@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { relativeDate } from "@/components/primitives";
 import { ActivityKind } from "@/components/activity";
 import { ConnectAgent } from "@/components/connect-agent";
+import { isEphemeral } from "@/lib/cli-name";
 import { DisconnectAgent } from "@/components/disconnect-agent";
 import { cliName } from "@/lib/cli-name";
 import { getLocale, t } from "@/lib/i18n";
@@ -52,7 +53,19 @@ export default async function AgentsPage() {
            It is canonized because the saved `kind` may be from an earlier vocabulary
            (`codex`, `claude_code`) and the detected ones use the provider's `id`.
           */}
-        <ConnectAgent connected={agents.map((agent) => canonicalAgentKind(agent.kind))} />
+        {/*
+           Two lists and not one, because they answer two questions the screen was merging.
+           `connected` is who has a key; `active` is who has ever used it. The badge printed the
+           word «connected» off the first list while the bridge counted the second and said zero —
+           and the bridge was right. Passing both lets the row say which of the two it means.
+          */}
+        <ConnectAgent
+          connected={agents.map((agent) => canonicalAgentKind(agent.kind))}
+          active={agents
+            .filter((agent) => agent.lastSeenAt !== null)
+            .map((agent) => canonicalAgentKind(agent.kind))}
+          ephemeral={isEphemeral()}
+        />
 
         {agents.length === 0 ? (
           <section className="mt-10 rounded-lg border border-edge bg-surface p-6">

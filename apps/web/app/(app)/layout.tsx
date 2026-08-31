@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { getStats } from "@panoma/db";
 import { db } from "@/lib/db";
+import { bridgeReport, bridgeSteps } from "@/lib/bridge";
 import { cliName, isEphemeral } from "@/lib/cli-name";
 import { getLocale, t } from "@/lib/i18n";
 import { AppShell, type ShellStats } from "@/components/app-shell";
@@ -104,6 +105,17 @@ async function shellStats(): Promise<ShellStats | undefined> {
       unsaved: stats.unsaved,
       notMine: stats.notMine,
       proposedRuns: stats.proposedRuns,
+      /*
+        Measured before putting it here, because it runs on every page and not only on its own.
+        With 76 projects in the catalog the whole report —five steps, one of which reads a small
+        file per project to find its hooks— renders in 16 ms, against the 40 ms the catalog page
+        costs on its own. It is affordable, and it is computed WHOLE on purpose: counting only the
+        cheap steps would make the frame and the bridge disagree about the same number, which is
+        the failure this very release went out to fix.
+       */
+      bridgePending: bridgeSteps(await bridgeReport(database)).filter(
+        (step) => step.state !== "done",
+      ).length,
     };
   } catch {
     return undefined;

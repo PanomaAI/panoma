@@ -96,6 +96,7 @@ const es = {
   "shell.ephemeralDetail":
     "La arrancaste con npx, que la guarda para un comando y la suelta. El catálogo se queda; el comando no. Para tenerlo: npm i -g panoma",
   "shell.pending": "{n} pendiente{s}",
+  "shell.setupLeft": "quedan {n} paso{s} por encender",
   "shell.summary": "Resumen del catálogo",
   "shell.summaryProjects": "{n} proyecto{s}",
   "shell.summaryScope": "en tu catálogo",
@@ -140,7 +141,14 @@ const es = {
   "dest.bridge": "Puente de mando",
   "bridge.title": "Encender panoma, paso a paso",
   "bridge.titleReady": "Todo encendido",
-  "bridge.lead": "Cada pieza de panoma, con su estado y un solo siguiente paso señalado. Nada de adivinar comandos: lo que toca ahora está marcado con una flecha, y lo demás espera su turno.",
+  /*
+    The lead says what is at stake and not only what the screen is.
+    This page is the answer to «why isn't this doing anything», and it was written as a tour: every
+    piece with its state. Whoever had not yet realised there was something to switch on read that
+    as a dashboard and left. The first sentence now names the stake, because the reader who most
+    needs this screen is exactly the one who does not know they need it.
+   */
+  "bridge.lead": "Panoma no está entero hasta que estos pasos estén dados: hasta entonces hay piezas que sencillamente no funcionan. Cada una con su estado y un solo siguiente paso señalado — nada de adivinar comandos: lo que toca ahora lleva una flecha, y lo demás espera su turno.",
   "bridge.leadReady": "El catálogo, el modelo, los agentes y los ganchos están en marcha. Desde aquí solo queda ver la memoria respirar — y decidir en las fichas lo que los agentes propongan.",
   "bridge.step.catalog.title": "El catálogo",
   "bridge.step.catalog.detail": "proyectos: {count}",
@@ -1728,6 +1736,14 @@ const es = {
   /* Connect an agent to the MCP from the 'Agents' page. */
   "agentMcp.localOnly": "Conectar un agente escribe en este disco: solo desde la máquina local.",
   "agentMcp.missingInput": "Falta el agente.",
+  /*
+    The same refusal the screen already makes, kept on this side too. The button knows and comes up
+    disabled, so nobody reaches here by accident — but a tab left open since before the install, or
+    anything calling the route directly, would. A guard that only lives in the interface is a
+    guard for the people who were not going to break it anyway.
+   */
+  "agentMcp.ephemeral": "Esta copia corre desde npx: la configuración apuntaría a una caché que npm puede borrar, y el agente arrancaría sin las herramientas sin decirlo.",
+  "agentMcp.ephemeralHow": "Instala panoma y vuelve a intentarlo: npm i -g panoma",
   "agentMcp.noServer":
     "El servidor MCP no está en esta instalación. Constrúyelo con: pnpm --filter @panoma/mcp run build",
   "agentMcp.badJson":
@@ -2277,6 +2293,19 @@ const es = {
   "connect.again": "Volver a conectar",
   "connect.alreadyOn": "conectado",
   /*
+    «Connected» was said of an agent that had never once called. The badge read a row in `agents`
+    —a key was issued— and printed the word for a connection, while the bridge, two clicks away,
+    counted `last_seen_at` and answered zero. Two screens, one fact, and the one that overstated
+    was the one you land on.
+    So the key that exists gets its own word, and the green one is kept for an agent that has
+    actually been in. And because a state nobody can act on is worse than no state, the step comes
+    with it: an already-open session picks up nothing, which is the whole reason it never entered.
+   */
+  "connect.keyIssued": "clave emitida",
+  "connect.neverUsed": "La clave está escrita, pero {name} no la ha usado todavía. Reinicia su sesión: una que ya estaba abierta no recoge nada.",
+  "connect.ephemeral": "Esta copia corre desde npx y se va al acabar la orden. La configuración apuntaría a su caché, y el día que se limpie {name} arrancaría sin las herramientas y sin decirlo.",
+  "connect.ephemeralHow": "Instálalo y vuelve a intentarlo:",
+  /*
     How much it costs to press it again, said before and not after.
     Reconnecting keeps the card and its history, but **emits another key**. Where Panoma writes
     the file it is not noticeable, because it overwrites it with the new one. Where the block was
@@ -2420,6 +2449,7 @@ const en = {
   "shell.ephemeralDetail":
     "You started it with npx, which keeps it for one command and lets it go. The catalog stays; the command does not. To keep it: npm i -g panoma",
   "shell.pending": "{n} pending",
+  "shell.setupLeft": "{n} step{s} left to switch on",
   "shell.summary": "Catalog summary",
   "shell.summaryProjects": "{n} project{s}",
   "shell.summaryScope": "in your catalog",
@@ -2449,7 +2479,14 @@ const en = {
   "dest.bridge": "The bridge",
   "bridge.title": "Power panoma on, step by step",
   "bridge.titleReady": "Everything is on",
-  "bridge.lead": "Every piece of panoma with its state, and a single next step marked. No more guessing commands: what to do now carries an arrow, and the rest waits its turn.",
+  /*
+    The lead says what is at stake and not only what the screen is.
+    This page is the answer to «why isn't this doing anything», and it was written as a tour: every
+    piece with its state. Whoever had not yet realised there was something to switch on read that
+    as a dashboard and left. The first sentence now names the stake, because the reader who most
+    needs this screen is exactly the one who does not know they need it.
+   */
+  "bridge.lead": "Panoma is not whole until these steps are done: until then there are pieces that simply do not work. Each one with its state and a single next step marked — no guessing commands: what to do now carries an arrow, and the rest waits its turn.",
   "bridge.leadReady": "Catalog, model, agents and hooks are running. From here you just watch the memory breathe — and decide on what agents propose, project by project.",
   "bridge.step.catalog.title": "The catalog",
   "bridge.step.catalog.detail": "projects: {count}",
@@ -3693,6 +3730,14 @@ const en = {
 
   "agentMcp.localOnly": "Connecting an agent writes to this disk: local machine only.",
   "agentMcp.missingInput": "The agent is missing.",
+  /*
+    The same refusal the screen already makes, kept on this side too. The button knows and comes up
+    disabled, so nobody reaches here by accident — but a tab left open since before the install, or
+    anything calling the route directly, would. A guard that only lives in the interface is a
+    guard for the people who were not going to break it anyway.
+   */
+  "agentMcp.ephemeral": "This copy runs from npx: the configuration would point at a cache npm may clear, and the agent would start without the tools and never say so.",
+  "agentMcp.ephemeralHow": "Install panoma and try again: npm i -g panoma",
   "agentMcp.noServer":
     "The MCP server isn’t in this install. Build it with: pnpm --filter @panoma/mcp run build",
   "agentMcp.badJson":
@@ -4004,6 +4049,19 @@ const en = {
   "connect.do": "Connect",
   "connect.again": "Connect again",
   "connect.alreadyOn": "connected",
+  /*
+    «Connected» was said of an agent that had never once called. The badge read a row in `agents`
+    —a key was issued— and printed the word for a connection, while the bridge, two clicks away,
+    counted `last_seen_at` and answered zero. Two screens, one fact, and the one that overstated
+    was the one you land on.
+    So the key that exists gets its own word, and the green one is kept for an agent that has
+    actually been in. And because a state nobody can act on is worse than no state, the step comes
+    with it: an already-open session picks up nothing, which is the whole reason it never entered.
+   */
+  "connect.keyIssued": "key issued",
+  "connect.neverUsed": "The key is written, but {name} has never used it. Restart its session: one that was already open picks up nothing.",
+  "connect.ephemeral": "This copy runs from npx and goes away when the command ends. The configuration would point inside its cache, and the day it is cleared {name} would start without the tools and never say so.",
+  "connect.ephemeralHow": "Install it and try again:",
   "connect.againCost":
     "Already connected. Connecting again issues a new key: where panoma writes the file it updates itself, but if you pasted the block by hand anywhere, that copy will stop working and you will have to paste it again.",
   "connect.working": "Connecting…",

@@ -12,6 +12,7 @@ import {
 } from "@panoma/core";
 import { db } from "@/lib/db";
 import { isLocalServer } from "@/lib/agent-auth";
+import { isEphemeral } from "@/lib/cli-name";
 import { localOperatorOnly, sameOrigin } from "@/lib/guard";
 import { localeFrom, t } from "@/lib/i18n";
 import { mcpEntry, mcpServerPath, preferredNode } from "@/lib/mcp-entry";
@@ -68,6 +69,28 @@ export async function POST(request: Request) {
   };
   if (!body.agent || !body.name) {
     return Response.json({ error: t(locale, "agentMcp.missingInput") }, { status: 400 });
+  }
+
+  /*
+    Under npx, nothing is written and no key is issued.
+
+    `panoma hooks` already refuses this, and its comment gives the reason in words that fit here
+    unchanged: writing a file that points at a copy npx is about to release is the one failure the
+    command must not have, because the silence would be total. The MCP is the same shape — the
+    entry below names the server by its path on disk, and under npx that path lives inside a cache
+    npm clears when it likes — with one difference that makes it worse: an agent whose MCP server
+    fails to start comes up **without the tools and without an error**, so the day it breaks
+    nothing on any screen says so.
+
+    It refuses ahead of `rotateAgentKey` and not after. Issuing the key and then declining leaves a
+    row in `agents` that no agent will ever use, and that row is exactly what the bridge counts as
+    a connected agent — the false 'connected' this release exists to stop telling.
+   */
+  if (isEphemeral()) {
+    return Response.json(
+      { error: t(locale, "agentMcp.ephemeral"), how: t(locale, "agentMcp.ephemeralHow") },
+      { status: 409 },
+    );
   }
 
   const server = await mcpServerPath();

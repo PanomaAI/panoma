@@ -515,6 +515,16 @@ const MESSAGES = {
   "npx.hooksRefusedWhy":
     "This copy runs from npx, which keeps it for one command and then lets it go. A hook written\n  now would call a command that stops existing the moment this one ends — and hooks stay quiet\n  by design, so nothing would ever tell you.",
   "npx.hooksRefusedHow": "Install it and try again:  npm i -g panoma",
+  /*
+    And the same refusal for the MCP, which needed it for the same reason and did not have it.
+    `--install` writes a permanent file in somebody's agent that names a path inside npx's cache.
+    That path is alive today and gone whenever npm clears it, and an MCP server that fails to
+    start is not an error anyone sees: the agent simply comes up without the tools.
+   */
+  "npx.mcpRefused": "An agent's configuration outlives the copy that would write it.",
+  "npx.mcpRefusedWhy":
+    "This copy runs from npx, which keeps it for one command and then lets it go. The configuration\n  written now would point inside that cache, so the agent would stop getting the tools the day it\n  is cleared — and it would come up without them saying nothing, which is how MCP fails.",
+  "npx.mcpRefusedHow": "Install it and try again:  npm i -g panoma",
   "npx.upEphemeral": "running from npx · to keep the command: npm i -g panoma",
 
   "cli.catalogUpdated":

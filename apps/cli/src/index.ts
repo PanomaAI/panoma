@@ -22,6 +22,7 @@ import { entryCommand, todayCommand } from "./today";
 import { helpText } from "./lang";
 import { plural, say, type MessageKey } from "./messages";
 import { mcpEntry, installFor } from "./mcp";
+import { panomaCommand } from "./environment";
 import { installSafeOutput } from "./safe-output";
 import { renderFamilies, renderGrid, renderProject } from "./render";
 import { cliVersion, downCommand, isAlive, upCommand, unreachable } from "./server";
@@ -916,6 +917,28 @@ async function enrichCatalog(api: string, force: boolean): Promise<number> {
  * Where does the block come from and why does it no longer say `npx -y @panoma/mcp`, but `mcp.ts`.
  */
 async function createAgentKey(api: string, name: string, install: boolean): Promise<number> {
+  /*
+    Before the key exists, and not after.
+    `panoma hooks` already refuses under npx, and the reason written there —a file that outlives
+    the copy that wrote it— is word for word this one: `--install` names the MCP server by its path
+    on disk, and under npx that path is inside a cache npm may clear whenever it likes. The agent
+    would then start without the tools and say nothing, because that is how MCP fails.
+    The refusal goes ahead of the HTTP call on purpose. Refusing afterwards would leave the key
+    issued and never used, which is the exact row that makes the bridge count an agent that is not
+    there — the state this whole screen exists to name.
+   */
+  if (install) {
+    const { efimero } = await panomaCommand();
+    if (efimero) {
+      process.stderr.write(
+        `\n  ${pc.yellow(say("npx.mcpRefused"))}\n` +
+          `  ${pc.dim(say("npx.mcpRefusedWhy"))}\n\n` +
+          `  ${pc.cyan(say("npx.mcpRefusedHow"))}\n\n`,
+      );
+      return 1;
+    }
+  }
+
   let response: Response;
   try {
     response = await catalogFetch(new URL("/api/agent/keys", api), {
