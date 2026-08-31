@@ -1,0 +1,315 @@
+/*
+  The frame: the top bar and the side bar.
+  What is seen on all screens and does not change when navigating — brand, global search,
+  navigation, the account tab, and the side rail with its folding.
+ */
+.app-topbar {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: var(--z-topbar);
+  display: grid;
+  grid-template-columns: 388px minmax(0, 565px) 1fr;
+  column-gap: 24px;
+  align-items: center;
+  min-height: 74px;
+  padding: 0 24px 0 16px;
+  border-bottom: 1px solid var(--color-edge);
+  background: var(--color-topbar-veil);
+  backdrop-filter: blur(18px);
+}
+
+.brand-cluster {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  width: fit-content;
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+.sidebar-toggle {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--color-edge);
+  border-radius: 8px;
+  background: var(--color-surface);
+  color: var(--color-chalk);
+  cursor: pointer;
+  transition: border-color var(--duration-medium) ease, background-color var(--duration-medium) ease;
+}
+
+.sidebar-toggle:hover {
+  border-color: var(--color-accent);
+  background: var(--color-raised);
+}
+
+.sidebar-toggle svg {
+  width: 18px;
+  height: 18px;
+}
+
+.brand-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  width: fit-content;
+  color: var(--color-chalk);
+  font-size: 1.18rem;
+  font-weight: 760;
+  letter-spacing: -0.03em;
+}
+
+.brand-lockup img {
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  object-fit: cover;
+}
+
+.global-search {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--color-edge-bright);
+  border-radius: 10px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-field);
+  color: var(--color-faint);
+}
+
+/*
+  The ring goes in the box and not on `input`: `focus-within` already said that. What didn't
+  matter was what it was drawn with. `--shadow-focus-ring` is a halo at 9% opacity —1.21:1 against
+  the white underneath, that is, invisible— and the accompanying border stays at 3.69:1 with a
+  one-pixel thickness. A `outline` is the same as already used by the rest of the app, costs the
+  same, and survives high contrast mode, where `box-shadow` turns off completely.
+ */
+.global-search:focus-within {
+  border-color: color-mix(in srgb, var(--color-accent) 50%, white);
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.global-search svg {
+  width: 20px;
+  height: 20px;
+  stroke-width: 1.7;
+}
+
+/*
+  The `outline: 0` is left on purpose: the ring is carried by the box, above, in `:focus-within`.
+  Removing it from here pulls out two rings, one inside the other.
+ */
+.global-search input {
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--color-chalk);
+  font-size: 0.86rem;
+}
+
+.global-search input::placeholder {
+  color: var(--color-faint);
+}
+
+.global-search button {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.global-search button:hover kbd {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.global-search kbd {
+  padding: 3px 6px;
+  border: 1px solid var(--color-edge);
+  border-radius: 6px;
+  background: var(--color-raised);
+  color: var(--color-faint);
+  font-family: var(--font-sans);
+  font-size: 0.69rem;
+}
+
+.top-navigation {
+  display: flex;
+  justify-content: flex-end;
+  align-items: stretch;
+  gap: 8px;
+  height: 74px;
+}
+
+.top-navigation > a {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
+  color: var(--color-smoke);
+  font-size: 0.84rem;
+  font-weight: 520;
+}
+
+.top-navigation > a:hover,
+.top-navigation > a.is-active {
+  color: var(--color-accent);
+}
+
+.top-navigation > a.is-active::after {
+  content: "";
+  position: absolute;
+  inset: auto 8px -1px;
+  height: 3px;
+  border-radius: 4px 4px 0 0;
+  background: var(--color-accent);
+}
+
+/*
+  The corner panel anchor: `position: relative` lives here and not on the button, because the
+  button is round and the panel has to hang from the corner of the bar.
+ */
+.account-holder {
+  position: relative;
+  align-self: center;
+  justify-self: start;
+  margin-left: 8px;
+}
+
+.account-button {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--color-raised);
+  color: var(--color-chalk);
+  font-weight: 650;
+  cursor: pointer;
+}
+.account-button svg { width: 18px; height: 18px; }
+.account-button[aria-expanded="true"] { background: var(--color-edge-bright); }
+
+/*
+  Hang from the button, aligned to the right so it does not go off the edge of the window. Above
+  the fixed bar (`z-index: 50`), otherwise it gets cut off below.
+ */
+.account-card {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: var(--z-account);
+  display: grid;
+  gap: 6px;
+  width: max-content;
+  max-width: min(280px, calc(100vw - 32px));
+  padding: 12px 14px;
+  border: 1px solid var(--color-edge-bright);
+  border-radius: 12px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+.account-card strong { font-size: 0.8rem; color: var(--color-chalk); }
+.account-card p {
+  margin: 0;
+  font-size: 0.74rem;
+  line-height: 1.45;
+  color: var(--color-smoke);
+}
+/*
+  The temporary copy, set apart without alarming. A rule of its own and not a colour of its own:
+  it borrows `--color-edge-bright` from the card that holds it, because a notice about something
+  healthy has no business inventing a warning colour.
+ */
+.account-ephemeral {
+  padding-top: 8px;
+  border-top: 1px solid var(--color-edge-bright);
+}
+.account-ephemeral strong { font-size: 0.74rem; }
+.account-card a {
+  font-size: 0.72rem;
+  color: var(--color-faint);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.account-card a:hover { color: var(--color-accent); }
+
+.app-sidebar {
+  position: fixed;
+  inset: 74px auto 0 0;
+  z-index: var(--z-sidebar);
+  display: flex;
+  flex-direction: column;
+  width: 228px;
+  padding: 26px 16px 20px;
+  border-right: 1px solid var(--color-edge);
+  background: var(--color-surface);
+}
+
+/*
+  Only the body can move; the foot is a guarantee, not potential content.
+  With eleven destinations and the open summary, the sum exceeds the height of many laptops.
+  Previously the overflow would come out below the window and take language, privacy, and font
+  with it. `min-height: 0` is what allows this flex child to really give way in height.
+ */
+.sidebar-scroll {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--color-edge-bright) transparent;
+  scrollbar-width: thin;
+}
+
+.app-sidebar nav {
+  display: grid;
+  gap: 7px;
+}
+
+.app-sidebar nav a {
+  display: flex;
+  align-items: center;
+  /*
+    During the 280 ms in which the lane widens, the name is already set and the link still
+    measures 46: without this, the text overflows above the content on every display. It goes in
+    the link and not in the bar because trimming the entire bar would cover the vertical overflow
+    in a low window, which is a worse problem.
+   */
+  overflow: hidden;
+  gap: 13px;
+  min-height: 46px;
+  padding: 0 14px;
+  border-radius: 10px;
+  color: var(--color-smoke);
+  font-size: 0.88rem;
+  font-weight: 520;
+  transition: background-color var(--duration-medium) ease, color var(--duration-medium) ease;
+}
+
+.app-sidebar nav a svg {
+  width: 21px;
+  height: 21px;
+  stroke-width: 1.65;
+}
+
+.app-sidebar nav a:hover {
+  background: var(--color-raised);
+  color: var(--color-chalk);
+}
+
+.app-sidebar nav a.is-active {
+  background: var(--color-selected);
+  color: var(--color-accent);
+  font-weight: 620;
+}
+

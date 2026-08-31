@@ -1,0 +1,26 @@
+# El estilo del editor, escrito una vez para que no lo decida cada editor por su cuenta.
+#
+# No hay formateador automático en este proyecto: los saltos de línea y la sangría los pone
+# quien escribe. Sin este fichero, un editor con la sangría en cuatro o los finales de línea
+# de Windows mete ruido en el diff que no tiene nada que ver con el cambio — y con el CI
+# corriendo en los tres sistemas, ese ruido llega.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 2
+insert_final_newline = true
+trim_trailing_whitespace = true
+# Los renglones se rompen a mano alrededor de 96: es lo que ya hacen los comentarios largos
+# del código, y es una pista para el editor, no una regla que falle nada.
+max_line_length = 96
+
+[*.md]
+# En Markdown, dos espacios al final de una línea son un salto de línea. Recortarlos
+# cambiaría el texto publicado.
+trim_trailing_whitespace = false
+
+[*.{yml,yaml}]
+indent_size = 2

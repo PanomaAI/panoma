@@ -1,0 +1,400 @@
+/*
+  What hangs from the catalog without being the catalog: where each project is distributed, the
+  navigation spinner, and the «private» label.
+ */
+
+/*
+  Where does Panoma look.
+  Copy the form of `.brief__line` on purpose: both are strips of a line within the catalog,
+  folded, that open to a detail. That they look alike is what makes the second not read as a new
+  element but as another of the same. See `sitios.tsx`.
+ */
+.sites {
+  margin-top: 10px;
+}
+
+.sites__line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 34px;
+  padding: 0 10px 0 12px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink-3);
+  font-size: 0.73rem;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) ease, color var(--duration-fast) ease, background-color var(--duration-fast) ease;
+}
+
+/*
+  Of dashed line, and it is the only thing that distinguishes it from the report.
+  The report tells what happened; this stripe marks the edge of what Panoma knows. The cut line
+  says ‘this is where what is seen ends’ without the need to write it, and at the same time it
+  lowers its rank: at rest it is almost invisible, which is what is assigned to something that is
+  consulted twice a year.
+ */
+.sites__line:hover {
+  border-color: var(--ink-3);
+  color: var(--ink-2);
+  background: var(--wash);
+}
+
+.sites__line > svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
+
+.sites__line > span:first-of-type {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sites__action {
+  flex: none;
+  font-size: 0.7rem;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.sites__detail {
+  margin-top: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--paper);
+  box-shadow: var(--shadow-lift);
+}
+
+.sites__detail ul {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.sites__detail li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 0.74rem;
+}
+
+.sites__detail li code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 0.74rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sites__detail li > span {
+  flex: none;
+  color: var(--ink-3);
+  font-size: 0.7rem;
+}
+
+.sites__detail li button,
+.sites__detail form button {
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--paper);
+  color: var(--ink-2);
+  font-size: 0.7rem;
+  padding: 3px 9px;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) ease, color var(--duration-fast) ease;
+}
+
+.sites__detail li button:hover {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+
+.sites__detail form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.sites__detail form input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--wash);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 0.74rem;
+}
+
+/*
+  Without `outline: none`: what was left was the edge on `--ink-3` over `--wash`, that is 2.79:1,
+  below the 3:1 required by a focus indicator. The edge remains as reinforcement.
+ */
+.sites__detail form input:focus {
+  border-color: var(--ink-3);
+}
+
+.sites__detail form button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.sites__detail form button:hover:not(:disabled) {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.sites__detail button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.sites__note,
+.sites__error {
+  margin: 8px 0 0;
+  font-size: 0.7rem;
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+
+.sites__error {
+  color: var(--bad);
+}
+
+.sites__search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.sites__search > span {
+  color: var(--ink-3);
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
+.sites__search button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--paper);
+  color: var(--ink-2);
+  font-size: 0.7rem;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) ease, color var(--duration-fast) ease;
+}
+
+.sites__search button:hover:not(:disabled) {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.sites__search button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Proposals, not a list: the dotted border says they are not yours yet. */
+.sites__candidates {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 10px 0 0;
+  border-top: 1px dashed var(--line-strong);
+  list-style: none;
+}
+
+.sites__candidates li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 0.74rem;
+}
+
+.sites__candidates li code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 0.74rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sites__candidates li > span {
+  flex: none;
+  color: var(--ink-3);
+  font-size: 0.7rem;
+}
+
+.sites__candidates li button {
+  flex: none;
+  padding: 3px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.sites__candidates li button:hover:not(:disabled) {
+  border-color: var(--ink);
+}
+
+/*
+  The link of the menu that is opening.
+  The size of a letter and the color of the text itself: it is not an alarm, it is an
+  acknowledgment of receipt. What it fixes is the feeling of a broken menu when `next dev` takes
+  four seconds to compile a route that had never been requested.
+ */
+.nav-pending {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  margin-left: auto;
+  border: 1.5px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  opacity: 0.55;
+  animation: nav-pending-spin var(--duration-spin) linear infinite;
+}
+
+@keyframes nav-pending-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /*
+    Without a twist, but the acknowledgment of receipt stays: whoever requested this needs to know
+    it anyway.
+   */
+  .nav-pending {
+    animation: none;
+    border-top-color: currentColor;
+    opacity: 0.35;
+  }
+}
+
+/* The two new buttons on the bar: same weight as the view switcher. */
+.catalog-tool {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink-3);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) ease, color var(--duration-fast) ease, background-color var(--duration-fast) ease;
+}
+
+.catalog-tool:hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+
+.catalog-tool.is-active {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--color-on-ink);
+}
+
+.catalog-tool svg {
+  width: 15px;
+  height: 15px;
+}
+
+/*
+  The sealed identity of the discreet mode.
+  It occupies exactly the place of the icon so that the grid does not shift, but it does not look
+  like a hole waiting to be loaded. It is a clear wording typical of Panoma: it does not use any
+  color, shape, or pixel of the real project that could be recognized by whoever is looking at the
+  screen.
+ */
+.catalog-private-mark {
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  flex: none;
+  border: 1px solid var(--color-seal-edge);
+  border-radius: 12px;
+  background:
+    linear-gradient(145deg, var(--color-seal-sheen), transparent 46%),
+    var(--color-seal-face);
+  box-shadow: inset 0 0 0 1px var(--color-seal-sheen-faint), var(--shadow-lift);
+}
+
+.catalog-private-mark::before {
+  position: absolute;
+  inset: -16px;
+  background: repeating-linear-gradient(
+    132deg,
+    transparent 0 9px,
+    var(--color-seal-sheen-soft) 9px 10px,
+    transparent 10px 17px
+  );
+  content: "";
+  transform: translateX(var(--private-shift, 0));
+}
+
+.catalog-private-mark[data-variant="1"] { --private-shift: 7px; }
+.catalog-private-mark[data-variant="2"] { --private-shift: -5px; }
+.catalog-private-mark[data-variant="3"] { --private-shift: 12px; }
+
+.catalog-private-mark--tile {
+  width: 54px;
+  height: 54px;
+}
+
+.catalog-private-mark--row {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+}
+
+.catalog-private-mark__seal {
+  position: relative;
+  z-index: var(--z-seal);
+  width: 58%;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--color-seal-band);
+  box-shadow: var(--shadow-seal-ring);
+}
+
+.catalog-private-mark__seal::after {
+  position: absolute;
+  inset: 2px 7px;
+  border-radius: inherit;
+  background: repeating-linear-gradient(90deg, var(--color-seal-stripe) 0 2px, transparent 2px 6px);
+  content: "";
+  opacity: 0.62;
+}
+

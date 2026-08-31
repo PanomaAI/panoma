@@ -1,0 +1,281 @@
+/*
+  The times of the tower. What each panel is and why, in `landing-tower.tsx`.
+  A full cycle is 13.5 s: three pages of 4.5 s, one per project. The light sweep crosses the
+  window at the start of each page, and the values change column by column in the order in which
+  the light reaches them — left at 0.10 s, center at 0.24 s, right at 0.38 s, which is how long it
+  actually takes the sweep to reach each one.
+  All the synchronization is arithmetic, without JavaScript: each element has a 'window' of a
+  third of a cycle (13.5 s) staggered by its page and column, and its internal drawings —arcs,
+  sparks, bars— run at 4.5 s, so they repeat exactly once per page and always fall within their
+  window. 13.5 is a multiple of 4.5: it cannot get out of phase.
+  Everything is `transform`, `opacity`, and `stroke-dash*`: it goes to the composer and does not
+  repaint.
+ */
+
+.tower {
+  --T: 13.5s;
+  --P: 4.5s;
+  display: block;
+  padding: 0;
+}
+
+/*
+  It is sized according to the width of its column: thus the percentages in the legend below —
+  which are scale-invariant — fall exactly under the column of panels they name.
+ */
+.stage {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.ink { fill: var(--ink); }
+
+/*
+  ——— Phase: page and column ———
+  The classes do not animate anything; they only indicate when. The delays are positive on
+  purpose: on the first painting the window is dark and the first sweep turns it on — the start is
+  part of the piece.
+ */
+
+.page0 { --pd: 0s; }
+.page1 { --pd: var(--P); }
+.page2 { --pd: calc(var(--P) * 2); }
+
+.colL { --cd: 0.1s; }
+.colC { --cd: 0.24s; }
+.colR { --cd: 0.38s; }
+
+/*
+  The window: visible for one third of the cycle, with a 120 ms fade on each edge. The fade-out of
+  one page coincides with the fade-in of the next: it is a relay, not a flicker.
+ */
+.win {
+  opacity: 0;
+  animation: win var(--T) linear infinite;
+  animation-delay: calc(var(--pd, 0s) + var(--cd, 0s));
+}
+
+@keyframes win {
+  0%     { opacity: 0; }
+  0.9%   { opacity: 1; }
+  33.33% { opacity: 1; }
+  34.23% { opacity: 0; }
+  100%   { opacity: 0; }
+}
+
+/*
+  What turns on once and stays: the wallpaper of each panel, the catalog list, the name bars. The
+  tower does not turn off between pages.
+ */
+.hold {
+  opacity: 0;
+  animation: holdIn 0.5s ease-out forwards;
+  animation-delay: calc(var(--cd, 0.1s) + 0.12s);
+}
+
+@keyframes holdIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ——— El barrido ——— */
+
+.sweep {
+  pointer-events: none;
+  animation: sweep var(--P) linear infinite;
+}
+
+@keyframes sweep {
+  0%    { transform: translateX(0); opacity: 0; }
+  1.6%  { opacity: 0.9; }
+  10.5% { transform: translateX(380px); opacity: 0.9; }
+  12%   { transform: translateX(380px); opacity: 0; }
+  100%  { transform: translateX(380px); opacity: 0; }
+}
+
+/* ——— The instruments ——— */
+
+/*
+  The health ring: the same design used by the app. It arrives late to the window and closes over
+  its note — arriving after everyone else is what makes it read as measurement.
+ */
+.ringTrack {
+  fill: none;
+  stroke: var(--paper-a-16);
+  stroke-width: 5;
+}
+
+.ringArc {
+  fill: none;
+  stroke-width: 5;
+  stroke-linecap: round;
+  stroke-dasharray: 175.93;
+  stroke-dashoffset: calc(var(--rest) * 1px);
+  transform: rotate(-90deg);
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: arcDraw var(--P) cubic-bezier(0.3, 0.7, 0.2, 1) infinite;
+  animation-delay: calc(var(--pd, 0s) + var(--cd, 0s));
+}
+
+@keyframes arcDraw {
+  0%, 4% { stroke-dashoffset: 175.93px; }
+  17%    { stroke-dashoffset: calc(var(--rest) * 1px); }
+  100%   { stroke-dashoffset: calc(var(--rest) * 1px); }
+}
+
+.good { stroke: var(--status-good); }
+.warn { stroke: var(--status-warn); }
+
+/* The spark of activity is drawn from left to right, like time. */
+.spark {
+  fill: none;
+  stroke: var(--paper);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 140;
+  stroke-dashoffset: 0;
+  animation: sparkDraw var(--P) cubic-bezier(0.3, 0.7, 0.2, 1) infinite;
+  animation-delay: calc(var(--pd, 0s) + var(--cd, 0s));
+}
+
+@keyframes sparkDraw {
+  0%, 5% { stroke-dashoffset: 140px; }
+  19%    { stroke-dashoffset: 0; }
+  100%   { stroke-dashoffset: 0; }
+}
+
+.sparkDot,
+.stateDot {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: dotPulse var(--P) ease-in-out infinite;
+  animation-delay: calc(var(--pd, 0s) + var(--cd, 0s));
+}
+
+.stateDot { stroke: none; }
+.stateDot.good { fill: var(--status-good); }
+.stateDot.warn { fill: var(--status-warn); }
+
+@keyframes dotPulse {
+  0%, 42% { transform: scale(1); }
+  48%     { transform: scale(1.25); }
+  56%     { transform: scale(1); }
+  100%    { transform: scale(1); }
+}
+
+/* The numbers, in the mono of the landing system: instrument, not label. */
+.num {
+  fill: var(--paper);
+  font-family: var(--font-landing-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 600;
+  text-anchor: middle;
+}
+
+.numSlide {
+  animation: numSlide var(--P) cubic-bezier(0.3, 0.7, 0.2, 1) infinite;
+  animation-delay: calc(var(--pd, 0s) + var(--cd, 0s));
+}
+
+@keyframes numSlide {
+  0%, 4% { transform: translateY(7px); }
+  13%    { transform: translateY(0); }
+  100%   { transform: translateY(0); }
+}
+
+/* The commit bars grow from their base, staggered by 50 ms: by mass, not all at once. */
+.bar {
+  fill: var(--paper-a-70);
+  transform-box: fill-box;
+  transform-origin: bottom center;
+  animation: barGrow var(--P) cubic-bezier(0.3, 0.7, 0.2, 1) infinite;
+  animation-delay: calc(var(--pd, 0s) + var(--cd, 0s) + var(--bd, 0s));
+}
+
+@keyframes barGrow {
+  0%, 7% { transform: scaleY(0.03); }
+  14%    { transform: scaleY(1.05); }
+  18%    { transform: scaleY(1); }
+  100%   { transform: scaleY(1); }
+}
+
+/* The project icon nods with a short pulse when changing pages. */
+.tilePop {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: tilePop var(--P) cubic-bezier(0.3, 0.7, 0.2, 1) infinite;
+  animation-delay: calc(var(--pd, 0s) + var(--cd, 0s));
+}
+
+@keyframes tilePop {
+  0%, 3% { transform: scale(0.92); }
+  9%     { transform: scale(1.03); }
+  13%    { transform: scale(1); }
+  100%   { transform: scale(1); }
+}
+
+/*
+  The selection of the catalog: a single clear row that jumps from project to project as it is
+  scrolled. It begins in the second row, which is where reduced-motion freezes it.
+ */
+.selection {
+  animation: selMove var(--T) cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  animation-delay: var(--cd, 0.1s);
+}
+
+@keyframes selMove {
+  0%     { transform: translateY(0); }
+  33.3%  { transform: translateY(0); }
+  35.1%  { transform: translateY(40px); }
+  66.6%  { transform: translateY(40px); }
+  68.4%  { transform: translateY(-20px); }
+  96.5%  { transform: translateY(-20px); }
+  99%    { transform: translateY(0); }
+  100%   { transform: translateY(0); }
+}
+
+/* The 'open in' arrow: it redraws on each page. One click and you're back. */
+.arrow {
+  fill: none;
+  stroke: var(--paper);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  stroke-dasharray: 44;
+  stroke-dashoffset: 0;
+  animation: arrowDraw var(--P) cubic-bezier(0.3, 0.7, 0.2, 1) infinite;
+  animation-delay: calc(var(--cd, 0s));
+}
+
+@keyframes arrowDraw {
+  0%, 5% { stroke-dashoffset: 44px; }
+  15%    { stroke-dashoffset: 0; }
+  100%   { stroke-dashoffset: 0; }
+}
+
+/* ——— Trazos de apoyo ——— */
+
+.barStrong { fill: var(--paper-a-55); }
+.barFaint { fill: var(--paper-a-28); }
+.squareFaint { fill: var(--paper-a-30); }
+
+/* ——— When narrowing: the whole tower, somewhat more restrained ——— */
+
+
+
+/*
+  ——— Without movement ———
+  The piece freezes on the first page with everything drawn: catalog with its selection, ring at
+  94, complete activity, status in green. The base values of each element are their final state on
+  purpose — removing the animation already leaves the board finished.
+ */
+
+@media (prefers-reduced-motion: reduce) {
+  .tower * { animation: none !important; }
+  .sweep { opacity: 0; }
+  .hold { opacity: 1; }
+  .win { opacity: 0; }
+  .win.page0 { opacity: 1; }
+  .selection { transform: none; }
+}
