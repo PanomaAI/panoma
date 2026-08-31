@@ -1,0 +1,459 @@
+/*
+  All the remaining width cuts, and the global focus ring.
+  It is the file most dependent on the sheet: its `@media` re-declare rules of `app-shell`,
+  `app-layout`, `catalog-screen`, `catalog-views`, and the four of the card with the same weight,
+  and they win only by being behind. Do not move it forward.
+  The `:focus-visible` global here belongs by content to `base.css`. It stays so as not to move a
+  line in the same change that splits the file.
+ */
+@media (max-width: 1180px) {
+  .project-detail-page__inner {
+    width: min(100% - 40px, 1184px);
+  }
+
+  .project-detail-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .project-secondary-column {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: start;
+  }
+
+  .project-attention-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .project-attention-row > a {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .project-hero {
+    flex-direction: column;
+  }
+
+  .project-action-bar {
+    width: 100%;
+    justify-items: start;
+  }
+
+  .project-overflow-menu {
+    right: auto;
+    left: 188px;
+  }
+
+  .project-secondary-column,
+  .project-context-grid,
+  .project-inventory-grid,
+  .project-log-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .project-inventory-grid > div,
+  .project-inventory-grid > div:not(:nth-child(3n + 1)),
+  .project-inventory-grid > div:nth-child(n + 4) {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+
+  .project-inventory-grid > div:first-child {
+    border-top: 0;
+  }
+
+  .project-stack-grid,
+  .project-service-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .project-detail-page__inner {
+    width: min(100% - 28px, 1184px);
+    padding-top: 24px;
+  }
+
+  .project-hero__identity {
+    gap: 15px;
+  }
+
+  .project-hero__identity > img,
+  .project-hero__identity > span {
+    width: 68px !important;
+    height: 68px !important;
+  }
+
+  .project-hero__copy h1 {
+    font-size: 1.75rem;
+  }
+
+  .project-hero__description {
+    font-size: 0.95rem;
+  }
+
+  .project-hero__facts {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 0;
+  }
+
+  .project-hero__fact,
+  .project-hero__fact + .project-hero__fact {
+    min-width: 0;
+    margin: 0;
+    padding: 0 12px 0 0;
+    border: 0;
+  }
+
+  .project-hero__fact:nth-child(even) {
+    padding-left: 12px;
+    padding-right: 0;
+    border-left: 1px solid var(--line);
+  }
+
+  .project-hero__path {
+    flex-wrap: wrap;
+  }
+
+  .project-hero__path-label {
+    display: none;
+  }
+
+  .project-hero__path-value {
+    flex: 1 1 auto;
+  }
+
+  .project-action-bar__primary {
+    width: 100%;
+  }
+
+  /* The split button stretches and the arrow stays with its fixed width. */
+  .open-menu {
+    flex: 1;
+  }
+
+  .open-menu__split {
+    width: 100%;
+  }
+
+  .open-menu__primary {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .open-project-action--primary {
+    flex: 1;
+  }
+
+  .open-project-action--primary button {
+    width: 100%;
+  }
+
+  .project-overflow-menu {
+    top: 52px;
+    right: 0;
+    left: auto;
+    width: min(250px, calc(100vw - 28px));
+  }
+
+  .project-subnav {
+    width: calc(100vw - 28px);
+    gap: 24px;
+    overflow-x: auto;
+  }
+
+  .project-subnav a {
+    flex: none;
+  }
+
+  .project-overview {
+    grid-template-columns: 1fr;
+  }
+
+  .project-overview__health {
+    order: -1;
+  }
+
+  .project-overview__segment {
+    min-height: 205px;
+  }
+
+  .project-overview__segment + .project-overview__segment {
+    border-top: 1px solid var(--color-edge);
+    border-left: 0;
+  }
+
+  .project-timeline li {
+    grid-template-columns: 30px 64px minmax(0, 1fr);
+    padding: 7px 0;
+  }
+
+  .project-timeline code {
+    display: none;
+  }
+
+  .project-timeline p {
+    white-space: normal;
+  }
+
+  .project-timeline__body {
+    align-items: flex-start;
+  }
+
+  .project-timeline small {
+    margin-top: 1px;
+  }
+
+  .project-safety-strip {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .project-safety-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+
+  .project-deep-section,
+  .project-utility-section {
+    padding: 18px;
+  }
+
+  .project-dependency-table > div {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: 10px 12px;
+  }
+
+  .project-dependency-table [role="cell"]:nth-child(2) {
+    text-align: right;
+  }
+
+  .project-dependency-table [role="cell"]:last-child {
+    grid-column: 1 / -1;
+    text-align: left;
+  }
+
+  .project-advisory-list,
+  .project-stack-grid,
+  .project-service-list {
+    grid-template-columns: 1fr;
+  }
+
+  .project-utility-section,
+  .project-page-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .project-page-footer a {
+    margin-left: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/*
+  The ring only follows the corner of the element: browsers draw the `outline` with the
+  `border-radius` it already has, and there is no need to tell it. Telling it was, moreover,
+  ROUNDING THE ELEMENT when focusing on it —`border-radius` is not a property of the ring—, and
+  only the four spots weighing 0-1-0 or less noticed it: the catalog tile went from 11px to 5, the
+  button to fold the bar from 8 to 5, the opening handle from 7 to 5, and the model selector field
+  from 4 to 5. Four shape changes when tabbing, none desired.
+ */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+
+@media (max-width: 980px) {
+  .app-topbar {
+    grid-template-columns: minmax(200px, max-content) minmax(0, 1fr) auto;
+    column-gap: 24px;
+  }
+
+  .top-navigation > a {
+    display: none;
+  }
+
+  .app-sidebar {
+    width: 204px;
+  }
+
+  .app-main {
+    width: calc(100% - 204px);
+    margin-left: 204px;
+  }
+
+  .legacy-page {
+    width: calc(100% - 204px);
+  }
+
+  html.sidebar-collapsed .app-main,
+  html.sidebar-collapsed .legacy-page {
+    width: calc(100% - 68px);
+    margin-left: 68px;
+  }
+
+}
+
+@media (max-width: 760px) {
+  .app-topbar {
+    grid-template-columns: auto 1fr auto;
+    gap: 12px;
+    min-height: 64px;
+    padding: 0 14px;
+  }
+
+  .sidebar-toggle,
+  .brand-lockup span,
+  .global-search kbd,
+  .top-navigation {
+    display: none;
+  }
+
+  .brand-lockup img {
+    width: 36px;
+    height: 36px;
+  }
+
+  .global-search {
+    height: 40px;
+  }
+
+  html.sidebar-collapsed .app-sidebar,
+  .app-sidebar {
+    inset: auto 0 0 0;
+    z-index: var(--z-dock);
+    display: block;
+    width: auto;
+    height: 66px;
+    padding: 7px 10px;
+    border-top: 1px solid var(--color-edge);
+    border-right: 0;
+  }
+
+  .sidebar-scroll {
+    display: block;
+    overflow: visible;
+  }
+
+  html.sidebar-ready .app-sidebar,
+  html.sidebar-ready .app-main,
+  html.sidebar-ready .legacy-page,
+  html.sidebar-ready.sidebar-collapsed .app-sidebar {
+    transition: none;
+  }
+
+  .app-sidebar nav {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 4px;
+  }
+
+  .app-sidebar nav a {
+    position: relative;
+    justify-content: center;
+    min-height: 50px;
+    padding: 0;
+  }
+
+  .app-sidebar nav a:nth-child(n + 6),
+  .nav-label,
+  .nav-badge,
+  .catalog-summary,
+  .sidebar-foot {
+    display: none;
+  }
+
+  /*
+    The footer bar is also just icons, so the spinner also got lost here — and on a mobile, where
+    the route takes longer, is where it is most needed.
+    The selector is intentionally long: `.nav-pending` by itself matches in weight with the base
+    rule and **the base is lower in the file**, so it would win and this caused no issues.
+    Measured, not deduced: the rotator was still coming out at 11 pixels and stuck to the edge.
+   */
+  .app-sidebar nav a .nav-pending {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 30px;
+    height: 30px;
+    margin: -15px 0 0 -15px;
+  }
+
+  .app-sidebar nav a svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  /*
+    In the footer there is no lane to leave space. The lane rule lives on the intermediate screen
+    and `html.sidebar-collapsed .app-main` weighs more than `.app-main` alone, so here it must be
+    repeated with the same weight or the content will remain with 68px of left margin due to a bar
+    that is below.
+   */
+  html.sidebar-collapsed .app-main,
+  html.sidebar-collapsed .legacy-page {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .app-main {
+    width: 100%;
+    margin-left: 0;
+    padding-top: 64px;
+    padding-bottom: 66px;
+  }
+
+  .legacy-page {
+    width: 100%;
+    padding: 98px 16px 94px;
+  }
+
+  .content-page {
+    width: min(100% - 32px, 1080px);
+    padding-top: 34px;
+  }
+
+  .catalog-screen__inner {
+    width: min(100% - 28px, 1240px);
+    padding-top: 26px;
+  }
+
+  .catalog-bar {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .catalog-bar__tools {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  /* The filters do not stack in four rows: they slide, like a tab bar. */
+  .catalog-filters {
+    width: calc(100vw - 28px);
+    padding-bottom: 8px;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+  }
+
+  .catalog-filters button {
+    flex: none;
+  }
+
+  /* Three per row on a mobile, like a home screen. With two it reads like a list. */
+  .catalog-rows--grid {
+    grid-template-columns: repeat(auto-fill, 118px);
+    gap: 10px;
+  }
+}

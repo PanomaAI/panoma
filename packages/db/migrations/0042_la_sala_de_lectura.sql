@@ -1,0 +1,1 @@
+CREATE INDEX "agent_activities_search_idx" ON "agent_activities" USING gin (to_tsvector('simple', "summary" || ' ' || coalesce("details", '')));

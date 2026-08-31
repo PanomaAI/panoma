@@ -1,0 +1,317 @@
+/*
+  The instruction file of the agents and the project accounts.
+ */
+/*
+  ── The agents' instruction file ───────────────────────────── The section teaches verified
+  facts, and the color corresponds to the verdict: green for a live project when everything it
+  states exists, amber as a warning when not. Red is reserved for security — here nothing bleeds,
+  it only ages.
+ */
+
+.project-md-hint {
+  display: block;
+  margin-top: 6px;
+  color: var(--color-faint);
+}
+
+.project-md-files {
+  display: grid;
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.project-md-file {
+  padding: 16px 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--corner);
+}
+
+.project-md-file-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.project-md-file-head code {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.project-md-file-head > span:not(.project-md-badge) {
+  color: var(--color-smoke);
+  font-size: 0.7rem;
+}
+
+.project-md-badge {
+  margin-left: auto;
+  padding: 3px 9px;
+  border: 1px solid var(--color-edge-bright);
+  border-radius: 999px;
+  background: var(--color-raised);
+  color: var(--color-chalk);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.project-md-clean {
+  margin-top: 10px;
+  color: var(--color-live);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.project-md-count {
+  margin-top: 10px;
+  color: var(--color-idle);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.project-md-findings {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.project-md-findings li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 0.75rem;
+}
+
+.project-md-line {
+  min-width: 64px;
+  color: var(--color-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.project-md-findings code {
+  padding: 1px 6px;
+  border: 1px solid var(--color-edge);
+  border-radius: 6px;
+  background: var(--color-raised);
+  font-size: 0.72rem;
+}
+
+.project-md-reason {
+  color: var(--color-smoke);
+}
+
+.project-accounts-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.project-accounts-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: baseline;
+  font-size: 0.8rem;
+}
+.project-accounts-list strong { font-size: 0.8rem; }
+.project-accounts-list code { font-size: 0.72rem; color: var(--color-smoke); }
+.project-accounts-note { color: var(--color-faint); font-size: 0.74rem; }
+
+.project-accounts-form { display: grid; gap: 8px; }
+.project-accounts-card { margin-top: 14px; }
+
+.project-account-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 0.8rem;
+}
+.project-account-favicon {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  margin-top: 2px;
+  flex: none;
+}
+.project-account-chip {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  margin-top: 2px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-raised);
+  border: 1px solid var(--color-edge);
+  color: var(--color-smoke);
+  font-size: 0.6rem;
+  font-weight: 600;
+}
+.project-account-body { display: grid; gap: 2px; min-width: 0; }
+.project-account-line { display: inline-flex; gap: 6px; align-items: baseline; min-width: 0; }
+.project-account-line a {
+  color: var(--color-accent);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-account-line a:hover { text-decoration: underline; }
+.project-account-line button {
+  color: var(--color-faint);
+  font-size: 0.7rem;
+  flex: none;
+}
+.project-account-line button:hover { color: var(--color-accent); }
+.project-account-line code { font-size: 0.72rem; color: var(--color-smoke); }
+
+.project-accounts-go {
+  margin-top: 10px;
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  font-family: var(--font-mono, ui-monospace);
+  font-size: 0.7rem;
+  color: var(--color-smoke);
+  text-decoration: none;
+  border: 1px solid var(--color-edge);
+  border-radius: 6px;
+  padding: 4px 10px;
+}
+.project-accounts-go:hover { border-color: var(--color-accent); color: var(--color-accent); }
+.project-accounts-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+  align-items: start;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed var(--color-edge);
+}
+.project-accounts-row input { grid-column: 1; }
+.project-accounts-row button { grid-column: 2; grid-row: 1; }
+
+/* In its menu view there is room: the editor rows are a grid again. */
+/*
+  901 and not 900: the other cutoff of this width is `max-width: 900px` (in `responsive.css` ),
+  and both were fulfilled at the same time at exactly 900px of window. Today they didn’t clash
+  because they touch different elements, but the axis remained unallocated. The house already has
+  the pair properly done elsewhere —`max-width: 760px` against `min-width: 761px` —, so the same
+  is followed: the exact width belongs to the narrow side.
+ */
+@media (min-width: 901px) {
+  .project-accounts--full .project-accounts-row {
+    grid-template-columns: 1.2fr 1.4fr 1.1fr 1fr auto;
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+  .project-accounts--full .project-accounts-row input { grid-column: auto; }
+  .project-accounts--full .project-accounts-row button { grid-column: auto; grid-row: auto; }
+}
+.project-accounts-row input {
+  border: 1px solid var(--color-edge);
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-chalk);
+  font-size: 0.74rem;
+  padding: 5px 8px;
+  min-width: 0;
+}
+/*
+  Without its own ring: it was 1px stuck to the edge where the rest of the app puts 2px apart
+  3. It inherits the global, and the `aria-invalid` rule below —which only changes `outline-color`
+  — still applies to it as is.
+ */
+/*
+  The field that could not be saved. The border is marked and **the text is not touched**: the
+  notice below says what happens and this indicates where. The red is the same `red-500` used by
+  that notice, for which there is no color swatch for 'bad' here.
+ */
+.project-accounts-row input[aria-invalid="true"] {
+  border-color: var(--color-danger-field);
+}
+.project-accounts-row input[aria-invalid="true"]:focus { outline-color: var(--color-danger-field); }
+.project-accounts-actions { display: flex; gap: 8px; align-items: center; }
+.project-accounts-warning {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--color-faint);
+  font-size: 0.72rem;
+  margin: 2px 0 0;
+}
+
+
+.project-md-lead {
+  margin-top: 14px;
+  color: var(--color-smoke);
+  font-size: 0.8rem;
+}
+
+.project-md-alt {
+  align-self: center;
+  color: var(--color-faint);
+  font-size: 0.7rem;
+}
+
+.project-md-apply { display: inline-flex; flex-direction: column; }
+
+.project-md-actions {
+  align-items: flex-start;
+
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.project-md-touches {
+  padding-top: 4px;
+}
+
+.project-md-touches ul {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.project-md-touches li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  color: var(--color-smoke);
+  font-size: 0.73rem;
+}
+
+.project-md-touches strong {
+  color: var(--color-chalk);
+}
+
+.project-md-touches code {
+  font-size: 0.7rem;
+}
+
+.project-md-inherited-row {
+  display: block !important;
+}
+
+.project-md-inspect-result {
+  margin-top: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--color-edge);
+  border-radius: 8px;
+  background: var(--color-ground);
+}
+.project-md-inspect-result .project-md-count { margin-top: 0; }
+
+.project-md-delta {
+  font-variant-numeric: tabular-nums;
+}

@@ -1,0 +1,43 @@
+{
+  "name": "panoma-monorepo",
+  "version": "0.1.0",
+  "license": "AGPL-3.0-only",
+  "private": true,
+  "type": "module",
+  "description": "The local catalog of your projects",
+  "homepage": "https://panoma.ai",
+  "author": "Jesus Castillo",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PanomaAI/panoma.git"
+  },
+  "bugs": {
+    "url": "https://github.com/PanomaAI/panoma/issues"
+  },
+  "packageManager": "pnpm@11.22.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @panoma/web run dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "scan": "pnpm --filter panoma run dev",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.10.2",
+    "eslint": "^10.9.0",
+    "eslint-config-next": "^16.3.2",
+    "globals": "^17.11.0",
+    "tsup": "^8.3.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.67.0",
+    "vitest": "^4.1.10"
+  }
+}

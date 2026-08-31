@@ -1,0 +1,30 @@
+{
+  "comentario": [
+    "Quién ha firmado el CLA. Se lleva aquí, en el propio repositorio y a la vista, en vez",
+    "de en un servicio externo: para saber quién firmó qué basta con git log, y nadie de",
+    "fuera necesita permisos de escritura sobre este repo para gestionarlo.",
+    "",
+    "Hay dos formas de estar cubierto, y son dos acuerdos distintos:",
+    "",
+    "«firmantes» — personas que firmaron el individual (/CLA.md) escribiendo la frase",
+    "exacta en un comentario de su pull request. Cada entrada lleva su login de GitHub, su",
+    "«id» numérico de usuario, la fecha en ISO y el enlace al comentario que sirve de",
+    "prueba. El id no es adorno: el login se renombra y se recicla, y la comprobación",
+    "compara por id justamente para que un login abandonado no herede la firma de otro.",
+    "El id sale de https://api.github.com/users/LOGIN.",
+    "",
+    "«empresas» — empresas que firmaron el corporativo (/CCLA.md), para el caso en que el",
+    "contrato de trabajo dice que lo que escribe la persona es de la empresa. Ahí no firma",
+    "quien programa: firma quien puede obligar a la empresa, y trae una lista de logins",
+    "autorizados (el Anexo A del acuerdo). Esa lista se modifica solo a petición escrita de",
+    "un firmante autorizado, y el historial de git de este fichero es el registro de quién",
+    "estaba autorizado y desde cuándo. El acuerdo firmado lo archiva el titular; aquí queda",
+    "el hecho, con su fecha.",
+    "",
+    "Un login que no esté ni en «firmantes» ni en el «anexoA» de alguna empresa no está",
+    "cubierto por nada, y eso es a propósito."
+  ],
+  "version": 3,
+  "firmantes": [],
+  "empresas": []
+}

@@ -1,0 +1,1 @@
+ALTER TABLE "projects" ADD COLUMN "icon_hash" text;
