@@ -94,7 +94,7 @@ const es = {
    */
   "shell.ephemeral": "Esta copia es temporal",
   "shell.ephemeralDetail":
-    "La arrancaste con npx, que la guarda para un comando y la suelta. El catálogo se queda; el comando no. Para tenerlo: npm i -g panoma",
+    "La arrancaste con npx, que la guarda para un comando y la suelta. El catálogo se queda; el comando no. Para tenerlo: npm i -g panoma — y después reinicia el catálogo, o esta pantalla seguirá escribiendo «npx panoma» en cada comando que te dé.",
   "shell.pending": "{n} pendiente{s}",
   "shell.setupLeft": "quedan {n} paso{s} por encender",
   "shell.summary": "Resumen del catálogo",
@@ -1743,7 +1743,7 @@ const es = {
     guard for the people who were not going to break it anyway.
    */
   "agentMcp.ephemeral": "Esta copia corre desde npx: la configuración apuntaría a una caché que npm puede borrar, y el agente arrancaría sin las herramientas sin decirlo.",
-  "agentMcp.ephemeralHow": "Instala panoma y vuelve a intentarlo: npm i -g panoma",
+  "agentMcp.ephemeralHow": "Instala panoma y reinicia el catálogo: npm i -g panoma · panoma down && panoma up",
   "agentMcp.noServer":
     "El servidor MCP no está en esta instalación. Constrúyelo con: pnpm --filter @panoma/mcp run build",
   "agentMcp.badJson":
@@ -2304,7 +2304,20 @@ const es = {
   "connect.keyIssued": "clave emitida",
   "connect.neverUsed": "La clave está escrita, pero {name} no la ha usado todavía. Reinicia su sesión: una que ya estaba abierta no recoge nada.",
   "connect.ephemeral": "Esta copia corre desde npx y se va al acabar la orden. La configuración apuntaría a su caché, y el día que se limpie {name} arrancaría sin las herramientas y sin decirlo.",
-  "connect.ephemeralHow": "Instálalo y vuelve a intentarlo:",
+  /*
+    Two commands, because installing is not the half that unblocks this.
+
+    It said «install it and try again», and whoever did exactly that watched the screen not change
+    and had nothing to read. This page is served by a process that was started from npx, and a
+    running process does not inherit an install that happened after it: the notice would have stayed
+    there through any number of refreshes. The reader did what they were told and the product went
+    on asking for it.
+
+    The terminal's version of this refusal is right to say «try again», because there the next
+    invocation IS the newly installed one. Here the thing that has to be restarted is the catalog,
+    so here it is named.
+   */
+  "connect.ephemeralHow": "Instálalo y reinicia el catálogo: esta pantalla la sirve la copia de npx, y un servidor ya en marcha no hereda lo que instales después.",
   /*
     How much it costs to press it again, said before and not after.
     Reconnecting keeps the card and its history, but **emits another key**. Where Panoma writes
@@ -2447,7 +2460,7 @@ const en = {
     "There’s no account or cloud to manage: panoma runs on this computer and the catalog stays here.",
   "shell.ephemeral": "This copy is temporary",
   "shell.ephemeralDetail":
-    "You started it with npx, which keeps it for one command and lets it go. The catalog stays; the command does not. To keep it: npm i -g panoma",
+    "You started it with npx, which keeps it for one command and lets it go. The catalog stays; the command does not. To keep it: npm i -g panoma — then restart the catalog, or this screen will go on writing «npx panoma» into every command it hands you.",
   "shell.pending": "{n} pending",
   "shell.setupLeft": "{n} step{s} left to switch on",
   "shell.summary": "Catalog summary",
@@ -3737,7 +3750,7 @@ const en = {
     guard for the people who were not going to break it anyway.
    */
   "agentMcp.ephemeral": "This copy runs from npx: the configuration would point at a cache npm may clear, and the agent would start without the tools and never say so.",
-  "agentMcp.ephemeralHow": "Install panoma and try again: npm i -g panoma",
+  "agentMcp.ephemeralHow": "Install panoma and restart the catalog: npm i -g panoma · panoma down && panoma up",
   "agentMcp.noServer":
     "The MCP server isn’t in this install. Build it with: pnpm --filter @panoma/mcp run build",
   "agentMcp.badJson":
@@ -4061,7 +4074,20 @@ const en = {
   "connect.keyIssued": "key issued",
   "connect.neverUsed": "The key is written, but {name} has never used it. Restart its session: one that was already open picks up nothing.",
   "connect.ephemeral": "This copy runs from npx and goes away when the command ends. The configuration would point inside its cache, and the day it is cleared {name} would start without the tools and never say so.",
-  "connect.ephemeralHow": "Install it and try again:",
+  /*
+    Two commands, because installing is not the half that unblocks this.
+
+    It said «install it and try again», and whoever did exactly that watched the screen not change
+    and had nothing to read. This page is served by a process that was started from npx, and a
+    running process does not inherit an install that happened after it: the notice would have stayed
+    there through any number of refreshes. The reader did what they were told and the product went
+    on asking for it.
+
+    The terminal's version of this refusal is right to say «try again», because there the next
+    invocation IS the newly installed one. Here the thing that has to be restarted is the catalog,
+    so here it is named.
+   */
+  "connect.ephemeralHow": "Install it and restart the catalog: this screen is served by the npx copy, and a running server does not inherit what you install afterwards.",
   "connect.againCost":
     "Already connected. Connecting again issues a new key: where panoma writes the file it updates itself, but if you pasted the block by hand anywhere, that copy will stop working and you will have to paste it again.",
   "connect.working": "Connecting…",
