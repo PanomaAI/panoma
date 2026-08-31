@@ -1,5 +1,4 @@
 import {
-  ConfigCorruptError,
   exchangeCode,
   complete,
   configPath,
@@ -109,10 +108,15 @@ export async function GET(request: Request) {
   try {
     config = await readConfig();
   } catch (error) {
-    // Your message contains the exact command to retrieve the previous copy, so it goes in full:
-    // shortening it would be taking away from the user the only thing that gets them out of the
-    // problem.
-    const broken = error instanceof ConfigCorruptError ? error.message : (error as Error).message;
+    /*
+      Translated, and with the recovery kept whole. The reason it used to travel raw still holds —
+      that message carries the exact command that gets somebody out of this, and shortening it
+      would take away the only thing that helps — but «raw» meant Spanish to an English reader.
+      `modelErrorParts` says what happened in the reader's language and hands back the commands
+      untouched as the hint, so nothing is lost and nothing is in the wrong language.
+     */
+    const parts = modelErrorParts(locale, error);
+    const broken = [parts.detail, parts.hint].filter(Boolean).join("\n");
     return Response.json({
       remote,
       broken,
@@ -274,10 +278,16 @@ export async function POST(request: Request) {
         return Response.json({ error: t(locale, "api.unknownAction") }, { status: 400 });
     }
   } catch (error) {
-    // `ConfigCorruptError` reaches this point deliberately: its message includes the exact recovery
-    // the previous copy, and rewriting it with something shorter would take away from the user the
-    // only thing that resolves the problem.
-    return Response.json({ error: (error as Error).message }, { status: 500 });
+    /*
+      `ConfigCorruptError` reaches this point deliberately: its message includes the exact recovery
+      command, and rewriting it with something shorter would take away the only thing that resolves
+      the problem. It goes through the translator, which keeps that command as the hint.
+     */
+    const parts = modelErrorParts(locale, error);
+    return Response.json(
+      { error: [parts.detail, parts.hint].filter(Boolean).join("\n") },
+      { status: 500 },
+    );
   }
 }
 

@@ -292,10 +292,19 @@ stale.
 
 ## What it does not do / Known limits
 
-- **There is no release CI.** The `tests.yml` matrix runs on three systems
-  ([platforms.md](platforms.md)) and `next build` runs on one, but **nobody builds the package
-  in CI**: `build:app`, `pack-app` and `prepack` only run when a person runs them. The whole
-  clean room is a procedure done by hand.
+- **Nobody publishes from CI, and the uplink is why it will come up again.** `package.yml` does
+  build the tarball on a tag and install it on the three systems, so the clean room is no longer
+  the only place it is exercised — but `npm publish` is still typed on a laptop, and 19.6 MB going
+  up a home connection is the fragile half. It failed twice on 31-Aug-2026 with the same shape:
+  two `EPIPE` while the body was still being written, then `bad record mac`, with downloads of the
+  same 19.6 MB completing perfectly at 20 MB/s. Nothing was wrong with the package, the session or
+  the TLS chain — restarting the router fixed it. **The fix worth doing is publishing from the tag
+  workflow with an npm automation token in the repository secrets**, which takes the laptop out of
+  it entirely; it is not done because the token is the owner's to create and store, and that is a
+  decision rather than a chore. Noted here in 0.1.9 so the next person does not rediscover the
+  diagnosis.
+- **The clean room itself is still by hand.** `build:app`, `pack-app` and `prepack` run when a
+  person runs them; CI builds its own tarball from the tag and never sees the one that ships.
 - **A stale `dist` inside the right commit passes the guard**, as just told. It would be
   measurable —compare `src`'s date with `dist`'s, or rebuild and compare bytes— and it is not
   done.

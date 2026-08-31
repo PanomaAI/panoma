@@ -2,6 +2,7 @@ import { completeWithCliAgent } from "./cli-agent";
 import { resolveCredential, type ResolvedCredential } from "./credentials";
 import { redact } from "./safety";
 import { callProvider } from "./transport";
+import { AiError } from "./failures";
 
 /**
  * A single function to request text from a model, no matter the provider.
@@ -65,8 +66,8 @@ export interface CompleteRequest {
 export class VisionUnsupportedError extends Error {
   constructor(readonly provider: string) {
     super(
-      `${provider} no sabe recibir imágenes. Configura un proveedor con clave ` +
-        `—'panoma ai key'— o pásale uno con --provider.`,
+      `${provider} cannot take images. Configure a provider with a key ` +
+        `—'panoma ai key'— or pass one with --provider.`,
     );
     this.name = "VisionUnsupportedError";
   }
@@ -89,7 +90,11 @@ export async function complete(request: CompleteRequest): Promise<CompleteResult
     if (request.images?.length) throw new VisionUnsupportedError(credential.provider.name);
     const prompt = request.system ? `${request.system}\n\n---\n\n${request.prompt}` : request.prompt;
     const text = await completeWithCliAgent(credential.provider, prompt);
-    return { text, provider: credential.provider.id, model: credential.model || "sesión" };
+    /*
+      «session» and not «sesión»: this string is not prose, it is the model name shown back to
+      whoever asked — a CLI agent has no model to name, it uses whatever its own sign-in has.
+     */
+    return { text, provider: credential.provider.id, model: credential.model || "session" };
   }
 
   if (credential.provider.api === "anthropic") return completeAnthropic(credential, request);
@@ -233,15 +238,17 @@ async function completeCodex(
     // The error does come as JSON in one piece, and its message is the only thing that will explain
     // what changed the day this breaks. That is why it is shown in full.
     const failure = (await response.json().catch(() => ({}))) as CodexResponse;
-    throw new Error(
-      redact(
-        `${credential.provider.name} respondió ${response.status}: ` +
-          `${failure.error?.message ?? failure.detail ?? response.statusText}`,
+    throw new AiError({
+      code: "providerRefused",
+      provider: credential.provider.name,
+      status: response.status,
+      detail: redact(
+        String(failure.error?.message ?? failure.detail ?? response.statusText),
         [credential.apiKey],
       ),
-    );
+    });
   }
-  if (!response.body) throw new Error(`${credential.provider.name} contestó sin cuerpo.`);
+  if (!response.body) throw new AiError({ code: "emptyBody", provider: credential.provider.name });
 
   const { text, final } = await readCodexStream(response.body);
 
@@ -386,14 +393,12 @@ async function completeOpenAi(
     // displaying "error 400" forces repeating the call manually to find out the same thing. Struck
     // out before leaving: a provider can return the key inside its own error ("invalid api key:
     // sk-…") and this message is displayed entirely on the screen.
-    throw new Error(
-      redact(
-        `${credential.provider.name} respondió ${response.status}: ${
-          body.error?.message ?? response.statusText
-        }`,
-        [credential.apiKey],
-      ),
-    );
+    throw new AiError({
+      code: "providerRefused",
+      provider: credential.provider.name,
+      status: response.status,
+      detail: redact(String(body.error?.message ?? response.statusText), [credential.apiKey]),
+    });
   }
 
   return {

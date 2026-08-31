@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 import type { Provider } from "./providers";
 import { redact } from "./safety";
 import { resolveExecutable } from "@panoma/core";
+import { AiError, failureMessage } from "./failures";
 
 const run = promisify(execFile);
 
@@ -132,7 +133,7 @@ export async function completeWithCliAgent(
   options: CliRunOptions = {},
 ): Promise<string> {
   const command = options.command ?? provider.command;
-  if (!command) throw new Error(`${provider.name} no declara ningún comando.`);
+  if (!command) throw new AiError({ code: "noCommand", provider: provider.name });
 
   return new Promise((resolve, reject) => {
     const launch = resolveExecutable(command, provider.args ?? []);
@@ -156,7 +157,7 @@ export async function completeWithCliAgent(
 
     child.on("error", (error) => {
       clearTimeout(timer);
-      reject(new Error(`No se pudo lanzar ${command}: ${error.message}`));
+      reject(new AiError({ code: "launchFailed", command, reason: error.message }));
     });
 
     child.on("close", (code) => {
@@ -169,7 +170,12 @@ export async function completeWithCliAgent(
       reject(
         new Error(
           redact(
-            `${provider.name} terminó con código ${code}. ${stderr.trim().slice(0, 600)}`.trim(),
+            failureMessage({
+              code: "exited",
+              provider: provider.name,
+              status: code ?? -1,
+              output: stderr.trim().slice(0, 600),
+            }),
           ),
         ),
       );

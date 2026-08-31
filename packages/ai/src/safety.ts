@@ -1,4 +1,5 @@
 import type { Provider } from "./providers";
+import { AiError } from "./failures";
 
 /**
  * The two things that can take a credential from this machine without anyone noticing.
@@ -30,14 +31,16 @@ export function checkBaseUrl(provider: Provider, value: string): string {
   try {
     url = new URL(value);
   } catch {
-    throw new Error(
-      `La dirección de ${provider.name} no es una URL válida: «${value}». ` +
-        `Revisa ${provider.baseUrlEnvVar ?? "la configuración"}.`,
-    );
+    throw new AiError({
+      code: "badUrl",
+      provider: provider.name,
+      value,
+      where: provider.baseUrlEnvVar ?? "the configuration",
+    });
   }
 
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error(`La dirección de ${provider.name} tiene que ser http o https.`);
+    throw new AiError({ code: "notHttp", provider: provider.name });
   }
 
   /*
@@ -47,18 +50,17 @@ export function checkBaseUrl(provider: Provider, value: string): string {
     legitimate case that needs them: whoever has a gateway with a password uses their API key.
    */
   if (url.username || url.password) {
-    throw new Error(
-      `La dirección de ${provider.name} lleva usuario o contraseña dentro. Quítalos y usa la clave.`,
-    );
+    throw new AiError({ code: "urlHasCredentials", provider: provider.name });
   }
 
   // In cleartext only against your own machine: there is no network to spy on between the process
   // and the model. Outside of loopback, `http://` is the key traveling in plain sight of anyone.
   if (url.protocol === "http:" && !isLocal(url.hostname)) {
-    throw new Error(
-      `Panoma no manda la credencial de ${provider.name} sin cifrar a ${url.hostname}. ` +
-        `Usa https, o un servidor en tu propia máquina.`,
-    );
+    throw new AiError({
+      code: "insecureHost",
+      provider: provider.name,
+      host: url.hostname,
+    });
   }
 
   return value;

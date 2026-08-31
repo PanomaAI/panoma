@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ATTEMPTS, callProvider, transportFailure } from "./transport";
+import { AiError } from "./failures";
 
 /**
  * The call that doesn't get made.
@@ -107,7 +108,10 @@ describe("la llamada al proveedor", () => {
     await expect(fallo).rejects.toThrow(/ECONNRESET/);
     await expect(fallo).rejects.toThrow(/ChatGPT \(suscripción\)/);
     // The number at the end, which is the house rule for everything that has a digit next to it.
-    await expect(fallo).rejects.toThrow(`Intentos: ${ATTEMPTS}`);
+    /* The figure, from the failure and not from the sentence that happens to carry it. */
+    const error = await fallo.catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(AiError);
+    expect((error as AiError).failure).toMatchObject({ code: "neverAnswered", attempts: ATTEMPTS });
     expect(veces).toBe(ATTEMPTS);
   });
 
