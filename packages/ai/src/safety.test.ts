@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { REDACTED, pointsElsewhere, checkBaseUrl, redact } from "./safety";
 import { findProvider } from "./providers";
+import { AiError } from "./failures";
 
 const OPENAI = findProvider("openai")!;
 const LOCAL = findProvider("local")!;
@@ -9,6 +10,21 @@ const LOCAL = findProvider("local")!;
  * The two ways for a credential to slip out without anyone noticing: sending it to the wrong place
  * and writing it in a message. Neither leaves a trace if it is not tested.
  */
+
+/*
+  On the code and not on the sentence. These asserted Spanish prose, so the day this package
+  started speaking English to the terminal — where the house rule is English — three tests failed
+  for a reason that had nothing to do with what they were guarding. A refusal is identified by what
+  it is, not by how it happens to be worded.
+ */
+function refusal(run: () => unknown): string {
+  try {
+    run();
+  } catch (error) {
+    return error instanceof AiError ? error.failure.code : `not an AiError: ${String(error)}`;
+  }
+  return "it did not refuse";
+}
 
 describe("a dónde se puede mandar una credencial", () => {
   it("la dirección propia del proveedor vale", () => {
@@ -31,19 +47,19 @@ describe("a dónde se puede mandar una credencial", () => {
   it("en claro fuera de la máquina, NO", () => {
     // The hole that almost no one out there documents closed: a `OPENAI_BASE_URL` set to a foreign
     // http sends the key over the network in plain sight of anyone.
-    expect(() => checkBaseUrl(OPENAI, "http://sitio-ajeno.example/v1")).toThrow(/sin cifrar/);
-    expect(() => checkBaseUrl(OPENAI, "http://10.0.0.9:8080/v1")).toThrow(/sin cifrar/);
+    expect(refusal(() => checkBaseUrl(OPENAI, "http://sitio-ajeno.example/v1"))).toBe("insecureHost");
+    expect(refusal(() => checkBaseUrl(OPENAI, "http://10.0.0.9:8080/v1"))).toBe("insecureHost");
   });
 
   it("con usuario y contraseña dentro de la URL, tampoco", () => {
-    expect(() => checkBaseUrl(OPENAI, "https://quien:sea@pasarela.example/v1")).toThrow(
-      /usuario o contraseña/,
+    expect(refusal(() => checkBaseUrl(OPENAI, "https://quien:sea@pasarela.example/v1"))).toBe(
+      "urlHasCredentials",
     );
   });
 
   it("ni con un esquema que no es web", () => {
-    expect(() => checkBaseUrl(OPENAI, "file:///etc/passwd")).toThrow(/http o https/);
-    expect(() => checkBaseUrl(OPENAI, "no-es-una-url")).toThrow(/no es una URL/);
+    expect(refusal(() => checkBaseUrl(OPENAI, "file:///etc/passwd"))).toBe("notHttp");
+    expect(refusal(() => checkBaseUrl(OPENAI, "no-es-una-url"))).toBe("badUrl");
   });
 
   it("sabe decir cuándo se apunta a otro sitio, sin cortar", () => {

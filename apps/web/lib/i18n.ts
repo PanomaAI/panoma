@@ -1823,6 +1823,38 @@ const es = {
   "model.noneConnected": "no hay ningún modelo conectado",
   "model.connectHint":
     "Conecta uno en la página Modelo, o desde el terminal: {cli} ai use <proveedor>",
+  /*
+    What `@panoma/ai` says when the failure is panoma's own, in the reader's language.
+
+    That package used to throw fixed Spanish, and both of its readers got the wrong one: the
+    terminal prints `error.message` raw and is a machine surface, where the rule is English; the
+    browser is bilingual and got Spanish either way. It carries a typed `failure` now, so these are
+    keyed on its code and not on its prose — the previous half-fix matched the Spanish sentence
+    «proveedor de IA» as if it were a key, which would have stopped working, silently, the first
+    time anybody reworded it.
+
+    What a provider said is not here. A 429, a refusal, someone else's API text: those arrive
+    inside `{detail}` and travel whole, because translating a quote is inventing one.
+   */
+  "aiFail.noCommand": "{provider} no declara ningún comando que ejecutar.",
+  "aiFail.launchFailed": "No se pudo lanzar {command}: {reason}",
+  "aiFail.exited": "{provider} terminó con código {status}. {detail}",
+  "aiFail.emptyBody": "{provider} contestó sin cuerpo.",
+  "aiFail.providerRefused": "{provider} respondió {status}: {detail}",
+  "aiFail.tokenRefused": "{provider} rechazó la petición de token ({status}): {detail}",
+  "aiFail.neverAnswered": "{provider} no llegó a contestar: {detail}. No es que el modelo dijera que no — la petición no salió de esta máquina. Intentos: {attempts}",
+  "aiFail.configShape": "El contenido no tiene la forma de una configuración de panoma.",
+  "aiFail.configLocked": "Otro proceso de panoma está escribiendo la configuración. Si no hay ninguno corriendo, el cerrojo se quedó de una ejecución anterior: bórralo con {detail}",
+  "aiFail.noProvider": "No hay ningún proveedor de IA configurado.",
+  "aiFail.unknownProvider": "Proveedor desconocido: {provider}",
+  "aiFail.oauthTimeout": "Se agotó el plazo esperando a que volvieras del navegador.",
+  "aiFail.noOauth": "{provider} no usa inicio de sesión.",
+  "aiFail.badUrl": "La dirección de {provider} no es una URL válida: «{detail}». Revisa {where}.",
+  "aiFail.notHttp": "La dirección de {provider} tiene que ser http o https.",
+  "aiFail.urlHasCredentials": "La dirección de {provider} lleva usuario o contraseña dentro. Quítalos y usa la clave.",
+  "aiFail.insecureHost": "panoma no manda la credencial de {provider} sin cifrar a {detail}. Usa https, o un servidor en tu propia máquina.",
+  "aiFail.visionUnsupported": "{provider} no sabe recibir imágenes. Conecta un proveedor con clave, o pásale uno con --provider.",
+  "aiFail.configCorrupt": "No se pudo leer la configuración de IA en {detail}.",
   "model.noCredential": "falta la credencial de {name}",
   "model.hintCli": "Instala {name} e inicia sesión; Panoma llamará a «{command}».",
   "model.hintOauth": "Inicia sesión en {name} desde la página Modelo.",
@@ -3808,6 +3840,38 @@ const en = {
   "model.noneConnected": "no model is connected yet",
   "model.connectHint":
     "Connect one on the Model page, or from the terminal: {cli} ai use <provider>",
+  /*
+    What `@panoma/ai` says when the failure is panoma's own, in the reader's language.
+
+    That package used to throw fixed Spanish, and both of its readers got the wrong one: the
+    terminal prints `error.message` raw and is a machine surface, where the rule is English; the
+    browser is bilingual and got Spanish either way. It carries a typed `failure` now, so these are
+    keyed on its code and not on its prose — the previous half-fix matched the Spanish sentence
+    «proveedor de IA» as if it were a key, which would have stopped working, silently, the first
+    time anybody reworded it.
+
+    What a provider said is not here. A 429, a refusal, someone else's API text: those arrive
+    inside `{detail}` and travel whole, because translating a quote is inventing one.
+   */
+  "aiFail.noCommand": "{provider} declares no command to run.",
+  "aiFail.launchFailed": "Could not launch {command}: {reason}",
+  "aiFail.exited": "{provider} exited with code {status}. {detail}",
+  "aiFail.emptyBody": "{provider} answered with no body.",
+  "aiFail.providerRefused": "{provider} answered {status}: {detail}",
+  "aiFail.tokenRefused": "{provider} refused the token request ({status}): {detail}",
+  "aiFail.neverAnswered": "{provider} never answered: {detail}. The model did not say no — the request never left this machine. Attempts: {attempts}",
+  "aiFail.configShape": "The contents are not shaped like a panoma configuration.",
+  "aiFail.configLocked": "Another panoma process is writing the configuration. If none is running, the lock was left behind by an earlier run: remove it with {detail}",
+  "aiFail.noProvider": "No AI provider is configured.",
+  "aiFail.unknownProvider": "Unknown provider: {provider}",
+  "aiFail.oauthTimeout": "Timed out waiting for you to come back from the browser.",
+  "aiFail.noOauth": "{provider} does not use sign-in.",
+  "aiFail.badUrl": "{provider}'s address is not a valid URL: «{detail}». Check {where}.",
+  "aiFail.notHttp": "{provider}'s address has to be http or https.",
+  "aiFail.urlHasCredentials": "{provider}'s address carries a user or a password inside. Take them out and use the key.",
+  "aiFail.insecureHost": "panoma will not send {provider}'s credential unencrypted to {detail}. Use https, or a server on your own machine.",
+  "aiFail.visionUnsupported": "{provider} cannot take images. Connect a provider with a key, or pass one with --provider.",
+  "aiFail.configCorrupt": "Could not read the AI configuration at {detail}.",
   "model.noCredential": "the {name} credential is missing",
   "model.hintCli": "Install {name} and sign in; Panoma will call “{command}”.",
   "model.hintOauth": "Sign in to {name} from the Model page.",

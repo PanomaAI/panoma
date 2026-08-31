@@ -1,6 +1,6 @@
-import { NoCredentialError } from "@panoma/ai";
+import { AiError, ConfigCorruptError, NoCredentialError, VisionUnsupportedError } from "@panoma/ai";
 import { cliName } from "@/lib/cli-name";
-import { t, type Locale } from "@/lib/i18n";
+import { t, type Locale, type MessageKey } from "@/lib/i18n";
 
 /**
  * The model failure, described in the viewer's language —truly.
@@ -36,13 +36,60 @@ export function modelErrorParts(
     return { detail: t(locale, "model.noCredential", { name: provider.name }), hint };
   }
 
-  const message = (error as Error).message ?? String(error);
-  if (message.includes("proveedor de IA")) {
+  /*
+    The typed failure, and no longer the sentence read as a key.
+
+    This used to test `message.includes("proveedor de IA")`: a Spanish string standing in for an
+    identifier, which would have gone quiet the first time somebody reworded it — and every other
+    failure from that package reached the screen in Spanish whatever language was showing. The
+    package carries `failure` now, so the code decides and the prose does not.
+   */
+  if (error instanceof AiError) {
+    const f = error.failure;
+    if (f.code === "noProvider") {
+      return {
+        detail: t(locale, "model.noneConnected"),
+        hint: t(locale, "model.connectHint", { cli: cliName() }),
+      };
+    }
     return {
-      detail: t(locale, "model.noneConnected"),
-      hint: t(locale, "model.connectHint", { cli: cliName() }),
+      detail: t(locale, `aiFail.${f.code}` as MessageKey, {
+        provider: "provider" in f ? f.provider : "",
+        command: "command" in f ? f.command : "",
+        reason: "reason" in f ? f.reason : "",
+        status: "status" in f ? String(f.status) : "",
+        where: "where" in f ? f.where : "",
+        /* Closing the sentence, which is where a figure goes in this repository. */
+        attempts: "attempts" in f ? String(f.attempts) : "",
+        /*
+          One slot for the part that is somebody else's — a provider's refusal, a hostname, a path,
+          the command to remove a lock. It travels whole and untranslated, which is the difference
+          between saying what happened and inventing what they said.
+         */
+        detail:
+          "detail" in f ? f.detail
+          : "output" in f ? f.output
+          : "last" in f ? f.last
+          : "host" in f ? f.host
+          : "value" in f ? f.value
+          : "lock" in f ? `rm ${f.lock}`
+          : "id" in f ? f.id
+          : "",
+      }),
     };
   }
 
-  return { detail: message };
+  if (error instanceof VisionUnsupportedError) {
+    return { detail: t(locale, "aiFail.visionUnsupported", { provider: error.provider }) };
+  }
+
+  /* Its own recovery lines stay as they are: they are commands to type, not prose to translate. */
+  if (error instanceof ConfigCorruptError) {
+    return {
+      detail: t(locale, "aiFail.configCorrupt", { detail: error.path }),
+      hint: error.message.split("\n").slice(1).join(" ").trim() || undefined,
+    };
+  }
+
+  return { detail: (error as Error).message ?? String(error) };
 }

@@ -1,3 +1,4 @@
+export { AiError, failureMessage, type AiFailure } from "./failures";
 export { PROVIDERS, findProvider, providersByAuth } from "./providers";
 export type { Provider, AuthType, ApiFamily, OauthConfig } from "./providers";
 

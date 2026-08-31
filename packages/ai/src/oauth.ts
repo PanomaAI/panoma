@@ -1,6 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { Provider } from "./providers";
+import { AiError } from "./failures";
 
 /**
  * Sign in with a subscription, in the browser.
@@ -93,7 +94,7 @@ export function awaitCallback(provider: Provider, challenge: Challenge): Promise
 
     const deadline = setTimeout(() => {
       close();
-      reject(new Error("Se agotó el plazo esperando a que volvieras del navegador."));
+      reject(new AiError({ code: "oauthTimeout" }));
     }, DEADLINE_MS);
 
     const finish = (error: Error | null, code?: string) => {
@@ -219,10 +220,13 @@ async function requestToken(
 
   const body = (await response.json().catch(() => ({}))) as TokenResponse;
   if (!response.ok || !body.access_token) {
-    throw new Error(
-      `${provider.name} rechazó la petición de token (${response.status}): ` +
-        `${body.error_description ?? body.error ?? response.statusText}`,
-    );
+    throw new AiError({
+      code: "tokenRefused",
+      provider: provider.name,
+      status: response.status,
+      /* The provider's own words, whole: translating somebody else's refusal invents one. */
+      detail: body.error_description ?? body.error ?? response.statusText,
+    });
   }
 
   return {
@@ -268,6 +272,6 @@ export function expired(token: OauthToken): boolean {
 }
 
 function requireOauth(provider: Provider) {
-  if (!provider.oauth) throw new Error(`${provider.name} no usa inicio de sesión.`);
+  if (!provider.oauth) throw new AiError({ code: "noOauth", provider: provider.name });
   return provider.oauth;
 }

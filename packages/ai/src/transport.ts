@@ -25,6 +25,8 @@
   trying again would be disobeying the one who hung up.
  */
 
+import { AiError } from "./failures";
+
 /** How many times is it tried, counting the first. Two retries and it's over. */
 export const ATTEMPTS = 3;
 
@@ -111,10 +113,7 @@ export async function callProvider(
     broken agreement that has already appeared seven times in this database, and it is only seen
     when the number is one — that is, exactly when someone has lowered the attempts to debug.
    */
-  throw new Error(
-    `${name} no llegó a contestar: ${last}. Intentos: ${attempts}. ` +
-      `No es que el modelo dijera que no: la petición no salió de esta máquina.`,
-  );
+  throw new AiError({ code: "neverAnswered", provider: name, last: String(last), attempts });
 }
 
 function sleep(ms: number): Promise<void> {

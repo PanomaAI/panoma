@@ -5,6 +5,7 @@ import { findProvider, type Provider } from "./providers";
 import { expired, refresh, type OauthToken } from "./oauth";
 import { checkBaseUrl } from "./safety";
 import { restrictToOwner } from "@panoma/core";
+import { AiError } from "./failures";
 
 /**
  * Where the AI configuration lives and in what order the credentials are resolved.
@@ -71,18 +72,23 @@ export class ConfigCorruptError extends Error {
     problem: Error,
     readonly recovery?: { path: string; keys: number },
   ) {
-    const lines = [`No se pudo leer la configuración de IA en ${path}: ${problem.message}`];
+    const lines = [`Could not read the AI configuration at ${path}: ${problem.message}`];
     if (recovery) {
       lines.push(
-        `Hay una copia anterior en ${recovery.path} con ${recovery.keys} ` +
-          `clave${recovery.keys === 1 ? "" : "s"} dentro. Recupérala con:`,
+        /*
+          Both forms written whole rather than an `s` glued to the figure. The house rule: never
+          attach an inflected word to a digit, and this line only ever reads wrong at one.
+         */
+        recovery.keys === 1
+          ? `There is an earlier copy at ${recovery.path} holding one key. Recover it with:`
+          : `There is an earlier copy at ${recovery.path} holding ${recovery.keys} keys. Recover it with:`,
         `  mv ${recovery.path} ${path}`,
-        "No ejecutes 'panoma ai key' antes: sobrescribiría el fichero y con él lo que quede.",
+        "Do not run 'panoma ai key' first: it would overwrite the file and whatever is left in it.",
       );
     } else {
       lines.push(
-        "No hay copia anterior. Ábrelo y arréglalo a mano, o bórralo si prefieres empezar",
-        "de cero — perderás las claves que hubiera guardadas dentro.",
+        "There is no earlier copy. Open it and fix it by hand, or delete it to start over —",
+        "you will lose whatever keys were saved inside.",
       );
     }
     super(lines.join("\n"), { cause: problem });
@@ -141,7 +147,7 @@ async function readFileConfig(path: string): Promise<AiConfig | undefined> {
 
   const parsed: unknown = JSON.parse(raw);
   if (!isConfig(parsed)) {
-    throw new Error("el contenido no tiene la forma de una configuración de Panoma");
+    throw new AiError({ code: "configShape" });
   }
   return parsed;
 }
@@ -292,14 +298,11 @@ async function withLock<T>(action: () => Promise<T>): Promise<T> {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       if (Date.now() > deadline) {
         const owner = await readFile(lock, "utf8").catch(() => "");
-        throw new Error(
-          `Otro proceso de Panoma está escribiendo la configuración${
-            owner.trim() ? ` (pid ${owner.trim()})` : ""
-          }.\n` +
-            `Si no hay ninguno corriendo, el cerrojo se quedó de una ejecución anterior:\n` +
-            `  rm ${lock}`,
-          { cause: error },
-        );
+        throw new AiError({
+          code: "configLocked",
+          lock,
+          holder: owner.trim() ? `pid ${owner.trim()}` : undefined,
+        });
       }
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
@@ -329,12 +332,17 @@ export class NoCredentialError extends Error {
   constructor(readonly provider: Provider) {
     const how =
       provider.auth === "cli"
-        ? `Instala ${provider.name} e inicia sesión; Panoma llamará a '${provider.command}'.`
+        ? `Install ${provider.name} and sign in; panoma will call '${provider.command}'.`
         : provider.auth === "oauth"
-          ? `Inicia sesión en ${provider.name} desde la página del modelo en Panoma.`
-          : `Ejecuta 'panoma ai key ${provider.id}' o exporta ${provider.apiKeyEnvVars?.[0]}. ` +
-            `La clave se saca en ${provider.signupUrl}.`;
-    super(`Sin credencial para ${provider.name}. ${how}`);
+          ? `Sign in to ${provider.name} from the model page in panoma.`
+          : `Run 'panoma ai key ${provider.id}' or export ${provider.apiKeyEnvVars?.[0]}. ` +
+            `The key comes from ${provider.signupUrl}.`;
+    /*
+      English here as everywhere else this package throws: the terminal prints it raw. The browser
+      never reads this sentence — `model-errors.ts` rebuilds the whole remedy from `provider`,
+      which is why this class carries it.
+     */
+    super(`No credential for ${provider.name}. ${how}`);
     this.name = "NoCredentialError";
   }
 }
@@ -346,13 +354,11 @@ export async function resolveCredential(
   const settings = config ?? (await readConfig());
   const id = providerId ?? settings.provider;
   if (!id) {
-    throw new Error(
-      "No hay proveedor de IA configurado. Ejecuta 'panoma ai' para ver las opciones.",
-    );
+    throw new AiError({ code: "noProvider" });
   }
 
   const provider = findProvider(id);
-  if (!provider) throw new Error(`Proveedor desconocido: ${id}`);
+  if (!provider) throw new AiError({ code: "unknownProvider", id });
 
   if (provider.auth === "cli") {
     return { provider, model: settings.model ?? "", source: "agent-session" };
