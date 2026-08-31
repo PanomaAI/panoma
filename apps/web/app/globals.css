@@ -1,0 +1,55 @@
+/*
+  The application sheet: the gateway, and nothing more than that.
+  There are not even any declarations here. The only thing this file does is bring the pieces in
+  ORDER, and the order is semantic: in CSS, two rules with the same weight are decided by which
+  goes after. Reordering these lines changes what is seen even if a property is not touched.
+  The dependencies that require this specific order are written in the header of each piece, and
+  `styles/README.md` counts them all at once. The four that hurt the most:
+  · `catalog-empty.css` steps on `catalog-screen`, `catalog-views`, and `detail-panel`. ·
+  `project-sections.css` steps on `project-panels.css` in three rules. · `responsive.css` steps on
+  almost all the previous ones: it goes after them on purpose.
+  `styles/styles.test.ts` checks that the list here and the files in the directory are still the
+  same, and in the same order.
+  Only the `(app)` route group loads it. The public site — the landing — and `/docs` — have their
+  own root layout and their own sheet, `(site)/site.css`, and should not bring anything from here.
+ */
+@import "tailwindcss";
+
+/* The vocabulary: first the Tailwind cards, then the scale and the papers. */
+@import "./styles/theme.css";
+@import "./styles/tokens.css";
+
+/* The document and what is not from any screen. */
+@import "./styles/base.css";
+
+/* The frame that is always seen. */
+@import "./styles/app-shell.css";
+@import "./styles/overlays.css";
+@import "./styles/app-layout.css";
+
+/* The catalog. */
+@import "./styles/catalog-screen.css";
+@import "./styles/catalog-views.css";
+@import "./styles/detail-panel.css";
+@import "./styles/catalog-empty.css";
+
+/* The file of a project. */
+@import "./styles/project-header.css";
+@import "./styles/project-panels.css";
+@import "./styles/project-md.css";
+@import "./styles/project-sections.css";
+
+/* The wide cuts, which step on everything above, and that's why they go here. */
+@import "./styles/responsive.css";
+
+/* What hangs from the catalog, and the loose screens. */
+@import "./styles/catalog-extras.css";
+@import "./styles/share.css";
+@import "./styles/model-picker.css";
+
+/*
+  The two surfaces that are not the screen, and which is why they come last: the two rewrite rules
+  of almost everything above with the same weight and win by order.
+ */
+@import "./styles/forced-colors.css";
+@import "./styles/print.css";

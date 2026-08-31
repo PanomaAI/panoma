@@ -1,0 +1,51 @@
+/*
+  The Tailwind color swatches, and why they are still in a `@theme` block.
+  From here come the utilities that the code uses hundreds of: `text-faint`, `border-edge`,
+  `bg-surface`, `text-accent`. Tailwind v4 generates them by reading this block, so moving these
+  fourteen colors to a regular `:root` would silently disable about seven hundred classes spread
+  across the components — no error, no warning: the elements would be left colorless and that's
+  it.
+  What you CAN do is add. A new token here gains its utility; and tested on the installed version,
+  Tailwind keeps those that are only used with `var()` and discards only those that nobody
+  mentions.
+  The full scale and the semantic roles live in `tokens.css`, which is imported right after.
+ */
+
+@theme {
+  --color-ground: #f8f9fc;
+  --color-surface: #ffffff;
+  --color-raised: #f2f3f8;
+  --color-edge: #e5e7ef;
+  --color-edge-bright: #d8dbe6;
+
+  --color-chalk: #141722;
+  --color-smoke: #667085;
+  --color-faint: #98a2b3;
+
+  --color-live: #25b878;
+  --color-idle: #f59e0b;
+  --color-dormant: #9aa3b2;
+  --color-nogit: #c8cdd6;
+  --color-accent: #0b0b0d;
+  /* The amber of the warnings, the same #b0800f that the health dial and the pause already use. */
+  --color-warn: #b0800f;
+  /*
+    The red that says something went wrong, and the only one that can be read.
+    The markup wrote THREE reds that no one chose: `text-red-400`, `text-red-500`, and
+    `text-red-600` from Tailwind's factory palette. Measured on the papers of this app, they give
+    2.61:1, 3.81:1, and 4.30:1 — meaning that the line that appears when an action fails, which is
+    when it is most needed to read it, was the worst of the three.
+    This is worth 5.39:1 in the worst paper of the application and 4.59:1 over its own tint at
+    10%, which is the background of the three gravity pills. The measurements are in
+    `styles/contrast.test.ts`, which recreates them in each execution.
+    Live here and not in `tokens.css` because of the house rule: it is written in the markup as a
+    class (`text-fail`, `border-fail/30` ), so it has to be a Tailwind token. And the four reds
+    from `tokens.css` that were used as TEXT now hang from this one, which is the other half of
+    the rule: one value, not four.
+   */
+  --color-fail: #c11919;
+
+  --font-display: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}

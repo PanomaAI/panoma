@@ -1,0 +1,1 @@
+ALTER TABLE "taste_entries" ADD COLUMN "scoped" boolean DEFAULT false NOT NULL;

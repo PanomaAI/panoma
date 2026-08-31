@@ -1,0 +1,1 @@
+ALTER TABLE "verdicts" ADD COLUMN "distilled_at" timestamp with time zone;

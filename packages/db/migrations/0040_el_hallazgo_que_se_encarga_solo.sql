@@ -1,0 +1,1 @@
+ALTER TABLE "tasks" ADD COLUMN "from_critique" text;
