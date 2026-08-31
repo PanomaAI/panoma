@@ -38,7 +38,7 @@ jobs:
               id numérico es lo único que no cambia nunca. (La exención de los bots no
               vive aquí: vive más abajo, en el filtro `[bot]`, con su propia guarda.)
             */
-            const EXENTOS = new Set(["jesus89x2"]);
+            const EXENTOS = new Set(["jesusrcastillo"]);
             const EXENTOS_ID = new Set([12791632]);
 
             /*

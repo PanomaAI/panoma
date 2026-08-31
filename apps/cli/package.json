@@ -1,6 +1,6 @@
 {
   "name": "panoma",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "license": "AGPL-3.0-only",
   "type": "module",
   "description": "The local catalog of your projects: everything on your disk, ready to pick up — by you or by your agents.",

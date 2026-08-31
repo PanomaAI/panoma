@@ -21,6 +21,7 @@ import {
   HiOutlineCloudArrowUp,
   HiOutlineEyeSlash,
   HiOutlineInboxArrowDown,
+  HiOutlineSquare2Stack,
   HiOutlineSquares2X2,
   HiOutlineStar,
   HiOutlineXMark,
@@ -1102,6 +1103,24 @@ function ProjectTile({
       <span className="catalog-tile__name">
         {favorite && <HiStar aria-hidden />}
         <span>{discreet ? t("store.hidden", { n: index + 1 }) : project.name}</span>
+        {/*
+           What this tile is standing for, which until now only the list said. The mark shipped on
+           the path line, and the tile has no path line — so on the view that opens by default,
+           four folders went on looking like one without a word. The same mistake the cloud above
+           records, repeated one row below it.
+
+           It comes as an icon and not as the sentence for a measured reason: the tile is 142px,
+           118px on a phone, and «· 3 more copies» is 81px against the 29px the meta line has left
+           over — 5px on a phone. The name row is the only shelf here with clipping of its own, so
+           a mark placed on it costs the name a few characters and never breaks the tile. The
+           figure travels in the tooltip, which is exactly the deal the cloud beside it already
+           takes.
+
+           The icon is the one the sidebar uses for Copies, because that is where this leads.
+          */}
+        {!discreet && project.copyCount > 0 && (
+          <HiOutlineSquare2Stack title={t("store.alsoCopiesMark", { n: project.copyCount })} />
+        )}
       </span>
       <span className="catalog-tile__meta">
         <StateDot state={project.state} />
