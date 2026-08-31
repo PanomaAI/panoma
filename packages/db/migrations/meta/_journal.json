@@ -1,0 +1,356 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1786819483549,
+      "tag": "0000_lonely_tigra",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1786820829430,
+      "tag": "0001_far_bill_hollister",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786821686044,
+      "tag": "0002_fixed_tinkerer",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1786822563531,
+      "tag": "0003_windy_winter_soldier",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1786840374976,
+      "tag": "0004_ancient_sabretooth",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1786843912295,
+      "tag": "0005_many_pride",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1786846494682,
+      "tag": "0006_bouncy_lyja",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1786850122962,
+      "tag": "0007_cute_triton",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1786850895130,
+      "tag": "0008_lucky_flatman",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786851659811,
+      "tag": "0009_natural_loki",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1786852074926,
+      "tag": "0010_acoustic_susan_delgado",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1786854402613,
+      "tag": "0011_loose_rachel_grey",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1786866210567,
+      "tag": "0012_yellow_kylun",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1786870000000,
+      "tag": "0013_decisiones",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1786980000000,
+      "tag": "0014_valores_en_ingles",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1786980600000,
+      "tag": "0015_runbook_en_ingles",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1787000000000,
+      "tag": "0016_el_md_de_agentes",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1787015807063,
+      "tag": "0017_la_opinion_del_md",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1787040198121,
+      "tag": "0018_cuentas_del_proyecto",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1787060168854,
+      "tag": "0019_el_veredicto_de_build",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1787313401984,
+      "tag": "0020_veredictos_y_huella_de_diseno",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1787321962655,
+      "tag": "0021_el_retrato_del_gusto",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1787328646932,
+      "tag": "0022_el_norte_del_proyecto",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1787331447740,
+      "tag": "0023_cuantas_veces_le_corriges",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1787334266015,
+      "tag": "0024_el_libro_de_gasto",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1787341089289,
+      "tag": "0025_lo_que_ya_se_ha_leido",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1787352449353,
+      "tag": "0026_donde_vale_cada_frase",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1787358455892,
+      "tag": "0027_veinte_gustos_dos_mil_veces",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1787358616872,
+      "tag": "0028_lo_que_una_frase_se_come",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1787367327528,
+      "tag": "0029_creencias_en_vez_de_aprobaciones",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1787367368463,
+      "tag": "0030_la_cola_de_revision_se_cierra",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1787370607196,
+      "tag": "0031_lo_que_ya_estaba_escrito",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1787383084040,
+      "tag": "0032_una_propuesta_puede_juntar_varias",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1787386992511,
+      "tag": "0033_lo_que_se_escribio_y_no_solo_cuando",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1787406474445,
+      "tag": "0034_churn_por_materia",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1787417470619,
+      "tag": "0035_cuando_entro_en_su_materia",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1787420845515,
+      "tag": "0036_la_memoria_del_critico",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1787456648027,
+      "tag": "0037_de_que_mirada_salio_el_encargo",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1787458136844,
+      "tag": "0038_lo_que_se_ve_sin_mirar",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1787475620628,
+      "tag": "0039_lo_que_salio_a_un_agente",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1787477109620,
+      "tag": "0040_el_hallazgo_que_se_encarga_solo",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1787676115588,
+      "tag": "0041_la_memoria_que_se_cura",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1787684038432,
+      "tag": "0042_la_sala_de_lectura",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1787684044147,
+      "tag": "0043_en_que_idioma_se_escribio",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1787686969535,
+      "tag": "0044_la_bascula",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1787687803225,
+      "tag": "0045_los_centinelas",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1787688413302,
+      "tag": "0046_el_suplente_en_sombra",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1787689219984,
+      "tag": "0047_la_nota_que_duerme",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1787697141555,
+      "tag": "0048_que_candado_no_se_pudo_leer",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1787699402270,
+      "tag": "0049_las_piezas_de_la_frase_compuesta",
+      "breakpoints": true
+    }
+  ]
+}

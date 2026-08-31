@@ -1,0 +1,359 @@
+/*
+  The side panel that opens when choosing a project from the catalog.
+ */
+/*
+  The quick details.
+  Answer what is asked about a project without going into it: who it is, how it is, and where to
+  enter to work. It stays stuck when scrolling because the list is long, and comparing with what
+  is below is exactly what it is for.
+ */
+.detail-panel {
+  position: sticky;
+  top: 92px;
+  display: grid;
+  align-content: start;
+  overflow: visible;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--paper);
+  box-shadow: var(--shadow-lift);
+}
+
+/* A single selector above replaces the list of destinations that previously occupied the bottom. */
+.detail-panel__open {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--color-paper-catalog);
+}
+
+.detail-panel__open:empty {
+  display: none;
+}
+
+.detail-panel__open .open-menu,
+.detail-panel__open .open-menu__split {
+  width: 100%;
+}
+
+.detail-panel__open .open-menu__primary {
+  min-width: 0;
+  flex: 1;
+}
+
+.detail-panel__open .open-menu__list {
+  width: 100%;
+  max-height: 44vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.detail-panel__head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  padding: 13px 12px 13px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.detail-panel__head h2 {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 0.88rem;
+  font-weight: 640;
+  letter-spacing: -0.022em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail-panel__head p {
+  overflow: hidden;
+  margin-top: 2px;
+  color: var(--ink-3);
+  font-size: 0.68rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail-panel__head button {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) ease, color var(--duration-fast) ease;
+}
+
+.detail-panel__head button:hover {
+  background: var(--wash);
+  color: var(--ink);
+}
+
+.detail-panel__head button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.detail-health {
+  padding: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.detail-health > p:first-child {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ink-2);
+  font-size: 0.7rem;
+  font-weight: 540;
+}
+
+.detail-health__score {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-top: 7px;
+  font-variant-numeric: tabular-nums;
+}
+
+.detail-health__score strong {
+  color: var(--ink);
+  font-size: 1.85rem;
+  font-weight: 660;
+  letter-spacing: -0.045em;
+  line-height: 1;
+}
+
+.detail-health__score span {
+  color: var(--ink-3);
+  font-size: 0.74rem;
+}
+
+.detail-health__meter {
+  display: block;
+  overflow: hidden;
+  height: 3px;
+  margin-top: 11px;
+  border-radius: 2px;
+  background: var(--line);
+}
+
+.detail-health__meter > span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--ink-3);
+}
+
+.detail-health--good .detail-health__meter > span { background: var(--good); }
+.detail-health--warn .detail-health__meter > span { background: var(--warn); }
+.detail-health--bad .detail-health__meter > span { background: var(--bad); }
+
+.detail-facts {
+  padding: 5px 14px 11px;
+}
+
+.detail-facts > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 30px;
+}
+
+.detail-facts dt {
+  flex: none;
+  color: var(--ink-3);
+  font-size: 0.72rem;
+}
+
+.detail-facts dd {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--ink);
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail-review {
+  padding: 12px 14px;
+  border-top: 1px solid var(--line);
+}
+
+.detail-review h3 {
+  color: var(--ink-3);
+  font-size: 0.63rem;
+  font-weight: 620;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.detail-review__waiting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 9px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  color: var(--ink);
+  font-size: 0.73rem;
+  font-weight: 550;
+  transition: background-color var(--duration-fast) ease, border-color var(--duration-fast) ease;
+}
+
+.detail-review__waiting:hover {
+  border-color: var(--ink);
+  background: var(--wash);
+}
+
+.detail-review__waiting svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+
+.detail-review ul {
+  display: grid;
+  gap: 5px;
+  margin-top: 9px;
+}
+
+.detail-review ul:empty {
+  display: none;
+}
+
+.detail-review li {
+  color: var(--ink-2);
+  font-size: 0.71rem;
+  line-height: 1.45;
+}
+
+/*
+  Each finding is a link, and it only shows when the pointer hovers over it.
+  The permanent underlining in three consecutive lines turns the block into a list of links
+  —noisy— when what it is, is a list of facts in which one can also enter. The dash that already
+  acted as a bullet stretches when passing: the movement is what says 'this leads somewhere,' and
+  nothing else is needed.
+ */
+.detail-review li a {
+  display: block;
+  color: inherit;
+  transition: color var(--duration-fast) ease;
+}
+
+.detail-review li::before {
+  content: "—";
+  display: inline-block;
+  width: 12px;
+  margin-right: 6px;
+  color: var(--ink-3);
+  transition: width var(--duration-nudge) ease, color var(--duration-nudge) ease;
+}
+
+.detail-review li:has(a:hover)::before {
+  width: 18px;
+  color: var(--ink);
+}
+
+.detail-review li a:hover {
+  color: var(--ink);
+}
+
+.detail-review li.is-danger {
+  color: var(--bad);
+}
+
+.detail-review li.is-danger a:hover {
+  color: var(--bad);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/*
+  What the server said when hiding didn't go well. On top of the footer and across its entire
+  width: the footer divides its space between the link and the icons, and a notice placed there
+  gets split right on the day it needs to be read.
+ */
+.detail-panel__error {
+  padding: 7px 14px;
+  border-top: 1px solid var(--line);
+  color: var(--bad);
+  font-size: 0.68rem;
+  line-height: 1.4;
+}
+
+.detail-panel__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 10px 9px 14px;
+  border-top: 1px solid var(--line);
+  background: var(--color-paper-catalog);
+}
+
+/*
+  The link to the sheet is a real link, and that is why it is here.
+  The row cannot be it —a link navigates on the first click and then there would be no second—, so
+  the catalog would be left without a single way to open a project in another tab or to copy its
+  address. This is that site.
+ */
+.detail-panel__foot > a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink);
+  font-size: 0.73rem;
+  font-weight: 560;
+}
+
+.detail-panel__foot > a:hover {
+  text-decoration: underline;
+}
+
+.detail-panel__foot > a svg {
+  width: 13px;
+  height: 13px;
+}
+
+.detail-panel__foot > div {
+  display: flex;
+  gap: 2px;
+}
+
+.detail-panel__foot > div button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) ease, color var(--duration-fast) ease;
+}
+
+.detail-panel__foot > div button:hover,
+.detail-panel__foot > div button[aria-pressed="true"] {
+  color: var(--ink);
+}
+
+.detail-panel__foot > div button:hover {
+  background: var(--wash);
+}
+
+.detail-panel__foot > div button svg {
+  width: 16px;
+  height: 16px;
+}
+

@@ -1,0 +1,124 @@
+name: Tests
+
+# The 470 tests ran in a single place: the laptop of the person who wrote them, and on macOS.
+#
+# That leaves ten code branches never executed —`platform() !== "darwin"` in five web routes, the
+# disk calculation without `du` of Windows, the macOS sandbox of the executor— and leaves them
+# unexecuted until someone installs Panoma on another system and writes to report it. An array of
+# three systems costs nothing and runs on every push.
+#
+# `windows-latest` is here on purpose even though the product is developed on macOS: it is the
+# system where the most things are taken for granted —paths with slashes, `du`, the binaries of
+# PATH— and where no one here is going to test by hand.
+#
+# And for the same reason, there are two versions of Node and not just one. The `engines` from the
+# root says `">=22"`, and these two are its two extremes: **22 is the promised floor** and the last
+# one is the ceiling that comes with a new machine. In this way, CI measures the entire contract
+# instead of a single point in the middle.
+#
+# It said `">=20"` and CI only tested 22, so it promised support for two major versions that no one
+# ran — the 20 also already without support. The floor was raised to what is measured.
+#
+# Both are needed because the risk of a newer Node is not in the application code, which is the only
+# thing a typecheck looks at: it's underneath. The Postgres in WASM of PGlite, the binaries of
+# esbuild and swc, and the APIs that each newer version removes.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+# One push after another does not need three engines running at the same time: the last one sends.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pruebas:
+    name: ${{ matrix.os }} · node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Without `fail-fast`: if Windows crashes, it is still interesting to know if Linux passed.
+      # With the default cut, the first red hides the rest and you have to guess.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: [22, 26]
+
+    # Bash on all three, also on Windows: the runners come with it, and that way a quotation mark
+    # doesn't mean one thing in PowerShell and another in the other two. The CI has to fail because
+    # of the code, not because of the interpreter.
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The pnpm version comes from `packageManager` in the root package.json: a single source for
+      # CI and for anyone who clones.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The web and the CLI consume `@panoma/*` from `dist/`, so without this step the tests fail
+      # due to a module that does not exist and not because of what is being tested. Only the
+      # packages: building the entire web takes minutes of Next for some tests that do not need it.
+      - run: pnpm --filter "./packages/*" build
+
+      # The linter goes before the tests: its failures are about reading the code, not executing it,
+      # so a red here can be fixed without waiting for the minute of the suite.
+      - run: pnpm lint
+
+      - run: pnpm -r typecheck
+
+      - run: pnpm test
+
+  # ── And compile the website, which is the product ────────────────────────────────────
+  #
+  # The matrix above runs `build` of the packages, `typecheck` and the tests. It never runs
+  # `next build`, and `tsc --noEmit` doesn't see the type of failure that kills that build: a server
+  # component that imports a client one without `"use client"`, a Node import in code that goes to
+  # the browser, a route that cannot be pre-rendered. They compile, pass the type check, pass the
+  # tests, and the deployment fails.
+  #
+  # A single system and a single version of Node on purpose: the risk this covers does not depend on
+  # the operating system, and multiplying it by six would be minutes of Next for each push to learn
+  # nothing new. As a bonus, the `prebuild` from `apps/web` comes in, which checks the paths and
+  # until today didn’t run anywhere either.
+  compilar:
+    name: the web builds
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build
+
+# Checked before uploading, in a clean clone inside Debian 12 on colima: install with the lockfile
+# frozen, the six packages built, the eight typechecks in green — `apps/web` included, which in a
+# clone without `.next-dev` does not pull the generated file that makes it red locally — and 467
+# tests passed with 3 skipped, which are the macOS sandbox ones and skip themselves where there is
+# no `sandbox-exec`.
+#
+# Version 26 was checked by hand on macOS before adding it here, and not just with the tests: the
+# six packages and the website built, the tarball packaged —16 MB, identical to that of version 22—,
+# installed cleanly, `panoma up` bringing up the catalog with its PostgreSQL 18 on WASM, the routes
+# at 200, the MCP channel responding with its six tools, and `down` shutting it down. Zero
+# deprecation warnings in any of the logs. What this work adds is repeating it on Linux and
+# Windows, which is where no
+# one here is going to look.

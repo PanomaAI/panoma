@@ -1,0 +1,46 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "panoma-web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--filter",
+        "@panoma/web",
+        "run",
+        "dev"
+      ],
+      "port": 4173
+    },
+    {
+      "name": "panoma-site",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--filter",
+        "@panoma/site",
+        "run",
+        "dev"
+      ],
+      "port": 4174
+    },
+    {
+      "name": "panoma-web-sandbox",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "PANOMA_HOME=/tmp/panoma-sandbox-home",
+        "PANOMA_WATCH=0",
+        "pnpm",
+        "--filter",
+        "@panoma/web",
+        "exec",
+        "next",
+        "dev",
+        "-H",
+        "127.0.0.1",
+        "--port",
+        "4180"
+      ],
+      "port": 4180
+    }
+  ]
+}

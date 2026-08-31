@@ -1,0 +1,28 @@
+# Los finales de línea se normalizan al guardar, no al mirar.
+#
+# El CI corre en ubuntu, macOS y Windows. Sin esto, un clon en Windows con `core.autocrlf`
+# en `true` —que es lo que trae Git for Windows de fábrica— devuelve al índice ficheros con
+# CRLF, y entonces un diff de una línea aparece como el fichero entero cambiado. Peor: los
+# tests que comparan texto contra un fichero del repositorio empiezan a fallar por un
+# carácter invisible. Ya pasó con el soporte de Windows; esto es lo que impide que vuelva.
+* text=auto eol=lf
+
+# Los .ps1 se quedan en LF como todo lo demás. Se pensó en darles CRLF «porque es donde se
+# ejecutan», y no hace falta: PowerShell los lee igual, y forzarlo obliga a reescribir esos
+# tres ficheros en el árbol de trabajo de todo el que haga checkout, para nada.
+
+# Binarios: que git no les toque nada ni intente diferenciarlos como texto.
+*.png binary
+*.webp binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.mp4 binary
+
+# Los lockfiles son generados: GitHub los colapsa en un pull request en vez de dejarlos
+# ocupar mil renglones. Sin `-diff`: marcarlos como binarios los oculta también en local,
+# y ahí sí hace falta poder leer qué versión cambió.
+pnpm-lock.yaml linguist-generated=true
+apps/cli/npm-shrinkwrap.json linguist-generated=true

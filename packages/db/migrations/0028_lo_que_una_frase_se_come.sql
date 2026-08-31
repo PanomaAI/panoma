@@ -1,0 +1,1 @@
+ALTER TABLE "taste_entries" ADD COLUMN "replaces" jsonb;

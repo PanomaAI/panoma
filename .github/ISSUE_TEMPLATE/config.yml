@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/PanomaAI/panoma/blob/HEAD/SECURITY.md
+    about: Do not publish it here. This explains how to report it privately.
+  - name: Contributing guide
+    url: https://github.com/PanomaAI/panoma/blob/HEAD/CONTRIBUTING.md
+    about: Setup, repository conventions, review evidence, and the contributor agreement.
