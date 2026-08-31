@@ -406,6 +406,7 @@ describe("las puertas que ejecutan llevan todas la misma guarda", () => {
     "agent/notes/route.ts POST": "Clave de agente (requireAgent). La llama el servidor MCP, que no es un navegador.",
     "agent/journal/route.ts POST": "Clave de agente (requireAgent). La llama el servidor MCP, que no es un navegador.",
     "agent/consult/route.ts POST": "Clave de agente (requireAgent). La llama el servidor MCP, que no es un navegador.",
+    "agent/hello/route.ts POST": "Clave de agente (requireAgent). La llama el servidor MCP al arrancar, que no es un navegador.",
   };
 
   it("toda puerta lleva sameOrigin, o dice por escrito por qué no", () => {

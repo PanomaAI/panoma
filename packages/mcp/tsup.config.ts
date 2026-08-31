@@ -22,4 +22,28 @@ export default defineConfig({
   format: "esm",
   clean: true,
   noExternal: [/^@panoma\//, "@modelcontextprotocol/sdk", "zod"],
+  /*
+    Without this the server did not start. At all, for anybody, in every version published.
+
+    `yaml` arrives through `@panoma/core`, is resolved as CommonJS, and gets bundled with esbuild's
+    interop shim — which begins `typeof require !== "undefined" ? require : …` and, finding no
+    `require` in an ES module, throws «Dynamic require of "process" is not supported» while the
+    module is still being evaluated. Before a single line of ours runs. `shims` is the option that
+    defines that `require`, built from `import.meta.url`.
+
+    It went unseen because of the one property this file has been warning about from its first
+    line: an MCP server that fails to start is silent. The agent comes up, its tool list is empty,
+    and nothing anywhere says why — not in the agent, not in the catalog, not on any screen. It was
+    found by running the published binary by hand while chasing a badge that would not turn green,
+    and the badge was right: nothing had ever connected.
+
+    `apps/cli` never had this. It carries no `format: esm` bundle of `yaml` on a path that node
+    evaluates as a module — which is why the whole product worked and only this file was dead.
+
+    Written by hand and not with tsup's `shims`, which was tried first and is for something else:
+    it fills in `__dirname` and `__filename`, not the `require` an ES module does not have.
+   */
+  banner: {
+    js: 'import { createRequire as __nodeRequire } from "node:module";\nconst require = __nodeRequire(import.meta.url);',
+  },
 });
