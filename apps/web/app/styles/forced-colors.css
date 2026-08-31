@@ -1,0 +1,166 @@
+/*
+  Windows high contrast mode, and the six signals it wipes out.
+  There the system DOES NOT respect the palette: it forces `color`, `background-color`,
+  `border-color`, `outline-color`, `fill`, and `stroke` to have four of its colors, and sets
+  `box-shadow` and `text-shadow` to `none`. All the vocabulary of `tokens.css` suddenly ceases to
+  exist.
+  That's not a contrast problem —what remains contrasts more than enough— but a VOCABULARY
+  problem: this app says six different things with the same resource, a color fill, and there all
+  six fills come out the same. A green dot and an amber one are the same dot. The selected row is
+  rendered with a background and a `box-shadow` lane: it loses both and nothing remains. The health
+  arc and its track are the same stroke.
+  That's why colors are not adjusted here: the resource is changed. What color used to express is
+  now expressed by FORM —full or empty, thick or thin, with a frame or without it—, which is the
+  only thing the system does not touch.
+  The values are system keyword words (`CanvasText`, `GrayText`, `Highlight` ), not literals:
+  within this `@media` they are the only ones that the browser respects, and `tokens.css` cannot
+  give them because their value is chosen by the user in their control panel.
+  It goes to the end of the waterfall. Each selector has written on it the weight of the original
+  it corrects, so it ties and wins by going after.
+ */
+
+@media (forced-colors: active) {
+  /*
+    ── 1. The status dots ───────────────────────────────────────────────────────── Four statuses
+    with four fills: alive, paused, asleep, and no git. Flattened, they are four identical 6 px
+    dots. Here they become two shapes with two inks: filled or ring, normal or off. The text
+    already travels with them —`StateDot` carries its `sr-only` and the summary its label—, so
+    this is for those who LOOK at them.
+    They go up to 10 px because a 2 px ring inside a 6-point dot is not a ring: it is a dot. It is
+    the only place where this sheet moves a measurement, and only in this mode.
+   */
+  .state-dot,
+  .catalog-row .state-dot,
+  .summary-dot {
+    width: 10px;
+    height: 10px;
+    border: 2px solid GrayText;
+    background: Canvas;
+  }
+
+  .state-dot--active,
+  .summary-dot--live {
+    border-color: CanvasText;
+    background: CanvasText;
+  }
+
+  .state-dot--paused,
+  .summary-dot--paused {
+    border-color: CanvasText;
+    background: Canvas;
+  }
+
+  .state-dot--dormant,
+  .summary-dot--dormant {
+    border-color: GrayText;
+    background: GrayText;
+  }
+
+  .summary-dot--muted {
+    border-color: GrayText;
+    background: Canvas;
+  }
+
+  /*
+    ── 2. The chosen row and tile ──────────────────────────────────────────────── The list is a
+    `listbox` and choosing a row is what opens the panel on the right: if it’s not clear which one
+    is chosen, half of the screen talks about a project that is unknown. On the screen it is
+    indicated with a background and a left lane of `box-shadow`, and there both are lost. The lane
+    returns as a border, which does survive; the filling is subtracted from the padding so that
+    the row does not move a single pixel from its place.
+   */
+  .catalog-row[aria-selected="true"] {
+    border-left: 3px solid Highlight;
+    padding-left: 15px;
+  }
+
+  /*
+    The tile already has a border at rest, so yours cannot be 'have a border' but 'have it
+    triple.' The 2 px gained per side are taken from the padding.
+   */
+  .catalog-tile[aria-selected="true"] {
+    border-width: 3px;
+    border-color: Highlight;
+    padding: 16px 10px 13px;
+  }
+
+  /*
+    ── 3. Health ───────────────────────────────────────────────────────────────────── The ring is
+    two SVG circles, track and arc, and `stroke` is also forced: both come out the same color and
+    the ring always appears full, that is, always 100. The track goes down to `GrayText` and the
+    arc stays at `CanvasText`, which returns 'how far it goes'.
+    What doesn't come back is the tone —well, I warn you, bad—, and there is no way to express it
+    in a 2 px stroke. It's not necessary: the dial carries the number inside and the number IS the
+    tone.
+   */
+  .health-dial__track {
+    stroke: GrayText;
+  }
+
+  .health-dial__arc {
+    stroke: CanvasText;
+  }
+
+  /*
+    The panel bar is the same endless problem that saves it: 3 px high, track background and tone
+    fill, both flattened at the same time. A frame is added so you can see where it ends, and it
+    is raised to 7 px because with `border-box` a 1 px frame eats 2 of the 3.
+   */
+  .detail-health__meter {
+    height: 7px;
+    border: 1px solid CanvasText;
+    background: Canvas;
+  }
+
+  .detail-health__meter > span {
+    background: CanvasText;
+  }
+
+  /*
+    ── 4. The selected item in a list ────────────────────────────────────────────────────── Seven
+    different places say “this is the selected one” with a highlight: the sidebar section, the
+    catalog filter, the list or grid view, the row with the keyboard in the command palette and in
+    the model selector, the language, and the discreet mode. All seven flatten at the same time,
+    and in the palette that means typing blindly: the down arrow stops having a visible effect.
+    A `Highlight` frame does not touch the text inside —which is what breaks using `Highlight` as
+    a background, because the text continues to be forced to `CanvasText` — and it is not confused
+    with the focus ring, which appears in `CanvasText`. Being selected and having the focus are
+    two different things, and here they continue to be two.
+   */
+  .app-sidebar nav a.is-active,
+  .catalog-filters button.is-active,
+  .view-switch button.is-active,
+  .palette__list button.is-active,
+  .model-picker__item.is-highlighted,
+  .lang-toggle button.is-active,
+  .catalog-tool.is-active {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  /*
+    ── 5. The two tab underlines ──────────────────────────────────────────────── The top
+    navigation and the tab menu mark the current section with a bar drawn in `::after` using
+    `background`. Forced to `Canvas`, the bar remains there and is the color of the paper. With
+    `Highlight` it returns, and the menu one goes up to 2 px because a one-pixel high
+    high-contrast line is lost against the edge that the block below already has.
+   */
+  .top-navigation > a.is-active::after {
+    background: Highlight;
+  }
+
+  .project-subnav a.is-active::after {
+    height: 2px;
+    background: Highlight;
+  }
+
+  /*
+    ── 6. The current step of the timeline ───────────────────────────────────────── The points of
+    the line have a border at rest, so the current one —which is distinguished by border,
+    background, and ink at the same time— becomes exactly the same as the others.
+   */
+  .project-timeline li > span.is-current {
+    border-color: Highlight;
+    border-width: 2px;
+  }
+}

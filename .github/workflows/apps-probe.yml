@@ -1,0 +1,112 @@
+name: Sondeo · apps de escritorio en Windows
+
+# The panel has a button to open a project with the Claude or ChatGPT desktop app, and that button
+# only exists on macOS. Not out of laziness: on macOS, an app is a folder with a fixed name in one
+# of two fixed locations, and the system keeps a written record if that app can open a folder.
+# Panoma reads those two things and doesn't make anything up.
+#
+# In Windows there is no equivalent that can be taken for granted, and typing
+# `%LOCALAPPDATA%\loquesea\Claude.exe` from memory is exactly the error that this project has been
+# fixing for days: code that compiles, passes the tests, and fails on someone else's machine.
+#
+# So instead of guessing, you look. A clean machine, a photo of the registry and the folders, the
+# actual installation —downloaded from wherever the public winget catalog says, not from a
+# remembered URL—, another photo, and the difference. What comes out of here is the only thing that
+# can be written later in the code.
+#
+# By hand and only by hand: this downloads and installs third-party software, and it doesn't have to
+# run on every push. It is launched when the map needs to be redone.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sondeo:
+    name: ${{ matrix.app }}
+    runs-on: windows-latest
+
+    strategy:
+      # Each app on its own clean machine: if the two shared a runner, the second 'before' photo
+      # would already contain the first one inside, and the diff would lie.
+      fail-fast: false
+      matrix:
+        include:
+          - app: claude
+            patron: claude|anthropic
+          - app: chatgpt
+            patron: chatgpt|openai
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Windows PowerShell 5.1 and not PowerShell 7: the COM that reads shortcuts and the module
+      # that lists store apps are native, and in 7 you have to go look for them with a bridge. Here
+      # what matters is what someone using the machine would see, not what is elegant.
+      - name: Foto de antes
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File .\.github\scripts\apps-probe.ps1 -Salida antes
+
+      - name: Instalar ${{ matrix.app }}
+        id: instalar
+        # If the installation fails, the probing continues: knowing that it could not be
+        # installed—and why—is half of the answer. The work turns red at the end, after having left
+        # the report written.
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File .\.github\scripts\install-app.ps1 -App ${{ matrix.app }}
+
+      - name: Foto de después
+        if: always()
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File .\.github\scripts\apps-probe.ps1 -Salida despues
+
+      - name: Informe
+        if: always()
+        shell: powershell
+        run: |
+          & .\.github\scripts\apps-report.ps1 -Antes antes -Despues despues -Salida informe.md -Patron '${{ matrix.patron }}'
+          Get-Content -LiteralPath informe.md -Raw | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+
+      # The report is a summary; the JSON are the proof. Whoever doesn't trust the conclusion can
+      # download the two photos and do the diff on their own.
+      - name: Guardar las dos fotos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sondeo-${{ matrix.app }}
+          path: |
+            antes/
+            despues/
+            informe.md
+          if-no-files-found: warn
+
+      - name: Un verde que no mienta
+        if: always() && steps.instalar.outcome == 'failure'
+        shell: powershell
+        run: |
+          Write-Host 'La instalación de ${{ matrix.app }} no salió bien. El informe de arriba dice lo que se pudo ver de todas formas, pero este trabajo no puede darse por bueno.'
+          exit 1
+
+# What it reported on its first run, on 19-Aug-2026, so it need not be run again just
+# out of curiosity:
+#
+# Claude winget `Anthropic.Claude` 1.30096.1, downloaded from downloads.claude.ai. Folder:
+# %LOCALAPPDATA%\AnthropicClaude (claude.exe of 222 MB inside app-1.30096.1). Registry:
+# HKCU\…\Uninstall\AnthropicClaude, with the folder written. Start menu: Anthropic\Claude.lnk.
+# Protocol: claude://. App Paths: none. Folder verb: NONE.
+#
+# ChatGPT is not in the winget catalog; it comes through the store as the product 9PLM9XGG6VKS
+# —record: PackageName ChatGPT, Publisher OpenAI— and is installed with the identity
+# OpenAI.Codex_2p2nqsd0c76g0, which is its internal package name; in the start menu it is called
+# 'ChatGPT'. No dedicated folder, no uninstall key: a store package is launched by identifier.
+# Folder verb: NOTHING.
+#
+# Two different things are called Codex and it is advisable not to confuse them: the one above is
+# the ChatGPT app, and `OpenAI.Codex` in the winget catalog is Codex CLI (0.99.0, a zip from
+# github.com/openai/codex), the terminal agent.
+#
+# The last line of the two is the one that matters: on Windows neither of them declares that they
+# know how to open a folder, so the button that does exist on macOS cannot be copied here without
+# inventing a promise for them. It is noted where it is decided, in `installedApps()`.

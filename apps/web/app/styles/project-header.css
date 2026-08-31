@@ -1,0 +1,566 @@
+/*
+  The project card: header, actions and the dropdown menu that hangs from them.
+  Here the second screen palette is created, in `.project-detail-page`. It declares the same names
+  as `.catalog-screen` with different values; they are opposed in `tokens.css`.
+ */
+/*
+  ── Visual sheet of the project ─────────────────────────────────────────────── Same palette as
+  the landing: paper, ink, one-pixel edge. Color is reserved for what means something —health,
+  warning, danger—, not to render each question in a different shade.
+ */
+
+.project-detail-page {
+  --ink: var(--color-ink-sheet);
+  --paper: var(--color-paper-sheet);
+  --card: var(--color-surface);
+  --muted: var(--color-ink-muted-sheet);
+  --faint: var(--color-ink-faint-sheet);
+  --line: var(--color-line-sheet);
+  --line-strong: var(--color-line-strong-sheet);
+  --wash: var(--color-wash-sheet);
+  background: var(--paper);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+.project-detail-page__inner {
+  width: min(100% - 64px, 1184px);
+  margin: 0 auto;
+  padding: 28px 0 88px;
+}
+
+.project-hero {
+  position: relative;
+  z-index: var(--z-hero);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 36px;
+}
+
+.project-hero__identity {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 22px;
+}
+
+.project-hero__copy {
+  min-width: 0;
+  padding-top: 2px;
+}
+
+.project-hero__copy h1 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 11px;
+  color: var(--ink);
+  font-size: clamp(2rem, 3vw, 2.55rem);
+  font-weight: 650;
+  letter-spacing: -0.045em;
+  line-height: 1.05;
+}
+
+.project-hero__copy h1 code {
+  color: var(--faint);
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.project-hero__description {
+  max-width: 42rem;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 1.02rem;
+  letter-spacing: -0.015em;
+  line-height: 1.5;
+}
+
+.project-hero__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  max-width: 44rem;
+  margin: 16px 0 0;
+  padding: 0;
+}
+
+.project-hero__fact {
+  display: grid;
+  gap: 4px;
+  min-width: 5.5rem;
+  padding: 0 18px 0 0;
+}
+
+.project-hero__fact + .project-hero__fact {
+  padding-left: 18px;
+  border-left: 1px solid var(--line);
+}
+
+.project-hero__fact dt {
+  color: var(--faint);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.project-hero__fact dd {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.84rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.project-health-grade {
+  color: var(--muted);
+}
+
+.project-hero__path {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 44rem;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  color: var(--faint);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+}
+
+.project-hero__path-label {
+  flex: none;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: 0.62rem;
+}
+
+.project-hero__path-value {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-hero__path .open-project-action {
+  flex: none;
+}
+
+.project-hero__path .open-project-action button {
+  min-height: 28px;
+  padding: 0 9px;
+  font-size: 0.68rem;
+  gap: 5px;
+}
+
+.project-hero__path .open-project-action button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.project-action-bar {
+  position: relative;
+  display: grid;
+  justify-items: end;
+  gap: 9px;
+  flex: none;
+}
+
+.project-action-bar__primary {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+.open-project-action {
+  display: inline-flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.open-project-action button,
+.project-more-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--corner-sm);
+  background: var(--card);
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 580;
+  cursor: pointer;
+  transition: border-color var(--duration-medium) ease, background-color var(--duration-medium) ease, color var(--duration-medium) ease, transform var(--duration-medium) ease;
+}
+
+.open-project-action button svg,
+.project-more-button svg {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  stroke-width: 1.7;
+}
+
+.open-project-action button:hover,
+.project-more-button:hover {
+  border-color: var(--ink, var(--color-accent));
+  color: var(--ink, var(--color-accent));
+}
+
+.open-project-action button:disabled,
+.project-more-button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.open-project-action--primary button {
+  min-height: 46px;
+  min-width: 178px;
+  border-color: var(--ink, var(--color-accent));
+  background: var(--ink, var(--color-accent));
+  color: var(--paper, var(--color-surface));
+  font-size: 0.8rem;
+}
+
+.open-project-action--primary button:hover {
+  border-color: var(--color-ink-pressed);
+  background: var(--color-ink-pressed);
+  color: var(--paper);
+}
+
+.open-project-action__error {
+  max-width: 260px;
+  color: var(--color-danger);
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
+.project-more-button {
+  width: 46px;
+  height: 46px;
+  padding: 0;
+}
+
+.project-more-button svg {
+  width: 22px;
+  height: 22px;
+}
+
+/*
+  The split button of the tile: open where always, or unfold the rest.
+  It inherits the black from the main button that was already there — it doesn't compete with
+  anything on the page — and the arrow is attached to it, separated by a one-pixel line of the
+  same lightened color. It reads as a single control, which is what it is: the action and its
+  variants.
+ */
+.open-menu {
+  position: relative;
+  display: inline-grid;
+  justify-items: end;
+  gap: 6px;
+}
+
+.open-menu__split {
+  display: flex;
+  align-items: stretch;
+}
+
+.open-menu__primary,
+.open-menu__toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 46px;
+  border: 1px solid var(--ink, var(--color-accent));
+  background: var(--ink, var(--color-accent));
+  color: var(--paper, var(--color-surface));
+  font-size: 0.8rem;
+  font-weight: 580;
+  cursor: pointer;
+  transition: background-color var(--duration-medium) ease, opacity var(--duration-medium) ease;
+}
+
+.open-menu__primary {
+  min-width: 168px;
+  padding: 0 15px;
+  border-radius: var(--corner-sm) 0 0 var(--corner-sm);
+}
+
+/* Without the arrow, the button is a single one and is fully rounded. */
+.open-menu__split > .open-menu__primary:only-child {
+  border-radius: var(--corner-sm);
+}
+
+.open-menu__toggle {
+  width: 38px;
+  padding: 0;
+  border-left: 1px solid var(--color-on-ink-edge);
+  border-radius: 0 var(--corner-sm) var(--corner-sm) 0;
+}
+
+.open-menu__primary:hover:not(:disabled),
+.open-menu__toggle:hover {
+  background: var(--color-ink-pressed);
+}
+
+/*
+  At line spacing, for the 'resume' strip on the cover.
+  The tab button measures 46 high and 206 wide, and that strip ends up measuring 52 in total: with
+  the normal size it would rise to 62 and it would be the card that was removed for starting the
+  cover below the fold. The minimum width also gives in — inside it helps prevent the action
+  column from wobbling, and here it only takes up space.
+ */
+.open-menu--compact .open-menu__primary,
+.open-menu--compact .open-menu__toggle {
+  min-height: 34px;
+  font-size: 0.78rem;
+}
+
+.open-menu--compact .open-menu__primary {
+  min-width: 0;
+  padding: 0 12px;
+}
+
+.open-menu--compact .open-menu__toggle {
+  width: 30px;
+}
+
+.open-menu--compact .open-menu__primary svg,
+.open-menu--compact .open-menu__toggle svg {
+  width: 15px;
+  height: 15px;
+}
+
+/*
+  With support, and not out of obsession.
+  `--card` is only declared in `.project-detail-page`, which is where this menu was born. On the
+  cover —`.catalog-screen`, another palette— the variable does not resolve, the entire declaration
+  is discarded, and the dropdown would appear **transparent** over the catalog: the list of
+  destinations would be readable underneath.
+  The corner and the shadow no longer need support: `--corner` and `--shadow-menu` live in `:root`
+  because they were not part of the contrast between the two screens, only constants trapped in
+  the scope of one. The supports that had been handwritten here were the scar of that.
+ */
+.open-menu__list {
+  position: absolute;
+  top: 52px;
+  right: 0;
+  z-index: var(--z-dropdown);
+  width: 246px;
+  padding: 7px;
+  border: 1px solid var(--line-strong, var(--color-line-strong-catalog));
+  border-radius: var(--corner);
+  background: var(--card, var(--color-surface));
+  box-shadow: var(--shadow-menu);
+}
+
+/* The compact measures 34 px: the menu starts after six pixels of space. */
+.open-menu--compact .open-menu__list {
+  top: 40px;
+}
+
+.open-menu__primary:disabled {
+  opacity: 0.62;
+  cursor: wait;
+}
+
+.open-menu__primary svg,
+.open-menu__toggle svg {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  stroke-width: 1.7;
+}
+
+.open-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 42px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--color-smoke);
+  font-size: 0.76rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.open-menu__item:hover {
+  background: var(--color-raised);
+  color: var(--color-chalk);
+}
+
+.open-menu__item.is-default {
+  background: color-mix(in srgb, var(--color-raised) 72%, transparent);
+  color: var(--color-chalk);
+}
+
+.open-menu__item svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+
+.open-menu__item-copy {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.open-menu__item-copy small {
+  color: var(--color-faint);
+  font-size: 0.66rem;
+}
+
+.open-menu__item-copy small b {
+  color: var(--color-chalk);
+  font-weight: 650;
+}
+
+.open-menu__item .open-menu__default-check {
+  width: 15px;
+  height: 15px;
+  margin-left: auto;
+  color: var(--color-chalk);
+  stroke-width: 2;
+}
+
+/*
+  The dash only where the window you end up in changes.
+  It is the only difference between 'Claude' and 'Claude Code': without it, the two lines read the
+  same, which is exactly the error that brought this list.
+ */
+.open-menu__item.is-first-of-group {
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid var(--line);
+}
+
+.open-menu__error {
+  max-width: 260px;
+  color: var(--color-danger);
+  font-size: 0.7rem;
+  text-align: right;
+}
+
+.project-overflow-menu {
+  position: absolute;
+  top: 52px;
+  right: 0;
+  z-index: var(--z-dropdown);
+  width: 220px;
+  padding: 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--corner);
+  background: var(--card);
+  box-shadow: var(--shadow-menu);
+}
+
+.project-menu-actions {
+  display: grid;
+}
+
+.project-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--color-smoke);
+  font-size: 0.76rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.project-menu-item:hover:not(:disabled) {
+  background: var(--color-raised);
+  color: var(--color-chalk);
+}
+
+.project-menu-item svg {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  stroke-width: 1.7;
+}
+
+.project-menu-item--danger {
+  color: var(--color-danger);
+}
+
+.project-menu-item--danger:hover:not(:disabled) {
+  background: var(--color-danger-soft);
+  color: var(--color-danger-ink);
+}
+
+.project-menu-item:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.project-menu-divider {
+  height: 1px;
+  margin: 6px -7px;
+  background: var(--color-edge);
+}
+
+.project-menu-notice,
+.project-menu-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 5px 4px;
+  padding: 7px 8px;
+  border-radius: 7px;
+  font-size: 0.68rem;
+  line-height: 1.4;
+}
+
+.project-menu-notice svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+
+.project-menu-notice--ok {
+  background: var(--color-success-soft);
+  color: var(--color-success-ink-soft);
+}
+
+.project-menu-notice--error,
+.project-menu-error {
+  background: var(--color-danger-soft);
+  color: var(--color-danger-ink);
+}
+
+.is-spinning {
+  animation: project-spin var(--duration-spin-slow) linear infinite;
+}
+
+@keyframes project-spin {
+  to { transform: rotate(360deg); }
+}
+

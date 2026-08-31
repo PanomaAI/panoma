@@ -1,0 +1,474 @@
+/*
+  The two ways to look at the catalog: the list and the grid.
+  The row, the tile, and the marks that both share — health dial, status point, technology seal,
+  the handle that opens the folder.
+ */
+/*
+  The list and the panel.
+  The panel slides in from the right and takes 312 px from the list instead of covering it:
+  looking at the details of a project almost always involves comparing it with the ones next to
+  it, and a layer on top hides exactly what you are comparing against.
+ */
+.catalog-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.catalog-split[data-open="true"] {
+  grid-template-columns: minmax(0, 1fr) 312px;
+}
+
+.catalog-body {
+  min-width: 0;
+}
+
+.catalog-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 76px 150px 140px 30px;
+  align-items: center;
+  gap: 18px;
+  padding: 0 18px 9px;
+  color: var(--ink-3);
+  font-size: 0.68rem;
+  font-weight: 560;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.catalog-rows--list {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--paper);
+  box-shadow: var(--shadow-lift);
+}
+
+/*
+  A row.
+  It doesn't have a single button. Forty rows with star, eye, "editor" and "open" are one hundred
+  sixty things that can be pressed by mistake while looking for a name, and none were needed until
+  it was chosen: the actions live in the panel, which is what opens when chosen. The entire row is
+  the clickable area; the left edge marks which one is open.
+ */
+.catalog-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 76px 150px 140px 30px;
+  align-items: center;
+  gap: 18px;
+  padding: 13px 18px;
+  border-top: 1px solid transparent;
+  outline-offset: -2px;
+  cursor: default;
+  transition: background-color var(--duration-fast) ease;
+}
+
+.catalog-row + .catalog-row {
+  border-top-color: var(--line);
+}
+
+.catalog-row:hover {
+  background: var(--wash);
+}
+
+.catalog-row[aria-selected="true"] {
+  background: var(--select);
+  box-shadow: inset 2px 0 0 var(--ink);
+}
+
+.catalog-row__identity {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  min-width: 0;
+}
+
+.catalog-row__names {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.catalog-row__name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--ink);
+  font-size: 0.89rem;
+  font-weight: 580;
+  letter-spacing: -0.016em;
+}
+
+.catalog-row__name > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.catalog-row__star {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  color: var(--ink-2);
+}
+
+/*
+  The pending proposal is the only thing marked on the row, and it is marked with the strongest
+  negative there is. It is not a notice that lingers —an overdue dependency will wait the same
+  next week—: it is completed work that cannot proceed without a response from you.
+ */
+.waiting-badge {
+  display: grid;
+  place-items: center;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 6px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--color-on-ink);
+  font-size: 0.67rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+/* The icon's backup when the project does not have one of its own. See `ProjectIcon`. */
+.project-icon--neutral {
+  background: var(--color-inset);
+  color: var(--color-icon-empty);
+}
+
+/*
+  The handle to open, and the signal that it is opening.
+  Double click is not announced alone on a website, so it is announced here: the arrow appears
+  when hovering over it, when tabbing, and when the project is selected, and its label says the
+  shortcut
+  ("Open X's tab — or double click"). Your slot is always reserved, so
+  appearing does not move a single pixel of the row.
+  Chosen also means going over because in touch there is no second: you tap once to choose and
+  then there is a visible door to enter.
+ */
+.open-handle {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-3);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity var(--duration-fast) ease, background-color var(--duration-fast) ease, color var(--duration-fast) ease;
+}
+
+.catalog-row:hover .open-handle,
+.catalog-row:focus-within .open-handle,
+.catalog-row[aria-selected="true"] .open-handle,
+.catalog-tile:hover .open-handle,
+.catalog-tile:focus-within .open-handle,
+.catalog-tile[aria-selected="true"] .open-handle {
+  opacity: 1;
+}
+
+.open-handle:hover {
+  background: var(--ink);
+  color: var(--color-on-ink);
+}
+
+.open-handle:focus-visible {
+  opacity: 1;
+}
+
+.open-handle svg {
+  width: 14px;
+  height: 14px;
+}
+
+.catalog-row__handle,
+.catalog-tile__handle {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+}
+
+.catalog-tile__handle {
+  position: absolute;
+  top: 7px;
+  left: 7px;
+}
+
+/* While the tab loads. A double click that doesn't respond repeats itself, and repeating it navigates. */
+.opening-spinner {
+  display: block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--line-strong);
+  border-top-color: var(--ink);
+  border-radius: 50%;
+  animation: opening-spin var(--duration-spin) linear infinite;
+}
+
+@keyframes opening-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/*
+  The row that is opening turns off: it is no longer just one of many, it is the one that will
+  come out.
+ */
+.catalog-row[aria-busy="true"],
+.catalog-tile[aria-busy="true"] {
+  background: var(--select);
+}
+
+.catalog-row[aria-busy="true"] .catalog-row__identity,
+.catalog-tile[aria-busy="true"] .catalog-tile__name,
+.catalog-tile[aria-busy="true"] img,
+.catalog-tile[aria-busy="true"] .catalog-tile__meta {
+  opacity: 0.55;
+  transition: opacity var(--duration-fast) ease;
+}
+
+/*
+  Work that only exists on this disc.
+  Amber and not red: nothing is broken, and the red on this screen is reserved for suspended
+  health. What this cloud says is 'this is not yet safe anywhere else,' which is a warning and not
+  a failure — and putting it in the serious color on sixty-three of ninety cards would have taught
+  people to ignore the color entirely.
+ */
+.risk-mark {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  color: var(--warn);
+}
+
+/* In the tile fits less, and it goes at the end of a line that already has a period and date. */
+.catalog-tile__meta .risk-mark {
+  width: 13px;
+  height: 13px;
+}
+
+.catalog-row__path {
+  overflow: hidden;
+  color: var(--ink-3);
+  font-size: 0.74rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.catalog-row__activity {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--ink-2);
+  font-size: 0.79rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+  Health, drawn.
+  It is the only number that orders the catalog and the only place on the table where color stays,
+  so it earns the drawing. A single number is read one by one; a ring is compared with the one
+  above and the one below without reading any.
+ */
+.health-dial {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  color: var(--ink);
+  font-size: 0.68rem;
+  font-weight: 590;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* At 100% and not at fixed 26 px: the ring follows the size given by each view. */
+.health-dial svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+/* In the list, the ring is the data of an entire column, not a corner marker. */
+.catalog-row .health-dial {
+  width: 34px;
+  height: 34px;
+  font-size: 0.79rem;
+}
+
+.health-dial circle {
+  fill: none;
+  stroke-width: 2;
+}
+
+.health-dial__track {
+  stroke: var(--line);
+}
+
+.health-dial__arc {
+  stroke: var(--ink-3);
+  stroke-linecap: round;
+}
+
+.health-dial--good .health-dial__arc { stroke: var(--good); }
+.health-dial--warn .health-dial__arc { stroke: var(--warn); }
+.health-dial--bad .health-dial__arc { stroke: var(--bad); }
+
+.stack-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--ink-2);
+  font-size: 0.74rem;
+}
+
+.stack-mark svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+
+.stack-mark > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stack-mark--empty {
+  color: var(--ink-3);
+}
+
+.catalog-row .stack-mark {
+  gap: 8px;
+  font-size: 0.8rem;
+}
+
+.catalog-row .stack-mark svg {
+  width: 18px;
+  height: 18px;
+}
+
+.state-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--color-state-unknown);
+}
+
+.catalog-row .state-dot {
+  width: 7px;
+  height: 7px;
+}
+
+.state-dot--active { background: var(--good); }
+.state-dot--paused { background: var(--warn); }
+.state-dot--dormant { background: var(--color-state-asleep); }
+
+/*
+  The icon view: the one that serves to recognize, not to read.
+  It is the same list with the same selection and the same gestures —one click opens the panel,
+  two open the tab—, so there is nothing new to learn when changing views. The health ring stays
+  in the corner so you can browse the entire grid without reading a name.
+ */
+/*
+  Tiles do not stretch.
+  With `1fr` each one grew until it filled the row, so on a widescreen a 64 px icon floated in a
+  196 box — the same content in double the space, which is exactly what makes a grid look empty.
+  The width is fixed and the leftover is distributed among the gaps, like any icon folder: the
+  spaces grow, not the tiles.
+ */
+.catalog-rows--grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 142px);
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.catalog-tile {
+  position: relative;
+  display: grid;
+  /*
+    `minmax(0, 1fr)` and not the automatic column that appears by default: without it, the track
+    is measured by the widest content —the full name, without cutting—, so the `max-width: 100%`
+    of the name was compared with itself and `mapbox-maps-flutter-main` went out of its tile on
+    the right. With the track tied to the width of the box, the clipping works.
+   */
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+  align-content: start;
+  gap: 8px;
+  padding: 18px 12px 15px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--paper);
+  box-shadow: var(--shadow-lift);
+  cursor: default;
+  transition: background-color var(--duration-fast) ease, border-color var(--duration-fast) ease;
+}
+
+.catalog-tile:hover {
+  border-color: var(--line-strong);
+}
+
+.catalog-tile[aria-selected="true"] {
+  border-color: var(--ink);
+  background: var(--select);
+}
+
+.catalog-tile > .health-dial {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+}
+
+.catalog-tile__name {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  max-width: 100%;
+  min-width: 0;
+  color: var(--ink);
+  font-size: 0.77rem;
+  font-weight: 560;
+  letter-spacing: -0.012em;
+}
+
+.catalog-tile__name > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.catalog-tile__name svg {
+  width: 11px;
+  height: 11px;
+  flex: none;
+  color: var(--ink-2);
+}
+
+.catalog-tile__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-3);
+  font-size: 0.69rem;
+  font-variant-numeric: tabular-nums;
+}
+

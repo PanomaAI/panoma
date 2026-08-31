@@ -1,0 +1,396 @@
+/*
+  The sidebar footer and the width of the content area.
+  They share a file because they share a problem: the folded lane moves both at the same time, and
+  the `@media (min-width: 761px)` that decides that width lives in here. Watch the order:
+  `responsive.css` redeclares `html.sidebar-collapsed .app-main` with the same weight and has to
+  win, so it goes afterwards.
+ */
+/*
+  Numeric notice next to a sidebar section. `margin-left: auto` anchors it to the right edge
+  regardless of how long the input text is.
+ */
+.nav-badge {
+  margin-left: auto;
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-idle) 18%, white);
+  color: var(--color-warn-ink);
+  font-family: var(--font-mono);
+  font-size: 0.67rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.app-sidebar nav a.is-active .nav-badge {
+  background: color-mix(in srgb, var(--color-idle) 26%, white);
+}
+
+.catalog-summary {
+  /*
+    `auto` and not a fixed height: with a magic number here, adding an entry to the menu pushed
+    the summary off the screen. The gap is distributed by the flex, not me.
+   */
+  margin-top: auto;
+  padding: 18px 15px;
+  border: 1px solid var(--color-edge);
+  border-radius: 12px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-summary);
+}
+
+.catalog-summary__title {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--color-edge);
+}
+
+.catalog-summary__title > svg {
+  width: 20px;
+  height: 20px;
+  color: var(--color-accent);
+  stroke-width: 1.8;
+}
+
+.catalog-summary__title p,
+.catalog-summary__title span {
+  display: block;
+}
+
+.catalog-summary__title strong {
+  font-size: 0.84rem;
+}
+
+/* Only the folded form is taught; there it replaces the whole sentence. */
+.catalog-summary__count {
+  display: none;
+}
+
+.catalog-summary__title span {
+  margin-top: 2px;
+  color: var(--color-smoke);
+  font-size: 0.72rem;
+}
+
+.catalog-summary dl {
+  display: grid;
+  gap: 9px;
+  margin-top: 14px;
+}
+
+.catalog-summary dt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-smoke);
+  font-size: 0.74rem;
+}
+
+.summary-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.summary-dot--live { background: var(--color-live); }
+/*
+  The same amber as the pause on the grid and on the health dial: the bar point and the token
+  state have to be recognizably the same state.
+ */
+.summary-dot--paused { background: var(--color-idle); }
+.summary-dot--dormant { background: var(--color-dormant); }
+.summary-dot--muted { background: var(--color-nogit); }
+
+/*
+  The copies, behind a line.
+  They are not included in the total above —`notACopy` excludes them— so in the same column they
+  looked like part of the 32 when they are 44 separately. The rule says it without a word.
+ */
+.catalog-summary__aside {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-edge);
+}
+
+/*
+  The slogan and the language selector share a row: the bar is fixed, it does not scroll, and on a
+  laptop the footer already touches the bottom edge — there is no room for another line here.
+ */
+.sidebar-foot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 16px 4px 0;
+}
+
+.sidebar-update {
+  display: grid;
+  gap: 3px;
+  color: var(--color-faint);
+  font-size: 0.67rem;
+  line-height: 1.45;
+}
+/*
+  The link to the source has to look like a link: Tailwind’s reset makes it identical to the
+  <span> next to it, and a link that exists because of the license but doesn’t look clickable is
+  half a link. Always lightly underlined, inked on hover.
+ */
+.sidebar-update a {
+  width: fit-content;
+  text-decoration: underline;
+  text-decoration-color: var(--color-edge-bright);
+  text-underline-offset: 2px;
+}
+.sidebar-update a:hover {
+  color: var(--color-chalk);
+  text-decoration-color: currentColor;
+}
+
+/*
+  The language selector, with the same anatomy as .view-switch but at foot scale: it is a
+  preference that is touched once, not an everyday tool.
+ */
+.lang-toggle {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--color-edge);
+  border-radius: 7px;
+  background: var(--color-ground);
+}
+
+.lang-toggle button {
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--color-faint);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  cursor: pointer;
+}
+
+.lang-toggle button.is-active {
+  background: var(--color-surface);
+  color: var(--color-smoke);
+  box-shadow: var(--shadow-toggle);
+}
+
+.app-main {
+  width: calc(100% - 228px);
+  max-width: 1600px;
+  min-height: 100vh;
+  margin-left: 228px;
+  padding-top: 74px;
+}
+
+/*
+  Folded, the bar does not go away: it stays in the icon lane.
+  Before, to "hide" it, I would remove it entirely from the screen —`translate3d(-100%)` and
+  `visibility: hidden` — and with it went the ten sections. But gaining space for the content
+  doesn't have to mean losing sight of where everything is: in the lane, the ten icons remain, in
+  the same order and at the same height, so muscle memory survives collapsing it and returning to
+  a section is one click on its icon, not two on the menu.
+  Only above 760px. Below that, the bar is already a row of icons stuck to the bottom —and its
+  fold button isn’t even shown—, so there 'folded' means nothing and these rules could only ruin
+  what already works.
+ */
+@media (min-width: 761px) {
+  html.sidebar-collapsed .app-sidebar {
+    width: 68px;
+    /* The sides narrow so that the link, which measures 46, is centered on the track. */
+    padding-right: 11px;
+    padding-left: 11px;
+  }
+
+  html.sidebar-collapsed .app-sidebar nav a {
+    position: relative;
+    justify-content: center;
+    gap: 0;
+    padding: 0;
+  }
+
+  /*
+    The name is hidden in plain sight, not from the screen reader.
+    With `display: none` the link would be **without an accessible name** —an icon does not
+    provide one— and the lane would be ten unidentified links. Removing it from the flow with a
+    size of one pixel makes it disappear from the screen and it continues to be read, which is
+    what is needed.
+   */
+  html.sidebar-collapsed .nav-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  /*
+    The acknowledgment upon pressing, that in the lane there was no space.
+    Once deployed, the spinner goes to the end of the row, pushed by `margin-left: auto`. In 45
+    pixels that misaligns the icon —it stops being centered as soon as it appears— so here it is
+    taken out of the flow and drawn **around** the icon, like a ring. The icon doesn't go away:
+    the person who clicked still sees what they clicked on, and on top of that they know that
+    something is happening.
+    The positions are given with `top/left` and negative margins and not with `transform`, because
+    `transform` is already being used by the spin.
+   */
+  html.sidebar-collapsed .nav-pending {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 28px;
+    height: 28px;
+    margin: -14px 0 0 -14px;
+  }
+
+  /* Without a name next to it, the notice has nothing to hang on: it goes up to the corner of the icon. */
+  html.sidebar-collapsed .nav-badge {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    min-width: 17px;
+    margin-left: 0;
+    padding: 0 4px;
+    font-size: 0.6rem;
+    line-height: 1.6;
+  }
+
+  /*
+    The summary and the language also survive the folding, in their short version.
+    They would disappear because they didn’t fit, and not fitting was a problem of the long
+    format, not of the data: how many projects there are and how many are active is exactly what
+    is glanced at while working, and sending the menu to expand to see it turns it into something
+    that is checked on purpose instead of something that is known. In 46 pixels, the figure and
+    three rows of dot and number fit; what is left over are the words, and those are counted by
+    the `title` when hovering over it.
+   */
+  /*
+    It is tightened until the rail does not occupy a higher position than the extended bar. It
+    matters because the bar is fixed and does not scroll: on a laptop the foot already touches the
+    edge, and a rail taller than the original would have pushed the language off the screen in the
+    exact windows — which are the same ones where one folds the menu.
+   */
+  html.sidebar-collapsed .catalog-summary {
+    padding: 10px 4px;
+    border-radius: 10px;
+  }
+
+  html.sidebar-collapsed .catalog-summary__title {
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    padding-bottom: 8px;
+  }
+
+  /*
+    The icon is the same as the one for 'Projects' in the menu, two fingers above: repeating it in
+    the lane adds nothing and takes up half the width.
+   */
+  html.sidebar-collapsed .catalog-summary__title > svg {
+    display: none;
+  }
+
+  html.sidebar-collapsed .catalog-summary__count {
+    display: block;
+    font-size: 1rem;
+    line-height: 1.1;
+  }
+
+  html.sidebar-collapsed .catalog-summary dl {
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  html.sidebar-collapsed .catalog-summary dt {
+    justify-content: center;
+    gap: 5px;
+    font-size: 0.72rem;
+  }
+
+  /*
+    The caption loses the motto —three lines of prose don't fit— and it keeps the language, which
+    is the only thing that is pressed. The two acronyms are stacked because in a row they measure
+    68 and the lane gives 46.
+   */
+  html.sidebar-collapsed .sidebar-foot {
+    justify-content: center;
+    margin: 10px 0 0;
+  }
+
+  html.sidebar-collapsed .sidebar-update {
+    display: none;
+  }
+
+  html.sidebar-collapsed .lang-toggle {
+    flex-direction: column;
+  }
+
+  html.sidebar-collapsed .lang-toggle button {
+    padding: 2px 6px;
+  }
+
+  /* The words of the summary and of the long paragraph: out of sight, inside the tree. */
+  html.sidebar-collapsed .summary-label,
+  html.sidebar-collapsed .catalog-summary__title p {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  html.sidebar-collapsed .app-main,
+  html.sidebar-collapsed .legacy-page {
+    width: calc(100% - 68px);
+    margin-left: 68px;
+  }
+}
+
+/*
+  What is animated is the width, not a displacement: the bar no longer travels anywhere, it
+  narrows. And `visibility` disappears from here because nothing becomes invisible.
+ */
+html.sidebar-ready .app-sidebar {
+  transition:
+    width var(--duration-slow) var(--ease-drawer),
+    padding var(--duration-slow) var(--ease-drawer);
+}
+
+html.sidebar-ready .app-main,
+html.sidebar-ready .legacy-page {
+  transition:
+    margin-left var(--duration-slow) var(--ease-drawer),
+    width var(--duration-slow) var(--ease-drawer);
+}
+
+.content-page {
+  width: min(100% - 48px, 1080px);
+  margin: 0 auto;
+  padding: 48px 0 96px;
+}
+
+.legacy-page {
+  width: calc(100% - 228px);
+  max-width: none;
+  padding: 122px 32px 96px;
+}
+
+.legacy-page > * {
+  width: min(100%, 1080px);
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.legacy-page > .pt-12,
+.legacy-page > header.pt-12 {
+  padding-top: 0;
+}
+

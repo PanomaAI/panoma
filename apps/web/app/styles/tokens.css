@@ -1,0 +1,223 @@
+/*
+  The app's color vocabulary, and its sole source.
+  Before this, the sheet contained 122 loose literals spread over six thousand lines. No one could
+  know how many reds there were without searching for them one by one — and there were seven, for
+  two sheets. Here they are all, grouped by what they mean, with the EXACT value they already had:
+  this file did not change a single pixel when it was created, and it can be verified by undoing
+  each `var()` and comparing it with the previous sheet.
+  What DID move pixels was August 25, 2026, and by the way: the four reds that were used as text
+  became just one, `--color-fail`, because two of the four could not be read. See the 'Danger'
+  group below.
+  What does change, however, is what the next decision costs. Touching up the danger red is one
+  line; before it was seven searches and the doubt of whether any of them was something else.
+  ── How it is read ────────────────────────────────────────────────────────────────────────
+  The Tailwind tokens live in `theme.css` and are a different thing: they produce utilities
+  (`text-faint`, `border-edge`) that components write in JSX. This file produces no utilities;
+  its values are consumed with `var()` from CSS. When a value here is exactly the same as one
+  there, the value from there is used instead of being duplicated.
+  ── The two screen palettes, which is the mess that remains ───────────────────────────
+  `.catalog-screen` and `.project-detail-page` each declare their `--ink`, `--paper`, `--line`,
+  `--line-strong`, and `--wash`, with the same names and DIFFERENT values. It is not an afternoon
+  oversight: they are two screens that were drawn separately. Below they are juxtaposed, suffixed
+  `-catalog` and `-sheet`, so that the difference can be seen at once.
+  paper #fcfcfd · #fafafa ink #0e0f11 · #0a0a0a edge #ebecee · #e6e6e6 edge+ #dbdde0 · #c8c8c8
+  wash #f6f6f7 · #f3f3f3
+  Unifying them is a VISUAL change, not a cleanup: you have to look at it on screen and decide.
+  That's why it hasn't been done here. When it's decided, it's five lines.
+  The same notice applies to the groups marked 'one step away' below.
+ */
+:root {
+  /*
+    ── Ink ────────────────────────────────────────────────────────────────────────── `-pressed`
+    is the pure black of the primary button when pressed; it is not `--color-accent`
+    (#0b0b0d), which is the brand's black. Three blacks for the same paper.
+   */
+  --color-ink-catalog: #0e0f11;
+  --color-ink-sheet: #0a0a0a;
+  --color-ink-pressed: #000;
+  --color-ink-muted-catalog: #5c6169;
+  --color-ink-muted-sheet: #3d3d3d;
+  /* 2.94:1 on its paper: It does NOT even reach the threshold of large text. See README, "Limits". */
+  --color-ink-faint-catalog: #90959d;
+  --color-ink-faint-sheet: #5c5c5c;
+
+  /* ── Papers ── The pure white is `--color-surface`, of `theme.css`. */
+  --color-paper-catalog: #fcfcfd;
+  --color-paper-sheet: #fafafa;
+  --color-wash-catalog: #f6f6f7;
+  --color-wash-sheet: #f3f3f3;
+  /* The selected item in a list, and the sunken slot of an icon or a key. */
+  --color-selected: #f0f0f2;
+  --color-inset: #f4f4f5;
+  /* The top bar, which lets you see what is happening underneath. */
+  --color-topbar-veil: rgb(255 255 255 / 0.92);
+
+  /*
+    ── Corners ── They lived inside `.project-detail-page`, which is where someone wrote them
+    first, and from there they came out the five times the backup was manually set —`var(--radius,
+    8px)`—: the scar of having run into the empty token outside of that page.
+    And `--radius-sm` was ALSO a Tailwind token. Redefining it inside a screen silently changes
+    any `rounded-sm` written there: it would come out at 5px instead of the 4 of the rest of the
+    app. Today there is none inside; the day there is, no one would relate it to this. That’s why
+    they are called `corner` and not `radius`.
+   */
+  --corner: 8px;
+  --corner-sm: 5px;
+
+  /* ── Filos ── */
+  --color-line-catalog: #ebecee;
+  --color-line-sheet: #e6e6e6;
+  --color-line-strong-catalog: #dbdde0;
+  --color-line-strong-sheet: #c8c8c8;
+  --color-line-hover: #c6c9ce;
+  --color-line-current: #c9ccd1;
+
+  /* ── What goes on top of a dark filling ── */
+  --color-on-ink: #fff;
+  --color-on-ink-muted: rgb(255 255 255 / 0.6);
+  --color-on-ink-edge: rgb(255 255 255 / 0.16);
+
+  /*
+    ── Success ── The solid green is `--color-live` in the Tailwind chips (#25b878); this other
+    one is for the chip marks, and they are different on purpose: one is status, the other
+    verdict.
+   */
+  /* 3.61:1 on white: suitable for an icon or a border, not for regular text. */
+  --color-success: #189a5b;
+  --color-success-ink: #147a49;
+  --color-success-ink-soft: #137c52;
+  --color-success-soft: #edf9f3;
+  --color-success-tint: rgb(24 154 91 / 0.06);
+
+  /*
+    ── Notice ── The amber of header is `--color-warn` (#b0800f), from `theme.css` — 3.54:1 on
+    white, that is, icon and border, not text. All of this hangs from it. The three backgrounds
+    are one step apart from each other: unifying them is a contrast decision, not a cleanliness
+    one.
+   */
+  --color-warn-ink: #92600a;
+  --color-warn-ink-deep: #8a6a08;
+  --color-warn-icon: #d88410;
+  --color-warn-icon-soft: #b87811;
+  --color-warn-edge: #f6d6a1;
+  --color-warn-edge-soft: #efd09b;
+  --color-warn-soft: #fffaf0;
+  --color-warn-soft-warm: #fffaf1;
+  --color-warn-soft-deep: #fff8ec;
+
+  /*
+    ── Danger ── There were seven reds for two papers: filler and text. No one decided that there
+    should be seven; they were being chosen by eye, one per screen.
+    The FOUR that were used as text are no longer four. `--color-danger` (4.04:1 on white),
+    `--color-danger-loud` (3.41:1 on the background where it is rendered), `-ink` (5.17) and
+    `-ink-deep` (4.85) all did the same job with four different values, and two of them did not
+    reach the 4.5:1 that normal text requires. The four now hang off `--color-fail`, which lives
+    in `theme.css` because the markup also writes it as a class.
+    The four names are kept because nineteen rules use them and renaming them is another day; what
+    is no longer kept is that they say different things.
+    The three that remain with their own value are filler and border, not text, and there the
+    threshold is different. The four backgrounds continue at a pace between each other.
+   */
+  --color-danger: var(--color-fail);
+  --color-danger-fill: #e04343;
+  --color-danger-fill-hover: #c93838;
+  --color-danger-loud: var(--color-fail);
+  --color-danger-field: #ef4444;
+  --color-danger-ink: var(--color-fail);
+  --color-danger-ink-deep: var(--color-fail);
+  --color-danger-soft: #fff2f2;
+  --color-danger-soft-pale: #fff4f4;
+  --color-danger-soft-warm: #fffafa;
+  --color-danger-soft-deep: #feecec;
+  --color-danger-edge: #fed0d0;
+  --color-danger-edge-soft: #f1d2d2;
+
+  /*
+    ── Status points ── They graze `--color-nogit` (#c8cdd6) and `--color-dormant` (#9aa3b2)
+    without matching them. Another pair rendered by eye that is noticeable as soon as it is placed
+    next to it.
+   */
+  --color-state-unknown: #d3d6da;
+  --color-state-asleep: #b9bdc3;
+
+  /* ── The icon of a project that does not have its own ── */
+  --color-icon-empty: #a2a7ae;
+
+  /*
+    ── The 'private' stamp ── The only dark object on the whole page, and that's why it has its
+    own palette: there is no dark theme from which to borrow it.
+   */
+  --color-seal-face: #111316;
+  --color-seal-edge: #272a2f;
+  --color-seal-band: #f4f4f2;
+  --color-seal-stripe: #777b82;
+  --color-seal-sheen: rgb(255 255 255 / 0.07);
+  --color-seal-sheen-soft: rgb(255 255 255 / 0.075);
+  --color-seal-sheen-faint: rgb(255 255 255 / 0.035);
+
+  /* ── The curtains that darken the screen behind a dialogue ── */
+  --color-scrim: rgb(16 24 40 / 0.32);
+  --color-scrim-share: rgb(14 15 17 / 0.42);
+
+  /*
+    ── Layers ── Thirteen `z-index` with eight loose values and none with a name. Putting them
+    together resulted in an error and an ambiguity.
+    **The failure.** Four surfaces shared 60. Among elements positioned with the same `z-index`,
+    it does not decide the order of the file CSS: it decides the order in DOM. And
+    `<CommandPalette />` is mounted BEFORE `<aside class="app-sidebar">` (see
+    `components/app-shell.tsx` ), so the bar wins. Below 760px that bar becomes a spring attached
+    to the foot — `--z-dock`, measured: `fixed`, 66px high — and it was rendered ABOVE the curtain
+    of the command palette. That’s why `--z-overlay` goes up to 70: a modal has to cover the
+    spring, not the other way around. It’s the only value that has moved.
+    **Ambiguity.** The 60 meant two things. The account record lives inside `.app-topbar`, which,
+    being `fixed` with its own layer, opens its own stacking context: its 60 is a LOCAL number
+    that can never go above the global 50. The same number meant 'above everything' in one place
+    and 'above my siblings' in the other. Now they have different names, which is half of the fix.
+   */
+  --z-behind: -1;
+  --z-seal: 1;
+  --z-hero: 12;
+  --z-dropdown: 20;
+  --z-sidebar: 40;
+  --z-topbar: 50;
+  /* Local to the context of `.app-topbar`: it never competes with those below. */
+  --z-account: 60;
+  --z-dock: 60;
+  --z-overlay: 70;
+
+  /*
+    ── Times ── Six durations for three jobs. The same list of properties —`border-color` and
+    `color` — is animated at 160ms in two rules and at 120ms in three others, with no criterion
+    separating them; and the three load spins go to 620, 620, and 900. Just like with the colors:
+    the values are maintained and grouped together, which makes it obvious that there are extras.
+    The `0.01ms` of the reduced movement block DOES NOT go here: it is not a design duration, it
+    is the way to say 'now' without breaking the end-of-transition events.
+   */
+  --duration-fast: 120ms;
+  --duration-nudge: 140ms;
+  --duration-medium: 160ms;
+  --duration-slow: 280ms;
+  --duration-spin: 620ms;
+  --duration-spin-slow: 900ms;
+
+  /* The only curve that is not `ease` or `linear`: the one of the side lane when folding. */
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0.24, 1);
+
+  /*
+    ── Shadows ── Whole recipes and not loose colors: none of those `rgb()` are ever used alone,
+    and a shadow is the recipe —displacement, blurring, and ink— or it is nothing. Three different
+    inks coexist here (16 24 40, 14 15 17, 10 10 10) for the same reason as the reds.
+   */
+  --shadow-field: 0 1px 2px rgb(16 24 40 / 0.04);
+  --shadow-toggle: 0 1px 2px rgb(16 24 40 / 0.06);
+  --shadow-summary: 0 2px 10px rgb(16 24 40 / 0.03);
+  --shadow-card: 0 12px 32px rgb(16 24 40 / 0.16);
+  --shadow-dialog: 0 24px 60px rgb(16 24 40 / 0.22);
+  --shadow-lift: 0 1px 2px rgb(14 15 17 / 0.05);
+  --shadow-pressed: 0 1px 2px rgb(14 15 17 / 0.08);
+  --shadow-share: 0 16px 48px rgb(14 15 17 / 0.18);
+  --shadow-menu: 0 0 0 1px rgb(10 10 10 / 0.04), 0 12px 28px rgb(10 10 10 / 0.06);
+  --shadow-popover: 0 0 0 1px rgb(10 10 10 / 0.03), 0 10px 26px rgb(10 10 10 / 0.08);
+  --shadow-focus-ring: 0 0 0 3px rgb(11 11 13 / 0.09);
+  --shadow-seal-ring: 0 0 0 3px rgb(255 255 255 / 0.07);
+}

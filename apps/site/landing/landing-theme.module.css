@@ -1,0 +1,275 @@
+/*
+  Only visual source of the landing.
+  The sections do not declare colors: they consume these tokens. The neutral scale keeps the
+  current values and the semantic aliases explain what each shade exists for. Changing the paper,
+  the ink, the edges, the particles, or the accents does not require going through the components.
+ */
+.theme {
+  /* Escala neutral */
+  --neutral-1000: #000000;
+  --neutral-975: #050505;
+  --neutral-950: #0a0a0a;
+  --neutral-900: #161616;
+  --neutral-875: #1a1a1a;
+  --neutral-850: #242424;
+  --neutral-825: #2e2e2e;
+  --neutral-750: #3d3d3d;
+  --neutral-700: #5c5c5c;
+  --neutral-650: #666666;
+  --neutral-625: #696969;
+  --neutral-600: #777777;
+  --neutral-550: #8a8a8a;
+  --neutral-525: #8f8f8f;
+  --neutral-500: #9a9a9a;
+  --neutral-475: #a2a2a2;
+  --neutral-450: #aaaaaa;
+  --neutral-350: #c8c8c8;
+  --neutral-325: #cfcfcf;
+  --neutral-300: #d0d0d0;
+  --neutral-285: #d2d2d2;
+  --neutral-275: #d8d8d8;
+  --neutral-200: #e6e6e6;
+  --neutral-175: #e9e9e9;
+  --neutral-160: #ececec;
+  --neutral-125: #f1f1f1;
+  --neutral-100: #f3f3f3;
+  --neutral-75: #f7f7f7;
+  --neutral-60: #f8f8f8;
+  --neutral-50: #fafafa;
+  --neutral-0: #ffffff;
+
+  /* Roles compartidos */
+  --black: var(--neutral-1000);
+  --night: var(--neutral-975);
+  --ink: var(--neutral-950);
+  --ink-raised: var(--neutral-875);
+  --graphite: var(--neutral-850);
+  --muted: var(--neutral-750);
+  --faint: var(--neutral-700);
+  --inverse-muted: var(--neutral-525);
+  --line: var(--neutral-200);
+  --line-strong: var(--neutral-350);
+  --wash: var(--neutral-100);
+  --paper: var(--neutral-50);
+  --card: var(--neutral-0);
+  --on-accent: var(--neutral-0);
+  --media-placeholder: var(--neutral-285);
+  --gold-accent: #d2bd7f;
+
+  /*
+    Elements that must retain their polarity even when the page changes.
+    The door and the terminal are dark scenes, not interface surfaces. If they are built with
+    `paper` /`ink`, when the dark theme is activated they invert twice and their texts disappear.
+    These roles account for the intent and remain stable.
+   */
+  --night-ink: var(--neutral-50);
+  --night-muted: var(--neutral-525);
+  --terminal-surface: var(--neutral-950);
+  --terminal-bar: var(--neutral-900);
+  --terminal-ink: var(--neutral-50);
+  --terminal-muted: var(--neutral-550);
+  --terminal-dot-one: var(--neutral-625);
+  --terminal-dot-two: var(--neutral-475);
+  --terminal-dot-three: var(--neutral-275);
+  --terminal-line: color-mix(in srgb, var(--terminal-ink) 8%, transparent);
+
+  /* Treatment of monochrome resources that also responds to the theme. */
+  --brand-filter: none;
+  --figure-filter: contrast(1.035);
+  --figure-blend: normal;
+  --entrance-image-filter: none;
+  --entrance-image-blend: normal;
+  --door-image-filter: grayscale(1) contrast(0.92) brightness(0.82);
+  --film-image-filter: grayscale(1) contrast(1.035) brightness(1.015);
+
+  /* Tintas con transparencia */
+  --ink-a-025: color-mix(in srgb, var(--ink) 2.5%, transparent);
+  --ink-a-03: color-mix(in srgb, var(--ink) 3%, transparent);
+  --ink-a-035: color-mix(in srgb, var(--ink) 3.5%, transparent);
+  --ink-a-05: color-mix(in srgb, var(--ink) 5%, transparent);
+  --ink-a-07: color-mix(in srgb, var(--ink) 7%, transparent);
+  --ink-a-08: color-mix(in srgb, var(--ink) 8%, transparent);
+  --ink-a-09: color-mix(in srgb, var(--ink) 9%, transparent);
+  --ink-a-10: color-mix(in srgb, var(--ink) 10%, transparent);
+  --ink-a-14: color-mix(in srgb, var(--ink) 14%, transparent);
+  --ink-a-15: color-mix(in srgb, var(--ink) 15%, transparent);
+  --ink-a-16: color-mix(in srgb, var(--ink) 16%, transparent);
+  --ink-a-28: color-mix(in srgb, var(--ink) 28%, transparent);
+  --ink-a-35: color-mix(in srgb, var(--ink) 35%, transparent);
+  --ink-a-44: color-mix(in srgb, var(--ink) 44%, transparent);
+  --ink-a-58: color-mix(in srgb, var(--ink) 58%, transparent);
+  --ink-a-66: color-mix(in srgb, var(--ink) 66%, transparent);
+  --ink-a-78: color-mix(in srgb, var(--ink) 78%, transparent);
+  --ink-a-82: color-mix(in srgb, var(--ink) 82%, transparent);
+  --black-a-07: color-mix(in srgb, var(--black) 7%, transparent);
+  --black-a-18: color-mix(in srgb, var(--black) 18%, transparent);
+  --black-a-28: color-mix(in srgb, var(--black) 28%, transparent);
+  --black-a-38: color-mix(in srgb, var(--black) 38%, transparent);
+
+  --paper-a-08: color-mix(in srgb, var(--paper) 8%, transparent);
+  --paper-a-14: color-mix(in srgb, var(--paper) 14%, transparent);
+  --paper-a-16: color-mix(in srgb, var(--paper) 16%, transparent);
+  --paper-a-28: color-mix(in srgb, var(--paper) 28%, transparent);
+  --paper-a-30: color-mix(in srgb, var(--paper) 30%, transparent);
+  --paper-a-32: color-mix(in srgb, var(--paper) 32%, transparent);
+  --paper-a-36: color-mix(in srgb, var(--paper) 36%, transparent);
+  --paper-a-55: color-mix(in srgb, var(--paper) 55%, transparent);
+  --paper-a-70: color-mix(in srgb, var(--paper) 70%, transparent);
+  --paper-a-82: color-mix(in srgb, var(--paper) 82%, transparent);
+  --paper-a-84: color-mix(in srgb, var(--paper) 84%, transparent);
+  --paper-a-86: color-mix(in srgb, var(--paper) 86%, transparent);
+  --paper-a-90: color-mix(in srgb, var(--paper) 90%, transparent);
+  --card-a-08: color-mix(in srgb, var(--card) 8%, transparent);
+  --card-a-14: color-mix(in srgb, var(--card) 14%, transparent);
+  --card-a-84: color-mix(in srgb, var(--card) 84%, transparent);
+  --card-a-86: color-mix(in srgb, var(--card) 86%, transparent);
+
+  --night-a-08: color-mix(in srgb, var(--night) 8%, transparent);
+  --night-a-18: color-mix(in srgb, var(--night) 18%, transparent);
+  --night-a-20: color-mix(in srgb, var(--night) 20%, transparent);
+  --night-a-38: color-mix(in srgb, var(--night) 38%, transparent);
+  --night-a-68: color-mix(in srgb, var(--night) 68%, transparent);
+  --night-a-76: color-mix(in srgb, var(--night) 76%, transparent);
+
+  --night-ink-a-14: color-mix(in srgb, var(--night-ink) 14%, transparent);
+  --night-ink-a-16: color-mix(in srgb, var(--night-ink) 16%, transparent);
+  --night-ink-a-32: color-mix(in srgb, var(--night-ink) 32%, transparent);
+  --night-ink-a-36: color-mix(in srgb, var(--night-ink) 36%, transparent);
+  --night-ink-a-82: color-mix(in srgb, var(--night-ink) 82%, transparent);
+
+  /* A single cold pair for the iconless state. */
+  --cool-surface: #f2f3f5;
+  --cool-ink: #8a8f96;
+
+  /* Sombras */
+  --shadow-window: 0 0 0 1px var(--ink-a-035), 0 18px 48px var(--ink-a-07);
+  --shadow-soft: 0 10px 22px var(--ink-a-08);
+  --shadow-float: 0 16px 38px var(--ink-a-08);
+
+  /* States and marks used by the demonstration */
+  --status-good: #2fbf82;
+  --status-warn: #e0a62a;
+  --accent-violet: #8b7bff;
+  --accent-orange: #ff9b45;
+  --accent-mint: #45d69a;
+  --stack-typescript: #3178c6;
+  --stack-go: #00add8;
+  --stack-react: #149eca;
+  --stack-python: #3776ab;
+  --stack-javascript: #d3b500;
+  --stack-rust: #c2510a;
+
+  --project-kirvo: linear-gradient(160deg, #2b323c, #0b0e13);
+  --project-marlow: linear-gradient(160deg, #ffa94d, #f06b0a);
+  --project-waypoint: linear-gradient(160deg, #4ade9f, #0e9f6e);
+  --project-nimbus: linear-gradient(160deg, #9b8bff, #5b3fe0);
+  --project-gridwork: linear-gradient(160deg, #5cb2ff, #1667d6);
+  --project-shopwell: linear-gradient(160deg, #ff8fa8, #de2455);
+  --project-trace: linear-gradient(160deg, #34383f, #000000);
+
+  /* The canvases read these channels once upon mounting. */
+  --particle-rgb: 10, 10, 10;
+}
+
+/*
+  The dark one is another reading of the same roles, not a second landing. The sections continue
+  consuming `paper`, `ink`, `line`, `card` and company; only the map changes. This way, a future
+  visual correction is done once and benefits both themes.
+ */
+.theme[data-theme="dark"] {
+  color-scheme: dark;
+
+  --ink: var(--neutral-50);
+  --ink-raised: var(--neutral-175);
+  --graphite: var(--neutral-200);
+  --muted: var(--neutral-300);
+  --faint: var(--neutral-450);
+  --inverse-muted: var(--neutral-500);
+  --line: var(--neutral-850);
+  --line-strong: var(--neutral-700);
+  --wash: var(--neutral-900);
+  --paper: var(--neutral-950);
+  --card: var(--neutral-900);
+  --on-accent: var(--neutral-0);
+  --media-placeholder: var(--neutral-850);
+
+  --cool-surface: var(--neutral-850);
+  --cool-ink: var(--neutral-450);
+
+  --shadow-window: 0 0 0 1px var(--ink-a-09), 0 18px 48px var(--black-a-38);
+  --shadow-soft: 0 10px 22px var(--black-a-28);
+  --shadow-float: 0 16px 38px var(--black-a-28);
+
+  --brand-filter: invert(1);
+  --figure-filter: invert(1) contrast(0.92) brightness(1.08);
+  --entrance-image-filter: invert(1) contrast(0.92) brightness(1.08);
+  --particle-rgb: 250, 250, 250;
+}
+
+/*
+  Mineral gold + black.
+  It is not a clearly tinted subject: all roles, statuses, and marks are reduced to a single
+  golden and black ink. The differences in hierarchy come from mixing those two extremes, so that
+  no third gray or product accent seeps in.
+ */
+.theme[data-theme="gold"] {
+  color-scheme: light;
+
+  --theme-accent: var(--gold-accent);
+  --night: var(--black);
+  --ink: var(--black);
+  --ink-raised: color-mix(in srgb, var(--black) 88%, var(--theme-accent));
+  --graphite: color-mix(in srgb, var(--black) 82%, var(--theme-accent));
+  --muted: color-mix(in srgb, var(--black) 68%, var(--theme-accent));
+  --faint: color-mix(in srgb, var(--black) 54%, var(--theme-accent));
+  --inverse-muted: color-mix(in srgb, var(--black) 42%, var(--theme-accent));
+  --line: color-mix(in srgb, var(--black) 17%, var(--theme-accent));
+  --line-strong: color-mix(in srgb, var(--black) 34%, var(--theme-accent));
+  --wash: color-mix(in srgb, var(--black) 7%, var(--theme-accent));
+  --paper: var(--theme-accent);
+  --card: color-mix(in srgb, var(--black) 3%, var(--theme-accent));
+  --on-accent: var(--theme-accent);
+  --media-placeholder: color-mix(in srgb, var(--black) 22%, var(--theme-accent));
+
+  --night-ink: var(--theme-accent);
+  --night-muted: color-mix(in srgb, var(--black) 34%, var(--theme-accent));
+  --terminal-surface: var(--black);
+  --terminal-bar: color-mix(in srgb, var(--black) 91%, var(--theme-accent));
+  --terminal-ink: var(--theme-accent);
+  --terminal-muted: color-mix(in srgb, var(--black) 38%, var(--theme-accent));
+  --terminal-dot-one: color-mix(in srgb, var(--black) 72%, var(--theme-accent));
+  --terminal-dot-two: color-mix(in srgb, var(--black) 50%, var(--theme-accent));
+  --terminal-dot-three: color-mix(in srgb, var(--black) 24%, var(--theme-accent));
+
+  --cool-surface: color-mix(in srgb, var(--black) 10%, var(--theme-accent));
+  --cool-ink: color-mix(in srgb, var(--black) 64%, var(--theme-accent));
+
+  --status-good: var(--black);
+  --status-warn: var(--black);
+  --accent-violet: var(--black);
+  --accent-orange: var(--black);
+  --accent-mint: var(--black);
+  --stack-typescript: var(--black);
+  --stack-go: var(--black);
+  --stack-react: var(--black);
+  --stack-python: var(--black);
+  --stack-javascript: var(--black);
+  --stack-rust: var(--black);
+
+  --project-kirvo: linear-gradient(160deg, var(--graphite), var(--black));
+  --project-marlow: linear-gradient(160deg, var(--black), var(--graphite));
+  --project-waypoint: linear-gradient(160deg, var(--graphite), var(--black));
+  --project-nimbus: linear-gradient(160deg, var(--black), var(--graphite));
+  --project-gridwork: linear-gradient(160deg, var(--graphite), var(--black));
+  --project-shopwell: linear-gradient(160deg, var(--black), var(--graphite));
+  --project-trace: linear-gradient(160deg, var(--graphite), var(--black));
+
+  --brand-filter: none;
+  --figure-filter: grayscale(1) contrast(1.08);
+  --figure-blend: multiply;
+  --entrance-image-filter: grayscale(1) contrast(1.08);
+  --entrance-image-blend: multiply;
+  --door-image-filter: grayscale(1) sepia(1) saturate(0.55) contrast(0.94) brightness(0.82);
+  --film-image-filter: grayscale(1) contrast(1.035) brightness(1.015);
+  --particle-rgb: 0, 0, 0;
+}

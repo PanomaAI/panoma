@@ -1,0 +1,128 @@
+/*
+  The sheet of the public site, and it is short on purpose.
+  `globals.css` is 123 KB of source written for the catalog: the sidebar, the tabs, the tables,
+  the project states. The landing page and `/docs` didn't use any of that—they bring their
+  palette, their typography, and their grid in their own modules—and yet they still downloaded it
+  entirely on each visit, because they hung from the same root layout. What they did use, without
+  declaring it anywhere, is this: the reset, two document rules, two body rules, and the focus
+  ring.
+  The restart goes ENTIRE and not trimmed by hand. Every rule that seems redundant —`a { color:
+  inherit }`, `ol, ul { list-style: none }`, `h1..h6 { font-size: inherit }`,
+  `img, svg, video { display: block }` — is one element away from becoming support, and the
+  failure would be silent. They are 8.5 KB compared to the 123 KB that are removed. Among them
+  travels `-webkit-text-size-adjust: 100%`, which is the only one that is only noticeable on a
+  phone: without it iOS and Android reinflate the text on their own, and the `clamp(…vw…)` of the
+  landing stop predicting the size they are going to have.
+ */
+@import "tailwindcss";
+
+html {
+  /*
+    The scroll bars and native controls, in light. Only those who have the system in dark notice
+    it — but they notice it.
+   */
+  color-scheme: light;
+  /*
+    And the smooth scrolling of the menu: pressing 'What it finds' slides instead of jumping. No
+    landing page sheet declares it; it came from here, and that's why it's here.
+   */
+  scroll-behavior: smooth;
+  /*
+    The mattress under the attached bar, which is what decides where an anchor lands.
+    Both pages of the site have the same bar: 64px of content and an edge, 65 in total. Without
+    padding, a menu anchor leaves the headline stuck to the bottom edge of the bar —or one pixel
+    below, which is what the value of 64 did that created an effect—, and what you see when you
+    arrive is a section that starts cut off. The 24 of air are what make the destination seem
+    chosen and not stopped.
+    Measured on 27-Aug-2026 in `#memory`, `#agents`, and `#local`: all three land with the edge of
+    the section at 89px from the height of the window, that is, 24 below the bar.
+    It lives in the sheet and not in an effect for two reasons that are noticeable: an anchor
+    pressed before React hydrates has to land just as well, and `scroll-padding` is from the
+    scroll container —the document—, so no module sheet reaches it.
+   */
+  scroll-padding-top: calc(65px + 24px);
+}
+
+/*
+  And whoever asked for less movement does not receive the slip.
+  The landing page tried it with `.page *`, but the element that scrolls is `html` and it is not
+  inside `.page`: that rule did not reach the only property that it had to turn off.
+ */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+body {
+  /*
+    The paper underneath. The landing paints its own over `.page`, so this only peeks in the
+    scroll rebound and behind the system bar.
+   */
+  background: #f8f9fc;
+  min-width: 320px;
+}
+
+/*
+  And that paper underneath continues with the theme of the landing, with one rule per theme and
+  none of the three at the mercy of the `#f8f9fc` above.
+  The three of them, including the one that is the defect. When the clear one was the defect the
+  first time, there was no rule here: the `#f8f9fc` fixed it almost completely, and 'almost' was
+  enough, because the only thing that showed was the scroll bounce. It is no longer enough for two
+  reasons that came later. In iOS 26 the browser tints its frame **by sampling the painted
+  background** —the `theme-color` tag can no longer be read there— and that sampling falls on the
+  `body` when there is no fixed element that supports it: 'almost the same color' is exactly the
+  kind of seam that sampling makes visible. And the dark and the gold are still an upward pull
+  away — a white band on a `#0a0a0a` page, on macOS and on iOS. The same with `color-scheme`,
+  which decides the color of the scrollbar: without its rule, light bar on black page.
+  It is resolved with `:has()` and not with JavaScript because that way it travels in the server's
+  first paint and does not flicker. And it hangs from the attribute `data-theme` and not from the
+  module's class, which goes with the encrypted name and from a global sheet cannot be named.
+  `/docs` house with the clear one —it sticks `data-theme="light"` to its root— and comes out
+  winning: its role is this very one `#fafafa`.
+  The three colors are handwritten —they are `--neutral-50`, `--neutral-950`, and `--gold-accent`
+  of `landing/landing-theme.module.css` — because those tokens live inside `.theme` and custom
+  properties only flow down, they never go up to `body`. `landing/color-theme.test.ts` watches to
+  make sure they don't get out of sync, reading the two sheets and comparing them.
+ */
+html:has([data-theme="dark"]) {
+  color-scheme: dark;
+}
+
+body:has([data-theme="light"]) {
+  background: #fafafa;
+}
+
+body:has([data-theme="dark"]) {
+  background: #0a0a0a;
+}
+
+body:has([data-theme="gold"]) {
+  background: #d2bd7f;
+}
+
+/*
+  The destination of the skip-to-content link, without ring.
+  Both `<main>` carry `tabindex="-1"` because without it, in Safari, the anchor moves the scroll
+  but not the focus: the keyboard stays on the bar and the link seems to do nothing. And the ring
+  is removed because focusing the container of the entire page would draw it around the WHOLE
+  screen — a rectangle that points to nothing. Whoever jumps already knows where they jumped.
+  It is the same pair that the catalog resolved in `apps/web/app/styles/base.css` with
+  `#app-main`. Here it goes in the global sheet and not in a module because both `id` live in two
+  different components and the rule is a single one.
+ */
+#main:focus,
+#docs-main:focus {
+  outline: none;
+}
+
+/*
+  The keyboard focus ring. Neither the landing page nor the docs redeclare it, so without this the
+  menu links retain the browser's default outline — and without the radius, which is what makes it
+  look like part of the page and not the system.
+ */
+:focus-visible {
+  outline: 2px solid #0b0b0d;
+  outline-offset: 3px;
+  border-radius: 5px;
+}

@@ -1,0 +1,616 @@
+/*
+  The deep sections of the file: proposals, dependencies, notices, context, inventory, resume, the
+  build check, and services.
+  Step on `project-panels.css` in three rules on purpose —`.project-deep-heading`, its `h2` and
+  `.project-empty-state` —, so it has to go afterwards.
+ */
+
+.project-proposals-strip {
+  border: 1px solid var(--ink);
+  border-radius: var(--corner);
+  background: var(--card);
+  color: var(--ink);
+}
+
+.project-proposals-strip > svg {
+  color: var(--ink);
+}
+
+.project-proposals-strip__card {
+  border: 1px solid var(--line-strong);
+  border-radius: var(--corner-sm);
+  background: var(--card);
+  transition: border-color var(--duration-medium) ease;
+}
+
+.project-proposals-strip__card:hover {
+  border-color: var(--ink);
+}
+
+.project-proposals-strip__more {
+  color: var(--ink);
+}
+
+.project-proposals-strip__more:hover {
+  text-decoration: underline;
+}
+
+.project-describe {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--corner);
+  background: var(--card);
+}
+
+.project-describe__ask,
+.project-describe__rewrite {
+  border: 1px solid var(--line-strong);
+  border-radius: var(--corner-sm);
+  background: var(--card);
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color var(--duration-medium) ease, color var(--duration-medium) ease;
+}
+
+.project-describe__ask:hover,
+.project-describe__rewrite:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.project-describe__rewrite {
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.project-safety-strip {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  margin-top: 20px;
+  padding: 17px 19px;
+  scroll-margin-top: 106px;
+  border: 1px solid var(--color-warn-edge-soft);
+  border-radius: var(--corner);
+  background: var(--color-warn-soft-warm);
+}
+
+.project-safety-strip > svg {
+  width: 26px;
+  height: 26px;
+  color: var(--color-warn-icon-soft);
+  stroke-width: 1.7;
+}
+
+.project-safety-strip h2 {
+  margin-top: 3px;
+  font-size: 0.9rem;
+  font-weight: 690;
+}
+
+.project-safety-strip p:last-child {
+  margin-top: 3px;
+  color: var(--color-smoke);
+  font-size: 0.7rem;
+}
+
+.project-safety-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  color: var(--color-warn-ink);
+  font-size: 0.7rem;
+}
+
+.project-deep-section,
+.project-utility-section {
+  margin-top: 24px;
+  padding: 24px;
+  scroll-margin-top: 100px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--corner);
+  background: var(--card);
+}
+
+.project-deep-heading {
+  align-items: flex-end;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.project-deep-heading h2 {
+  font-size: 1.18rem;
+}
+
+.project-dependency-groups {
+  display: grid;
+  gap: 22px;
+  margin-top: 18px;
+}
+
+.project-dependency-groups h3 {
+  margin-bottom: 8px;
+  color: var(--color-smoke);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.project-dependency-table {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--corner);
+}
+
+.project-dependency-table > div {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(200px, 0.8fr) 150px;
+  align-items: center;
+  min-height: 54px;
+  padding: 0 14px;
+}
+
+.project-dependency-table > div + div {
+  border-top: 1px solid var(--color-edge);
+}
+
+.project-dependency-table [role="cell"]:first-child,
+.project-dependency-table [role="cell"]:first-child strong,
+.project-dependency-table [role="cell"]:first-child small {
+  display: block;
+}
+
+.project-dependency-table strong {
+  font-family: var(--font-mono);
+  font-size: 0.71rem;
+  font-weight: 590;
+}
+
+.project-dependency-table small {
+  margin-top: 2px;
+  color: var(--color-faint);
+  font-size: 0.61rem;
+}
+
+.project-dependency-table [role="cell"]:last-child {
+  text-align: right;
+}
+
+.project-dependency-ok {
+  color: var(--color-live);
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.project-advisory-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.project-advisory-list article {
+  padding: 16px;
+  border: 1px solid var(--color-danger-edge-soft);
+  border-radius: 10px;
+  background: var(--color-danger-soft-warm);
+}
+
+.project-advisory-list article > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.project-advisory-list strong {
+  font-family: var(--font-mono);
+  font-size: 0.73rem;
+}
+
+.project-advisory-list code {
+  color: var(--color-faint);
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+}
+
+.project-advisory-list article > p {
+  margin-top: 10px;
+  color: var(--color-smoke);
+  font-size: 0.72rem;
+  line-height: 1.55;
+}
+
+.project-advisory-list footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  color: var(--color-live);
+  font-size: 0.66rem;
+}
+
+.project-advisory-list footer a {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ink);
+}
+
+.project-advisory-list footer svg {
+  width: 13px;
+  height: 13px;
+}
+
+.project-context-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(280px, 0.85fr);
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.project-context-card {
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--corner);
+  background: color-mix(in srgb, var(--card) 88%, var(--wash));
+}
+
+.project-context-card__heading {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.project-detail-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--corner-sm);
+  background: var(--wash);
+  color: var(--ink);
+}
+
+.project-detail-icon svg {
+  width: 19px;
+  height: 19px;
+}
+
+.project-context-card h3 {
+  font-size: 0.9rem;
+  font-weight: 680;
+}
+
+.project-context-card--origin > strong {
+  display: block;
+  margin-top: 18px;
+  color: var(--ink);
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+.project-context-summary {
+  max-width: 74ch;
+  margin-top: 16px;
+  color: var(--color-smoke);
+  font-size: 0.84rem;
+  line-height: 1.65;
+}
+
+.project-context-card .project-describe {
+  margin-top: 18px;
+  background: var(--card);
+}
+
+.project-origin-evidence-title {
+  margin-top: 18px;
+  color: var(--color-faint);
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.project-origin-evidence {
+  display: grid;
+  gap: 7px;
+  margin-top: 9px;
+  padding-left: 17px;
+}
+
+.project-origin-evidence li {
+  color: var(--color-smoke);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.project-origin-evidence a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 2px;
+}
+
+.project-empty-state {
+  margin-top: 16px;
+  color: var(--faint);
+  font-size: 0.78rem;
+  line-height: 1.55;
+}
+
+.project-inventory-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 18px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--corner);
+}
+
+.project-inventory-grid > div {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  min-height: 82px;
+  padding: 16px 18px;
+}
+
+.project-inventory-grid > div:not(:nth-child(3n + 1)) {
+  border-left: 1px solid var(--line);
+}
+
+.project-inventory-grid > div:nth-child(n + 4) {
+  border-top: 1px solid var(--line);
+}
+
+.project-inventory-grid dt,
+.project-inventory-grid dd {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-inventory-grid dt {
+  color: var(--color-faint);
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.project-inventory-grid dd {
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 620;
+}
+
+.project-resume-block {
+  margin-top: 16px;
+}
+
+.project-resume-block > div {
+  gap: 12px;
+}
+
+.project-resume-block section {
+  border-radius: 10px;
+}
+
+/* ── Does it still compile? — the verdict of Panoma check, inside Resume ── */
+
+.project-check-heading {
+  margin-top: 26px;
+  padding-top: 16px;
+  border-top: 1px dashed color-mix(in srgb, currentColor 18%, transparent);
+}
+
+.project-check-heading h3 {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.project-build-check {
+  margin-top: 10px;
+}
+
+/* The error tail, just as it came out: monospaced, with its own scroll, without overflowing. */
+.project-build-check-reason {
+  margin-top: 8px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  border-radius: 8px;
+  background: color-mix(in srgb, currentColor 6%, transparent);
+  /*
+    `--mono` does not exist on this sheet: it is only declared by the landing modules, which are
+    not loaded here. So this always fell into the backup and was left without the application
+    stack. `--font-mono` is the record of `theme.css`, which is the one that applied.
+   */
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.project-stack-grid,
+.project-service-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.project-stack-grid .technology-mark {
+  min-height: 60px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--corner-sm);
+  background: var(--card);
+}
+
+.project-log-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.project-log-empty {
+  margin-top: 18px;
+  padding: 20px;
+  border: 1px dashed var(--color-edge-bright);
+  border-radius: 10px;
+  background: var(--color-raised);
+}
+
+.project-log-empty__what {
+  color: var(--color-chalk);
+  font-size: 0.95rem;
+}
+
+.project-log-empty__how {
+  max-width: 64ch;
+  margin: 6px 0 14px;
+  color: var(--color-smoke);
+  font-size: 0.875rem;
+  line-height: 1.55;
+}
+
+.project-log-grid > article {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--color-edge);
+  border-radius: 10px;
+}
+
+.project-log-grid h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 13px;
+  border-bottom: 1px solid var(--color-edge);
+  font-size: 0.76rem;
+  font-weight: 680;
+}
+
+.project-log-grid h3 svg {
+  width: 17px;
+  height: 17px;
+  color: var(--ink);
+}
+
+.project-log-grid li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 9px;
+  padding: 10px 12px;
+}
+
+.project-log-grid li + li {
+  border-top: 1px solid var(--color-edge);
+}
+
+.project-log-grid li p {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-smoke);
+  font-size: 0.68rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-log-grid li time {
+  grid-column: 2;
+  color: var(--color-faint);
+  font-family: var(--font-mono);
+  font-size: 0.59rem;
+}
+
+.project-service-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 64px;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: var(--corner-sm);
+  background: var(--card);
+}
+
+.project-service-list a.project-service-item {
+  transition: border-color var(--duration-medium) ease, color var(--duration-medium) ease;
+}
+
+.project-service-list a.project-service-item:hover {
+  border-color: var(--ink);
+}
+
+.project-service-item > svg {
+  width: 18px;
+  height: 18px;
+  color: var(--ink);
+  flex: none;
+}
+
+.project-service-item span,
+.project-service-item strong,
+.project-service-item small {
+  display: block;
+  min-width: 0;
+}
+
+.project-service-item strong {
+  font-size: 0.78rem;
+}
+
+.project-service-item small {
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--color-smoke);
+  font-size: 0.68rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-utility-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.project-utility-section h2 {
+  margin-top: 3px;
+  font-size: 0.94rem;
+}
+
+.project-view-frame .project-maintenance-utility {
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+
+.project-page-footer {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-top: 24px;
+  padding: 0 2px;
+  color: var(--color-faint);
+  font-size: 0.66rem;
+}
+
+.project-page-footer a {
+  margin-left: auto;
+  color: var(--ink);
+}
+

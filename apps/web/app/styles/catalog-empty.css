@@ -1,0 +1,158 @@
+/*
+  The two gaps in the catalog and the width cuts assigned to it.
+  The three `@media` here step with the same weight on `catalog-screen`, `catalog-views`, and
+  `detail-panel`, so this file goes after the three. At the end are the width cuts of this screen.
+ */
+.catalog-empty {
+  display: grid;
+  place-items: center;
+  gap: 3px;
+  min-height: 280px;
+  padding: 40px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 11px;
+  background: var(--paper);
+  text-align: center;
+}
+
+.catalog-empty > svg {
+  width: 26px;
+  height: 26px;
+  color: var(--ink-3);
+}
+
+.catalog-empty h2 {
+  margin-top: 10px;
+  color: var(--ink);
+  font-size: 0.92rem;
+  font-weight: 620;
+}
+
+.catalog-empty p {
+  color: var(--ink-2);
+  font-size: 0.76rem;
+}
+
+.catalog-empty button {
+  min-height: 34px;
+  margin-top: 12px;
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 0.74rem;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) ease;
+}
+
+.catalog-empty button:hover {
+  border-color: var(--ink);
+}
+
+@media (max-width: 1180px) {
+  .catalog-split[data-open="true"] {
+    grid-template-columns: minmax(0, 1fr) 286px;
+  }
+
+  .catalog-columns,
+  .catalog-row {
+    grid-template-columns: minmax(0, 1fr) 66px 126px 118px 28px;
+    gap: 14px;
+  }
+
+  .catalog-columns {
+    padding-left: 15px;
+    padding-right: 15px;
+  }
+
+  .catalog-row {
+    padding-left: 15px;
+    padding-right: 15px;
+  }
+}
+
+@media (max-width: 980px) {
+  .catalog-screen__inner {
+    width: min(100% - 40px, 1240px);
+  }
+
+  /* Below this width, the panel next to it leaves the list without space: it goes below. */
+  .catalog-split[data-open="true"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .detail-panel {
+    position: static;
+  }
+
+  .catalog-hint {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .catalog-columns {
+    display: none;
+  }
+
+  /* No room for five columns: the stack and the date move to a second line. */
+  .catalog-row {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    row-gap: 8px;
+    padding: 13px 13px;
+  }
+
+  .catalog-row__identity { grid-area: 1 / 1; }
+  .catalog-row > .health-dial { grid-area: 1 / 2; }
+  .catalog-row__handle { grid-area: 1 / 3; }
+  .catalog-row .stack-mark { grid-area: 2 / 1; }
+  .catalog-row__activity { grid-area: 2 / 2 / 3 / 4; justify-self: end; }
+
+  /*
+    On a touchscreen there is no 'hover' or double-click, so the handle stops hiding: without it
+    there would be no way to enter a project from here.
+   */
+  .catalog-row .open-handle,
+  .catalog-tile .open-handle {
+    opacity: 1;
+  }
+
+  .resume-strip {
+    flex-wrap: wrap;
+  }
+
+  .resume-strip p {
+    flex: 1 1 100%;
+    order: 1;
+  }
+
+  .resume-strip .open-menu {
+    margin-left: auto;
+  }
+}
+
+.empty-catalog-page h1 {
+  margin-top: 12px;
+  font-size: clamp(2rem, 4vw, 3.5rem);
+  font-weight: 750;
+  letter-spacing: -0.045em;
+}
+
+.empty-catalog-page > p:nth-of-type(2) {
+  max-width: 620px;
+  margin-top: 18px;
+  color: var(--color-smoke);
+  line-height: 1.7;
+}
+
+.empty-catalog-page pre {
+  margin-top: 24px;
+  padding: 18px;
+  overflow-x: auto;
+  border: 1px solid var(--color-edge);
+  border-radius: 10px;
+  background: var(--color-surface);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
