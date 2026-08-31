@@ -1,0 +1,201 @@
+/*
+  The sheet of paper.
+  Up to this point there was none, and what came out of the printer was not the card: the top bar
+  is `position: fixed`, so it is stamped over the title of the first page; the side bar, at that
+  width, has already become the 66 px spring at the bottom and lands crossed over the text; and if
+  there was an open dialogue, the curtain covers the entire page in gray.
+  A detail that saves half the work: a A4 page measures about 690 px of usable width, so when
+  printing, the four cuts of `responsive.css` (1180, 980, 900, and 760) are met AT THE SAME TIME.
+  The form already comes to paper in a single column without anyone asking for it. What this sheet
+  has to do is the other thing: release what floats, turn off what only serves to be pressed, and
+  return the width that the frame was keeping.
+  The very last one goes on purpose. It rearranges rules from almost all the previous pieces with
+  the same weight, and only wins by being last; the two selectors of `data-view` have the original
+  weight written on them — four and three — for the same reason.
+ */
+
+@page {
+  margin: 16mm 14mm;
+}
+
+@media print {
+  /*
+    Backgrounds are not printed by default, and it's fine that way: `.catalog-screen` and
+    `.project-detail-page` print almost white paper and that is ink wasted on nothing. What must
+    be ensured is that the text comes out dark and does not inherit a screen gray.
+   */
+  html,
+  body {
+    background: var(--color-surface);
+    color: var(--color-chalk);
+  }
+
+  /*
+    No shadow survives a printer: it comes out as a gray stain or it doesn't come out at all. And
+    with them goes the blurring of the bar and the curtains, which on paper is a flat rectangle.
+   */
+  *,
+  *::before,
+  *::after {
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    text-shadow: none !important;
+  }
+
+  /*
+    ── What is not printed ──────────────────────────────────────────────────────────── The
+    framework that floats, the curtains, and everything that on paper is ink that lies: a printed
+    button cannot be pressed and a printed filter filters nothing.
+   */
+  .app-topbar,
+  .app-sidebar,
+  .palette-backdrop,
+  .share,
+  .project-action-bar,
+  .project-overflow-menu,
+  .project-subnav,
+  .open-menu,
+  .open-project-action,
+  .project-more-button,
+  .open-handle,
+  .catalog-bar__tools,
+  .catalog-filters,
+  .catalog-hint,
+  .catalog-sort,
+  .view-switch,
+  .detail-panel__open,
+  .model-picker,
+  .sites,
+  .project-describe__ask,
+  .project-describe__rewrite,
+  .project-md-actions,
+  .project-md-apply,
+  .project-accounts-form,
+  .project-accounts-actions,
+  .project-safety-actions {
+    display: none;
+  }
+
+  /*
+    ── The width that the frame was left ────────────────────────────────────────────── 228 px of
+    bleed for a bar that is not there, and 64 + 66 px of reserve for two bars that aren't there
+    either. On paper, the margin is set by `@page`.
+   */
+  .app-main,
+  .legacy-page {
+    width: auto;
+    max-width: none;
+    min-height: 0;
+    margin-left: 0;
+    padding: 0;
+  }
+
+  .project-detail-page__inner,
+  .catalog-screen__inner,
+  .content-page {
+    width: auto;
+    padding: 0;
+  }
+
+  /*
+    Sticking to the window means nothing on paper: `sticky` leaves the panel in the place where it
+    was when printed, which is anywhere.
+   */
+  .detail-panel,
+  .project-secondary-column {
+    position: static;
+  }
+
+  /*
+    The label on the plate is taken out of the flow and raised half a line. On paper, that leaves
+    it cut off by the edge of the page as soon as the section falls on a break; returned to the
+    flow, it reads as the header that it is.
+   */
+  .project-view-frame__plate {
+    position: static;
+    transform: none;
+    padding: 0 0 10px;
+  }
+
+  /*
+    ── The entire record, and not the view that remained open ────────────────────────────────
+    `data-view` hides eight of the nine views. On screen it is what is wanted; on paper it is not:
+    whoever prints a record prints it entirely, and going back to the screen to change tabs to
+    print nine times is not a functionality.
+   */
+  .project-detail-page[data-view]:not([data-view="all"]) .project-view {
+    display: block;
+  }
+
+  .project-detail-page[data-view="detalles"] .project-secondary-column {
+    display: grid;
+  }
+
+  /*
+    ── Where a page can be broken ───────────────────────────────────────────────── A plate cut in
+    half leaves the heading on one page and the content on the next. And a header only at the
+    bottom of the page is worse than not having it.
+   */
+  .project-view-frame,
+  .project-context-card,
+  .project-md-file,
+  .project-agent-row,
+  .project-attention-row,
+  .project-service-item,
+  .catalog-row,
+  .catalog-tile {
+    break-inside: avoid;
+  }
+
+  h1,
+  h2,
+  h3,
+  .project-panel-heading,
+  .project-deep-heading,
+  .project-view-frame__plate {
+    break-after: avoid;
+  }
+
+  /*
+    ── The text that gets lost on paper ─────────────────────────────────────────────────
+    `--color-faint` measures 2.58:1 on white and `--color-ink-faint-catalog` 2.94:1 on its paper:
+    on screen they are already marked as limit, and an inkjet printer turns them into a gray that
+    cannot be read. Here they go up to `--color-smoke`, which measures 4.77:1 on the card paper
+    and is the reading gray that the app already has. It is not a new color: it is the same token
+    used by the card footers.
+   */
+  .eyebrow,
+  .project-section-hint,
+  .project-section-copy,
+  .project-page-footer,
+  .project-md-hint,
+  .catalog-tile__meta,
+  .detail-health__score span {
+    color: var(--color-smoke);
+  }
+
+  /*
+    The only negative that remains standing on paper. Without background, the number of proposals
+    is white on white: the strongest signal on the list disappears.
+   */
+  .waiting-badge {
+    border: 1px solid var(--color-chalk);
+    background: var(--color-surface);
+    color: var(--color-chalk);
+  }
+
+  /*
+    ── The URLs ──────────────────────────────────────────────────────────────────────── Only the
+    ones that go outside. The file is sewn with internal anchors —`#stack`, `#unsaved`,
+    `#dependencies` — and `/runs/…`; printing that next to each link is noise on each line for a
+    destination that is not physically visited. What is indeed lost without writing it down is
+    where a service points to: the repository, the deployment, the security notice. Those are
+    exactly the `http(s)`.
+   */
+  a[href^="http"]::after {
+    content: " <" attr(href) ">";
+    font-size: 0.85em;
+    font-weight: 400;
+    word-break: break-all;
+  }
+}

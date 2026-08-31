@@ -1,0 +1,111 @@
+/*
+  The cookie notice banner.
+  It lives in `lib/` and not in `landing/` because it hangs from the root layout: it appears the
+  same on the homepage and in `/docs`, and its color cannot depend on the landing tokens —which
+  live inside `.theme` and do not reach here. Hence the three colors are written out, with their
+  pair for the system's dark mode.
+ */
+
+.notice {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  z-index: 60;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px 18px;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 13px 16px;
+  border: 1px solid #e6e6e6;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.14);
+  font-family: var(--font-landing-display), ui-sans-serif, system-ui, sans-serif;
+
+  opacity: 0;
+  animation: noticeIn 220ms ease-out forwards;
+}
+
+/*
+  It appears without moving for those who asked for less movement — the opacity does not make you
+  dizzy.
+ */
+@keyframes noticeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.text {
+  flex: 1 1 260px;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: #3d3d3d;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+/*
+  Both buttons are THE SAME button, and that is the whole point.
+  Accept and reject share a class: same size, same color, same weight. As soon as one of the two
+  stands out, consent ceases to be free and the permission obtained is invalid — this is the
+  pattern that European authorities have been sanctioning for years. If someone wants to 'improve'
+  this by highlighting the accept option, this is what would be breaking it.
+ */
+.button {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #161616;
+  font-family: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+
+.button:hover {
+  background: #f3f3f3;
+  border-color: #8a8a8a;
+}
+
+.button:focus-visible {
+  outline: 2px solid #161616;
+  outline-offset: 2px;
+}
+
+/*
+  The issue is with the system and not with the landing: this strip also appears in `/docs`, and
+  the cover's theme button does not affect the root layout.
+ */
+@media (prefers-color-scheme: dark) {
+  .notice {
+    border-color: #2e2e2e;
+    background: #161616;
+    box-shadow: 0 12px 32px rgb(0 0 0 / 0.5);
+  }
+  .text { color: #c8c8c8; }
+  .button {
+    border-color: #3d3d3d;
+    background: #242424;
+    color: #fafafa;
+  }
+  .button:hover {
+    background: #2e2e2e;
+    border-color: #8a8a8a;
+  }
+  .button:focus-visible { outline-color: #fafafa; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notice { animation-duration: 1ms; }
+}

@@ -1,0 +1,140 @@
+/*
+  The model selector on the screen 'What does Panoma think about?'.
+ */
+/*
+  The dropdown of models of 'what Panoma thinks with'.
+  Before it was a `<datalist>` and this didn't exist: the browser drew it, outside the document,
+  in whatever way it wanted and there was no way to look at it from here. Now it draws because the
+  native filter acts on the text of the box, and the box always comes filled with the model in use
+  — so opening it didn't show anything.
+  The arrow goes **inside** the box, attached to the right edge and with its own line: it's the
+  only thing that says there is a list there, and separated from the field it would be read as
+  another button in the row, which already has two.
+ */
+.model-picker {
+  position: relative;
+  display: flex;
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.model-picker__field {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 40px 6px 10px;
+  border: 1px solid var(--color-edge);
+  border-radius: 4px;
+  background: var(--color-raised);
+}
+
+/*
+  Without `outline: none`. The border contrasts more than enough (17.75:1 over `--color-raised` ),
+  but it is one pixel wide and does not resemble the ring that the rest of the app draws: the same
+  key cannot render two different things depending on where it lands. The border stays as a
+  reinforcement.
+ */
+.model-picker__field:focus {
+  border-color: var(--color-accent);
+}
+
+.model-picker__toggle {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  bottom: 1px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  border: 0;
+  border-left: 1px solid var(--color-edge);
+  border-radius: 0 3px 3px 0;
+  background: transparent;
+  color: var(--color-faint);
+  cursor: pointer;
+}
+
+.model-picker__toggle:hover:not(:disabled) {
+  color: var(--color-accent);
+}
+
+.model-picker__toggle:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.model-picker__toggle svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 2;
+}
+
+.model-picker__toggle[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
+/*
+  With height limit and own displacement: 'bring your own' against OpenRouter returns more than
+  three hundred models, and without this the list comes out below the window.
+ */
+.model-picker__list {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  left: 0;
+  z-index: var(--z-dropdown);
+  max-height: 260px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 5px;
+  border: 1px solid var(--color-edge-bright);
+  border-radius: 6px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-popover);
+  list-style: none;
+}
+
+.model-picker__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  color: var(--color-smoke);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+/*
+  A single highlight for the mouse and for the keyboard: two at once is not knowing which one will
+  fall.
+ */
+.model-picker__item.is-highlighted {
+  background: var(--color-raised);
+  color: var(--color-chalk);
+}
+
+.model-picker__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-picker__tag {
+  flex: none;
+  padding: 1px 6px;
+  border: 1px solid var(--color-edge);
+  border-radius: 999px;
+  color: var(--color-faint);
+  font-size: 0.62rem;
+}
+
+.model-picker__empty {
+  padding: 6px 8px;
+  color: var(--color-faint);
+  font-size: 0.7rem;
+  line-height: 1.45;
+}

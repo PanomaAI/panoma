@@ -1,0 +1,316 @@
+/*
+  The invitation to continue on X.
+  The tokens are inherited from `.theme` that contains it: `showModal()` moves the element to the
+  top layer, which changes where it is painted and not where it hangs from DOM, so the inheritance
+  of the variables remains intact and the dialogue comes out in the color of the theme that is
+  set.
+  The exception is `::backdrop`, which inherits nothing from anyone — hence why its color is
+  written down and not in a variable. Translucent black works for all three themes: on paper it
+  darkens, on ink it sinks.
+ */
+
+/*
+  The sentinel measures one pixel, and not zero.
+  With zero height, its rectangle becomes degenerate and, placed as it is in the last pixel of the
+  document, it never intersects with the window: the rectangle [end, end] touches the bottom edge
+  without overlapping it. Measured with a real browser on August 28, 2026 — the card never opened,
+  in any language or theme, and nothing produced an error.
+ */
+.sentinel {
+  height: 1px;
+  pointer-events: none;
+}
+
+.dialog {
+  /*
+    Centering, handwritten and not inherited from the browser.
+    The user sheet centers a `<dialog>` modal with `margin: auto` over `inset: 0`, and the
+    Tailwind reset —which sets `margin: 0` on everything— wipes it out: the card was stuck in the
+    top left corner, on top of the navigation bar. Seen in the first screenshot with a real
+    browser, on August 28, 2026.
+   */
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  height: fit-content;
+
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius, 6px);
+  background: var(--card);
+  color: var(--ink);
+  width: min(400px, calc(100vw - 32px));
+  box-shadow: 0 24px 60px var(--black-a-28);
+
+  /*
+    The faded element is loose and the scrolling is inside `no-preference`, not the other way
+    around. `prefers-reduced-motion: reduce` returns false when the browser is unaware of the
+    query, so turning off the movement from there would leave it on precisely where nothing is
+    known about the visitor. In this way, the only thing assumed is the opacity —which doesn't
+    bother anyone— and scrolling requires an explicit "I have no preference."
+   */
+  opacity: 0;
+  transition:
+    opacity 200ms ease-out,
+    display 200ms allow-discrete,
+    overlay 200ms allow-discrete;
+}
+
+.dialog[open] {
+  opacity: 1;
+}
+
+@starting-style {
+  .dialog[open] { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .dialog {
+    transition:
+      opacity 200ms ease-out,
+      translate 200ms cubic-bezier(0.2, 0.8, 0.2, 1),
+      display 200ms allow-discrete,
+      overlay 200ms allow-discrete;
+    translate: 0 12px;
+  }
+  .dialog[open] { translate: 0 0; }
+  @starting-style {
+    .dialog[open] { opacity: 0; translate: 0 12px; }
+  }
+}
+
+.dialog::backdrop {
+  background: rgb(0 0 0 / 0.5);
+  opacity: 0;
+  transition:
+    opacity 200ms ease-out,
+    display 200ms allow-discrete,
+    overlay 200ms allow-discrete;
+}
+
+.dialog[open]::backdrop { opacity: 1; }
+
+@starting-style {
+  .dialog[open]::backdrop { opacity: 0; }
+}
+
+.body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 20px 20px 16px;
+  font-family: var(--sans);
+}
+
+.title {
+  font-size: 1.0625rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+
+.text {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/*
+  ── Why is everything interactive prefixed with `.dialog` ───────────────────────────
+  Because `landing.module.css` opens with `.page button { border: 0; background: none; }`, and
+  this card lives inside `.page`. That selector is worth (0,1,1) and a loose class is worth
+  (0,1,0): it wins. The symptom was the subscribe button rendered without a background and with
+  letters
+  clear on white —illegible— without anything failing: the rule was applied, only that another one
+  won it. Seen in a capture with a real browser on 28-Aug-2026.
+  The prefix goes up to (0,2,0) and settles the discussion. And now it matters more than before:
+  the X button is outlined, so its `border` also depends on winning that fight.
+ */
+
+/*
+  ── The geometry, which is the same for both buttons ───────────────────────────────
+  Forty pixels high, same radius, same 14-point font. The hierarchy is carried **only by the
+  fill**: solid for the first, outline for the second. This is what Material, Apple's guides, and
+  Primer all agree on, and there is a practical reason — making the secondary smaller is not read
+  as 'less important,' it is read as a layout flaw.
+ */
+
+.form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+/*
+  The field takes the gap, and the row stacks itself when the field drops below 11rem. Without
+  media queries: the row breaks based on the container's width, so it can handle a 360 px screen,
+  a longer label in Spanish, and any future copy changes without anyone having to remember this
+  calculation.
+ */
+.dialog .email {
+  flex: 1 1 11rem;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--neutral-550);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  /*
+    Sixteen pixels, and it is not an aesthetic preference: Safari on iOS zooms the entire page
+    when the focused field has a font size below 16, and here that would happen with the keyboard
+    rising over a dialog on the top layer. It recovers terribly.
+   */
+  font-size: 1rem;
+}
+
+.dialog .email::placeholder { color: var(--faint); }
+
+.dialog .email:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -1px;
+  border-color: transparent;
+}
+
+.dialog .subscribe {
+  flex: 1 0 auto;
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: var(--radius-sm, 4px);
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: background-color 160ms ease;
+}
+
+.dialog .subscribe:hover { background: var(--ink-raised); }
+
+/* The squeeze does not soften: a press with transition feels soft. When released, yes. */
+.dialog .subscribe:active { transition: none; }
+
+.dialog .subscribe[aria-busy="true"] {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+/*
+  The bait for robots. `display: none` and not a positioning trick: this way it also disappears
+  from the accessibility tree and tab order. An invisible but focusable field would be a trap for
+  someone navigating with a keyboard — they would reach it without knowing it exists.
+ */
+.trap { display: none; }
+
+/*
+  The label that only screen readers see. Nothing like `display: none`, which would also remove it
+  from them: it is cropped to one pixel and taken out of the flow.
+ */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/*
+  The line between the two requests, and it is the piece that prevents them from competing.
+  Two buttons stuck together say 'choose one' —it's the language of Cancel/Save—. With this thread
+  in between, they end up saying 'do this; and besides, there is this other thing,' which is the
+  truth: they are not two paths to the same place. That's why there isn't any 'or' on top either.
+ */
+.rule {
+  height: 0;
+  margin: 14px 0 12px;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+/*
+  X: in circumference and width, as tall as the primary. A `<a>` that looks like a button, because
+  it leads to another place and someone navigating with a reader expects a link where you
+  navigate. One weight less than the primary (500 versus 600) is the second step of hierarchy, but
+  the color stays in full `--ink`: turning it off would cost readability and barely add
+  distinction, which the fill already provides.
+ */
+.dialog .xButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--neutral-550);
+  border-radius: var(--radius-sm, 4px);
+  background: transparent;
+  color: var(--ink);
+  font-size: 0.875rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+
+.dialog .xButton:hover {
+  background: var(--ink-a-05);
+  border-color: var(--muted);
+  color: var(--ink);
+}
+
+.dialog .xButton:active { background: var(--ink-a-09); }
+.dialog .xButton svg { width: 14px; height: 14px; }
+
+/*
+  The notice that something did not go in. Red no: in the three topics the system red is not
+  guaranteed, and the text already says what happens.
+ */
+.error {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+/*
+  The close cross. 32×32 and no less: below 24 the target size criterion of the WCAG is not met,
+  and on a card that nobody asked for, the close is the first thing someone will look for with
+  their thumb.
+ */
+.dialog .close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm, 4px);
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 160ms ease, background-color 160ms ease;
+}
+
+.dialog .close:hover { color: var(--ink); background: var(--ink-a-05); }
+.dialog .close svg { width: 15px; height: 15px; }
+
+.note {
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.dialog a:focus-visible,
+.dialog button:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}

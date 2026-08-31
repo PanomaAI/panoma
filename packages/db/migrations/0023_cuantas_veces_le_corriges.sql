@@ -1,0 +1,1 @@
+ALTER TABLE "taste_entries" ADD COLUMN "decided_at" timestamp with time zone;

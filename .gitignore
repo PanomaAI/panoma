@@ -1,0 +1,86 @@
+node_modules/
+dist/
+.turbo/
+*.tsbuildinfo
+.env
+.env.*
+# La excepción se queda por si algún día hace falta. Hoy no hay ninguna variable que haya
+# que rellenar para arrancar, y el porqué —con la lista entera— está en docs/environment.md.
+!.env.example
+.DS_Store
+coverage/
+.next/
+# El desarrollo tiene su propio directorio para no pisarse con `next build`.
+.next-dev/
+next-env.d.ts
+
+# Las capturas de las revisiones de diseño.
+# Son evidencia de un momento, no fuente: treinta y ocho para una sola página, con
+# nombres como v2, v3, «final» y «selected». Se miran mientras se compara y después
+# nadie sabe cuál era cuál — pero el repositorio las arrastraría en cada clon para
+# siempre. Lo que sí se versiona es el documento que cuenta qué se comparó y por qué.
+apps/web/qa/
+
+# Notas de trabajo que no son parte del producto.
+#
+# `private/` guarda documentos internos —planificación y las capturas de las revisiones
+# de diseño— que no hacen falta para leer, compilar ni contribuir al código. Siguen en
+# el disco y a mano; simplemente no los rastrea git.
+private/
+
+# Las auditorías visuales de los agentes: capturas de una revisión concreta, con su
+# fecha o su asunto en el nombre. Misma regla que `apps/web/qa/` — evidencia de un
+# momento, no fuente. Lo que se versiona es el documento que cuenta qué se comparó y
+# por qué; las capturas que lo acompañan se quedan en el disco de quien las hizo.
+.codex/
+.codex-artifacts/
+
+# El taller de las imágenes: máscaras, recortes y pasos intermedios.
+#
+# Son 180 PNG y 57 MB de camino hacia los cuatro `.webp` que sí viajan en `public/`. Un
+# binario intermedio versionado no se puede quitar después —queda en el historial para
+# siempre— y no sirve para nada: lo que hay que poder leer es el resultado.
+.artifacts/
+
+# Los ajustes de Claude Code de esta máquina, que son de quien se sienta aquí y no del
+# proyecto. `.claude/` sí se versiona: dentro viven cosas compartidas como `launch.json`.
+.claude/settings.local.json
+
+# El bloque MCP que escribe `panoma agent-key --install`, con la clave del agente dentro.
+#
+# En otros proyectos `.mcp.json` se versiona a propósito —es como Claude Code comparte
+# servidores con el equipo— pero el nuestro lleva `PANOMA_KEY` en claro, y con ella se lee
+# el parte, la bitácora y las tareas de todo el catálogo. Un `git add .` la mete en un
+# commit y ya no sale del historial. Es exactamente lo que el CLI y la página «Agentes»
+# avisan al escribirlo; aquí ese aviso ya está atendido.
+.mcp.json
+
+# El buzón local de panoma dentro de este proyecto.
+#
+# `.panoma/shots/` ya se escondía sola —lleva su propio `.gitignore` con un `*` que
+# ignora hasta a sí mismo— y por eso `.panoma/` no aparecía en `git status`: git no lista
+# un directorio cuyo contenido entero está ignorado. Eso duró hasta que apareció un
+# segundo hijo, `audits/`, que ninguna regla cubría, y el directorio se hizo visible de
+# golpe con capturas de pantalla dentro.
+#
+# El motivo es el que ya explica el `.gitignore` de `shots/`: una captura puede enseñar
+# cualquier cosa que estuviera en pantalla, y un binario que entra en el historial no
+# sale. Se ignora el directorio ENTERO y no cada subcarpeta según aparece, porque la
+# lección es justo esa: la regla por subcarpeta solo cubre las que ya existen.
+#
+# Nada de aquí dentro hace falta para montar el proyecto: lo escriben panoma y los
+# agentes que trabajan aquí, y se regenera solo.
+.panoma/
+
+# El catálogo empaquetado para npm.
+#
+# `apps/cli/app` son ~174 MB que produce `build:app` a partir del standalone de Next:
+# es salida de compilación, como `dist/`, y se reconstruye con un comando. Versionarlo
+# metería en el historial —para siempre— un árbol de node_modules aplanado.
+apps/cli/app/
+# La compilación del paquete de npm: ver apps/cli/scripts/build-app.mjs.
+.next-bundle/
+# Y el tarball que produce `npm pack`, que también es salida. Sin esto, el guardián de
+# `prepack` ve un árbol sucio en el segundo intento —por el .tgz del primero— y se niega
+# a empaquetar por algo que no afecta a lo que va dentro.
+*.tgz

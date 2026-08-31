@@ -1,0 +1,29 @@
+{
+  "name": "@panoma/enrich",
+  "version": "0.1.0",
+  "license": "AGPL-3.0-only",
+  "private": true,
+  "type": "module",
+  "description": "Current releases from public registries and vulnerabilities from OSV.dev.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "panoma-src": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@panoma/core": "workspace:*",
+    "@panoma/db": "workspace:*",
+    "drizzle-orm": "^0.45.2"
+  }
+}

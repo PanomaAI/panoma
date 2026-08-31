@@ -1,0 +1,307 @@
+/*
+  Share a card, and the screen from when the catalog does not open.
+  They go together because the cut had to be contiguous. `.catalog-down` is rendered outside of the
+  two screen palettes, and that is why their `var()` have backing.
+ */
+/* ── Compartir ─────────────────────────────────────────────────────────────── */
+
+.share {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.share__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-behind);
+  border: 0;
+  background: var(--color-scrim-share);
+  cursor: default;
+}
+
+.share__box {
+  width: min(100%, 920px);
+  max-height: 92vh;
+  overflow: auto;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--paper);
+  box-shadow: var(--shadow-share);
+}
+
+.share__box header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.share__box h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.share__box header button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+
+.share__box header button:hover {
+  background: var(--wash);
+  color: var(--ink);
+}
+
+/*
+  The preview is the true canvas, scaled by CSS.
+  Teaching a model in HTML and downloading something else is the easiest way for the published
+  image not to be the one that was approved. Here what you see is literally the PNG that comes
+  out.
+ */
+.share__canvas {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: max(240px, calc(92vh - 240px));
+  margin-inline: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.share__options {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr) auto;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.share__options label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.78rem;
+  color: var(--ink-2);
+}
+
+.share__options input[type="text"],
+.share__options label > input:not([type]) {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--wash);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 0.78rem;
+}
+
+.share__visibility {
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  align-self: end;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) ease, color var(--duration-fast) ease, background var(--duration-fast) ease;
+}
+
+.share__visibility:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.share__visibility.is-private {
+  background: var(--wash);
+  color: var(--ink);
+}
+
+.share__visibility svg {
+  width: 16px;
+  height: 16px;
+}
+
+.share__visibility:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.share__language {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink-2);
+  font-size: 0.78rem;
+}
+
+.share__language > div {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--wash);
+}
+
+.share__language button {
+  padding: 4px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-3);
+  font: inherit;
+  cursor: pointer;
+}
+
+.share__language button.is-active {
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: var(--shadow-pressed);
+}
+
+.share__language button:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+
+.share__note {
+  margin: 12px 0 0;
+  color: var(--ink-3);
+  font-size: 0.72rem;
+  line-height: 1.55;
+}
+
+.share__box footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.share__box footer button,
+.share__box footer a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink-2);
+  font-size: 0.76rem;
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) ease, color var(--duration-fast) ease;
+}
+
+.share__box footer button:hover,
+.share__box footer a:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.share__primary {
+  border-color: var(--ink) !important;
+  background: var(--ink) !important;
+  color: var(--color-on-ink) !important;
+}
+
+.share__primary:hover {
+  opacity: 0.85;
+}
+
+.share__box footer svg {
+  width: 14px;
+  height: 14px;
+}
+
+@media (max-width: 680px) {
+  .share__options {
+    grid-template-columns: 1fr;
+  }
+
+  .share__visibility {
+    justify-self: start;
+  }
+}
+
+/*
+  The catalog that doesn't open, and the error page that shows it.
+  It is a box and not a line like the watcher's notice, because when this comes out there is
+  nothing else to read on the screen: it carries a path that needs to be able to be copied and the
+  first line of what the database reported. The colors use fallbacks because this is also
+  rendered outside of `.catalog-screen`, which is where the variables live.
+ */
+.catalog-down {
+  max-width: 62ch;
+  margin: 40px auto;
+  padding: 20px 22px;
+  border: 1px solid var(--line, var(--color-line-catalog));
+  border-radius: 10px;
+  background: var(--paper, var(--color-surface));
+}
+
+.catalog-down h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--bad, var(--color-danger-ink-deep));
+  font-size: 1rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.catalog-down h2 svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+.catalog-down p {
+  margin-top: 10px;
+  color: var(--ink-2, var(--color-ink-muted-catalog));
+  font-size: 0.86rem;
+  line-height: 1.55;
+}
+
+.catalog-down__detail code {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.78rem;
+  word-break: break-word;
+}
+
+.catalog-down__button {
+  margin-top: 16px;
+  padding: 7px 14px;
+  border: 1px solid var(--line-strong, var(--color-line-strong-catalog));
+  border-radius: 7px;
+  background: var(--paper, var(--color-surface));
+  color: var(--ink, var(--color-ink-catalog));
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.catalog-down__button:hover {
+  background: var(--wash, var(--color-wash-catalog));
+}

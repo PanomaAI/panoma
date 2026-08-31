@@ -1,0 +1,3393 @@
+.page {
+  /*
+    The typography above and nothing else. Before, `var(--font-inter)` used to come behind, the
+    variable that the catalog layout puts in the <html>, and it never showed up: Geist always wins
+    because it comes first. But it wasn't harmless — it was a strap.
+    A `var()` without value does not skip: it invalidates the entire declaration at computed value
+    time, and then `font-family` **inherits** instead of continuing down the list. Measured in the
+    browser: with the variable, “Geist, Geist Fallback, Inter, …”; without it, the body source. So
+    the day this page stops hanging from the catalog layout, it will be left without its entire
+    font and without a single error anywhere.
+   */
+  --display: var(--font-landing-display), ui-sans-serif, system-ui, sans-serif;
+  --sans: var(--font-landing-display), ui-sans-serif, system-ui, sans-serif;
+  --mono: var(--font-landing-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --measure: min(1200px, calc(100% - 80px));
+  --wide: min(1320px, calc(100% - 56px));
+  --prose: 58ch;
+  --gap-section: 104px;
+  --radius: 6px;
+  --radius-sm: 4px;
+  --motion-enter: 900ms;
+  --motion-slow: 1400ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  min-height: 100dvh;
+  overflow-x: clip;
+  background: var(--paper);
+  color: var(--ink);
+  color-scheme: light;
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/*
+  Nothing fits here, and it is a decision tested three times against this page.
+  The height that a section reaches is set by the `scroll-padding-top` of the document in
+  `site.css` — a single number for the two pages of the site, which share the same bar—.
+  `scroll-margin-top` is intentionally left at zero because it is ADDED to the other: declaring
+  both was the way for the air to change without anyone touching either of them.
+  What was tried and discarded, in order, because the reason is more useful than the attempt:
+  1. An effect that, when stopping the gesture near an edge, slid the last section with its own
+  curve. It grabbed at 190 pixels, which is too much: it moved the page under whoever was reading.
+  2. `scroll-snap-type: y mandatory`. It forbids standing between two fitting points, so with
+  sections of 2819 and 2049 pixels —more than three screens and two and a half— it was impossible
+  to read them: the browser was ordered to get you out of there.
+  3. `scroll-snap-type: y proximity`. The correct version in theory —it only fits if you end up
+  nearby, and it allows reading in the middle of a section: measured, it fit from 30 pixels away
+  and respected a stop at 1200 inside—. It was tested by hand and still felt wrong.
+  The verdict of the page owner, which is what counts: the scrolling of the browser by itself,
+  without anyone adjusting the position from behind. A page that is read from top to bottom gains
+  nothing by taking away the reader's control over where to stop.
+ */
+.page main > section,
+.footer {
+  scroll-margin-top: 0;
+}
+
+.page * { box-sizing: border-box; }
+.page a { text-decoration: none; }
+.page button { border: 0; background: none; font: inherit; }
+.page h1,
+.page h2,
+.page h3,
+.page p { margin: 0; }
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skipLink {
+  position: fixed;
+  z-index: 80;
+  top: 12px;
+  left: 12px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 0.875rem;
+  transform: translateY(-160%);
+}
+.skipLink:focus { transform: none; }
+
+/*
+  The slats that iOS 26 samples — the reason is explained about them in `landing-experience.tsx`.
+  Here, the geometry: Safari only counts as a candidate a fixed element that touches the edge (at
+  ~4px or less), occupies almost the entire width, and has a few pixels of height. Of the 12 high,
+  8 are off the screen and 4 are inside.
+  Those 4 go ABOVE the content, not hidden behind: with `z-index: -1` the role of `.page` covered
+  them and the sampling didn't see them — tested in the iOS 26.3 simulator and discarded. It’s the
+  same decision taken by the site of the pattern author (jahir.dev: `-bottom-2 min-h-3 z-5` ).
+  Painted with the theme paper they are not visible: on top they are covered by the attached bar,
+  which is made of the same paper, and at the bottom there are 4px of the page color under the
+  Safari bar glass.
+  The `@supports` is the iOS signature, and not out of habit but due to compilation: WebKit only
+  includes `-webkit-touch-callout` under `PLATFORM(IOS_FAMILY)` (PlatformEnableCocoa.h), so macOS
+  Safari doesn't even parse it. Outside of iOS, the stripes aren't even drawn — there's nothing to
+  sample.
+ */
+.frameTintTop,
+.frameTintBottom {
+  display: none;
+}
+
+@supports (-webkit-touch-callout: none) {
+  .frameTintTop,
+  .frameTintBottom {
+    display: block;
+    position: fixed;
+    left: 0;
+    width: 100%;
+    min-height: 12px;
+    background: var(--paper);
+    pointer-events: none;
+    z-index: 5;
+  }
+  .frameTintTop { top: -8px; }
+  .frameTintBottom { bottom: -8px; }
+}
+
+.page .eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.page .eyebrow::before {
+  content: "";
+  width: 16px;
+  height: 1px;
+  background: var(--ink);
+}
+
+/* ——— Nav ——— */
+
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper-a-90);
+  backdrop-filter: blur(18px) saturate(1.15);
+}
+
+.navInner {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  width: var(--measure);
+  min-height: 64px;
+  margin: 0 auto;
+  gap: 16px;
+}
+
+.page a.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  width: fit-content;
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: 1.05rem;
+  font-weight: 650;
+  letter-spacing: -0.04em;
+}
+.page a.brand img {
+  display: block;
+  width: 28px;
+  height: 28px;
+  filter: var(--brand-filter);
+  transition: filter 240ms ease;
+}
+
+.navLinks { display: flex; align-items: center; gap: 28px; }
+.page .navLinks a {
+  position: relative;
+  color: var(--muted);
+  font-size: 0.875rem;
+  letter-spacing: -0.01em;
+  transition: color 160ms ease;
+}
+.page .navLinks a::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -6px;
+  height: 1px;
+  background: var(--ink);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 180ms ease;
+}
+.page .navLinks a:hover { color: var(--ink); }
+.page .navLinks a:hover::after { transform: scaleX(1); }
+
+.navActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  min-width: 0;
+}
+
+.page button.themeSwitch {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease,
+    transform 180ms ease;
+}
+.page button.themeSwitch:hover {
+  border-color: var(--ink);
+  background: var(--wash);
+  transform: translateY(-1px);
+}
+.page button.themeSwitch[data-next-theme="gold"] {
+  border-color: color-mix(in srgb, var(--gold-accent) 54%, var(--black));
+  background: var(--black);
+  color: var(--gold-accent);
+}
+.page button.themeSwitch[data-next-theme="gold"]:hover {
+  border-color: var(--gold-accent);
+  background: var(--black);
+  color: var(--gold-accent);
+}
+.page button.themeSwitch svg { width: 15px; height: 15px; }
+
+.page a.navCta,
+.page button.navCta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: background-color 160ms ease, transform 160ms ease;
+}
+.page a.navCta,
+.page button.navCta {
+  min-height: 36px;
+  padding: 0 13px;
+}
+.page a.navCta svg,
+.page button.navCta svg { width: 15px; height: 15px; }
+.page a.navCta:hover,
+.page button.navCta:hover {
+  background: var(--ink-raised);
+  color: var(--paper);
+}
+
+.page a:focus-visible,
+.page button:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
+
+/* ——— Hero ——— */
+
+/*
+  The first fold.
+  The P is a capital letter: it does not accompany the main text, it starts it. The swarm occupies
+  the space and the command closes the group. `isolation: isolate` so that the canvas does not
+  sneak over the tower or the bar.
+ */
+.hero {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  align-content: center;
+  width: var(--measure);
+  min-height: calc(100vh - 65px);
+  margin: 0 auto;
+  padding: 20px 0 64px;
+}
+
+.heroStage {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  justify-items: center;
+}
+
+.heroTowerParked { display: none; }
+
+.phraseSlot {
+  width: 100%;
+  height: clamp(300px, 46vh, 480px);
+}
+
+.page .heroQualifier {
+  margin-top: 4px;
+  padding: 0 16px;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-align: center;
+}
+
+.hero h1 {
+  margin-top: 20px;
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: clamp(2.2rem, 4.3vw, 3.75rem);
+  font-weight: 700;
+  letter-spacing: -0.045em;
+  line-height: 1;
+}
+
+/*
+  The command is the only gesture the page asks for: a single black piece, the prompt and the copy
+  button sharing the same edge. Black on paper, not a white box with a button stuck on — this is
+  read as an instrument and not as a form field.
+ */
+/*
+  The two paths, stacked: the Desktop for testing and the entire drive for going serious. The
+  first one commands —solid black— and the second waits in a low voice, with the same button. The
+  alternative was the previous one: a command and a note asking you to edit it by hand.
+ */
+.commands {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  /*
+    The group shrinks to the wider of the two and the boxes fill it in: this way the two commands
+    share the left and right edge and are read as a pair, not as two boxes of different sizes that
+    happen to be together.
+   */
+  width: fit-content;
+  margin-top: 28px;
+  max-width: 100%;
+}
+.commandRow {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  max-width: 100%;
+}
+.heroStage .commandRow { align-items: center; }
+
+/* The sign indicates which is which, so you don't have to deduce it from the route. */
+.page .commandLabel {
+  margin-top: 9px;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.01em;
+}
+
+.commandBox {
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+  min-height: 56px;
+  width: 100%;
+  max-width: 100%;
+  border: 1px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--ink);
+  color: var(--paper);
+}
+
+/* The second path: same gesture, less voice. Outline instead of solid. */
+.commandBox[data-quiet] {
+  min-height: 48px;
+  border-color: var(--line-strong);
+  background: transparent;
+  color: var(--ink);
+}
+.commandBox[data-quiet] code {
+  color: var(--ink);
+  font-size: 0.875rem;
+}
+.commandBox[data-quiet] code b { color: var(--faint); }
+.commandBox[data-quiet] button {
+  border-left-color: var(--line-strong);
+  color: var(--muted);
+}
+.commandBox[data-quiet] button:hover { background: var(--wash); color: var(--ink); }
+.commandBox[data-quiet] button:focus-visible { outline-color: var(--ink); }
+
+.commandBox code {
+  display: flex;
+  align-items: center;
+  /*
+    The command stretches to fill the box so that the button always rests on the right edge.
+    Without this, when sharing width between the two boxes, the short command would leave the
+    button planted where its text ended — halfway across the box — and dead space behind it.
+   */
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 22px;
+  color: var(--paper);
+  font-family: var(--mono);
+  font-size: 0.9375rem;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+.commandBox code b {
+  margin-right: 10px;
+  color: var(--inverse-muted);
+  font-weight: 500;
+}
+
+.commandBox button {
+  flex: none;
+  min-width: 88px;
+  padding: 0 22px;
+  border-left: 1px solid var(--card-a-14);
+  background: transparent;
+  color: var(--paper);
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  cursor: pointer;
+  transition: background-color 160ms ease;
+}
+.commandBox button:hover { background: var(--ink-raised); }
+.commandBox button:focus-visible {
+  outline: 2px solid var(--paper);
+  outline-offset: -4px;
+}
+
+/*
+  ——— The couplet: the pair that structures all the sections ———
+  Two lines of the same size, the second in gray. It's the entire system: a third level subtitle
+  is not necessary, and the jump from h1 keeps the page as a continuous document instead of a
+  catalog of blocks.
+ */
+
+.page .duo {
+  max-width: none;
+  margin-top: 16px;
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: clamp(1.9rem, 3.35vw, 3rem);
+  font-weight: 650;
+  letter-spacing: -0.042em;
+  line-height: 1.02;
+  text-wrap: balance;
+}
+.duo > span { display: block; color: var(--faint); }
+.duo > span.duoInk,
+.duo > span.fileReel { color: var(--ink); }
+.duo code {
+  font-family: var(--mono);
+  font-size: 0.72em;
+  letter-spacing: -0.01em;
+}
+
+/*
+  The name of the .md, on its own line.
+  Each agent opens a different file: if the main file stays on one, the section is read as
+  belonging to that agent. The space is measured by the longest name —so the main file doesn't
+  jump when it rotates— and the names live stacked in the same cell.
+ */
+.fileReel {
+  position: relative;
+  display: block;
+  color: var(--ink);
+  font-family: var(--mono);
+  letter-spacing: -0.045em;
+  overflow: hidden;
+}
+.fileReelSizer {
+  display: block;
+  visibility: hidden;
+  pointer-events: none;
+}
+.fileReelOn,
+.fileReelOff {
+  position: absolute;
+  left: 0;
+  top: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: opacity 280ms ease, transform 280ms ease;
+}
+.fileReelOn {
+  opacity: 1;
+  transform: none;
+}
+.fileReelOff {
+  opacity: 0;
+  transform: translateY(0.28em);
+  pointer-events: none;
+}
+
+.docTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 28px;
+}
+.docTab {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+.docTab:hover { border-color: var(--ink); color: var(--ink); }
+.docTab[aria-selected="true"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+}
+.docTab:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
+.docTabAgent {
+  min-height: 1.2em;
+  margin: 10px 0 0;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+}
+
+/* ——— The obvious substitute: two lists, and what stands out ——— */
+
+.rival {
+  width: 100%;
+}
+
+.rivalInner {
+  width: var(--measure);
+  margin: 0 auto;
+  padding: var(--gap-section) 0;
+}
+
+.rivalGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  align-items: stretch;
+  margin-top: 56px;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+.rivalCard {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: var(--wash);
+}
+.rivalCardFull {
+  background: var(--card);
+  border-left: 1px solid var(--ink);
+}
+.rivalCard > header {
+  padding: 11px 18px;
+  border-bottom: 1px solid var(--line);
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.02em;
+}
+.rivalCard ul { margin: 0; padding: 0; list-style: none; flex: 1; }
+/*
+  The two lists share a high row so that each project falls at the same height on both sides: it
+  is the only thing that makes the gap in front mean anything.
+ */
+.rivalCard li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 44px;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--line);
+  border-left: 2px solid transparent;
+}
+.rivalCard li:last-child { border-bottom: 0; }
+.rivalCard small { flex: none; color: var(--faint); font-size: 0.6875rem; }
+
+.rivalPlain {
+  overflow: hidden;
+  font-size: 0.8125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+  The gap. Where Panoma has a project and GitHub has nothing, the row doesn't disappear: it stays
+  open, with a dashed line where the name would go.
+ */
+.rivalGap {
+  background: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 6px,
+    var(--ink-a-03) 6px,
+    var(--ink-a-03) 12px
+  );
+}
+.rivalGap span {
+  flex: 1;
+  height: 1px;
+  border-top: 1px dashed var(--line-strong);
+}
+.rivalGap small {
+  color: var(--inverse-muted);
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.06em;
+}
+
+.rivalRich {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.rivalRich i {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 22%;
+  box-shadow: inset 0 0 0 1px var(--black-a-07);
+}
+.rivalRich i svg { width: 12px; height: 12px; }
+.rivalIconEmpty { background: var(--cool-surface); color: var(--cool-ink); }
+.rivalRich b {
+  overflow: hidden;
+  font-size: 0.8125rem;
+  font-weight: 560;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rivalRich em {
+  flex: none;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  font-style: normal;
+}
+
+.rivalHealth {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1.5px solid var(--graphite);
+  border-radius: 50%;
+  color: var(--graphite);
+  font-size: 0.625rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.rivalHealthWarn { border-color: var(--faint); color: var(--muted); }
+.rivalHealthBad { border-color: var(--ink); color: var(--ink); }
+
+.rivalWarn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ink) !important;
+  font-family: var(--mono);
+  font-size: 0.625rem;
+}
+.rivalWarn svg { width: 13px; height: 13px; }
+
+.knows {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0;
+  margin: 16px 0 0;
+  padding: 0;
+}
+.knows span {
+  padding: 0 10px;
+  border-left: 1px solid var(--line-strong);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.625rem;
+}
+.knows span:first-child { border-left: 0; }
+
+.rivalOnlyLocal {
+  border-left-color: var(--ink);
+  background: var(--wash);
+}
+
+.page .rivalFoot {
+  margin-top: 24px;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  text-align: right;
+}
+
+
+.rivalCount {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 0;
+  padding: 18px 18px 4px;
+}
+.rivalCount strong {
+  color: var(--inverse-muted);
+  font-family: var(--display);
+  font-size: 3.1rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.05em;
+  line-height: 0.9;
+}
+.rivalCount span {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+.rivalCountWin strong { color: var(--ink); }
+.rivalCountWin span { color: var(--muted); }
+
+.verdict {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  margin-top: 56px;
+  padding-top: 40px;
+  border-top: 1px solid var(--line);
+}
+.verdict strong {
+  flex: none;
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: clamp(4.5rem, 11vw, 8.5rem);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.045em;
+  line-height: 0.8;
+}
+.verdict p {
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: clamp(1.5rem, 3vw, 2.5rem);
+  font-weight: 650;
+  letter-spacing: -0.032em;
+  line-height: 1;
+}
+.verdict p span {
+  display: block;
+  max-width: 30ch;
+  margin-top: 14px;
+  color: var(--faint);
+  font-family: var(--sans);
+  font-size: 1rem;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.5;
+}
+
+
+/*
+  ——— Product Signs ———
+  These labels provide hierarchy without turning the page into a collection of cards. The short
+  line works like an editorial index: it indicates where a feature starts, but allows each section
+  to maintain its own space and composition.
+ */
+.productMarker {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+  margin: 0 0 clamp(30px, 4vw, 44px);
+  font-family: var(--mono);
+  font-size: 0.64rem;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.productMarker::before {
+  content: "";
+  width: 30px;
+  height: 1px;
+  flex: 0 0 auto;
+  background: var(--ink);
+}
+.productMarker span {
+  color: var(--faint);
+}
+.productMarker b {
+  padding-left: 10px;
+  border-left: 1px solid var(--line-strong);
+  color: var(--ink);
+  font-weight: 650;
+}
+.productMarker[data-foundation]::before { background: var(--muted); }
+.productMarker[data-foundation] b { color: var(--muted); }
+
+/* ——— The hands: who touched what, in panorama ——— */
+
+.hands {
+  background: var(--paper);
+}
+.handsInner {
+  width: var(--measure);
+  margin: 0 auto;
+  padding: var(--gap-section) 0;
+}
+
+/*
+  The document is the main evidence, so on desktop it shares the foreground with the argument
+  instead of appearing several hundred pixels later. The column becomes linear again on narrow
+  screens to preserve a natural reading.
+ */
+.agentLayout {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.82fr) minmax(500px, 1.18fr);
+  grid-template-rows: auto auto auto 1fr;
+  align-items: start;
+  column-gap: 64px;
+}
+
+.agentLayout > .duo {
+  grid-column: 1;
+  grid-row: 1;
+  max-width: 13ch;
+  margin-top: 0;
+  font-size: clamp(2.15rem, 3.6vw, 3.25rem);
+}
+
+.agentLayout > .docTabs {
+  grid-column: 1;
+  grid-row: 2;
+  margin-top: 28px;
+}
+
+.agentLayout > .docTabAgent {
+  grid-column: 1;
+  grid-row: 3;
+}
+
+.agentLayout > .mdCard {
+  grid-column: 2;
+  grid-row: 1 / 5;
+  width: 100%;
+  max-width: none;
+  margin-top: 0;
+  box-shadow: var(--shadow-window);
+}
+
+.handsNote {
+  max-width: var(--prose);
+  margin-top: 36px;
+  padding-top: 28px;
+  border-top: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 1.05rem;
+  line-height: 1.6;
+}
+
+/*
+  The CLAUDE.md model.
+  It counts the entire section without reading the prose: two lines crossed out with their verdict
+  next to them, and the block of Panoma below with its label.
+ */
+.mdCard {
+  max-width: 680px;
+  margin-top: 52px;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+.mdHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  padding: 13px 20px;
+  border-bottom: 1px solid var(--line);
+  background: var(--wash);
+}
+.mdHead b {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+.mdHead span {
+  color: var(--faint);
+  font-size: 0.75rem;
+}
+
+.mdBody {
+  display: grid;
+  gap: 10px;
+  padding: 18px 20px 20px;
+}
+
+.mdRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.84375rem;
+  line-height: 1.45;
+}
+.mdRow code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--wash);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+}
+
+.mdRowBad > span {
+  text-decoration: line-through;
+  text-decoration-color: var(--ink-a-58);
+  text-decoration-thickness: 2px;
+}
+.mdRowBad em {
+  color: var(--ink);
+  font-size: 0.7rem;
+  font-style: normal;
+  font-weight: 650;
+}
+
+.mdBlock {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 16px 16px 14px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--ink-a-025);
+}
+.mdMarker {
+  margin: 0;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 0.66rem;
+}
+.mdBlockTag {
+  position: absolute;
+  top: -10px;
+  right: 14px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--card);
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.mdFoot {
+  margin: 0;
+  padding: 13px 20px;
+  border-top: 1px solid var(--line);
+  background: var(--wash);
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.gains {
+  display: block;
+  margin: 52px 0 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+  list-style: none;
+}
+.gains li {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.72fr) minmax(0, 1.28fr);
+  gap: 48px;
+  align-items: baseline;
+  padding: 24px 0;
+  border-bottom: 1px solid var(--line);
+}
+.gains strong {
+  display: block;
+  font-family: var(--display);
+  font-size: 1.0625rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+.gains span {
+  display: block;
+  margin-top: 0;
+  color: var(--faint);
+  font-size: 0.9375rem;
+  line-height: 1.55;
+}
+
+/* ——— The masterful closing: from the album to a living catalog ——— */
+
+.finale {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  justify-items: center;
+  width: 100%;
+  min-height: max(656px, calc(100svh - 64px));
+  overflow: hidden;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.finaleCopy {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: var(--measure);
+  padding-top: clamp(38px, 5.5vh, 64px);
+  text-align: center;
+}
+
+.finaleEyebrow {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.finaleTitle {
+  display: grid;
+  max-width: 27ch;
+  font-family: var(--display);
+  font-size: clamp(2.25rem, 3.65vw, 3.6rem);
+  font-weight: 740;
+  letter-spacing: -0.058em;
+  line-height: 0.98;
+  text-wrap: balance;
+}
+.page .finaleTitle { margin-top: 18px; }
+.finaleTitle span:first-child { color: var(--faint); }
+.finaleTitle span:last-child { color: var(--ink); }
+
+.finaleSystem {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(400px, 1.35fr) minmax(110px, 0.3fr) minmax(400px, 1.35fr);
+  align-items: start;
+  width: var(--wide);
+  min-height: 238px;
+  margin-top: 12px;
+  padding: 16px clamp(4px, 2.2vw, 30px) 20px;
+}
+
+.finaleNode {
+  display: grid;
+  justify-items: center;
+  gap: 18px;
+}
+
+.page .finaleMapLabel {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: min(366px, 100%);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.finaleMapLabel span {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  color: var(--faint);
+  font-size: 0.56rem;
+  letter-spacing: 0;
+}
+
+.finaleFolderField {
+  position: absolute;
+  top: 36px;
+  right: 12px;
+  bottom: 12px;
+  left: 46px;
+  z-index: 6;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+.finaleFolder {
+  position: relative;
+  display: block;
+  min-width: 0;
+  min-height: 0;
+  opacity: 1;
+}
+.finaleFolder > span,
+.finaleTraveler > span {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: linear-gradient(145deg, var(--card), var(--wash));
+}
+.finaleFolder > span::before,
+.finaleTraveler > span::before {
+  position: absolute;
+  top: 5px;
+  left: 6px;
+  width: 13px;
+  height: 10px;
+  border: 1px solid var(--ink-a-35);
+  border-radius: 2px 3px 3px 3px;
+  background: var(--card);
+  box-shadow: inset 0 3px var(--line);
+  content: "";
+}
+.finaleFolder > span::after,
+.finaleTraveler > span::after {
+  position: absolute;
+  top: 7px;
+  right: 6px;
+  left: 24px;
+  height: 1px;
+  background: var(--ink-a-16);
+  box-shadow: 0 5px var(--ink-a-09);
+  content: "";
+}
+.finaleFolder > span > b,
+.finaleTraveler > span > b {
+  position: absolute;
+  inset: 0;
+  display: block;
+  opacity: 0;
+}
+.finaleFolder > span > b::before,
+.finaleTraveler > span > b::before {
+  position: absolute;
+  top: 5px;
+  left: 6px;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--ink);
+  content: "";
+}
+.finaleFolder > span > b::after,
+.finaleTraveler > span > b::after {
+  position: absolute;
+  right: 6px;
+  bottom: 5px;
+  left: 6px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--line-strong);
+  content: "";
+}
+/*
+  The group folders are the ones that travel. The distance is not an approximation of CSS: the
+  component measures a real cell from the catalog and writes its coordinates in each folder. The
+  source interface is not touched: four copies travel through an outer layer and arrive converted
+  into an app, without emptying or animating the folder grid.
+ */
+.finaleTravelLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  pointer-events: none;
+}
+.finaleTraveler {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  opacity: 0;
+}
+.finaleSystem[data-routes="true"] .finaleTraveler {
+  z-index: 8;
+  transform-origin: center;
+  animation: finaleRealFolderRoute 7.2s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  animation-delay: var(--launch-delay);
+  transition: none;
+  will-change: transform, opacity;
+}
+.finaleSystem[data-routes="true"] .finaleTraveler > span,
+.finaleSystem[data-routes="true"] .finaleTraveler > span::before,
+.finaleSystem[data-routes="true"] .finaleTraveler > span::after,
+.finaleSystem[data-routes="true"] .finaleTraveler > span > b {
+  animation-duration: 7.2s;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  animation-delay: var(--launch-delay);
+}
+.finaleSystem[data-routes="true"] .finaleTraveler > span {
+  animation-name: finaleRealFolderShell;
+}
+.finaleSystem[data-routes="true"] .finaleTraveler > span::before {
+  animation-name: finaleRealFolderTab;
+}
+.finaleSystem[data-routes="true"] .finaleTraveler > span::after {
+  animation-name: finaleRealFolderLines;
+}
+.finaleSystem[data-routes="true"] .finaleTraveler > span > b {
+  animation-name: finaleRealProjectFace;
+}
+
+@keyframes finaleRealFolderRoute {
+  0% { opacity: 0; transform: translate3d(var(--source-x), var(--source-y), 0) scale(1); }
+  4%, 22% { opacity: 1; transform: translate3d(var(--source-x), var(--source-y), 0) scale(1); }
+  72%, 96% { opacity: 1; transform: translate3d(var(--target-x), var(--target-y), 0) rotate(0) scale(var(--target-scale)); }
+  100% { opacity: 0; transform: translate3d(var(--target-x), var(--target-y), 0) rotate(0) scale(var(--target-scale)); }
+}
+@keyframes finaleRealFolderShell {
+  0%, 100% { border-radius: 3px; background: linear-gradient(145deg, var(--card), var(--wash)); }
+}
+@keyframes finaleRealFolderTab {
+  0%, 38% { opacity: 1; transform: scale(1); }
+  52%, 100% { opacity: 0; transform: scale(0.2); }
+}
+@keyframes finaleRealFolderLines {
+  0%, 38% { opacity: 1; }
+  52%, 100% { opacity: 0; }
+}
+@keyframes finaleRealProjectFace {
+  0%, 45% { opacity: 0; }
+  58%, 100% { opacity: 1; }
+}
+
+.finaleFlow {
+  position: relative;
+  width: 100%;
+  height: 54px;
+}
+
+.finaleCatalog { transform: none; }
+.finaleCatalogBody {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.finaleCatalogWindow {
+  position: relative;
+  flex: 0 0 auto;
+  width: 198px;
+  height: 142px;
+  overflow: hidden;
+  border: 1px solid var(--ink-a-35);
+  border-radius: 8px;
+  background: var(--card-a-84);
+  box-shadow: var(--shadow-float);
+  opacity: 0;
+  transform: translateX(28px);
+  transition: opacity 800ms ease 700ms, transform 1100ms var(--ease-out) 700ms;
+}
+.finaleSystem[data-awake="true"] .finaleCatalogWindow { opacity: 1; transform: none; }
+.finaleCatalogWindow.finaleLooseWindow { transform: translateX(-28px); }
+.finaleSystem[data-awake="true"] .finaleCatalogWindow.finaleLooseWindow { transform: none; }
+
+.finaleFeatureList {
+  display: grid;
+  flex: 0 0 154px;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.finaleFeatureList li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.61rem;
+  font-weight: 550;
+  letter-spacing: 0.035em;
+  line-height: 1.25;
+  opacity: 0;
+  transform: translateX(10px);
+  transition: opacity 520ms ease, transform 760ms var(--ease-out);
+  transition-delay: calc(1050ms + var(--i) * 70ms);
+}
+.finaleFeatureList li > i {
+  flex: 0 0 auto;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--ink);
+  box-shadow: 0 0 0 3px var(--ink-a-05);
+}
+.finaleSystem[data-awake="true"] .finaleFeatureList li {
+  opacity: 1;
+  transform: none;
+}
+.finaleLooseList { align-self: start; }
+
+.finaleWindowBar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 24px;
+  border-bottom: 1px solid var(--line);
+  background: var(--wash);
+}
+.finaleWindowBar::before {
+  position: absolute;
+  top: 9px;
+  left: 10px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--muted);
+  box-shadow: 10px 0 var(--inverse-muted), 20px 0 var(--line-strong);
+  content: "";
+}
+.finaleWindowTitle {
+  position: absolute;
+  top: 6px;
+  left: 42px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.56rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+}
+.finaleWindowRail {
+  position: absolute;
+  top: 24px;
+  bottom: 0;
+  left: 0;
+  width: 34px;
+  border-right: 1px solid var(--line);
+  background: var(--card);
+}
+.finaleProjectGrid {
+  position: absolute;
+  top: 36px;
+  right: 12px;
+  bottom: 12px;
+  left: 46px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 7px;
+}
+.finaleProjectGrid i {
+  position: relative;
+  display: block;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: linear-gradient(145deg, var(--card), var(--wash));
+  opacity: 0;
+  transform: translateY(9px);
+  transition: opacity 440ms ease, transform 700ms var(--ease-out);
+  transition-delay: calc(950ms + var(--i) * 45ms);
+}
+.finaleProjectGrid i::before {
+  position: absolute;
+  top: 7px;
+  left: 7px;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--graphite);
+  content: "";
+}
+.finaleProjectGrid i::after {
+  position: absolute;
+  right: 7px;
+  bottom: 6px;
+  left: 7px;
+  height: 2px;
+  background: var(--line-strong);
+  content: "";
+}
+.finaleSystem[data-awake="true"] .finaleProjectGrid i { opacity: 1; transform: none; }
+
+.finaleCommand {
+  position: relative;
+  z-index: 2;
+  align-items: center;
+  width: 100%;
+}
+.page .finaleCommand { margin-top: 0; }
+.finaleCommand .commandRow { width: 100%; }
+.finaleCommand .commandBox {
+  border-color: var(--ink-a-78);
+  box-shadow: 0 14px 34px var(--ink-a-08);
+}
+
+.finaleUtilities {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(340px, 430px) minmax(150px, 1fr);
+  gap: clamp(30px, 5vw, 76px);
+  align-items: end;
+  width: var(--measure);
+  padding: 18px 0 20px;
+}
+.finaleNav {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+}
+.finaleNav:last-child { justify-self: end; }
+.finaleNav b {
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.page .finaleNav a,
+.page .finaleNav button {
+  justify-self: start;
+  padding: 0;
+  color: var(--faint);
+  font-family: var(--sans);
+  font-size: 0.875rem;
+  text-align: left;
+  cursor: pointer;
+  transition: color 140ms ease;
+}
+.page .finaleNav a:hover,
+.page .finaleNav button:hover { color: var(--ink); }
+
+.footerNote {
+  color: var(--faint);
+}
+
+.footerBar {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 12px;
+  width: var(--measure);
+  min-height: 46px;
+  border-top: 1px solid var(--line);
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 0.7rem;
+}
+.footerBar > :nth-child(2) { text-align: center; }
+.footerBar > :last-child { text-align: right; }
+.footerBar b { color: var(--ink); font-weight: 600; }
+
+/* ——— The closure: four truths that the reader can break ——— */
+
+/* ── The question with a timer: the void, measured in front of the reader ── */
+
+/*
+  A warning that was costly and is worth leaving in writing: above, on line 35, there is a
+  `.page h1, .page h2, .page h3, .page p { margin: 0 }`. Specificity (0,1,1). Any rule
+  `.loQueSea { margin: ... }` that falls on a `p` or a `h2` on this page loses that fight and ends
+  up at zero — without vertical rhythm and, if the centering was `margin: 0 auto`, stuck to the
+  left edge. That is why everything here that touches a margin is prefixed with `.page`, like the
+  rest of the file, and the horizontal centering is done by flex and not by margin: this way it
+  does not depend on a rule that someone else can override.
+ */
+
+/* It has no edge below: the change from black to white already separates both moments clearly. */
+.door {
+  position: relative;
+  isolation: isolate;
+  display: block;
+  overflow: hidden;
+  width: 100%;
+  border: 0;
+  background: var(--night);
+  color: var(--night-ink);
+}
+
+/*
+  The visual answer to the question is behind the words: a real entrance, open and from side to
+  side. The dark center of the photograph itself is the space for the text; the veil only dims the
+  stone and the ground so that the timer continues to command.
+ */
+.door::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  background:
+    var(--night) url("/assets/landing/front-door-background.webp") center 54% / cover no-repeat;
+  filter: var(--door-image-filter);
+  opacity: 0.56;
+  pointer-events: none;
+  transition: opacity var(--motion-slow) var(--ease-out);
+  /*
+    The original opening was narrower than the header and the words fell onto the pillars. Only
+    the horizontal axis opens: it retains the complete lintel and threshold.
+   */
+  transform: scaleX(1.68);
+  transform-origin: center;
+}
+.doorTrustImage {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  display: block;
+  background:
+    var(--night) url("/assets/landing/front-door-trust.webp") center 54% / cover no-repeat;
+  filter: var(--door-image-filter);
+  opacity: 0;
+  pointer-events: none;
+  transform: scaleX(1.68);
+  transform-origin: center;
+  transition: opacity var(--motion-slow) var(--ease-out);
+}
+.door[data-settled]::before { opacity: 0.08; }
+.door[data-settled] .doorTrustImage { opacity: 0.56; }
+.door::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  background:
+    linear-gradient(180deg, var(--night-a-68) 0%, var(--night-a-20) 24%, var(--night-a-18) 66%, var(--night-a-76) 100%),
+    radial-gradient(ellipse at center, var(--night-a-08) 0%, var(--night-a-38) 100%);
+  pointer-events: none;
+}
+
+/* The boundaries belong to the container: a clean line above and a curve below. */
+.doorEdges {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.doorEdges::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--night-ink-a-36) 18%, var(--night-ink-a-14) 50%, var(--night-ink-a-36) 82%, transparent);
+}
+
+/* The white covers the rectangular base and leaves the curve of the path visible as a boundary. */
+.doorCurve {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  display: block;
+  width: 100%;
+  height: clamp(38px, 4.4vw, 48px);
+  overflow: visible;
+}
+.doorCurvePaper { fill: var(--paper); }
+.doorCurveLine {
+  fill: none;
+  stroke: var(--night-ink-a-32);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.doorInner {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: var(--measure);
+  margin: 0 auto;
+  padding: clamp(72px, 11vh, 128px) 0;
+  text-align: center;
+}
+
+/*
+  The sign, without its script. In the left-aligned sections, the 16px edge is an anchor; in a
+  centered column, it pushes the text thirteen pixels to the right and misaligns exactly the piece
+  that has to stay the most still. Besides, it was ink on ink: invisible.
+ */
+.door .eyebrow {
+  color: var(--night-muted);
+}
+.door .eyebrow::before {
+  display: none;
+}
+
+.doorQuestion {
+  max-width: 18ch;
+  font-family: var(--display);
+  font-size: clamp(1.875rem, 3.9vw, 3.125rem);
+  font-weight: 650;
+  letter-spacing: -0.038em;
+  line-height: 1.05;
+  text-wrap: balance;
+}
+.page .doorQuestion {
+  margin-top: 18px;
+}
+
+/*
+  The assignment. Without it, the reader watches someone else's number run; with it, they try, it
+  does not work, and the emptiness marked by the clock becomes theirs. It goes out when the verdict
+  arrives —there is nothing left to answer— but it continues to occupy its place so that nothing
+  jumps.
+ */
+.doorHint {
+  color: var(--night-muted);
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  transition: opacity 420ms ease;
+}
+.page .doorHint {
+  margin-top: 16px;
+}
+.doorHint[data-off] {
+  opacity: 0;
+}
+
+/*
+  The instrument: a fixed-width panel with the figure, the measurement window, and the verdict.
+  Fixed on purpose — a device that changes size while measuring is not a device, it is an
+  animation, and here what is sold is rigor.
+ */
+.doorMeter {
+  width: min(360px, 100%);
+  padding: 24px 0 18px;
+  border-top: 1px solid var(--night-ink-a-14);
+  border-bottom: 1px solid var(--night-ink-a-14);
+  background: transparent;
+}
+.page .doorMeter {
+  margin-top: 36px;
+}
+
+/* Tabular figures: a stopwatch whose digits dance in width seems broken. */
+.doorTimer {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 3.25rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  transition: opacity 520ms ease;
+}
+.doorTimer i {
+  font-size: 1rem;
+  font-style: normal;
+  opacity: 0.55;
+}
+
+/* The measurement window: five seconds of sampling, no more, no less. */
+.doorTrack {
+  height: 2px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--night-ink-a-16);
+}
+.page .doorTrack {
+  margin-top: 20px;
+}
+.doorFill {
+  display: block;
+  height: 100%;
+  background: var(--night-ink);
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+
+.doorState {
+  color: var(--night-muted);
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  transition: color 520ms ease;
+}
+.page .doorState {
+  margin-top: 13px;
+}
+
+/* The sample is measured, the figure is taken away, and the verdict is lit: the number has spoken. */
+.doorMeter[data-settled] .doorTimer {
+  opacity: 0.34;
+}
+.doorMeter[data-settled] .doorFill {
+  background: var(--night-muted);
+}
+.doorMeter[data-settled] .doorState {
+  color: var(--night-ink);
+}
+
+/*
+  Always in the flow, invisible until its turn: the response appears, it does not push. Flex
+  column just like the container above: what `max-width` carries inside is centered by the box and
+  not by a margin `auto` that the page reset crushes.
+ */
+.doorReveal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  opacity: 0;
+  transform: translateY(10px);
+  transition:
+    opacity var(--motion-enter) ease,
+    transform var(--motion-enter) var(--ease-out);
+}
+.page .doorReveal {
+  margin-top: 40px;
+}
+.doorReveal[data-on] {
+  opacity: 1;
+  transform: none;
+}
+
+.doorLead {
+  color: var(--night-muted);
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  letter-spacing: 0.02em;
+}
+
+.doorAnswer {
+  max-width: 46ch;
+  color: var(--night-ink-a-82);
+  font-size: clamp(1.0625rem, 1.5vw, 1.1875rem);
+  font-weight: 450;
+  letter-spacing: -0.01em;
+  line-height: 1.55;
+  text-wrap: balance;
+}
+.page .doorAnswer {
+  margin-top: 14px;
+}
+
+/* The only thing to take away from this section, and that is why it is the last and the whitest. */
+.doorKicker {
+  max-width: 30ch;
+  font-family: var(--display);
+  font-size: clamp(1.125rem, 1.8vw, 1.4375rem);
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  line-height: 1.2;
+  text-wrap: balance;
+}
+.page .doorKicker {
+  margin-top: 26px;
+}
+
+/*
+  On low laptops, the section must fit under the fixed navigation when the snap aligns it. Pauses
+  are compressed, not text: the response remains complete and readable.
+ */
+@media (min-width: 561px) and (max-height: 780px) {
+  .doorInner { padding: 32px 0; }
+  .page .doorQuestion { margin-top: 10px; }
+  .page .doorHint { margin-top: 8px; }
+  .page .doorMeter { margin-top: 16px; }
+  .doorMeter { padding: 18px 0 14px; }
+  .page .doorReveal { margin-top: 18px; }
+  .page .doorAnswer { margin-top: 10px; }
+  .page .doorKicker { margin-top: 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .door::before,
+  .doorTrustImage {
+    transition: none;
+  }
+  .doorReveal {
+    transform: none;
+    transition: opacity 640ms ease;
+  }
+}
+
+@media (max-width: 560px) {
+  .doorMeter {
+    width: 100%;
+  }
+  .doorTimer {
+    font-size: 2.75rem;
+  }
+}
+
+/* ── The ten seconds: the answer, taught ── */
+
+/*
+  The answer comes back to the light with a clean cut: nothing gray between the dark question and
+  'Ten seconds.' The video and its explanation live entirely in the clear system.
+ */
+.film {
+  display: block;
+  width: 100%;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.filmInner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: var(--measure);
+  margin: 0 auto;
+  padding: clamp(72px, 11vh, 128px) 0;
+  text-align: center;
+}
+
+.film .eyebrow {
+  color: var(--faint);
+}
+.film .eyebrow::before {
+  display: none;
+}
+
+/*
+  The entrance. It rises and opens —from 0.965 to its full size— as it appears, which is what
+  makes it read as something that is arriving and not something that was there and has been turned
+  on. Long exit curve: it accelerates little and slows down a lot, like a curtain that stops by
+  itself. Once inside it stays; going up and down again does not repeat the animation, which on
+  the second pass already says nothing and makes you dizzy.
+ */
+.filmStage {
+  display: block;
+  width: 100%;
+  margin: 0;
+  opacity: 0;
+  transform: translateY(26px) scale(0.965);
+  transition:
+    opacity var(--motion-enter) ease,
+    transform var(--motion-enter) var(--ease-out);
+}
+.page .filmStage {
+  margin-top: 34px;
+}
+.filmStage[data-on] {
+  opacity: 1;
+  transform: none;
+}
+
+.filmFrame {
+  position: relative;
+  /*
+    Query container: what is written on top of the video is measured in `cqw` —percent of the
+    frame width—, which is the only way for the font size to shrink with the laptop screen instead
+    of staying huge on a mobile.
+   */
+  container-type: inline-size;
+  width: min(1040px, 100%);
+  margin: 0 auto;
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  /*
+    The same gray as the clip: as long as there is neither a poster nor a first frame, the gap is
+    the color of what is going to appear and not a black hole that later flashes.
+   */
+  background: var(--media-placeholder);
+  box-shadow: var(--shadow-window);
+}
+
+.filmVideo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: var(--film-image-filter);
+}
+
+/*
+  The laptop screen, in frame coordinates.
+  The video leaves the screen blank two and a half seconds after the slap, and that gap was
+  wasted. Here a terminal is opened and the command is typed —the same one that is copied in the
+  headline— as if it were being written by the person handling the laptop: you can see WHAT is
+  pasted so that what happens afterward happens.
+  It leaves before the mark appears: who decides that is `film-beats.ts`, with the window measured
+  over the frames, and a test monitors it.
+ */
+.filmScreen {
+  position: absolute;
+  left: 23.6%;
+  top: 7.1%;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52.3%;
+  height: 59.2%;
+  opacity: 0;
+  pointer-events: none;
+  /*
+    150 ms and no more: it starts going at 4.14 and the mark appears at 4.30, so the command must
+    have completely turned off before there is anything underneath to cover.
+   */
+  transition: opacity 150ms ease;
+}
+.filmScreen[data-on] {
+  opacity: 1;
+}
+
+/*
+  A window, not a line floating in the white.
+  The loose command was read like a sign stuck to the video. This box is the same black ink as the
+  ones above, with the three-dot bar that says "this is a terminal" without having to write it,
+  and the text goes in HTML so that it reads clearly: white on black, not 92% ink on the white of
+  the clip.
+ */
+.filmTerm {
+  display: flex;
+  flex-direction: column;
+  width: fit-content;
+  min-width: 0;
+  max-width: 94%;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--terminal-surface);
+  box-shadow:
+    0 0 0 1px var(--terminal-line),
+    0 14px 36px var(--black-a-28);
+  text-align: left;
+}
+
+/*
+  The measurements of the bar live here and not spread out by the rules below.
+  It is not an order for pleasure: the heading is centered over the **entire** bar with
+  `inset: 0`, so to avoid getting under the three dots it needs to reserve exactly what they
+  occupy. With the figures copied by hand in two places, that reservation gets out of sync the
+  first time someone touches the size of a dot — and the symptom would be the same as before: the
+  heading below the dots, which is not seen on desktop because there is extra space there.
+ */
+.filmTermBar {
+  --film-term-bar-height: max(22px, 2.35cqw);
+  --film-term-pad: max(10px, 1.1cqw);
+  --film-term-dot: max(7px, 0.7cqw);
+  --film-term-dot-gap: max(5px, 0.5cqw);
+  --film-term-dots-width: calc(3 * var(--film-term-dot) + 2 * var(--film-term-dot-gap));
+
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  height: var(--film-term-bar-height);
+  padding: 0 var(--film-term-pad);
+  background: var(--terminal-bar);
+}
+
+.filmTermDots {
+  display: flex;
+  gap: var(--film-term-dot-gap);
+}
+.filmTermDots i {
+  display: block;
+  width: var(--film-term-dot);
+  height: var(--film-term-dot);
+  border-radius: 50%;
+  background: var(--terminal-dot-one);
+}
+.filmTermDots i:nth-child(2) { background: var(--terminal-dot-two); }
+.filmTermDots i:nth-child(3) { background: var(--terminal-dot-three); }
+
+/*
+  The title of the frame, centered over the entire bar and without overlapping the dots.
+  The terminal lives inside the laptop screen of the video —`.filmScreen`, 52.3% of the frame—, so
+  on a mobile the bar is about 162 px and not the 500 of a desktop. Measured on 27-Aug-2026 at
+  375×812: bar of 161.8 px, «Panoma · ~/Desktop» occupies 122.4 px and centered started at 19.7 px
+  when the points end at 39.9 — **twenty pixels of title below the three circles**. On a desktop
+  there is extra space and that is why it was not visible.
+  There are three things, and all three are needed:
+  1. `padding-inline` reserves on both sides the space occupied by the points, so that the text
+  continues to be centered with respect to the entire bar but never goes under them.
+  2. `line-height` instead of `display: flex`, because the ellipsis truncation does not work on
+  loose text in a flex container. Being `inset: 0`, the height of the box is that of the bar, so a
+  line with that height ends up centered.
+  3. Ellipsis as a net: no matter how narrow the bar gets, the title is truncated instead of
+  overflowing. Without this, the arrangement only moves the problem to a smaller mobile device.
+ */
+.filmTermTitle {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  padding-inline: calc(
+    var(--film-term-pad) + var(--film-term-dots-width) + var(--film-term-dot-gap)
+  );
+  color: var(--terminal-muted);
+  font-family: var(--mono);
+  font-size: max(0.625rem, 1.15cqw);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  line-height: var(--film-term-bar-height);
+  text-align: center;
+  text-overflow: ellipsis;
+  text-transform: lowercase;
+  white-space: nowrap;
+}
+
+/*
+  And on a narrow bar the title is left alone with the folder.
+  With the reservation above, «Panoma · ~/Desktop» does not fit in the 162 px of a mobile: it
+  would appear cropped, which is correct but reads like an error. Half of what is shown is the
+  path —the product name is already in the command below and throughout the page—, so the prefix
+  is removed and it becomes `~/Desktop`, which fits completely with room to spare.
+  It is a container query and not a window query on purpose: what determines whether it fits is
+  not the width of the phone but that of the video frame, which is what controls the laptop
+  screen. `.filmFrame` is already `container-type: inline-size` for the same reason. The threshold
+  comes from the calculation: with the frame below ~428 px, the bar drops from the 122 px that the
+  entire title needs.
+ */
+@container (max-width: 440px) {
+  .filmTermTitleBrand {
+    display: none;
+  }
+}
+
+/*
+  The padding goes on the body, not on the `code`: with `border-box` (the one of `.page *` ) a
+  width in `ch` plus padding cut off the last letters — `~/Desk` instead of `~/Desktop`.
+ */
+.filmTermBody {
+  padding: max(12px, 2cqw) max(14px, 2.2cqw) max(16px, 2.6cqw);
+}
+
+/*
+  Fixed width —the entire command's width, in `ch` of a monospaced font— and left-aligned: if the
+  box grew with the text, the command would be written from the center outwards on both sides at
+  once, which is not how anyone writes. `--film-ch` is set by the component: the length of the
+  command, the `$`, the space, and the cursor.
+ */
+.filmCommand {
+  display: block;
+  box-sizing: content-box;
+  width: calc(var(--film-ch) * 1ch);
+  max-width: 100%;
+  color: var(--terminal-ink);
+  font-family: var(--mono);
+  font-size: clamp(0.875rem, 2.5cqw, 1.65rem);
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  line-height: 1.35;
+  text-align: left;
+  white-space: pre;
+}
+.filmCommand b {
+  color: var(--terminal-muted);
+  font-weight: 500;
+}
+
+/*
+  The cursor blinks with its own clock and not with the video's: on a real terminal it keeps
+  blinking even if nothing is being typed, and with `step-end` it doesn't fade — it jumps, like on
+  a terminal.
+ */
+.filmCaret {
+  display: inline-block;
+  width: 0.55ch;
+  height: 1.05em;
+  margin-left: 0.1ch;
+  background: var(--terminal-ink);
+  transform: translateY(0.14em);
+  animation: filmCaretBlink 1.06s step-end infinite;
+}
+
+@keyframes filmCaretBlink {
+  0%, 50% { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
+}
+
+/* A blinking cursor is exactly what this preference asks to turn off. */
+@media (prefers-reduced-motion: reduce) {
+  .filmCaret {
+    animation: none;
+  }
+}
+
+/*
+  The button never hides while the video is playing: something that moves on its own for more than
+  five seconds has to be able to be stopped, and a control that only appears when hovering the
+  mouse over it does not exist for someone using a finger or the keyboard. Dimmed while playing
+  —what matters is the video—, fully visible as soon as it stops, is focused, or is pointed at.
+ */
+.filmToggle {
+  position: absolute;
+  z-index: 2;
+  right: 12px;
+  bottom: 12px;
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  padding: 8px 13px;
+  border-radius: 999px;
+  background: var(--ink-a-66);
+  color: var(--paper);
+  backdrop-filter: blur(9px);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.5;
+  transition:
+    opacity 260ms ease,
+    background 260ms ease;
+}
+.filmToggle svg {
+  width: 12px;
+  height: 12px;
+}
+.filmToggle[data-on],
+.filmToggle:hover,
+.filmToggle:focus-visible {
+  background: var(--ink-a-82);
+  opacity: 1;
+}
+.filmToggle:focus-visible {
+  outline: 2px solid var(--paper);
+  outline-offset: 3px;
+}
+
+/* ── The progress bar: what is being seen, how much is left, and how to go back to a section ── */
+
+.filmScript {
+  display: block;
+  width: min(1040px, 100%);
+  margin: 0 auto;
+}
+.page .filmScript {
+  margin-top: 26px;
+}
+
+.filmRail {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.filmBeat {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 0;
+  cursor: pointer;
+  text-align: center;
+}
+.filmBeat:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 6px;
+  border-radius: 2px;
+}
+
+.filmBeatTrack {
+  display: block;
+  width: 100%;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--ink-a-14);
+  transition: background 260ms ease;
+}
+.filmBeat:hover .filmBeatTrack {
+  background: var(--ink-a-28);
+}
+
+/*
+  It moves it frame by frame according to the video clock: without transition, which here would be
+  a delay between what is seen and what the bar says.
+ */
+.filmBeatFill {
+  display: block;
+  height: 100%;
+  background: var(--ink);
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+
+.filmBeatLabel {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  line-height: 1.35;
+  text-transform: uppercase;
+  transition: color 380ms ease;
+}
+.filmBeat[data-on] .filmBeatLabel,
+.filmBeat:hover .filmBeatLabel {
+  color: var(--ink);
+}
+
+/*
+  The phrases, all stacked in the same cell: the box measures by the tallest one and changing the
+  section doesn't move a single pixel of what is underneath.
+ */
+.filmLines {
+  display: grid;
+  justify-items: center;
+  width: 100%;
+}
+.page .filmLines {
+  margin-top: 22px;
+}
+
+.filmLine {
+  grid-area: 1 / 1;
+  max-width: 54ch;
+  color: var(--ink-a-78);
+  font-size: clamp(1rem, 1.4vw, 1.125rem);
+  font-weight: 450;
+  letter-spacing: -0.01em;
+  line-height: 1.5;
+  opacity: 0;
+  text-wrap: balance;
+  transform: translateY(7px);
+  transition:
+    opacity 420ms ease,
+    transform 420ms ease;
+}
+.filmLine[data-on] {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .filmStage {
+    transform: none;
+    transition: opacity 640ms ease;
+  }
+  .filmLine {
+    transform: none;
+    transition: opacity 320ms ease;
+  }
+}
+
+/*
+  In two columns rather than in four, names split in half: from here on, a three-word headline
+  does not fit in a quarter of the screen.
+ */
+@media (max-width: 680px) {
+  .filmRail {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px 18px;
+  }
+  /*
+    The sections are uneven: the last one was left alone in half a row, with the bar at half width
+    and the gap next to it screaming that something is missing. Occupying the entire row, it reads
+    as the finishing touch that it is.
+   */
+  .filmRail > li:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+  .filmFrame {
+    border-radius: var(--radius);
+  }
+  .filmToggle {
+    right: 9px;
+    bottom: 9px;
+    padding: 7px 11px;
+  }
+  /*
+    On a phone, the frame drops from 340 px and a single line does not fit a readable body within
+    the laptop screen. It is split at the spaces — it is still the same command, not a cut — and
+    the minimum of 13 px is what prevents it from being read as texture.
+   */
+  .filmCommand {
+    width: auto;
+    font-size: clamp(0.875rem, 4.4cqw, 1.125rem);
+    white-space: pre-wrap;
+  }
+}
+
+/* ── The closing remark: the same question, now with an answer ── */
+
+.page .closeDoorQuestion {
+  margin-top: 44px;
+  color: var(--faint);
+  font-size: 1.0625rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.page .closeDoorAnswer {
+  margin-top: 8px;
+  max-width: 32ch;
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: 1.5rem;
+  font-weight: 650;
+  letter-spacing: -0.035em;
+  line-height: 1.15;
+}
+
+.close {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.closeInner {
+  width: var(--measure);
+  margin: 0 auto;
+  padding: var(--gap-section) 0 96px;
+}
+
+/*
+  The four promises like a custody table. Each row allows you to go through site, statement,
+  mechanism, and path without relearning the shape of a card. The only exception —the package that
+  can leave— inverts the ink to be read at a glance.
+ */
+.custody {
+  display: block;
+  margin: 52px 0 0;
+  padding: 0;
+  border-top: 1px solid var(--line-strong);
+  list-style: none;
+}
+
+.custody li {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.48fr) minmax(220px, 0.82fr) minmax(0, 1.45fr) minmax(140px, 0.55fr);
+  gap: 28px;
+  align-items: start;
+  padding: 24px 0;
+  border-bottom: 1px solid var(--line-strong);
+  background: transparent;
+}
+
+.custody li[data-exit] {
+  margin-top: -1px;
+  padding: 24px 20px;
+  border-color: var(--ink);
+  background: var(--ink);
+}
+
+.custodyLocus {
+  display: grid;
+  justify-items: start;
+  gap: 9px;
+  margin: 0;
+}
+
+.custodyLocus span {
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.custodyLocus em {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  font-style: normal;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.custodyLocus em::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border: 1px solid currentColor;
+  border-radius: 1px;
+}
+
+.custody li[data-exit] .custodyLocus em {
+  color: var(--paper);
+}
+
+.custody li[data-exit] .custodyLocus em::before {
+  background: currentColor;
+}
+
+.custody b {
+  display: block;
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: 1.125rem;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+  line-height: 1.25;
+}
+
+.custody li > span {
+  display: block;
+  margin-top: 0;
+  color: var(--muted);
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+
+.custody code {
+  display: block;
+  margin-top: 2px;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  letter-spacing: -0.01em;
+  text-align: right;
+}
+
+.custody li[data-exit] b,
+.custody li[data-exit] > span,
+.custody li[data-exit] code,
+.custody li[data-exit] .custodyLocus span {
+  color: var(--paper);
+}
+
+.custody li[data-exit] > span,
+.custody li[data-exit] code {
+  opacity: 0.72;
+}
+
+/*
+  Two things can come out —the package names and, if you connect a model, whatever you ask it to
+  describe—, so there are two rows of ink in a row. They touch (the `margin-top: -1px` above joins
+  them) and their separator is ink on ink, that is, invisible: without this they are read as a
+  single block with a hundred-pixel gap in the middle. The edge goes on translucent paper, which
+  is the only color visible over the ink.
+ */
+.custody li[data-exit] + li[data-exit] {
+  border-top: 1px solid color-mix(in srgb, var(--paper) 22%, transparent);
+}
+
+.page .dare {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 20px 28px;
+  margin-top: 24px;
+  padding: 18px 0;
+  border-top: 1px solid var(--ink);
+  border-bottom: 1px solid var(--ink);
+  background: transparent;
+}
+
+.page .dare > span {
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.page .dare strong {
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.4;
+}
+
+.page .dare code {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+/* What happens right after pasting the command, pasted next to the command. */
+.page .closeGrow {
+  max-width: var(--prose);
+  margin-top: 34px;
+  color: var(--muted);
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+
+.closeInner .commands {
+  margin-top: 20px;
+}
+
+/*
+  The language selector, as a control and not as two separate words.
+  A pill with two segments. The bottom of the active ingredient is a single element that slides.
+ */
+.langSwitch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding: 3px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--card);
+}
+
+.langThumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: calc(50% - 3px);
+  height: calc(100% - 6px);
+  border-radius: 999px;
+  background: var(--ink);
+  transition: transform 260ms cubic-bezier(0.32, 0.72, 0.24, 1);
+}
+.langSwitch[data-lang="es"] .langThumb { transform: translateX(100%); }
+
+.page .langSwitch button {
+  position: relative;
+  z-index: 1;
+  min-width: 44px;
+  min-height: 32px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: color 160ms ease 60ms;
+}
+.page .langSwitch button[aria-pressed="true"] { color: var(--paper); }
+.page .langSwitch button[aria-pressed="false"]:hover { color: var(--ink); }
+.page .langSwitch button:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
+
+.footLang { color: var(--faint); }
+
+/* ——— Functions of Panoma: the same grammar, two capabilities ——— */
+
+.featureMarkerCentered {
+  justify-content: center;
+  margin: 0 auto;
+}
+
+.page .featureTitle {
+  display: grid;
+  margin-top: 20px;
+  font-family: var(--display);
+  font-size: clamp(2.65rem, 4vw, 3.7rem);
+  font-weight: 720;
+  letter-spacing: -0.055em;
+  line-height: 1.01;
+  text-wrap: balance;
+}
+.featureTitle span:last-child { color: var(--faint); }
+
+/*
+  The jump to /docs from a section: a discreet pill under the headline. The two headers that carry
+  it are positioned absolutely over a decorative visual, so the button needs to reactivate the
+  pointer in case any ancestor turned it off.
+ */
+.page .featureDocsLink {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 20px;
+  padding: 9px 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  text-decoration: none;
+  pointer-events: auto;
+  transition: color 200ms var(--ease-out), border-color 200ms var(--ease-out);
+}
+.page .featureDocsLink:hover { border-color: var(--ink); color: var(--ink); }
+
+/* ——— Memory: a living memory, any agent ——— */
+
+.memory {
+  position: relative;
+  min-height: 950px;
+  overflow: hidden;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.memoryInner {
+  position: relative;
+  isolation: isolate;
+  width: var(--wide);
+  height: 950px;
+  margin: 0 auto;
+}
+
+.memoryCopy {
+  position: absolute;
+  z-index: 3;
+  top: 104px;
+  left: 50%;
+  width: min(1120px, calc(100% - 64px));
+  text-align: center;
+  transform: translateX(-50%);
+}
+
+.page .memoryLead {
+  max-width: 48ch;
+  margin: 18px auto 0;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1.5;
+  text-wrap: balance;
+}
+
+.memoryVisual {
+  position: absolute;
+  z-index: 1;
+  inset: 478px 0 auto;
+  display: grid;
+  /*
+    The track measures the container, not the contents, and that determines whether the network is
+    centered.
+    Without `grid-template-columns`, the implicit column is sized to `max-content`: it grows to
+    the width of the grid, starts at the left edge of the container, and goes off to the right.
+    `place-items: center` then does nothing, because centering something inside a track that
+    measures exactly the same does not move it.
+    That wasn’t noticeable while the network fit. On mobile it doesn’t fit on purpose —`min(500px,
+    124vw)` bleeds on the sides so the scene can be read— and the result was a network stuck to
+    the left that got cut completely on the right: measured on August 27, 2026 at 375 px, its
+    center fell at 245 with the screen centered at 187.5. The brain is in `x=450` of a `viewBox`
+    of 900, that is, in the exact center of the drawing, so that error was seen right where it
+    hurts the most.
+    With the track tied to the container, `place-items: center` takes control again and the
+    overflow is distributed on both sides. `minmax(0, 1fr)` and not `100%` because the minimum `0`
+    is what prevents a wide child from pushing the track again.
+    On the desktop nothing changes —verified: the grid was already centered and remains on the
+    same pixel—, because when the content fits, both ways of measuring coincide.
+   */
+  grid-template-columns: minmax(0, 1fr);
+  place-items: center;
+  pointer-events: none;
+}
+
+.memoryNetwork {
+  display: block;
+  width: min(900px, 84vw);
+  height: auto;
+  overflow: visible;
+  color: var(--ink);
+  opacity: 0;
+  transform: translateY(22px) scale(0.97);
+  transition:
+    opacity var(--motion-slow) ease 180ms,
+    transform 1800ms var(--ease-out) 140ms;
+}
+.memory[data-on] .memoryNetwork {
+  opacity: 1;
+  transform: none;
+}
+
+.memoryNetworkHalo {
+  fill: url("#memory-network-core");
+  opacity: 0.72;
+}
+
+.memoryNetworkDust {
+  fill: currentColor;
+  opacity: 0;
+  transition: opacity 1200ms ease 300ms;
+}
+.memory[data-on] .memoryNetworkDust { opacity: 0.38; }
+.memoryNetworkDust circle {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: memory-network-drift 7s ease-in-out var(--memory-delay) infinite alternate;
+}
+.memoryNetworkDust circle:nth-child(4n) { opacity: 0.46; }
+.memoryNetworkDust circle:nth-child(7n) { opacity: 0.72; }
+
+.memoryNetworkBranches {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.memoryNetworkBranch,
+.memoryNetworkBranchGlow {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+}
+.memoryNetworkBranch {
+  stroke-width: 1.2;
+  opacity: 0.46;
+}
+.memoryNetworkBranchGlow {
+  stroke-width: 8;
+  opacity: 0.035;
+}
+.memory[data-on] .memoryNetworkBranch,
+.memory[data-on] .memoryNetworkBranchGlow {
+  animation: memory-network-draw 900ms var(--ease-out) var(--network-delay) forwards;
+}
+.memoryNetworkAgentRoutes .memoryNetworkBranch {
+  stroke-width: 0.9;
+  opacity: 0.28;
+}
+.memoryNetworkAgentRoutes .memoryNetworkBranchGlow {
+  stroke-width: 6;
+  opacity: 0.025;
+}
+.memoryNetworkAgentRoutes .memoryNetworkFlow { stroke-width: 1.5; }
+.memory[data-on] .memoryNetworkAgentRoutes > g {
+  animation: memory-network-agent-route-live 4.8s ease-in-out calc(var(--network-delay) + 900ms + var(--route-phase)) infinite;
+}
+.memoryNetworkFlow {
+  stroke-width: 2;
+  stroke-dasharray: 0.014 0.07;
+  opacity: 0;
+}
+.memory[data-on] .memoryNetworkFlow {
+  animation: memory-network-flow 1.8s linear calc(var(--network-delay) + 820ms) infinite;
+}
+
+.memoryNetworkAgent {
+  opacity: 0;
+  transform: translate(var(--agent-enter-x), var(--agent-enter-y)) scale(0.78);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.memory[data-on] .memoryNetworkAgent {
+  animation: memory-network-agent-in 900ms var(--ease-out) var(--agent-delay) forwards;
+}
+.memoryNetworkAgentObject { overflow: visible; }
+.memoryNetworkAgentIcon {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 1px solid var(--hairline);
+  border-radius: 50%;
+  background: var(--paper);
+  box-shadow: var(--shadow-soft);
+  color: var(--ink);
+}
+.memoryNetworkAgentIcon svg {
+  width: 22px;
+  height: 22px;
+}
+.memoryNetworkAgentLabel {
+  opacity: 0;
+  fill: var(--ink);
+  stroke: var(--paper);
+  stroke-width: 4px;
+  paint-order: stroke fill;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 720;
+  letter-spacing: 0.02em;
+  text-anchor: middle;
+}
+.memory[data-on] .memoryNetworkAgentLabel {
+  animation: memory-network-agent-label 2.8s ease var(--agent-delay) forwards;
+}
+
+.memoryNetworkPanoma {
+  opacity: 0;
+  transform: scale(0.58);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.memory[data-on] .memoryNetworkPanoma {
+  animation: memory-network-awaken 1100ms var(--ease-out) var(--network-delay) forwards;
+}
+.memoryNetworkPanomaHalo {
+  fill: url("#memory-network-core");
+  opacity: 0.82;
+  transform: scale(0.66);
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: memory-network-panoma-halo 3.8s ease-out 720ms infinite;
+}
+.memoryNetworkMark {
+  fill: var(--ink);
+  opacity: 0;
+}
+.memory[data-on] .memoryNetworkMark {
+  animation: memory-network-mark-in 800ms ease 720ms forwards;
+}
+.memoryNetworkPanoma .memoryNetworkBase { opacity: 0.14; }
+.memoryNetworkPanoma .memoryNetworkMatter { opacity: 0.78; }
+
+.memoryNetworkNode {
+  opacity: 0;
+  transform: scale(0.72);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.memory[data-on] .memoryNetworkNode {
+  animation: memory-network-arrive 860ms var(--ease-out) var(--network-delay) forwards;
+}
+.memoryNetworkNodeHalo {
+  fill: url("#memory-network-core");
+  opacity: 0.8;
+  transform: scale(0.74);
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: memory-network-halo 3.4s ease-out calc(var(--network-delay) + 650ms) infinite;
+}
+
+.memoryNetworkBrain {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: memory-network-breathe 6.5s ease-in-out var(--network-delay) infinite;
+}
+.memoryNetworkBase {
+  fill: currentColor;
+  opacity: 0.065;
+}
+.memoryNetworkMatter {
+  fill: url("#memory-network-dots");
+  opacity: 0.78;
+}
+.memoryNetworkContour {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 0.8;
+  stroke-linecap: round;
+  stroke-dasharray: 1 4;
+  opacity: 0.4;
+}
+
+.memoryNetworkSignals {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 0.78;
+  stroke-linecap: round;
+  stroke-dasharray: 2 8;
+  opacity: 0.56;
+  animation: memory-network-signal 2.1s linear infinite;
+}
+
+.memoryNetworkLabel {
+  fill: var(--ink);
+  stroke: var(--paper);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+  paint-order: stroke fill;
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 720;
+  letter-spacing: 0.01em;
+  text-anchor: middle;
+}
+
+@keyframes memory-network-draw {
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes memory-network-flow {
+  0% { opacity: 0; stroke-dashoffset: 0.18; }
+  18% { opacity: 0.64; }
+  100% { opacity: 0.08; stroke-dashoffset: -0.42; }
+}
+
+@keyframes memory-network-drift {
+  from { transform: translate3d(-3px, -2px, 0) scale(0.85); }
+  to { transform: translate3d(5px, 4px, 0) scale(1.18); }
+}
+
+@keyframes memory-network-arrive {
+  0% { opacity: 0; transform: scale(0.72); }
+  62% { opacity: 1; transform: scale(1.035); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes memory-network-awaken {
+  0% { opacity: 0; transform: scale(0.58); }
+  64% { opacity: 1; transform: scale(1.045); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes memory-network-agent-in {
+  0% {
+    opacity: 0;
+    transform: translate(var(--agent-enter-x), var(--agent-enter-y)) scale(0.78);
+  }
+  64% { opacity: 1; transform: translate(0, 0) scale(1.04); }
+  100% { opacity: 1; transform: translate(0, 0) scale(1); }
+}
+
+@keyframes memory-network-agent-route-live {
+  0%, 100% { opacity: 0; }
+  18%, 58% { opacity: 1; }
+  76% { opacity: 0; }
+}
+
+@keyframes memory-network-agent-label {
+  0% { opacity: 0; transform: translateY(3px); }
+  24%, 72% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: translateY(-2px); }
+}
+
+@keyframes memory-network-mark-in {
+  from { opacity: 0; }
+  to { opacity: 0.96; }
+}
+
+@keyframes memory-network-panoma-halo {
+  0% { opacity: 0.7; transform: scale(0.62); }
+  74%, 100% { opacity: 0; transform: scale(1.08); }
+}
+
+@keyframes memory-network-halo {
+  0% { opacity: 0.58; transform: scale(0.62); }
+  78%, 100% { opacity: 0; transform: scale(1.08); }
+}
+
+@keyframes memory-network-breathe {
+  50% { transform: scale(1.018); opacity: 0.82; }
+}
+
+@keyframes memory-network-signal {
+  to { stroke-dashoffset: -20; }
+}
+
+@keyframes memory-network-pulse {
+  0% { opacity: 0.34; transform: scale(0.45); }
+  82%, 100% { opacity: 0; transform: scale(1.35); }
+}
+
+/* ——— Twin: the same criterion within each agent ——— */
+
+.twin {
+  position: relative;
+  min-height: 760px;
+  overflow: hidden;
+  border: 0;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.twinInner {
+  --twin-figure-width: min(720px, 48vw);
+  --twin-figure-top: 245px;
+  --twin-finger-offset: min(291.6px, 19.44vw);
+  position: relative;
+  isolation: isolate;
+  width: var(--wide);
+  height: 760px;
+  margin: 0 auto;
+}
+
+.twinCopy {
+  position: absolute;
+  z-index: 6;
+  top: 104px;
+  left: 50%;
+  width: min(920px, calc(100% - 64px));
+  text-align: center;
+  transform: translateX(-50%);
+}
+
+.twinFigures {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  pointer-events: none;
+}
+
+.twinFigure {
+  position: absolute;
+  top: var(--twin-figure-top);
+  display: block;
+  width: var(--twin-figure-width);
+  height: auto;
+  opacity: 0;
+  filter: var(--figure-filter);
+  mix-blend-mode: var(--figure-blend);
+  will-change: transform, opacity;
+  transition:
+    opacity var(--motion-slow) ease 120ms,
+    transform 2400ms var(--ease-out);
+}
+
+.twinFigureLeft {
+  left: calc(50% - var(--twin-figure-width) - 44px);
+  transform: translateX(-14%);
+}
+.twinFigureRight {
+  right: calc(50% - var(--twin-figure-width) - 44px);
+  transform: translateX(14%);
+}
+
+.twin[data-on] .twinFigure { opacity: 0.56; }
+.twin[data-on] .twinFigureLeft { transform: none; }
+.twin[data-on] .twinFigureRight { transform: none; }
+
+.twinParticleCanvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--motion-enter) ease 180ms;
+}
+.twinParticlesBack { z-index: 0; }
+.twinParticlesFront { z-index: 5; }
+.twin[data-on] .twinParticleCanvas { opacity: 1; }
+
+.twinCore {
+  position: absolute;
+  /*
+    This box only gives the typography and the reference center to the canvas. The visible word is
+    written by the particles; the text HTML remains hidden.
+   */
+  z-index: 4;
+  top: calc(var(--twin-figure-top) + var(--twin-finger-offset));
+  left: 50%;
+  display: grid;
+  place-items: center;
+  width: 148px;
+  height: 148px;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.96);
+  transition:
+    opacity var(--motion-enter) ease 2300ms,
+    transform var(--motion-enter) var(--ease-out) 2250ms;
+}
+.twinCore strong {
+  grid-area: 1 / 1;
+  position: relative;
+  z-index: 1;
+  font-family: var(--mono);
+  font-size: 0.875rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  opacity: 0;
+}
+.twin[data-on] .twinCore {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+.twinAgentMap {
+  position: absolute;
+  z-index: 6;
+  top: 557px;
+  left: 50%;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  width: min(380px, calc(100% - 48px));
+  opacity: 0;
+  transform: translate(-50%, 8px);
+  transition:
+    opacity 760ms ease 3300ms,
+    transform var(--motion-enter) var(--ease-out) 3250ms;
+}
+.twin[data-on] .twinAgentMap {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.twinAgent {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 132px;
+  padding-top: 94px;
+  color: var(--ink);
+}
+.twinAgent > svg {
+  position: relative;
+  z-index: 1;
+  width: 30px;
+  height: 30px;
+}
+
+/* Three simple dividers are born in the same TASTE.md and end at a real mark. */
+.twinRay {
+  position: absolute;
+  bottom: 34px;
+  left: 50%;
+  display: block;
+  width: 1px;
+  height: 122px;
+  border-left: 0;
+  opacity: 0;
+  transform-origin: center bottom;
+}
+.twinRay[data-ray="1"] { transform: rotate(30deg); }
+.twinRay[data-ray="3"] { transform: rotate(-30deg); }
+
+.footer {
+  display: block;
+  border-top: 1px solid var(--line);
+  background: var(--paper);
+}
+
+@media (max-width: 1100px) {
+  .page {
+    --measure: calc(100% - 64px);
+    --wide: calc(100% - 36px);
+    --gap-section: 96px;
+  }
+  .agentLayout {
+    grid-template-columns: minmax(240px, 0.72fr) minmax(420px, 1.28fr);
+    column-gap: 40px;
+  }
+}
+
+@media (max-width: 880px) {
+  .navInner { grid-template-columns: 1fr auto; }
+  .navLinks { display: none; }
+}
+
+@media (max-width: 800px) {
+  .page { --measure: calc(100% - 48px); --gap-section: 80px; }
+  .verdict { gap: 20px; margin-top: 44px; padding-top: 32px; }
+  .navActions { gap: 10px; }
+
+  .hero { min-height: 0; padding: 8px 0 48px; }
+  .heroStage { gap: 0; }
+  .phraseSlot { height: clamp(280px, 42vh, 380px); }
+  .rivalGrid,
+  .gains,
+  .custody { grid-template-columns: minmax(0, 1fr); }
+  .rivalCardFull { border-top: 1px solid var(--ink); border-left: 0; }
+  .agentLayout { display: block; }
+  .agentLayout > .duo { max-width: 18ch; }
+  .agentLayout > .docTabs { margin-top: 28px; }
+  .agentLayout > .mdCard { margin-top: 36px; }
+  .gains li { grid-template-columns: 1fr; gap: 10px; }
+  .custody li {
+    grid-template-columns: minmax(140px, 0.55fr) minmax(0, 1.45fr);
+    gap: 14px 28px;
+  }
+  .custody code { text-align: right; }
+  .knows { justify-content: flex-start; }
+  .gains { gap: 24px; }
+  .memory,
+  .memoryInner { min-height: 800px; height: 800px; }
+  .memoryCopy { top: 76px; width: calc(100% - 40px); }
+  .memoryVisual { inset: 390px 0 auto; }
+  .memoryNetwork { width: min(780px, 92vw); }
+  .finale { min-height: 1060px; }
+  .finaleCopy { width: calc(100% - 48px); padding-top: 52px; }
+  .finaleSystem {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 58px auto;
+    width: var(--measure);
+    min-height: 430px;
+    padding: 24px 0 28px;
+  }
+  .finaleFlow {
+    width: 76px;
+    transform: rotate(90deg);
+  }
+  .finaleCatalog { transform: none; }
+  .page .finaleMapLabel { width: min(324px, 100%); }
+  .finaleUtilities {
+    grid-template-columns: 1fr 1fr;
+    gap: 28px 44px;
+    padding-top: 28px;
+  }
+  .finaleCommand { grid-column: 1 / -1; grid-row: 1; }
+  .finaleNav:last-child { justify-self: start; }
+  .footerBar {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding: 16px 0;
+  }
+  .footerBar > :nth-child(2),
+  .footerBar > :last-child { text-align: left; }
+
+  .twinInner { min-height: 670px; height: 670px; }
+  .twinInner {
+    --twin-figure-width: min(500px, 64vw);
+    --twin-figure-top: 235px;
+    --twin-finger-offset: min(202.5px, 25.92vw);
+  }
+  .twinCopy { top: 76px; width: calc(100% - 40px); }
+  .page .featureTitle { font-size: clamp(2.15rem, 7vw, 3rem); }
+  .twinFigureLeft { left: calc(50% - var(--twin-figure-width) - 72px); }
+  .twinFigureRight { right: calc(50% - var(--twin-figure-width) - 72px); }
+  .twinCore { width: 126px; height: 126px; }
+  .twinAgentMap { top: 486px; width: min(340px, calc(100% - 32px)); }
+  .twinRay { height: 108px; }
+}
+
+@media (max-width: 520px) {
+  .page { --measure: calc(100% - 32px); --wide: calc(100% - 24px); --gap-section: 64px; }
+  .productMarker {
+    gap: 7px;
+    font-size: 0.56rem;
+    letter-spacing: 0.055em;
+  }
+  .productMarker::before { width: 20px; }
+  .productMarker b { padding-left: 7px; }
+  .phraseSlot { height: clamp(240px, 36vh, 300px); }
+  .page .heroQualifier {
+    max-width: 34ch;
+    text-wrap: balance;
+  }
+  .navCtaLabel { display: none; }
+  .page a.navCta {
+    min-width: 40px;
+    min-height: 40px;
+    padding: 0 10px;
+  }
+
+  /*
+    The margin lives in the group, not in each box: otherwise, the gap between the two commands
+    would be added to the `gap` and the pair would open twice as much on the narrower screen.
+   */
+  .commands { margin-top: 22px; gap: 14px; }
+  .commandRow { width: 100%; }
+  .commandBox { width: 100%; min-height: 52px; }
+  .commandBox code {
+    flex: 1 1 auto;
+    overflow: hidden;
+    padding: 0 14px;
+    font-size: 0.78rem;
+    text-overflow: ellipsis;
+  }
+  .commandBox button {
+    min-width: 76px;
+    padding: 0 14px;
+    font-size: 0.75rem;
+  }
+  .custody li { grid-template-columns: 1fr; gap: 10px; }
+  .custody li[data-exit] { padding: 22px 18px; }
+  .custody code { margin-top: 8px; text-align: left; }
+  .closeInner { padding-bottom: 72px; }
+  .page .dare {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .page .dare code { white-space: normal; }
+
+  .memory,
+  .memoryInner { min-height: 720px; height: 720px; }
+  .memoryCopy { top: 54px; width: calc(100% - 28px); }
+  .page .memoryLead { margin-top: 16px; font-size: 0.92rem; }
+  .memoryVisual { inset: 406px 0 auto; }
+  .memoryNetwork { width: min(500px, 124vw); }
+
+  .finale { min-height: 1010px; }
+  .finaleCopy { width: calc(100% - 28px); padding-top: 42px; }
+  .finaleTitle {
+    max-width: 14ch;
+    font-size: clamp(1.9rem, 8.8vw, 2.5rem);
+    line-height: 1;
+  }
+  .page .finaleTitle { margin-top: 14px; }
+  .finaleSystem { width: 100%; margin-top: 14px; padding-right: 14px; padding-left: 14px; }
+  .finaleCatalogBody { gap: 10px; }
+  .finaleCatalogWindow { width: 176px; height: 132px; }
+  .finaleFeatureList { flex-basis: 138px; }
+  .finaleFeatureList li { gap: 5px; font-size: 0.56rem; }
+  .finaleUtilities { width: calc(100% - 32px); gap: 24px 28px; }
+  .finaleCommand { width: 100%; }
+  .finaleCommand .commandRow { width: 100%; }
+
+  .twinInner { min-height: 570px; height: 570px; }
+  .twinInner {
+    --twin-figure-width: min(360px, 80vw);
+    --twin-figure-top: 220px;
+    --twin-finger-offset: min(145.8px, 32.4vw);
+  }
+  .twinCopy { top: 54px; width: calc(100% - 28px); }
+  .page .featureTitle {
+    margin-top: 16px;
+    font-size: clamp(1.85rem, 8.7vw, 2.35rem);
+    line-height: 1.03;
+  }
+  /*
+    On mobile, the two bodies open so that the arms do not invade the word. Since the canvas
+    measures the fingers from these same boxes, the particles continue to be born from them and
+    form TASTE.MD right in the new gap.
+   */
+  .twinFigureLeft { left: calc(50% - var(--twin-figure-width) - 72px); }
+  .twinFigureRight { right: calc(50% - var(--twin-figure-width) - 72px); }
+  .twinCore { width: 106px; height: 106px; }
+  .twinCore strong { font-size: 0.75rem; }
+  .twinAgentMap { top: 376px; width: min(300px, calc(100% - 24px)); }
+  .twinAgent { min-height: 118px; padding-top: 82px; }
+  .twinAgent > svg { width: 26px; height: 26px; }
+  .twinRay { bottom: 31px; height: 94px; }
+}
+
+/*
+  On small laptops the section fits completely below the navigation. Without this variant, the
+  headline took up half the screen and the agents could be flying out of frame, making an organic
+  trajectory look like a fixed logo.
+ */
+@media (min-width: 801px) and (max-height: 820px) {
+  .memory,
+  .memoryInner {
+    min-height: calc(100svh - 64px);
+    height: calc(100svh - 64px);
+  }
+  .memoryCopy { top: 36px; }
+  .page .memory .featureTitle {
+    margin-top: 14px;
+    font-size: clamp(2.35rem, 4vw, 3.15rem);
+  }
+  .page .memoryLead { margin-top: 12px; }
+  .memoryVisual { inset: 270px 0 auto; }
+  .memoryNetwork { width: min(720px, 76vw); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page *,
+  .page *::before,
+  .page *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .fileReelOn,
+  .fileReelOff { transform: none; }
+}

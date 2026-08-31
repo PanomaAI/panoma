@@ -1,0 +1,52 @@
+{
+  "name": "panoma",
+  "version": "0.1.2",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "description": "The local catalog of your projects: everything on your disk, ready to pick up — by you or by your agents.",
+  "homepage": "https://panoma.ai",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PanomaAI/panoma.git",
+    "directory": "apps/cli"
+  },
+  "keywords": [
+    "catalog",
+    "projects",
+    "local-first",
+    "cli",
+    "agents",
+    "claude",
+    "developer-tools"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "panoma": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "app",
+    "THIRD-PARTY-NOTICES.md",
+    "npm-shrinkwrap.json"
+  ],
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "build:app": "node scripts/build-app.mjs",
+    "prepack": "node scripts/check-package.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.71.0",
+    "ignore": "^6.0.2",
+    "picocolors": "^1.1.1",
+    "smol-toml": "^1.3.1",
+    "yaml": "^2.6.1"
+  },
+  "devDependencies": {
+    "@panoma/ai": "workspace:*",
+    "@panoma/core": "workspace:*"
+  }
+}
