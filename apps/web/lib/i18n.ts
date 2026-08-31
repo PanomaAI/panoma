@@ -1440,6 +1440,13 @@ const es = {
    */
   "store.alsoCopies": "· {n} copia{s} más",
   "store.alsoCopiesTitle": "Esta ficha vale por la carpeta buena; las otras están en Copias.",
+  /*
+    The same fact for the tile, where the sentence does not fit and becomes the tooltip. It is
+    written whole, with its figure inside, instead of joining `store.alsoCopies` and the title at
+    render time: the «·» that opens the other one is a separator between the path and this, not
+    prose, and a tooltip assembled from two strings cannot be read here as the reader will hear it.
+   */
+  "store.alsoCopiesMark": "{n} copia{s} más. Esta ficha vale por la carpeta buena; las otras están en Copias.",
   "families.canonical": "principal",
   "families.copy": "copia",
   "families.noGit": "sin git",
@@ -3444,6 +3451,13 @@ const en = {
   "families.copiesAndSize": "{n} cop{ies} · {bytes}",
   "store.alsoCopies": "· {n} more cop{ies}",
   "store.alsoCopiesTitle": "This row stands for the good folder; the others are under Copies.",
+  /*
+    The same fact for the tile, where the sentence does not fit and becomes the tooltip. It is
+    written whole, with its figure inside, instead of joining `store.alsoCopies` and the title at
+    render time: the «·» that opens the other one is a separator between the path and this, not
+    prose, and a tooltip assembled from two strings cannot be read here as the reader will hear it.
+   */
+  "store.alsoCopiesMark": "{n} more cop{ies}. This tile stands for the good folder; the others are under Copies.",
   "families.canonical": "main",
   "families.copy": "copy",
   "families.noGit": "no git",
