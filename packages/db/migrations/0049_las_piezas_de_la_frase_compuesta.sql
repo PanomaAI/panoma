@@ -1,0 +1,1 @@
+ALTER TABLE "projects" ADD COLUMN "summary_composition" jsonb;

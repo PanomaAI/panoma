@@ -1,0 +1,15 @@
+packages:
+  - "packages/*"
+  - "apps/*"
+
+# esbuild needs its postinstall script to download the native binary. It is used by tsx
+# (development) and tsup (build).
+allowBuilds:
+  esbuild: true
+  # sharp: Next image optimization.
+  sharp: true
+  # The native resolver that comes with the ESLint set to follow imports. It is left UNbuilt: none
+  # of the rules that this project has enabled resolve paths —that is already done by `tsc` —, and
+  # its postinstall downloads a binary per platform on each installation, also on the three systems
+  # of CI. Verified that the linter does not complain.
+  unrs-resolver: false

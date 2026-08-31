@@ -1,0 +1,89 @@
+/*
+  The document, the body, and the parts that are not part of any screen.
+  `.eyebrow` is here because it is used by several screens and none of them owns it, and
+  `.skip-link` for the same reason: it is rendered once in the layout, in front of everything else.
+ */
+
+html {
+  color-scheme: light;
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--color-ground);
+  color: var(--color-chalk);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  min-width: 320px;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.eyebrow {
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-faint);
+}
+
+/*
+  The skip to content link.
+  In front of the content of any page, there are twenty keyboard stops — folding the bar, the
+  mark, the searcher, ⌘K, the account, twelve sections, two languages, and the font — and they are
+  the SAME twenty on every page that is opened. This link skips them. It is criterion 2.4.1 of the
+  WCAG and it is level A, the lowest of the three.
+  It hides with `transform` and NOT with `display: none` or `visibility: hidden`: those two would
+  take it out of the tab order, meaning the link that exists for the keyboard would cease to exist
+  precisely for the keyboard. Off-screen but focusable is the only way.
+  And respond to `:focus` alone, not to `:focus-visible`: whoever arrives here with a switch, an
+  on-screen keyboard, or any other pointer has to see it the same. The focus ring is still set by
+  the global rule of `responsive.css`.
+ */
+.skip-link {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  /*
+    Above the curtain of dialogues: if something covered it, the link would be useless just when
+    it is needed.
+   */
+  z-index: calc(var(--z-overlay) + 1);
+  padding: 10px 16px;
+  border: 1px solid var(--color-accent);
+  border-radius: var(--corner);
+  background: var(--color-surface);
+  color: var(--color-chalk);
+  font-size: 0.85rem;
+  font-weight: 650;
+  text-decoration: none;
+  box-shadow: var(--shadow-dialog);
+  transform: translateY(calc(-100% - 16px));
+  transition: transform var(--duration-fast) ease;
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+/*
+  The destination of the jump, which is the `<main>` of each page (or the `(app)/error.tsx`
+  wrapper when the path falls).
+  Carry `tabindex="-1"` because without it, in Safari, the anchor moves the scroll but not the
+  focus: the keyboard stays where it was and the link seems to do nothing. And the ring is removed
+  because focusing on a full-page container would draw it around the ENTIRE screen — a rectangle
+  that points to nothing. Whoever jumps already knows where they jumped to.
+ */
+#app-main:focus {
+  outline: none;
+}

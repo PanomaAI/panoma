@@ -1,0 +1,260 @@
+name: CLA
+
+# Check that everyone who contributes code has signed the /CLA.md agreement.
+#
+# Why don't we use cla-assistant: the action `contributor-assistant/github-action` has been archived
+# since 2024 and runs with write permissions, and the hosted service requires giving a third party
+# write access to the repository. For a product whose argument is that nothing leaves your machine,
+# delegating that was incoherent. These are forty lines that are read in full.
+
+on:
+  # `pull_request_target` and not `pull_request` because PRs from a fork receive a read-only token
+  # and could not comment.
+  #
+  # NOTICE to whoever touches this: `pull_request_target` runs with write permissions and with the
+  # content of the BASE BRANCH. Never check out the PR branch here, nor run anything that comes from
+  # it (neither `npm install` nor scripts from the PR repo): it would be giving the token to anyone
+  # who opens a PR. This flow only reads a JSON and comments.
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  firmas:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const FRASE = "I have read the CLA Document and I hereby sign the CLA";
+            /*
+              Quien no necesita firmar: el titular del copyright, por login Y por id.
+
+              Por id porque el login de GitHub se renombra y se RECICLA: quien registre
+              mañana un login abandonado no debe heredar ni la exención ni una firma. El
+              id numérico es lo único que no cambia nunca. (La exención de los bots no
+              vive aquí: vive más abajo, en el filtro `[bot]`, con su propia guarda.)
+            */
+            const EXENTOS = new Set(["jesus89x2"]);
+            const EXENTOS_ID = new Set([12791632]);
+
+            /*
+              Los agentes de IA que firman commits como coautores (`Co-Authored-By:
+              Claude …`). No firman el CLA porque no hay nada que firmar: sin autor
+              humano no hay copyright que licenciar, y ese trailer existe para la
+              atribución, no para la titularidad. Se reconocen por su email, que no es
+              de ninguna persona.
+            */
+            const COAUTORES_IA = new Set(["noreply@anthropic.com"]);
+
+            /*
+              El registro se lee de la RAMA POR DEFECTO por la API, no de un checkout.
+
+              Dos motivos. El primero es de seguridad: bajo `pull_request_target` lo más
+              sano es no materializar ningún árbol — este flujo ya no toca el disco. El
+              segundo es el que se sufría: un re-run reutiliza el SHA del evento
+              original, así que el checkout releía el cla-signers.json VIEJO y el
+              contribuidor recién apuntado seguía en rojo hasta empujar otro commit.
+              Leyendo de la rama viva, «Re-run» basta después de registrar la firma.
+            */
+            const { data: fichero } = await github.rest.repos.getContent({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              path: ".github/cla-signers.json",
+              ref: context.payload.repository.default_branch,
+            });
+            const registro = JSON.parse(Buffer.from(fichero.content, "base64").toString("utf8"));
+
+            /*
+              Cada firmante se apunta con login, `id` numérico, fecha y enlace al
+              comentario. La comparación fuerte es por id (sobrevive a renombres y a
+              reciclajes de login); el login solo vale para entradas antiguas sin id.
+            */
+            const firmadosPorId = new Set(
+              (registro.firmantes ?? []).filter((f) => f.id).map((f) => Number(f.id)),
+            );
+            const firmados = new Set(
+              (registro.firmantes ?? [])
+                .filter((f) => !f.id)
+                .map((f) => String(f.login).toLowerCase()),
+            );
+
+            /*
+              Y los cubiertos por el acuerdo corporativo (/CCLA.md).
+
+              Ahí no firma quien programa: firma quien puede obligar a la empresa, y trae
+              una lista de logins autorizados. Sin esto, un ingeniero cuya empresa ya ha
+              firmado recibiría igualmente el comentario del bot pidiéndole que firme el
+              individual — que es justo lo que no puede firmar con verdad, porque su
+              contrato dice que ese código no es suyo.
+            */
+            const porEmpresa = new Map();
+            for (const empresa of registro.empresas ?? []) {
+              for (const login of empresa.anexoA ?? []) {
+                porEmpresa.set(String(login).toLowerCase(), empresa.nombre);
+              }
+            }
+
+            // Quién aporta: el autor del PR y el de cada commit. Los dos, porque un PR
+            // puede traer commits de otra persona y esa persona también tiene que firmar.
+            const commits = await github.paginate(github.rest.pulls.listCommits, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+              per_page: 100,
+            });
+
+            const quienAbre = context.payload.pull_request.user;
+            const autores = new Map([[quienAbre.login, quienAbre.id]]);
+            /*
+              Los que no se pueden identificar, que también cuentan — en contra.
+
+              La autoría de git es autoafirmada: basta un `git config user.email` con
+              cualquier dirección para que un commit diga lo que quiera. Si ese email no
+              está vinculado a ninguna cuenta de GitHub, la API devuelve author nulo, y
+              tragárselo en silencio significaría aceptar código de alguien a quien ni
+              siquiera se le puede pedir la firma. Se apunta y se falla.
+            */
+            const huerfanos = new Set();
+
+            for (const commit of commits) {
+              if (commit.author?.login) {
+                const login = commit.author.login;
+                if (login.endsWith("[bot]")) {
+                  /*
+                    Un login `[bot]` no se puede REGISTRAR, pero sí SUPLANTAR: un commit
+                    local con el email noreply de dependabot sale atribuido a
+                    dependabot[bot]. Se exime al bot solo cuando hay prueba de que el
+                    commit es suyo de verdad: o el PR lo abrió el propio bot, o GitHub
+                    firmó el commit (verification.verified, que un commit local
+                    suplantado no tiene).
+                  */
+                  const esSuyo =
+                    quienAbre.login === login || commit.commit?.verification?.verified === true;
+                  if (!esSuyo) huerfanos.add(`${login} (commit sin verificar: suplantación posible)`);
+                  continue;
+                }
+                autores.set(login, commit.author.id);
+              } else {
+                const quien = commit.commit?.author;
+                huerfanos.add(`${quien?.name ?? "?"} <${quien?.email ?? "?"}> (email sin cuenta de GitHub)`);
+              }
+
+              /*
+                Y los coautores de los trailers, que GitHub acredita como contribuidores
+                pero `listCommits` no trae como autores. Un email noreply de GitHub
+                delata el login (con o sin id delante); un email de agente de IA se
+                salta (ver COAUTORES_IA); cualquier otro es una persona sin identificar
+                cuyo código entraría sin firma — huérfano.
+              */
+              for (const [, nombre, email] of (commit.commit?.message ?? "").matchAll(
+                /^co-authored-by:\s*(.+?)\s*<(.+?)>\s*$/gim,
+              )) {
+                const correo = email.toLowerCase();
+                if (COAUTORES_IA.has(correo)) continue;
+                const noreply = correo.match(/^(?:(\d+)\+)?([a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38})@users\.noreply\.github\.com$/);
+                if (noreply) {
+                  autores.set(noreply[2], noreply[1] ? Number(noreply[1]) : undefined);
+                } else {
+                  huerfanos.add(`${nombre} <${email}> (coautor sin cuenta identificable)`);
+                }
+              }
+            }
+
+            const faltan = [...autores.entries()]
+              .filter(([login, id]) => {
+                if (id !== undefined && EXENTOS_ID.has(id)) return false;
+                if (id === undefined && EXENTOS.has(login.toLowerCase())) return false;
+                if (porEmpresa.has(login.toLowerCase())) return false;
+                if (id !== undefined && firmadosPorId.has(id)) return false;
+                return !firmados.has(login.toLowerCase());
+              })
+              .map(([login]) => login);
+
+            if (faltan.length === 0 && huerfanos.size === 0) {
+              const como = [...autores.keys()].map((login) => {
+                const empresa = porEmpresa.get(login.toLowerCase());
+                return empresa ? `${login} (${empresa})` : login;
+              });
+              core.info(`Firmado por: ${como.join(", ")}`);
+              return;
+            }
+
+            const cuerpo = [
+              "### Falta la firma del CLA",
+              "",
+              `Gracias por la aportación. Antes de poder fusionarla necesitamos que ${faltan
+                .map((l) => `@${l}`)
+                .join(", ")} firme el [acuerdo de colaboración](../blob/HEAD/CLA.md).`,
+              "",
+              "Lo esencial, antes de que lo leas: **conservas tu copyright** — es una licencia,",
+              "no una cesión. Nos permite vender excepciones a la AGPL y construir productos de",
+              "pago que reutilicen código del proyecto, que es como se financia esto; y nos ata",
+              "de vuelta: lo que aportes seguirá disponible bajo su licencia libre como cláusula",
+              "del contrato (§4), con derecho a retirarnos la licencia si eso se rompiera.",
+              "",
+              "Se lee en cinco minutos y se firma una sola vez, para siempre. Publica este",
+              "comentario en este mismo pull request, exactamente:",
+              "",
+              "```",
+              FRASE,
+              "```",
+              "",
+              "Nadie de fuera guarda esa firma: queda escrita en",
+              "[`.github/cla-signers.json`](../blob/HEAD/.github/cla-signers.json), en este",
+              "repositorio y a la vista.",
+              "",
+              ...(huerfanos.size > 0
+                ? [
+                    "**Hay además código que no se puede atribuir a nadie con cuenta:**",
+                    ...[...huerfanos].map((h) => `- ${h}`),
+                    "",
+                    "Un commit cuyo autor no tiene cuenta vinculada es código de alguien a quien no",
+                    "se le puede pedir la firma. Se arregla vinculando ese email a tu cuenta de",
+                    "GitHub (o rehaciendo el commit con tu email de verdad) y empujando de nuevo.",
+                    "",
+                  ]
+                : []),
+              "**¿Y si el código que escribes es de tu empresa y no te ha dado permiso por",
+              "escrito?** Entonces no puedes firmar este acuerdo con verdad, y no queremos que",
+              "lo hagas. Hay otro para ese caso —",
+              "[el corporativo](../blob/HEAD/CCLA.md) — que firma quien puede obligar a la",
+              "empresa y trae una lista de personas autorizadas. Escríbenos a",
+              "`support@panoma.ai` y lo resolvemos antes de seguir.",
+            ].join("\n");
+
+            // Un solo comentario del bot, actualizado, en vez de uno por cada push.
+            const previos = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              per_page: 100,
+            });
+            const mio = previos.find(
+              (c) =>
+                c.user?.type === "Bot" && c.body?.startsWith("### Falta la firma del CLA"),
+            );
+
+            if (mio) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: mio.id,
+                body: cuerpo,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                body: cuerpo,
+              });
+            }
+
+            const partes = [];
+            if (faltan.length > 0) partes.push(`sin firmar: ${faltan.join(", ")}`);
+            if (huerfanos.size > 0) partes.push(`sin cuenta identificable: ${huerfanos.size}`);
+            core.setFailed(partes.join(" · "));

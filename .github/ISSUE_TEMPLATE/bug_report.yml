@@ -1,0 +1,71 @@
+name: Bug report
+description: Something is not working as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting this. A reproduction saves the most time. If you do not know
+        one of the optional details below, leave it blank and submit the rest.
+
+        If you found a **security vulnerability**, do not publish it here. Follow
+        [SECURITY.md](../blob/HEAD/SECURITY.md).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Include what you expected to happen instead.
+      placeholder: When I scan ~/Projects, panoma stops without an error and the catalog remains empty.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Provide the exact commands in order, copied as you ran them.
+      placeholder: |
+        1. pnpm install
+        2. pnpm exec tsx apps/cli/src/index.ts scan ~/Projects --save
+        3. Open http://localhost:4173
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Terminal output
+      description: Include the complete error and stack trace. Remove any secret or private path you do not want to publish.
+      render: shell
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The output of `panoma --version`, or the commit hash when working from source.
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Linux
+        - Windows
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node.js version
+      description: The output of `node --version`. The repository floor is Node.js 22.
+      placeholder: v22.12.0
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched for an existing issue about this problem
+          required: true
+        - label: I checked that the report contains no secrets or private paths
+          required: true
