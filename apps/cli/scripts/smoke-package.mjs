@@ -206,7 +206,8 @@ for (const [path, expected] of routes) {
   product hands to the agent. If that path is wrong, this fails too, and it should.
  */
 const keyRun = panoma(["agent-key", "Smoke", "--api", API]);
-const mcpServer = (keyRun.out.match(/\S*@panoma[/\\]mcp[/\\]dist[/\\]index\.js/) ?? [])[0];
+/* Not `\S*`: the configuration is printed as JSON and that swallowed the opening quote. */
+const mcpServer = (keyRun.out.match(/[^"'\s]*@panoma[/\\]mcp[/\\]dist[/\\]index\.js/) ?? [])[0];
 const agentKey = (keyRun.out.match(/panoma_[A-Za-z0-9_-]{8,}/) ?? [])[0];
 
 check("panoma agent-key names the MCP server on this disk", () => {
