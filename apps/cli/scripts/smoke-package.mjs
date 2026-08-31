@@ -206,8 +206,15 @@ for (const [path, expected] of routes) {
   product hands to the agent. If that path is wrong, this fails too, and it should.
  */
 const keyRun = panoma(["agent-key", "Smoke", "--api", API]);
-/* Not `\S*`: the configuration is printed as JSON and that swallowed the opening quote. */
-const mcpServer = (keyRun.out.match(/[^"'\s]*@panoma[/\\]mcp[/\\]dist[/\\]index\.js/) ?? [])[0];
+/*
+  Two things the first version of this line got wrong, both of them about JSON rather than about
+  paths. `\S*` began the match at the opening quote, so the path was longer than the file by one
+  character; and on Windows the separators arrive **doubled**, because a backslash inside a JSON
+  string is written `\\` — which is why `[/\\]` matched on two systems and found nothing on the
+  third. One or more separators, then, and the escaping undone before anyone looks on disk.
+ */
+const printed = (keyRun.out.match(/[^"'\s]*@panoma[/\\]+mcp[/\\]+dist[/\\]+index\.js/) ?? [])[0];
+const mcpServer = printed?.replace(/\\\\/g, "\\");
 const agentKey = (keyRun.out.match(/panoma_[A-Za-z0-9_-]{8,}/) ?? [])[0];
 
 check("panoma agent-key names the MCP server on this disk", () => {
