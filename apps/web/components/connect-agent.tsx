@@ -204,12 +204,21 @@ function AgentRow({
       {ephemeral && (
         <div className="mt-2 text-xs leading-relaxed text-smoke">
           <p>{t("connect.ephemeral", { name })}</p>
-          <p className="mt-1.5 flex flex-wrap items-center gap-2">
-            <span className="text-faint">{t("connect.ephemeralHow")}</span>
-            <code className="rounded border border-edge bg-raised px-2 py-1 font-mono text-[11px] text-chalk">
-              npm i -g panoma
-            </code>
-          </p>
+          <p className="mt-1.5 text-faint">{t("connect.ephemeralHow")}</p>
+          {/*
+             Both commands and in order, because the first one on its own changes nothing here and
+             that is exactly how this was found: somebody ran it, the notice stayed, and there was
+             nothing on the screen to explain why. The second is the one that ends the wait.
+            */}
+          <ol className="mt-1.5 grid gap-1.5">
+            {["npm i -g panoma", "panoma down && panoma up"].map((line) => (
+              <li key={line}>
+                <code className="inline-block rounded border border-edge bg-raised px-2 py-1 font-mono text-[11px] text-chalk">
+                  {line}
+                </code>
+              </li>
+            ))}
+          </ol>
         </div>
       )}
 
