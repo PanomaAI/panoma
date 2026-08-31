@@ -45,6 +45,16 @@ export type ShellStats = {
   notMine?: number;
   /** Completed proposals waiting for human decision. */
   proposedRuns?: number;
+  /**
+   * Steps of the bridge that are not done yet.
+   *
+   * It rides in the frame and not on its own screen because that is the whole point: the bridge
+   * exists to answer «what is missing for this to work», and it answered it only to whoever
+   * already thought to go and ask. Quorum mining found a catalog with 76 projects, nine agent
+   * tools built and zero usage — and the bridge had been written for exactly that person, sitting
+   * one unvisited click away.
+   */
+  bridgePending?: number;
 };
 
 type NavItem = {
@@ -55,6 +65,12 @@ type NavItem = {
   exact?: boolean;
   /** `ShellStats` key whose value is displayed as a notice next to the name. */
   badge?: keyof ShellStats;
+  /**
+   * What that number is called out loud. Without this every notice was read as «3 pending», which
+   * is true of proposals waiting for a decision and false of a setup that is unfinished: the two
+   * ask opposite things of whoever hears them.
+   */
+  badgeLabel?: MessageKey;
 };
 
 /*
@@ -72,7 +88,13 @@ const SIDEBAR_ITEMS: NavItem[] = [
   { href: "/", label: "nav.projects", icon: HiOutlineSquares2X2, exact: true },
   // The bridge right below the projects, and not at the end with the health screens: this is where
   // everything lights up, and what lights up cannot live where no one reaches.
-  { href: "/bridge", label: "nav.bridge", icon: HiOutlineSignal },
+  {
+    href: "/bridge",
+    label: "nav.bridge",
+    icon: HiOutlineSignal,
+    badge: "bridgePending",
+    badgeLabel: "shell.setupLeft",
+  },
   { href: "/runs", label: "nav.activity", icon: HiOutlinePlayCircle, badge: "proposedRuns" },
   { href: "/unsaved", label: "nav.unsaved", icon: HiOutlinePencilSquare, badge: "unsaved" },
   { href: "/agents", label: "nav.agents", icon: HiOutlineLink },
@@ -248,7 +270,7 @@ export function AppShell({ stats, ephemeral }: { stats?: ShellStats; ephemeral?:
                   */}
                 <span className="nav-label">{t(item.label)}</span>
                 {typeof badge === "number" && badge > 0 && (
-                  <span className="nav-badge" aria-label={t("shell.pending", { n: badge })}>
+                  <span className="nav-badge" aria-label={t(item.badgeLabel ?? "shell.pending", { n: badge })}>
                     {badge}
                   </span>
                 )}

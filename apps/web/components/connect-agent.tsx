@@ -1,7 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { HiOutlineSparkles, HiOutlineCheckCircle, HiOutlineClipboard } from "react-icons/hi2";
+import {
+  HiOutlineSparkles,
+  HiOutlineCheckCircle,
+  HiOutlineClipboard,
+  HiOutlineKey,
+} from "react-icons/hi2";
 import { postJson } from "@/lib/api";
 import { BRAND_ICONS } from "./brand-icons";
 import { useOpenTarget } from "./use-open-target";
@@ -29,7 +34,18 @@ type Result =
   | { wrote: true; file: string; replaced?: boolean; coexists: string[]; exposedToGit?: boolean }
   | { wrote: false; file: string | null; snippet: string; reason?: string };
 
-export function ConnectAgent({ connected }: { connected: string[] }) {
+export function ConnectAgent({
+  connected,
+  active,
+  ephemeral,
+}: {
+  /** Has a row in the catalog: a key was issued for it. */
+  connected: string[];
+  /** Has actually been in — `last_seen_at` is set. A subset of `connected`, never the same thing. */
+  active: string[];
+  /** This catalog runs from npx, so nothing durable may be written. See `AgentRow`. */
+  ephemeral: boolean;
+}) {
   const t = useT();
   const { agents, remote } = useOpenTarget();
 
@@ -55,6 +71,8 @@ export function ConnectAgent({ connected }: { connected: string[] }) {
             id={agent.id}
             name={agent.name}
             already={connected.includes(agent.id)}
+            live={active.includes(agent.id)}
+            ephemeral={ephemeral}
           />
         ))}
       </ul>
@@ -66,11 +84,20 @@ function AgentRow({
   id,
   name,
   already,
+  live,
+  ephemeral,
 }: {
   id: string;
   name: string;
   /** It already has a record in the catalog, from a previous connection. See header. */
   already: boolean;
+  /**
+   * And it has used it at least once, which is a different question and the one the word
+   * «connected» was answering wrongly.
+   */
+  live: boolean;
+  /** Running from npx: what would be written outlives what would be pointed at. */
+  ephemeral: boolean;
 }) {
   const t = useT();
   const Icon = BRAND_ICONS[id] ?? HiOutlineSparkles;
@@ -109,8 +136,16 @@ function AgentRow({
     setState("ready");
   }
 
-  /* It was connected when turning it on or if we just connected it on this screen. */
-  const conectado = already || result !== null;
+  /*
+    Three states where there were two, because two could not tell the truth.
+    `already` is a row in `agents`: a key was issued for this agent. `live` is `last_seen_at`: it
+    has actually called at least once. The badge used to print «connected» for the first, which is
+    the claim the bridge contradicted two clicks away — and the bridge was right.
+    `result` is the third: we just wrote it on this screen, so a key exists and of course nothing
+    has used it yet. It counts as issued, not as in.
+   */
+  const hasKey = already || result !== null;
+  const hasEntered = live;
 
 
   return (
@@ -122,23 +157,31 @@ function AgentRow({
            That it is already connected is said here and not just on the button: the badge is read
            without interpreting a verb, and that is what explains why the button changed its word.
           */}
-        {conectado && !result && (
-          <span className="flex items-center gap-1 rounded-full border border-edge px-2 py-0.5 font-mono text-[10px] text-green-700">
-            <HiOutlineCheckCircle aria-hidden className="h-3.5 w-3.5" />
-            {t("connect.alreadyOn")}
+        {hasKey && !result && (
+          <span
+            className={`flex items-center gap-1 rounded-full border border-edge px-2 py-0.5 font-mono text-[10px] ${
+              hasEntered ? "text-green-700" : "text-amber-700 dark:text-amber-500"
+            }`}
+          >
+            {hasEntered ? (
+              <HiOutlineCheckCircle aria-hidden className="h-3.5 w-3.5" />
+            ) : (
+              <HiOutlineKey aria-hidden className="h-3.5 w-3.5" />
+            )}
+            {t(hasEntered ? "connect.alreadyOn" : "connect.keyIssued")}
           </span>
         )}
         <button
           type="button"
           onClick={() => void connect()}
-          disabled={state === "working"}
+          disabled={state === "working" || ephemeral}
           className={`ml-auto rounded px-3 py-1.5 font-mono text-[11px] transition-opacity hover:opacity-85 disabled:opacity-50 ${
-            conectado
+            hasKey
               ? "border border-edge text-smoke"
               : "border border-accent bg-accent text-white"
           }`}
         >
-          {t(state === "working" ? "connect.working" : conectado ? "connect.again" : "connect.do")}
+          {t(state === "working" ? "connect.working" : hasKey ? "connect.again" : "connect.do")}
         </button>
       </div>
 
@@ -151,8 +194,39 @@ function AgentRow({
          `panoma agent-key --install` — the old copy ceases to be valid without a single error:
          the agent simply doesn't enter anymore. Saying it beforehand costs a line.
         */}
-      {conectado && !result && (
+      {/*
+         The button is off, so the reason is on. A disabled control with nothing beside it is a
+         dead end: whoever meets it has no way of telling a bug from a decision, and the way out —
+         installing panoma — is not something anyone guesses from a greyed-out button.
+         The command is rendered as a command, the way the bridge does it, because it is going to
+         be copied.
+        */}
+      {ephemeral && (
+        <div className="mt-2 text-xs leading-relaxed text-smoke">
+          <p>{t("connect.ephemeral", { name })}</p>
+          <p className="mt-1.5 flex flex-wrap items-center gap-2">
+            <span className="text-faint">{t("connect.ephemeralHow")}</span>
+            <code className="rounded border border-edge bg-raised px-2 py-1 font-mono text-[11px] text-chalk">
+              npm i -g panoma
+            </code>
+          </p>
+        </div>
+      )}
+
+      {hasKey && hasEntered && !result && (
         <p className="mt-2 text-xs leading-relaxed text-faint">{t("connect.againCost")}</p>
+      )}
+
+      {/*
+         A state nobody can act on is worse than no state at all. The key is there, the agent has
+         never used it, and the reason is almost always the same one sentence — a session that was
+         already open when the file was written. It was said once, right after writing, and then
+         only on a screen two clicks away. Whoever comes back later lands here.
+        */}
+      {hasKey && !hasEntered && !result && (
+        <p className="mt-2 text-xs font-medium leading-relaxed text-chalk">
+          {t("connect.neverUsed", { name })}
+        </p>
       )}
 
       {result?.wrote === true && (

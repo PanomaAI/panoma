@@ -41,6 +41,26 @@
         "4180"
       ],
       "port": 4180
+    },
+    {
+      "name": "panoma-web-npx",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "PANOMA_HOME=/tmp/panoma-npx-home",
+        "PANOMA_WATCH=0",
+        "PANOMA_EPHEMERAL=1",
+        "pnpm",
+        "--filter",
+        "@panoma/web",
+        "exec",
+        "next",
+        "dev",
+        "-H",
+        "127.0.0.1",
+        "--port",
+        "4181"
+      ],
+      "port": 4181
     }
   ]
 }
