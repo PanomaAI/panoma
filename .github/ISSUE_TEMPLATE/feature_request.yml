@@ -1,0 +1,38 @@
+name: Feature proposal
+description: Something panoma should do but does not do today
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Panoma has a deliberately narrow purpose: **being the front door to the projects
+        already on your disk**. Saying no to good ideas outside that purpose is part of
+        maintaining the project, so the important question is the problem rather than the
+        feature itself.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe it without assuming a solution. What were you trying to do, and where did you get stuck?
+      placeholder: I have four copies of the same project and cannot identify the current one without opening each folder.
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: How do you solve it today?
+      description: Include manual workarounds or other tools. This helps establish whether the problem is worth solving here.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What approach do you have in mind?
+      description: Optional. Share a possible shape for the solution if you already have one.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I checked the README status list to see whether this is already planned
+          required: true

@@ -1,0 +1,107 @@
+# Does the package work where someone installs it?
+#
+# `tests.yml` builds and tests the SOURCE on the three systems. That is a different question from
+# this one, and passing it says nothing about this: what is published is not the source but a
+# tarball with `dist/` bundled and `app/` as a compiled Next standalone, and the promise sold on
+# top of that is «you install it and the catalog opens». Between the two there is room for a whole
+# class of failure —the binary that does not resolve, the static file that does not travel, the
+# server that boots and answers nothing— that no test of the source can see.
+#
+# **It is built once and installed everywhere, because that is what actually happens.** The first
+# version of this file compiled the package on each system, and that measures something else: it
+# asks whether you can build here, not whether what was published works here. A release is packed
+# on one machine and installed on thousands of others, so the tarball travels between jobs exactly
+# as it travels to npm. It is also the honest arrangement: whoever installs on Windows never runs
+# `build:app`, and making that a precondition of the check hid the answer behind an unrelated
+# failure.
+#
+# Known and deliberately not covered here: `build:app` does not complete on Windows. On that
+# runner pnpm's store lives inside the user's profile, the tracing globs follow it there, and the
+# legacy junctions Windows keeps in every profile —`Cookies`, `Application Data`— refuse to be
+# read. It stops a contributor building the package on Windows; it does not touch anyone who
+# installs it, and it deserves its own fix rather than blocking this one.
+#
+# It does not run on every push: it builds the website, which is the slow part, and what it
+# protects only changes when the package changes. Run it by hand before publishing, and it runs
+# itself on a version tag.
+
+name: the installed package works
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  pack:
+    name: packed once, as the release is
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter "./packages/*" build
+      - run: pnpm --filter panoma run build:app
+      - run: pnpm --filter panoma run build
+
+      # `prepack` refuses if the tree got dirty, if `app/` does not come from this commit, or if
+      # traces or native binaries appear. It is a guard, so it is left to speak.
+      - name: pack it as npm would publish it
+        working-directory: apps/cli
+        run: npm pack
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tarball
+          path: apps/cli/panoma-*.tgz
+          retention-days: 1
+          if-no-files-found: error
+
+  journey:
+    name: ${{ matrix.os }} · installed from the tarball
+    needs: pack
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      # The repository comes along only for `smoke-package.mjs`, which uses nothing but Node's own
+      # modules: there is no install here on purpose, because neither does the person who installs.
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: tarball
+
+      # `bash` on the three systems so the glob is the same everywhere: the runners carry it on
+      # Windows too, and pinning the version in the path would rot on the next release.
+      - name: install it as the person who installs it does
+        shell: bash
+        run: npm install -g ./panoma-*.tgz
+
+      - name: walk the promise from end to end
+        env:
+          PANOMA_HOME: ${{ runner.temp }}/panoma-journey
+          PANOMA_SMOKE_PORT: "4188"
+        run: node apps/cli/scripts/smoke-package.mjs
+
+      # What the server wrote while it was up, which is where the cause lives when the journey
+      # fails on a system where nobody can attach a terminal.
+      - name: the catalog's log, if it went wrong
+        if: failure()
+        shell: bash
+        run: cat "${{ runner.temp }}/panoma-journey/logs/web.log" || echo "no log was written"

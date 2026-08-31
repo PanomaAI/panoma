@@ -1,0 +1,160 @@
+.intro {
+  --contact-shift: 1vw;
+
+  position: fixed;
+  /*
+    The screenshot also covers navigation. Reserving its 65 px left a blank strip when the browser
+    restored a lower position before hydrating the page.
+   */
+  inset: 0;
+  z-index: 50;
+  overflow: hidden;
+  background: var(--paper);
+  pointer-events: auto;
+  will-change: opacity;
+}
+
+.intro[data-running="true"] { animation: introVeil 7.2s linear both; }
+
+/*
+  The wrapping of what is being looked at. It exists so that the `aria-hidden` covers the hands
+  and the particles —which say nothing— without covering the jump button, which is the only
+  control of the piece and has to exist for a screen reader.
+ */
+.art {
+  position: absolute;
+  inset: 0;
+}
+
+/*
+  The exit when someone skips it. Short and only opacity: whoever has just requested to skip does
+  not want to see a second animation, and a hard cut would seem like the page has failed. It beats
+  `introVeil` in specificity plus `!important` — the veil has an animation with `both`, which sets
+  its own final value and cannot be moved in any other way.
+ */
+.intro.leaving {
+  animation: none !important;
+  opacity: 0;
+  transition: opacity 260ms ease-out;
+  pointer-events: none;
+}
+
+/*
+  The jump button. Discreet but not hidden: plenty of contrast, 44 px high area, and in the corner
+  where no one places content. It rises above the veil and the particles with its own `z-index`.
+ */
+.skip {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  z-index: 4;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: var(--radius-sm, 4px);
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--mono), ui-monospace, monospace;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: color 160ms ease, background-color 160ms ease;
+}
+
+.skip:hover {
+  color: var(--ink);
+  background: var(--ink-a-05);
+}
+
+.skip:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .intro.leaving { transition: none; }
+}
+
+.hand {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+  width: 50vw;
+  opacity: 0;
+  will-change: transform, opacity;
+}
+
+.particles {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.image {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  /*
+    A little below 1: the particles, which go on top, are read as part of the hand instead of as a
+    layer stuck to an opaque photo.
+   */
+  opacity: 0.88;
+  filter: var(--entrance-image-filter);
+  mix-blend-mode: var(--entrance-image-blend);
+  user-select: none;
+}
+
+.left { right: 50%; }
+
+.right { left: 50%; }
+
+/*
+  The hands enter without the initial stop, they touch, and fade while the particles go to the
+  logo: the curve is a long exit so that the approach does not seem like a push.
+ */
+.intro[data-running="true"] .left {
+  animation: leftApproach 5.8s cubic-bezier(0.22, 0.8, 0.28, 1) both;
+}
+
+.intro[data-running="true"] .right {
+  animation: rightApproach 5.8s cubic-bezier(0.22, 0.8, 0.28, 1) both;
+}
+
+@keyframes introVeil {
+  0%, 90.3% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes leftApproach {
+  0% { opacity: 0; transform: translateX(-104%); }
+  10% { opacity: 1; }
+  50% { opacity: 1; transform: translateX(0); }
+  60% { opacity: 1; transform: translateX(var(--contact-shift)) scale(1.006); }
+  76% { opacity: 0.28; transform: translateX(var(--contact-shift)) scale(1.012); }
+  100% { opacity: 0; transform: translateX(var(--contact-shift)) scale(1.02); }
+}
+
+@keyframes rightApproach {
+  0% { opacity: 0; transform: translateX(104%); }
+  10% { opacity: 1; }
+  50% { opacity: 1; transform: translateX(0); }
+  60% { opacity: 1; transform: translateX(calc(-1 * var(--contact-shift))) scale(1.006); }
+  76% { opacity: 0.28; transform: translateX(calc(-1 * var(--contact-shift))) scale(1.012); }
+  100% { opacity: 0; transform: translateX(calc(-1 * var(--contact-shift))) scale(1.02); }
+}
+
+@media (max-width: 620px) {
+  .intro { --contact-shift: 1.5vw; }
+  .hand { width: 75vw; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .intro { display: none; }
+}

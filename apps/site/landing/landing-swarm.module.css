@@ -1,0 +1,18 @@
+/*
+  The swarm occupies the entire fold and does not receive mouse input: what is on top —the logo
+  and the command— has to remain clickable. It goes behind everything, in its own layer.
+ */
+
+.field {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}

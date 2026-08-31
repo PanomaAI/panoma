@@ -1,0 +1,559 @@
+/*
+  The catalog screen: its own palette, the daily report, and the filter bar.
+  The `.catalog-screen` block declares `--ink`, `--paper`, `--line`, `--wash` and company. They
+  are SCREEN variables, not document variables: the project sheet declares the same ones with
+  different values. They are inherited, so the order of the files does not affect them — but
+  deleting this block would leave half a page without color.
+ */
+/*
+  The project catalog.
+  Ink on paper. The purple of the brand was removed from this entire screen —selection, buttons,
+  links, badges— and the color that remains is the one that means something: the health of each
+  project, the status dot, and the brand icons of each technology, which is how you recognize a
+  stack without reading it. Everything else is four shades of gray and a line.
+  The shadows are one pixel of drop and two of blur, and there are none wider. A card that hovers
+  over a twenty-pixel halo draws attention to itself; here what has to stand out is the row you
+  have chosen, and for that a background is enough.
+ */
+.catalog-screen {
+  --ink: var(--color-ink-catalog);
+  --ink-2: var(--color-ink-muted-catalog);
+  --ink-3: var(--color-ink-faint-catalog);
+  --paper: var(--color-surface);
+  --line: var(--color-line-catalog);
+  --line-strong: var(--color-line-strong-catalog);
+  --wash: var(--color-wash-catalog);
+  --select: var(--color-selected);
+  --good: var(--color-success);
+  --warn: var(--color-warn);
+  --bad: var(--color-danger-ink-deep);
+  background: var(--color-paper-catalog);
+}
+
+/* The same width as the part of the day, so that the two bands align. */
+.catalog-screen__inner {
+  width: min(100% - 64px, 1240px);
+  margin: 0 auto;
+  padding: 30px 0 88px;
+}
+
+/* The purple focus stripe goes out here: on this screen the emphasis is the ink. */
+.catalog-screen :focus-visible {
+  outline-color: var(--ink);
+}
+
+/*
+  The day's report, folded.
+  It occupied a 190 px box above the catalog and was the first and only thing you saw upon
+  arriving. What it says is still the only thing on this screen that expires—a completed proposal
+  is a stalled agent waiting for your response—so it still stays at the very top and is still the
+  first thing you read. What has changed is that it fits on one line: the three numbers on the
+  line, and who and what with one click.
+ */
+.brief {
+  margin-bottom: 14px;
+}
+
+.brief__line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 38px;
+  padding: 0 10px 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--paper);
+  color: var(--ink-2);
+  font-size: 0.76rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) ease, border-color var(--duration-fast) ease;
+}
+
+.brief__line:hover {
+  border-color: var(--line-strong);
+  background: var(--wash);
+}
+
+.brief__line > svg:first-child {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--ink-3);
+}
+
+.brief__line strong {
+  flex: none;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.brief__facts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  min-width: 0;
+  flex: 1;
+  white-space: nowrap;
+}
+
+.brief__facts > span + span::before {
+  content: "·";
+  margin-right: 8px;
+  color: var(--ink-3);
+}
+
+/*
+  What is waiting for a response is seen without opening anything: it is the only thing that
+  cannot wait.
+ */
+.brief__decision {
+  color: var(--ink);
+  font-weight: 570;
+}
+
+.brief__when {
+  flex: none;
+  color: var(--ink-3);
+  font-size: 0.71rem;
+}
+
+.brief__arrow {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  color: var(--ink-3);
+  transition: transform var(--duration-nudge) ease;
+}
+
+.brief__line[aria-expanded="true"] .brief__arrow {
+  transform: rotate(180deg);
+}
+
+.brief__line[aria-expanded="true"] {
+  border-radius: 9px 9px 0 0;
+  border-bottom-color: transparent;
+  background: var(--wash);
+}
+
+.brief__detail {
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  border-top: 0;
+  border-radius: 0 0 9px 9px;
+  background: var(--paper);
+}
+
+/* No news: a line without a box. An empty stripe every morning teaches to ignore it. */
+.brief--quiet {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 0 2px;
+  color: var(--ink-3);
+  font-size: 0.74rem;
+}
+
+.brief--quiet svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+/*
+  The watcher's notice: the same anatomy as 'no news' —a line, an icon, no box— but in the color
+  of what is going wrong. It comes out just below the report because it is the report that stops
+  being reliable when the watcher is not there.
+ */
+/* The way back from what has just been set aside: it is read, it does not alarm. */
+.brief--dismissed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 0 2px;
+  color: var(--color-smoke);
+  font-size: 0.74rem;
+}
+
+.brief--dismissed svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.brief--dismissed button,
+.brief--dismissed a {
+  color: var(--color-accent);
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.brief--dismissed button:hover,
+.brief--dismissed a:hover {
+  text-decoration: none;
+}
+
+.brief--alert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 0 2px;
+  color: var(--bad);
+  font-size: 0.74rem;
+}
+
+.brief--alert svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.brief__decisions {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--color-paper-sheet);
+}
+
+.brief__label {
+  margin-bottom: 7px;
+  color: var(--ink);
+  font-size: 0.63rem;
+  font-weight: 620;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.brief__decisions ul {
+  display: grid;
+  gap: 6px;
+}
+
+.brief__decisions li {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 7px;
+  font-size: 0.78rem;
+}
+
+.brief__decisions li > a {
+  color: var(--ink);
+  font-weight: 570;
+}
+
+.brief__decisions li > a:hover {
+  text-decoration: underline;
+}
+
+.brief__where {
+  color: var(--ink-2);
+}
+
+/* How many attempts are there of the same package. It only appears when there is more than one. */
+.brief__attempts {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--select);
+  color: var(--ink-2);
+  font-size: 0.65rem;
+  font-weight: 560;
+  font-variant-numeric: tabular-nums;
+}
+
+.brief__meta {
+  color: var(--ink-3);
+  font-size: 0.71rem;
+}
+
+.brief__projects {
+  display: grid;
+}
+
+.brief__projects li {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 0;
+}
+
+.brief__projects li + li {
+  border-top: 1px solid var(--line);
+}
+
+.brief__projects li > div {
+  min-width: 0;
+}
+
+.brief__projects li a {
+  color: var(--ink);
+  font-size: 0.8rem;
+  font-weight: 570;
+}
+
+.brief__projects li a:hover {
+  text-decoration: underline;
+}
+
+.brief__subject {
+  overflow: hidden;
+  margin-top: 2px;
+  color: var(--ink-2);
+  font-size: 0.76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.brief__agent {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--select);
+  font-size: 0.66rem;
+  font-weight: 550;
+}
+
+.brief__born {
+  margin-top: 11px;
+  color: var(--ink-3);
+  font-size: 0.72rem;
+}
+
+.brief__born a {
+  color: var(--ink-2);
+}
+
+.brief__born a:hover {
+  text-decoration: underline;
+}
+
+/*
+  The header.
+  It was a 2.3rem headline with a subtitle —«Discover what you have built»— above everything else.
+  A catalog that opens every morning doesn’t need to be told what each morning is: the name in
+  interface size and the number of projects say the same thing in one line, and what was gained
+  are two hundred pixels of list above the fold.
+ */
+.catalog-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 14px;
+}
+
+.catalog-bar h1 {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  color: var(--ink);
+  font-size: 1.02rem;
+  font-weight: 660;
+  letter-spacing: -0.022em;
+}
+
+.catalog-bar h1 span {
+  color: var(--ink-3);
+  font-size: 0.78rem;
+  font-weight: 450;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+.catalog-bar__tools {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Double click is not discovered by itself on a website: it is said, in small and once. */
+.catalog-hint {
+  color: var(--ink-3);
+  font-size: 0.7rem;
+}
+
+/*
+  Without `outline: 0`. It was in the base rule, not in `:focus`, and the only edge change that
+  this `select` has is from `:hover`: nothing moved with the keyboard. The ring is given by the
+  global `:focus-visible`, and on this screen it appears in ink (19.18:1 on paper).
+ */
+.catalog-sort select {
+  height: 32px;
+  padding: 0 26px 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--paper);
+  color: var(--ink-2);
+  font-size: 0.73rem;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) ease;
+}
+
+.catalog-sort select:hover {
+  border-color: var(--color-line-hover);
+}
+
+.view-switch {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--paper);
+}
+
+.view-switch button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 26px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) ease, color var(--duration-fast) ease;
+}
+
+.view-switch button:hover {
+  color: var(--ink);
+}
+
+.view-switch button.is-active {
+  background: var(--ink);
+  color: var(--color-on-ink);
+}
+
+.view-switch svg {
+  width: 15px;
+  height: 15px;
+}
+
+/*
+  The filters lose the box.
+  Ten pills with borders and backgrounds are ten rectangles competing for the same attention as
+  the list below. Without a border, they are ten words, and the chosen one is seen because it is
+  the only one in negative. The counter only appears where it counts something: attention and
+  favorites.
+ */
+.catalog-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.catalog-filters button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 0.74rem;
+  font-weight: 510;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) ease, color var(--duration-fast) ease;
+}
+
+.catalog-filters button:hover {
+  background: var(--wash);
+  color: var(--ink);
+}
+
+.catalog-filters button.is-active {
+  background: var(--ink);
+  color: var(--color-on-ink);
+}
+
+.catalog-filters button span {
+  color: var(--ink-3);
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.catalog-filters button.is-active span {
+  color: var(--color-on-ink-muted);
+}
+
+/*
+  Resume, in one line.
+  Before this was a 316 px card with the icon at showcase size, five metrics, and two buttons, and
+  it said one thing: yesterday you were here. Now it says it in 52 px and without losing anything
+  — the name, the phrase from the last commit, and the button that returns to the editor.
+ */
+.resume-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  margin-top: 16px;
+  padding: 8px 10px 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+  box-shadow: var(--shadow-lift);
+}
+
+.resume-strip > svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--ink-3);
+}
+
+.resume-strip p {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+/*
+  The name is truncated before the commit message is consumed.
+  With `flex: none` not yielding a single pixel, a long name pushed the subject of the last commit
+  down to nothing — and the subject is exactly what answers 'what was I doing?'. Now neither of
+  them goes past its halfway point and both end with dots.
+ */
+.resume-strip strong {
+  flex: 0 1 auto;
+  overflow: hidden;
+  min-width: 0;
+  max-width: 42%;
+  color: var(--ink);
+  font-size: 0.83rem;
+  font-weight: 620;
+  letter-spacing: -0.015em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resume-strip p span {
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: 0.76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resume-strip__when {
+  flex: none;
+  color: var(--ink-3);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
