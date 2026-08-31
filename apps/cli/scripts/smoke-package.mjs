@@ -16,7 +16,7 @@
  */
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -188,6 +188,51 @@ for (const [path, expected] of routes) {
     return "";
   });
 }
+
+/*
+  And the channel this whole product is built around: the MCP server actually starting.
+
+  It never did. In every version published, the packaged server died while node was still
+  evaluating it — `yaml` bundled as CommonJS into an ES module, and its interop shim looking for a
+  `require` that is not there. Nothing caught it because nothing here ever started it: the journey
+  walked the catalog, the CLI and the static files, and stopped at the door of the one piece that
+  talks to agents.
+
+  It cannot be caught anywhere else, either. An MCP server that fails to load is silent by
+  construction — the agent comes up, its tool list is empty, and no error reaches the agent, the
+  catalog or any screen. The only way to know is to run it, which is what this does.
+
+  The path is not guessed: it is read from what `agent-key` prints, which is the very path the
+  product hands to the agent. If that path is wrong, this fails too, and it should.
+ */
+const keyRun = panoma(["agent-key", "Smoke", "--api", API]);
+const mcpServer = (keyRun.out.match(/\S*@panoma[/\\]mcp[/\\]dist[/\\]index\.js/) ?? [])[0];
+const agentKey = (keyRun.out.match(/panoma_[A-Za-z0-9_-]{8,}/) ?? [])[0];
+
+check("panoma agent-key names the MCP server on this disk", () => {
+  if (keyRun.code !== 0) throw new Error(`exit ${keyRun.code}: ${keyRun.out.trim()}`);
+  if (!mcpServer) throw new Error("the printed configuration names no @panoma/mcp server");
+  if (!existsSync(mcpServer)) throw new Error(`it names a file that is not there: ${mcpServer}`);
+  return mcpServer.split(/[\\/]/).slice(-4).join("/");
+});
+
+check("the MCP server starts instead of dying as it loads", () => {
+  if (!mcpServer) throw new Error("no server to start");
+  const run = spawnSync(process.execPath, [mcpServer], {
+    encoding: "utf8",
+    timeout: 30_000,
+    /* Closing stdin at once: a stdio server with nothing to talk to leaves on its own. */
+    input: "",
+    env: { ...process.env, PANOMA_HOME: HOME, PANOMA_API: API, PANOMA_KEY: agentKey ?? "" },
+  });
+  /*
+    Silence is the pass. This transport carries the protocol on stdout and nothing else belongs
+    there, so anything printed at all — the load error included — is the failure.
+   */
+  const noise = `${run.stdout ?? ""}${run.stderr ?? ""}`.trim();
+  if (noise) throw new Error(noise.split("\n").slice(0, 2).join(" / "));
+  return "silent, which is what a healthy stdio server is";
+});
 
 const down = panoma(["down"]);
 console.log(`--- panoma down ---\n${down.out}\n`);

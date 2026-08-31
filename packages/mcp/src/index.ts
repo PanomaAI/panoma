@@ -316,3 +316,21 @@ server.registerTool(
 );
 
 await server.connect(new StdioServerTransport());
+
+/*
+  And then it says it is here.
+
+  Everything above talks to the catalog only inside a tool, so an agent that starts and is not
+  asked for anything is invisible to panoma — which spent three releases telling people their agent
+  was «connected» off the fact that a key existed, and then telling them to restart a session that
+  changed nothing they could see. It changed nothing because nothing reached the other side.
+
+  After `connect` and not before: the channel with the agent is what must not be kept waiting, and
+  a catalog that is slow to answer —or not running at all— has no business delaying it.
+
+  Nothing is awaited and nothing is reported. If it fails, the agent is up, its tools work the
+  moment the catalog returns, and the only cost is a badge that stays honest about not having seen
+  it yet. Announcing that failure on stdio would be worse than the silence: this transport carries
+  the protocol, and noise on it is not a message anybody reads.
+ */
+void client.post("/api/agent/hello", {}).catch(() => undefined);
