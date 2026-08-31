@@ -125,7 +125,12 @@ export function BridgeSteps({ report, steps }: { report: BridgeReport; steps: Br
               </span>
             </div>
 
-            {step.id === "hooks" && report.hooks.installed < report.hooks.checked && (
+            {/*
+               Against `installable` and not `checked`. With 44 of 76 projects carrying git and the
+               hook in all 44, this button stayed on offer for ever and pressing it did nothing:
+               the 32 that were missing have nowhere to keep one.
+              */}
+            {step.id === "hooks" && report.hooks.installed < report.hooks.installable && (
               <div className="mt-1.5 space-y-2">
                 <button
                   type="button"
@@ -146,6 +151,13 @@ export function BridgeSteps({ report, steps }: { report: BridgeReport; steps: Br
                     step.id === "agent" && report.agents.keys > 0
                       ? "bridge.step.agent.keyUnused"
                       : (`bridge.step.${step.id}.pending` as MessageKey),
+                    /*
+                       The journal names the tool that fills it. It is one MCP tool among nine and
+                       the only one that matters to whoever is reading this line, so it travels
+                       written rather than described: it is what they will type when they ask their
+                       agent for it.
+                      */
+                    { tool: "panoma_log" },
                   )}
                 </p>
                 {step.state === "next" && commands[step.id] && (

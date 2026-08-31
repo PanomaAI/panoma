@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { hooksInstalledIn, bridgeSteps, type BridgeReport } from "./bridge";
+import { hooksInstalledIn, bridgePending, bridgeSteps, type BridgeReport } from "./bridge";
 
 /**
  * The bridge is tested by its two decisions: that detecting the hooks is truly reading the disk,
@@ -30,7 +30,8 @@ afterAll(async () => {
 describe("detectar los ganchos", () => {
   it("cuenta por la marca, no por existir: el gancho de otro no es el nuestro", async () => {
     const result = await hooksInstalledIn([withHook, without, "/no/existe"]);
-    expect(result).toEqual({ checked: 3, installed: 1 });
+    /* `without` has git and somebody else's hook: it counts as installable and not installed. */
+    expect(result).toEqual({ checked: 3, installed: 1, installable: 2 });
   });
 
   it("encuentra los ganchos donde git los tenga: core.hooksPath y worktrees incluidos", async () => {
@@ -56,7 +57,7 @@ describe("detectar los ganchos", () => {
       await writeFile(join(linked, ".git"), `gitdir: ${join(main, ".git", "worktrees", "rama")}\n`);
       await writeFile(join(main, ".git", "worktrees", "rama", "commondir"), "../..\n");
 
-      expect(await hooksInstalledIn([custom, linked])).toEqual({ checked: 2, installed: 2 });
+      expect(await hooksInstalledIn([custom, linked])).toEqual({ checked: 2, installed: 2, installable: 2 });
     } finally {
       await rm(custom, { recursive: true, force: true });
       await rm(tree, { recursive: true, force: true });
@@ -70,7 +71,7 @@ describe("un solo siguiente", () => {
       catalog: { projects: 5, watcherActive: true },
       model: { active: null, envKeys: 0 },
       agents: { keys: 0, connected: 0 },
-      hooks: { checked: 5, installed: 0 },
+      hooks: { checked: 5, installed: 0, installable: 5 },
       memory: { activities: 0, approved: 0, sleeping: 0, pending: 0, consultations: 0 },
       scale: { ablation: false },
       ...overrides,
@@ -92,7 +93,7 @@ describe("un solo siguiente", () => {
       report({
         model: { active: "anthropic", envKeys: 0 },
         agents: { keys: 1, connected: 1 },
-        hooks: { checked: 5, installed: 2 },
+        hooks: { checked: 5, installed: 5, installable: 5 },
         memory: { activities: 12, approved: 3, sleeping: 1, pending: 2, consultations: 4 },
       }),
     );
@@ -100,5 +101,71 @@ describe("un solo siguiente", () => {
 
     const keyOnly = bridgeSteps(report({ model: { active: "anthropic", envKeys: 0 }, agents: { keys: 1, connected: 0 } }));
     expect(keyOnly[2]?.state).toBe("next");
+  });
+});
+
+/*
+  A real catalog: 76 projects, 44 of them with git, and the hook in all 44. It read «44 of 76»,
+  kept offering the button, and counted the step as unfinished — for ever, because the 32 without
+  git can never take one.
+ */
+describe("los ganchos se cuentan contra lo que se puede", () => {
+  function report(hooks: BridgeReport["hooks"]): BridgeReport {
+    return {
+      catalog: { projects: 76, watcherActive: true },
+      model: { active: "anthropic", envKeys: 0 },
+      agents: { keys: 1, connected: 1 },
+      hooks,
+      memory: { activities: 0, approved: 0, sleeping: 0, pending: 0, consultations: 0 },
+      scale: { ablation: false },
+    };
+  }
+
+  it("con el gancho en todo lo que puede llevarlo, el paso está hecho", () => {
+    const step = bridgeSteps(report({ checked: 76, installed: 44, installable: 44 }))[3]!;
+    expect(step.state).toBe("done");
+    expect(step.detail).toEqual({ count: 44, total: 44 });
+  });
+
+  it("y si falta alguno de los que sí pueden, sigue pendiente", () => {
+    expect(bridgeSteps(report({ checked: 76, installed: 43, installable: 44 }))[3]!.state).not.toBe("done");
+  });
+
+  it("un catálogo entero sin git no deja el paso hecho por vacío", () => {
+    expect(bridgeSteps(report({ checked: 76, installed: 0, installable: 0 }))[3]!.state).not.toBe("done");
+  });
+});
+
+/*
+  And the journal, which is not anybody's to press. It fills when an agent calls `panoma_log`, so
+  it never carries the arrow and it is not counted among what is left to switch on: a catalog whose
+  owner has done all four of their parts was being told it was one short, and sent to a screen with
+  nothing to do on it.
+ */
+describe("la bitácora es consecuencia, no paso", () => {
+  function report(activities: number): BridgeReport {
+    return {
+      catalog: { projects: 5, watcherActive: true },
+      model: { active: "anthropic", envKeys: 0 },
+      agents: { keys: 1, connected: 1 },
+      hooks: { checked: 5, installed: 5, installable: 5 },
+      memory: { activities, approved: 0, sleeping: 0, pending: 0, consultations: 0 },
+      scale: { ablation: false },
+    };
+  }
+
+  it("con todo lo del usuario hecho, no queda nada por encender", () => {
+    const steps = bridgeSteps(report(0));
+    expect(bridgePending(steps)).toBe(0);
+    expect(steps[4]!.kind).toBe("consequence");
+  });
+
+  it("y nunca lleva la flecha, porque una flecha es una instrucción", () => {
+    expect(bridgeSteps(report(0))[4]!.state).toBe("waiting");
+  });
+
+  it("lo que sí es del usuario sigue contando", () => {
+    const steps = bridgeSteps({ ...report(0), agents: { keys: 1, connected: 0 } });
+    expect(bridgePending(steps)).toBe(1);
   });
 });

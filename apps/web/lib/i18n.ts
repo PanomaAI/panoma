@@ -163,11 +163,24 @@ const es = {
   "bridge.step.agent.keyUnused": "La clave existe pero ningún agente la ha usado todavía: instala la configuración y reinicia la sesión del agente.",
   "bridge.step.agent.go": "Ir a la pantalla de Agentes",
   "bridge.step.hooks.title": "Los ganchos",
-  "bridge.step.hooks.detail": "proyectos con ganchos: {count} de {total}",
+  /*
+    «of {total}» is the ones that can carry a hook, not the whole catalog. A folder without git has
+    nowhere to keep one, and counting it invented a debt that could never be paid: 44 of 76, with
+    the hook in all 44 that had git, read as unfinished for ever.
+   */
+  "bridge.step.hooks.detail": "con gancho: {count} de {total} que pueden llevarlo",
   "bridge.step.hooks.pending": "Dentro de cada proyecto donde trabajes: apuntan la actividad sin que el modelo se acuerde, y entregan las notas dormidas en su ruta.",
   "bridge.step.alive.title": "La memoria, viva",
   "bridge.step.alive.detail": "entradas de bitácora: {count}",
-  "bridge.step.alive.pending": "Se enciende sola cuando lo anterior esté en marcha: los agentes empiezan a apuntar, el destilador a proponer, y tú a decidir.",
+  /*
+    The journal, which is the one thing on this page nobody here can press.
+
+    It fills when an agent working in a project calls `panoma_log` — and it said «it turns on by
+    itself once the rest is running», which is true and tells the reader nothing they can act on.
+    Somebody with all four of their own parts done, reading that, is looking for the button. There
+    is no button. So the tool is named, and what makes an agent reach for it.
+   */
+  "bridge.step.alive.pending": "Esta no es tuya: la llena un agente. Cuando termine algo que se sostenga solo en uno de tus proyectos, llama a la herramienta {tool} y aquí aparece la primera entrada — pídeselo si no lo hace por su cuenta. A partir de ahí el destilador propone y tú decides.",
   "bridge.restartHint": "Después de instalar, reinicia la sesión del agente: una sesión ya abierta no recoge nada.",
   "bridge.todayTitle": "Los números de hoy",
   "bridge.stat.journal": "Bitácora",
@@ -2288,7 +2301,7 @@ const es = {
    */
   "connect.title": "Conectar un agente por MCP",
   "connect.lead":
-    "MCP es el canal por el que un agente habla con tu catálogo. Estos son los que hay en esta máquina: conectar uno le da las seis herramientas —el resumen del proyecto al empezar, la bitácora y la cola de tareas— y escribe su configuración donde ese agente la lee.",
+    "MCP es el canal por el que un agente habla con tu catálogo. Estos son los que hay en esta máquina: conectar uno le da las nueve herramientas —el resumen del proyecto al empezar, la bitácora y la cola de tareas— y escribe su configuración donde ese agente la lee.",
   "connect.do": "Conectar",
   "connect.again": "Volver a conectar",
   "connect.alreadyOn": "conectado",
@@ -2514,11 +2527,24 @@ const en = {
   "bridge.step.agent.keyUnused": "The key exists but no agent has ever used it: install the config and restart the agent's session.",
   "bridge.step.agent.go": "Go to the Agents screen",
   "bridge.step.hooks.title": "The hooks",
-  "bridge.step.hooks.detail": "projects with hooks: {count} of {total}",
+  /*
+    «of {total}» is the ones that can carry a hook, not the whole catalog. A folder without git has
+    nowhere to keep one, and counting it invented a debt that could never be paid: 44 of 76, with
+    the hook in all 44 that had git, read as unfinished for ever.
+   */
+  "bridge.step.hooks.detail": "hooked: {count} of {total} that can take one",
   "bridge.step.hooks.pending": "Inside each project you work on: they record activity without the model having to remember, and deliver sleeping notes on their paths.",
   "bridge.step.alive.title": "The memory, alive",
   "bridge.step.alive.detail": "journal entries: {count}",
-  "bridge.step.alive.pending": "It turns on by itself once the rest is running: agents start logging, the distiller starts proposing, and you decide.",
+  /*
+    The journal, which is the one thing on this page nobody here can press.
+
+    It fills when an agent working in a project calls `panoma_log` — and it said «it turns on by
+    itself once the rest is running», which is true and tells the reader nothing they can act on.
+    Somebody with all four of their own parts done, reading that, is looking for the button. There
+    is no button. So the tool is named, and what makes an agent reach for it.
+   */
+  "bridge.step.alive.pending": "This one is not yours: an agent fills it. When it finishes something that stands on its own in one of your projects it calls the {tool} tool, and the first entry lands here — ask it to, if it does not on its own. From there the distiller proposes and you decide.",
   "bridge.restartHint": "After installing, restart the agent's session: an already-open session picks up nothing.",
   "bridge.todayTitle": "Today's numbers",
   "bridge.stat.journal": "Journal",
@@ -4058,7 +4084,7 @@ const en = {
 
   "connect.title": "Connect an agent over MCP",
   "connect.lead":
-    "MCP is the channel an agent uses to talk to your catalog. These are the ones on this machine: connecting one gives it the six tools — the project brief on arrival, the log, and the task queue — and writes its configuration where that agent reads it.",
+    "MCP is the channel an agent uses to talk to your catalog. These are the ones on this machine: connecting one gives it the nine tools — the project brief on arrival, the log, and the task queue — and writes its configuration where that agent reads it.",
   "connect.do": "Connect",
   "connect.again": "Connect again",
   "connect.alreadyOn": "connected",

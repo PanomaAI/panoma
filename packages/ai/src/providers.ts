@@ -371,11 +371,11 @@ export const PROVIDERS: Provider[] = [
     name: "ChatGPT (Codex)",
     auth: "oauth",
     description:
-      "Tu suscripción de ChatGPT Plus o Pro, sin clave. Uso personal: se apoya en el " +
+      "Tu suscripción de ChatGPT Plus o Pro, sin clave y sin binario local. Uso personal: se apoya en el " +
       "inicio de sesión del CLI de Codex y en un endpoint privado de OpenAI, así que " +
       "puede dejar de funcionar el día que ellos lo cambien.",
     descriptionEn:
-      "Your ChatGPT Plus or Pro subscription, no key. Personal use: it leans on the " +
+      "Your ChatGPT Plus or Pro subscription, no key and no local binary. Personal use: it leans on the " +
       "Codex CLI sign-in and a private OpenAI endpoint, so it can stop working the " +
       "day they change it.",
     api: "codex",
@@ -429,11 +429,23 @@ export const PROVIDERS: Provider[] = [
     ],
   },
   {
+    /*
+      «Codex CLI» and not «Codex», which is what it said.
+
+      Two entries away sits `openai-codex`, called «ChatGPT (Codex)», and a list showing both
+      offered the reader the same word twice with no way to tell them apart. They are not variants:
+      this one runs the `codex` binary on this machine as a subprocess, and that one talks to
+      OpenAI over your ChatGPT sign-in without any local binary at all. Whoever picked wrong was
+      not being careless — the screen gave them nothing to pick with.
+
+      The descriptions say the mechanism now, for the same reason: «uses your signed-in session,
+      no keys» was true of both.
+     */
     id: "codex-cli",
-    name: "Codex",
+    name: "Codex CLI",
     auth: "cli",
-    description: "Usa tu sesión de Codex ya iniciada. Sin claves.",
-    descriptionEn: "Uses your signed-in Codex session. No keys.",
+    description: "Ejecuta el binario `codex` de esta máquina. Usa su sesión ya iniciada, sin claves.",
+    descriptionEn: "Runs the `codex` binary on this machine, using its signed-in session. No keys.",
     command: "codex",
     args: ["exec"],
     bundles: ["/Applications/ChatGPT.app/Contents/Resources/codex"],
