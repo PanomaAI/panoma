@@ -11,13 +11,9 @@ import {
   useTransition,
   type KeyboardEvent,
 } from "react";
-import type { IconType } from "react-icons";
 import {
   HiOutlineArrowUpRight,
-  HiOutlineArrowUturnLeft,
   HiOutlineBars3,
-  HiOutlineEye,
-  HiOutlineShare,
   HiOutlineCloudArrowUp,
   HiOutlineEyeSlash,
   HiOutlineInboxArrowDown,
@@ -27,39 +23,19 @@ import {
   HiOutlineXMark,
   HiStar,
 } from "react-icons/hi2";
-import {
-  SiDart,
-  SiDocker,
-  SiExpress,
-  SiFirebase,
-  SiFlutter,
-  SiGo,
-  SiKotlin,
-  SiNextdotjs,
-  SiNodedotjs,
-  SiPhp,
-  SiPostgresql,
-  SiPython,
-  SiReact,
-  SiRuby,
-  SiRust,
-  SiSupabase,
-  SiSvelte,
-  SiSwift,
-  SiTailwindcss,
-  SiTypescript,
-  SiVuedotjs,
-} from "react-icons/si";
-import { riskText, type MessageKey, type Translate } from "@/lib/i18n";
+import { riskText, type MessageKey } from "@/lib/i18n";
 import { projectCategories, type Category } from "@/lib/categories";
 import { Today, type ReportView } from "./today";
-import { WatchWarning } from "./watch-warning";
-import { Sites } from "./sites";
+import type { CatalogSummaryStats } from "./catalog-summary";
+import { CatalogContext } from "./catalog-context";
+import { CatalogActions } from "./catalog-actions";
 import { SharePanel, type PanoramaData } from "./share-panel";
 import { useLocale, useT } from "./i18n-provider";
+import { OpenAll } from "./open-all";
 import { OpenMenu } from "./open-menu";
 import { useSearch } from "./search-provider";
 import { formatBytes, ProjectIcon, relativeDate } from "./primitives";
+import { technologyIcon } from "./technology-mark";
 import { usePreference } from "./use-preference";
 import { fold } from "@panoma/core/fold";
 
@@ -117,52 +93,11 @@ export type StoreProject = {
   lastCommitSubject?: string | null;
 };
 
-type StoreStats = {
+type StoreStats = CatalogSummaryStats & {
   projects: number;
-  live: number;
-  paused: number;
-  dormant: number;
-  noGit: number;
-  copies: number;
   unsaved: number;
   noRemote: number;
   notMine: number;
-};
-
-type TechnologyMeta = { icon: IconType; color: string };
-
-/*
-  The brand colors remain even though the rest of the screen is ink on paper.
-  They are not decoration: the blue of TypeScript and the green of Node are how a stack is
-  recognized at a glance among forty lines, just like an app icon is recognized. What was turned
-  off was the purple of the interface —buttons, selection, links—, which did compete.
- */
-const TECHNOLOGY_ICONS: Record<string, TechnologyMeta> = {
-  typescript: { icon: SiTypescript, color: "#3178c6" },
-  "next.js": { icon: SiNextdotjs, color: "#111111" },
-  nextjs: { icon: SiNextdotjs, color: "#111111" },
-  react: { icon: SiReact, color: "#149eca" },
-  flutter: { icon: SiFlutter, color: "#02569b" },
-  dart: { icon: SiDart, color: "#0175c2" },
-  "node.js": { icon: SiNodedotjs, color: "#5fa04e" },
-  nodejs: { icon: SiNodedotjs, color: "#5fa04e" },
-  python: { icon: SiPython, color: "#3776ab" },
-  rust: { icon: SiRust, color: "#111111" },
-  go: { icon: SiGo, color: "#00add8" },
-  vue: { icon: SiVuedotjs, color: "#42b883" },
-  "vue.js": { icon: SiVuedotjs, color: "#42b883" },
-  svelte: { icon: SiSvelte, color: "#ff3e00" },
-  swift: { icon: SiSwift, color: "#f05138" },
-  kotlin: { icon: SiKotlin, color: "#7f52ff" },
-  ruby: { icon: SiRuby, color: "#cc342d" },
-  php: { icon: SiPhp, color: "#777bb4" },
-  express: { icon: SiExpress, color: "#111111" },
-  tailwind: { icon: SiTailwindcss, color: "#06b6d4" },
-  tailwindcss: { icon: SiTailwindcss, color: "#06b6d4" },
-  docker: { icon: SiDocker, color: "#2496ed" },
-  postgresql: { icon: SiPostgresql, color: "#4169e1" },
-  supabase: { icon: SiSupabase, color: "#3ecf8e" },
-  firebase: { icon: SiFirebase, color: "#ffca28" },
 };
 
 const FILTERS = [
@@ -322,26 +257,14 @@ function shortPath(root: string): string {
   return root.replace(/^\/(?:Users|home)\/[^/]+/, "~");
 }
 
-/*
-  Receive the translator instead of calling it: it is not a component and hooks cannot enter here.
-  The real description —if the project has one— is shown exactly as it comes, in the language in
-  which it is written: it is project data, not interface text.
- */
-function projectDescription(project: StoreProject, t: Translate): string {
-  if (project.description) return project.description;
-  const primary = project.technologies.find(
-    (technology) => technology.kind === "framework" || technology.kind === "language",
-  );
-  return primary ? t("store.builtWith", { tech: primary.name }) : t("store.detected");
-}
-
 export function ProjectStore({
   projects,
+  stats,
   report,
 }: {
   projects: StoreProject[];
   stats: StoreStats;
-  /** The day's report, which is rendered folded on top of the catalog. See `Today`. */
+  /** Recent activity, rendered below the controls when there are changes. See `Today`. */
   report: ReportView;
 }) {
   const router = useRouter();
@@ -396,6 +319,7 @@ export function ProjectStore({
    */
   const touched = useRef(false);
   const rowsRef = useRef<HTMLDivElement>(null);
+  const filtersRef = useRef<HTMLDivElement>(null);
   /*
     What the server responds when hiding does not go well. Live here and not on the panel because
     the one making the call is this screen.
@@ -412,12 +336,6 @@ export function ProjectStore({
     an output for someone who already knew it was there.
    */
   const [justHidden, setJustHidden] = useState<{ id: string; name: string } | null>(null);
-
-  /*
-    The project to resume is the most recent one, nothing more. The query already arrives sorted
-    by the date of the last commit.
-   */
-  const resume = projects[0];
 
   const attentionCount = useMemo(() => projects.filter(needsAttention).length, [projects]);
   const favoriteCount = useMemo(
@@ -629,11 +547,20 @@ export function ProjectStore({
   }
 
   const filterCounts: Partial<Record<Filter, number>> = {
+    all: projects.length,
     attention: attentionCount,
     favorites: favoriteCount,
   };
 
-  if (!resume) return null;
+  function clearFilters() {
+    setFilter("all");
+    filtersRef.current?.scrollTo({ left: 0 });
+    setQuery("");
+    // A refresh must not restore the query that was just cleared.
+    if (window.location.search) router.replace("/", { scroll: false });
+  }
+
+  if (projects.length === 0) return null;
 
   /*
     The destination of the jump link goes here, and not in `page.tsx`.
@@ -646,9 +573,6 @@ export function ProjectStore({
   return (
     <main id="app-main" tabIndex={-1} className="app-main catalog-screen">
       <div className="catalog-screen__inner">
-        <Today report={report} />
-        <WatchWarning />
-
         {justHidden && (
           <p className="brief brief--dismissed" role="status">
             <HiOutlineEyeSlash aria-hidden />
@@ -660,45 +584,55 @@ export function ProjectStore({
           </p>
         )}
 
-        <div className="catalog-bar">
-          <h1>
-            {t("catalog.title")}
-            <span>
-              {filtered.length === projects.length
-                ? t(projects.length === 1 ? "catalog.countOne" : "catalog.count", {
-                    n: projects.length,
-                  })
-                : `${filtered.length} / ${projects.length}`}
-            </span>
-          </h1>
+        <header className="catalog-bar">
+          <div className="catalog-bar__heading">
+            <div className="catalog-bar__title">
+              <h1>{t("catalog.title")}</h1>
+              <span className="catalog-count" role="status">
+                {filtered.length === projects.length
+                  ? t(projects.length === 1 ? "catalog.countOne" : "catalog.count", {
+                      n: projects.length,
+                    })
+                  : `${filtered.length} / ${projects.length}`}
+              </span>
+            </div>
+          </div>
           <div className="catalog-bar__tools">
-            <p className="catalog-hint">{t("catalog.hint")}</p>
+            <CatalogActions discreet={discreet} onToggleDiscreet={() => setDiscreet(!discreet)}
+              onShare={() => setSharing(true)} />
+          </div>
+        </header>
+
+        <CatalogContext stats={stats} total={projects.length}>
+          <div className="catalog-activity">
+            <Today report={report} />
+            {projects[0]?.lastCommitAt && <LatestProject project={projects[0]} discreet={discreet} />}
+          </div>
+        </CatalogContext>
+
+        <div className="catalog-toolbar">
+          <div className="catalog-toolbar__heading">
+            <span>{t("store.filterAria")}</span>
+            <p>{t("catalog.hint")}</p>
+          </div>
+          <div ref={filtersRef} className="catalog-filters" role="group" aria-label={t("store.filterAria")}>
+            {FILTERS.map((item) => (
+              <button key={item} type="button" onClick={() => setFilter(item)}
+                className={filter === item ? "is-active" : undefined} aria-pressed={filter === item}>
+                {t(FILTER_LABELS[item])}
+                {filterCounts[item] ? <span>{filterCounts[item]}</span> : null}
+              </button>
+            ))}
+          </div>
+          <div className="catalog-view-tools">
             <label className="catalog-sort">
-              <span className="sr-only">{t("store.sortLabel")}</span>
+              <span>{t("catalog.sort")}</span>
               <select value={sort} onChange={(event) => setSort(event.target.value)}>
                 <option value="recent">{t("store.sortRecent")}</option>
                 <option value="name">{t("store.sortName")}</option>
                 <option value="health">{t("store.sortHealth")}</option>
               </select>
             </label>
-            <button
-              type="button"
-              className={`catalog-tool${discreet ? " is-active" : ""}`}
-              onClick={() => setDiscreet(!discreet)}
-              aria-pressed={discreet}
-              title={t(discreet ? "store.showNames" : "store.hideNames")}
-            >
-              {discreet ? <HiOutlineEyeSlash aria-hidden /> : <HiOutlineEye aria-hidden />}
-            </button>
-            <button
-              type="button"
-              className="catalog-tool"
-              onClick={() => setSharing(true)}
-              aria-label={t("share.abrir")}
-              title={t("share.abrir")}
-            >
-              <HiOutlineShare aria-hidden />
-            </button>
             <div className="view-switch" role="group" aria-label={t("store.viewAria")}>
               <button
                 type="button"
@@ -706,8 +640,9 @@ export function ProjectStore({
                 className={view === "list" ? "is-active" : undefined}
                 aria-label={t("store.viewList")}
                 aria-pressed={view === "list"}
+                title={t("store.viewList")}
               >
-                <HiOutlineBars3 aria-hidden />
+                <HiOutlineBars3 aria-hidden /><span>{t("catalog.list")}</span>
               </button>
               <button
                 type="button"
@@ -715,38 +650,24 @@ export function ProjectStore({
                 className={view === "grid" ? "is-active" : undefined}
                 aria-label={t("store.viewGrid")}
                 aria-pressed={view === "grid"}
+                title={t("store.viewGrid")}
               >
-                <HiOutlineSquares2X2 aria-hidden />
+                <HiOutlineSquares2X2 aria-hidden /><span>{t("catalog.grid")}</span>
               </button>
             </div>
           </div>
         </div>
 
-        <div className="catalog-filters" role="group" aria-label={t("store.filterAria")}>
-          {FILTERS.map((item) => (
-            <button
-              key={item}
-              type="button"
-              onClick={() => setFilter(item)}
-              className={filter === item ? "is-active" : undefined}
-              aria-pressed={filter === item}
-            >
-              {t(FILTER_LABELS[item])}
-              {filterCounts[item] ? <span>{filterCounts[item]}</span> : null}
+        {(filter !== "all" || query.trim()) && (
+          <div className="catalog-filter-state">
+            <p>{t("catalog.filteredBy", { filter: t(FILTER_LABELS[filter]) })}
+              {query.trim() && <span> · {query.trim()}</span>}
+            </p>
+            <button type="button" onClick={clearFilters}>
+              <HiOutlineXMark aria-hidden />{t("store.clearFilters")}
             </button>
-          ))}
-        </div>
-
-        <ResumeStrip
-          project={resume}
-          discreet={discreet}
-          index={Math.max(0, projects.findIndex((project) => project.id === resume.id))}
-        />
-        {/*
-           Below the filters and not at the very top: the question it answers —'are all my
-           projects there?'— is asked after looking at the grid, not before.
-          */}
-        <Sites total={projects.length} />
+          </div>
+        )}
 
         {sharing && (
           <SharePanel
@@ -808,19 +729,7 @@ export function ProjectStore({
                 <p>{t("store.noResultsBody")}</p>
                 <button
                   type="button"
-                  onClick={() => {
-                    setFilter("all");
-                    setQuery("");
-                    /*
-                      And the URL with them, if it had a term.
-                      The state clears immediately—the grid waits for no one—but leaving a `?q=`
-                      hanging in the address bar would be the same discord as before with a
-                      different face: refreshing would resurrect a filter that the user just
-                      deleted. `replace` and not `push`: deleting a filter is not a place to
-                      return to with Back.
-                     */
-                    if (window.location.search) router.replace("/", { scroll: false });
-                  }}
+                  onClick={clearFilters}
                 >
                   {t("store.clearFilters")}
                 </button>
@@ -847,49 +756,23 @@ export function ProjectStore({
   );
 }
 
-/**
- * Resume, in one line.
- *
- * It was a three-hundred-pixel card with a storefront-sized icon, five metrics, and two buttons.
- * It said only one thing —"you were here yesterday"— and took up half of the first screen to say
- * it, so what it came to do, which is look at the catalog, started below the fold. Now it's a
- * line: where you left off, what you wrote in the last commit, and the button that takes you back
- * to the editor.
- */
-function ResumeStrip({
-  project,
-  discreet,
-  index,
-}: {
-  project: StoreProject;
-  discreet: boolean;
-  index: number;
-}) {
+/** The latest recorded commit, not a claim about which project the user last opened. */
+function LatestProject({ project, discreet }: { project: StoreProject; discreet: boolean }) {
   const t = useT();
   const locale = useLocale();
-  const visibleName = discreet ? t("store.hidden", { n: index + 1 }) : project.name;
   return (
-    <section className="resume-strip" aria-label={t("store.resume")}>
-      <HiOutlineArrowUturnLeft aria-hidden />
-      <p>
-        <strong>{visibleName}</strong>
-        {/*
-           The commit subject is shown exactly as it was written: it is project text, not
-           interface text, and translating it would be inventing it.
-          */}
-        <span>{project.lastCommitSubject || projectDescription(project, t)}</span>
-      </p>
-      <span className="resume-strip__when">{relativeDate(project.lastCommitAt, locale)}</span>
-      {/*
-         The same dropdown as the card, and not a standalone 'open in editor'.
-         It used to show the generic verb and open the first editor it found: with Cursor and VS
-         Code installed, you never knew which one would come up until it did. And it was the only
-         door on the front page — to open in a terminal, in the folder, or in an agent, you had to
-         enter the project, even if the list of sites was already calculated and in view two
-         panels over. Now it says the name of the program and the arrow takes you to the rest,
-         just like inside.
-        */}
-      <OpenMenu projectId={project.id} path={project.root} locale={locale} compact />
+    <section className="catalog-latest" aria-label={t("catalog.latestCommit")}>
+      <div className="catalog-latest__heading">
+        <h2>{t("catalog.latestCommit")}</h2>
+        <span>{relativeDate(project.lastCommitAt, locale)}</span>
+      </div>
+      <Link href={`/p/${project.slug}`}>
+        {discreet ? t("store.hidden", { n: 1 }) : project.name}
+        <HiOutlineArrowUpRight aria-hidden />
+      </Link>
+      {!discreet && project.lastCommitSubject && (
+        <p title={project.lastCommitSubject}>{project.lastCommitSubject}</p>
+      )}
     </section>
   );
 }
@@ -1041,7 +924,7 @@ function ProjectRow({
   );
 }
 
-/** The same row in icon form: the view to recognize at a glance, not to read. */
+/** An app launcher tile: recognize the icon, then read its name and current status. */
 function ProjectTile({
   project,
   index,
@@ -1096,7 +979,7 @@ function ProjectTile({
           locale={locale}
           name={project.name}
           src={project.hasIcon ? `/icon/${project.id}` : null}
-          size={54}
+          size={76}
           tone="neutral"
         />
       )}
@@ -1109,12 +992,8 @@ function ProjectTile({
            four folders went on looking like one without a word. The same mistake the cloud above
            records, repeated one row below it.
 
-           It comes as an icon and not as the sentence for a measured reason: the tile is 142px,
-           118px on a phone, and «· 3 more copies» is 81px against the 29px the meta line has left
-           over — 5px on a phone. The name row is the only shelf here with clipping of its own, so
-           a mark placed on it costs the name a few characters and never breaks the tile. The
-           figure travels in the tooltip, which is exactly the deal the cloud beside it already
-           takes.
+           The mark stays beside the name, leaving the activity row clear. Its fixed size
+           leaves the remaining space to the project name.
 
            The icon is the one the sidebar uses for Copies, because that is where this leads.
           */}
@@ -1168,9 +1047,8 @@ function ConcealedProjectMark({
 /**
  * Health, drawn.
  *
- * It is the only number that orders the catalog and the only place where color remains, so it
- * earns the drawing: a ring that fills up to where the note reaches. A single number is read one
- * by one; a ring is compared with the one above and the one below without reading any.
+ * A ring fills to the measured score. Its length and explicit number complement the status
+ * colors, so comparing projects does not depend on distinguishing colors.
  */
 function HealthDial({ score, grade }: { score: number; grade: string }) {
   const t = useT();
@@ -1203,7 +1081,9 @@ function StackMark({ technologies }: { technologies: StoreProject["technologies"
     (technology) => technology.kind === "framework" || technology.kind === "language",
   );
   if (!primary) return <span className="stack-mark stack-mark--empty">—</span>;
-  const meta = TECHNOLOGY_ICONS[primary.name.toLowerCase()];
+  /* One map, in `technology-mark.tsx`. This file used to carry a second copy of it and the two had
+     drifted: `anthropic` and `drizzle` drew a mark on the project sheet and nothing here. */
+  const meta = technologyIcon(primary.name);
   const Icon = meta?.icon;
   return (
     <span className="stack-mark">
@@ -1307,6 +1187,7 @@ function DetailPanel({
         */}
       <div className="detail-panel__open">
         <OpenMenu projectId={project.id} path={project.root} locale={locale} />
+        <OpenAll projectId={project.id} projectName={project.name} compact />
       </div>
 
       <section className={`detail-health detail-health--${tone}`}>

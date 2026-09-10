@@ -24,9 +24,9 @@ export default function Error({ reset }: { error: Error & { digest?: string }; r
     The wrapper carries the target of the jump link, and it ALWAYS carries it.
     When a route goes down, this is the content of the page: if the anchor `#app-main` points to
     nothing, the first tab of the page has nowhere to go. It goes in a wrapper and not in each
-    branch because `CatalogDown` is also rendered inside the catalog—from `WatchWarning`, that is,
-    inside `<main>` of the homepage—and there the id is already set: repeating it would leave two
-    on the same page.
+    branch because `CatalogDown` is also rendered inside the catalog—from `CatalogContext`, that
+    is, inside `<main>` of the homepage—and there the id is already set: repeating it would leave
+    two on the same page.
    */
   return (
     <div id="app-main" tabIndex={-1}>

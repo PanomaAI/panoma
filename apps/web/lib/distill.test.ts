@@ -1,8 +1,10 @@
+import { MIN_DISTILL_CITATIONS } from "@panoma/db";
 import { describe, expect, it } from "vitest";
 import {
   CHUNK_CHARS,
   CHUNK_VERDICTS,
   MAX_CHUNKS,
+  MIN_CITATIONS,
   MAX_STATEMENTS,
   MAX_STATEMENT_CHARS,
   MAX_VERDICTS_PER_RUN,
@@ -10,6 +12,7 @@ import {
   estimateRunTokens,
   parseObservations,
   planChunks,
+  planDistillation,
   readLimit,
   type DistillVerdict,
 } from "./distill";
@@ -97,25 +100,45 @@ describe("el reparto en tandas", () => {
     expect(chars).toBeLessThanOrEqual(CHUNK_CHARS);
   });
 
-  it("pero la cita que ella sola se pasa del tope entra igual, o la tanda nace vacía", () => {
-    const plan = planChunks([verdict({ quote: "x".repeat(CHUNK_CHARS + 1_000) })]);
+  /*
+    The first two always go in, even past the character limit. Before, only the first did —"a
+    batch is never fixed by being empty"— and that left a batch of one, which cannot back a single
+    observation: the parser wants two distinct citations. A batch that cannot answer is not fixed
+    by being born either. The parser bounds a quote at 2,240 characters, so in a real corpus this
+    branch never fires; it exists so the invariant holds whatever the input.
+   */
+  it("la cita que ella sola se pasa del tope entra igual, y con la segunda: sola no vale", () => {
+    // The big one carries the signal, so it is read first and is the one that breaks the limit.
+    const plan = planChunks([
+      verdict({ id: "gorda", quote: "x".repeat(CHUNK_CHARS + 1_000) }),
+      verdict({ id: "corta", quote: "quitalo", signals: [] }),
+      verdict({ id: "tercera", quote: "y esto tambien", signals: [] }),
+    ]);
 
     expect(plan).toHaveLength(1);
-    expect(plan[0]?.verdicts).toHaveLength(1);
+    expect(plan[0]?.verdicts.map((one) => one.id)).toEqual(["gorda", "corta"]);
   });
 
   it("cada proyecto va en su tanda: el gusto no es el mismo en la web que en el CLI", () => {
     const plan = planChunks([
       verdict({ id: "a", identity: "git:aaaa" }),
+      verdict({ id: "a2", identity: "git:aaaa" }),
       verdict({ id: "b", identity: "git:bbbb" }),
+      verdict({ id: "b2", identity: "git:bbbb" }),
     ]);
 
     expect(plan).toHaveLength(2);
-    expect(plan.map((chunk) => chunk.verdicts.length)).toEqual([1, 1]);
+    expect(plan.map((chunk) => chunk.verdicts.length)).toEqual([2, 2]);
   });
 
+  /*
+    Two quotes per project and not one: a project with a single unread quote is not a batch, it is
+    `thin` (see below), so a run over fourteen lone quotes would plan nothing and prove nothing.
+   */
   it("y no se planean más tandas de las que hace una ejecución", () => {
-    const projects = many(MAX_CHUNKS + 6, (index) => ({ identity: `git:${index}` }));
+    const projects = many((MAX_CHUNKS + 6) * 2, (index) => ({
+      identity: `git:${index % (MAX_CHUNKS + 6)}`,
+    }));
     const plan = planChunks(projects);
 
     expect(plan).toHaveLength(MAX_CHUNKS);
@@ -124,7 +147,7 @@ describe("el reparto en tandas", () => {
   it("manda el proyecto con más citas con señal", () => {
     const plan = planChunks([
       ...many(3, () => ({ identity: "git:mucho" })),
-      verdict({ id: "solo", identity: "git:poco", signals: [] }),
+      ...many(2, (index) => ({ id: `p${index}`, identity: "git:poco", signals: [] })),
     ]);
 
     expect(plan[0]?.identity).toBe("git:mucho");
@@ -136,12 +159,28 @@ describe("el reparto en tandas", () => {
         ...many(3, () => ({ identity: "git:primero" })),
         ...many(3, (index) => ({ id: `s${index}`, identity: "git:segundo", signals: [] })),
       ],
+      { limit: 5 },
+    );
+
+    // Five quotes: three from the preferred project and two from the next. Sharing them equally
+    // would leave out verdicts better than those included.
+    expect(plan.map((chunk) => chunk.verdicts.length)).toEqual([3, 2]);
+  });
+
+  /*
+    And a remainder of one is not a batch. With `limit: 4` the old plan was `[3, 1]`, and that one
+    was a paid call with `[]` as its only possible answer. It stays unread for the next pass.
+   */
+  it("pero un resto por debajo de las dos citas se queda para la siguiente pasada", () => {
+    const plan = planChunks(
+      [
+        ...many(3, () => ({ identity: "git:primero" })),
+        ...many(3, (index) => ({ id: `s${index}`, identity: "git:segundo", signals: [] })),
+      ],
       { limit: 4 },
     );
 
-    // Four quotes: three from the preferred project and one from the next. Sharing them equally
-    // would leave out verdicts better than those included.
-    expect(plan.map((chunk) => chunk.verdicts.length)).toEqual([3, 1]);
+    expect(plan.map((chunk) => chunk.verdicts.length)).toEqual([3]);
   });
 
   it("y nunca se pasa del techo de la ejecución, pida quien pida lo que pida", () => {
@@ -217,14 +256,14 @@ describe("el prompt", () => {
   it("la regla eliminatoria de las dos citas está escrita, no solo comprobada", () => {
     const built = buildPrompt(chunk);
 
-    expect(built.prompt).toContain("eliminatorias");
-    expect(built.prompt).toContain("al menos 2 etiquetas");
+    expect(built.prompt).toContain("disqualifying");
+    expect(built.prompt).toContain("at least 2 labels");
   });
 
   it("y la de que una frase que valdría para cualquiera no vale para nadie", () => {
     const built = buildPrompt(chunk);
 
-    expect(built.prompt).toContain("cualquier programador");
+    expect(built.prompt).toContain("any programmer");
   });
 
 
@@ -565,7 +604,7 @@ describe("destilar avanza sobre el corpus", () => {
    */
   it("al agotarse un proyecto sube el siguiente", () => {
     const grande = many(3, (index) => ({ id: `g${index}`, identity: "git:grande" }));
-    const pequeno = many(1, () => ({ id: "p0", identity: "git:pequeno", signals: [] }));
+    const pequeno = many(2, (index) => ({ id: `p${index}`, identity: "git:pequeno", signals: [] }));
 
     const primera = planChunks([...grande, ...pequeno]);
     expect(primera[0]!.identity).toBe("git:grande");
@@ -585,6 +624,71 @@ describe("destilar avanza sobre el corpus", () => {
   it("sin el filtro nada cambia: es un añadido, no un cambio de reparto", () => {
     const todos = many(10, (index) => ({ quote: `frase ${index}` }));
     expect(planChunks(todos, { skip: new Set() })).toEqual(planChunks(todos));
+  });
+});
+
+/**
+ * What no pass can send.
+ *
+ * An observation needs two distinct citations from the same batch, so a project whose only unread
+ * quote is one cannot yield anything: the call is paid —about a thousand tokens of instructions—
+ * and the answer is `[]` before it is made. Measured on 6-Sep-2026 at the end of the author's
+ * corpus: every pass paid that call for the lone quote of a project, marked nothing, and the
+ * corpus line said "1 left" forever. Those verdicts come out apart, unmarked and unpaid, and the
+ * route subtracts them from what the corpus line counts as pending.
+ */
+describe("lo que ninguna pasada puede mandar", () => {
+  /*
+    The corpus line on the Twin screen comes from `corpusProgress` in packages/db, which leaves a
+    project's lone unread quotes out with its own copy of this number. If the two ever drift, the
+    screen says "1 left" about a quote no pass will send, or hides one a pass would.
+   */
+  it("the planner and the corpus count agree on how many quotes a belief needs", () => {
+    expect(MIN_CITATIONS).toBe(MIN_DISTILL_CITATIONS);
+  });
+
+  it("un proyecto con una sola cita sin leer no hace tanda: sale aparte", () => {
+    const plan = planDistillation([
+      verdict({ id: "a1", identity: "git:aaaa" }),
+      verdict({ id: "a2", identity: "git:aaaa" }),
+      verdict({ id: "solo", identity: "git:sola" }),
+    ]);
+
+    expect(plan.chunks.map((chunk) => chunk.identity)).toEqual(["git:aaaa"]);
+    expect(plan.thin.map((one) => one.id)).toEqual(["solo"]);
+  });
+
+  /* The lone one is the one left after the others were read: that is how the tail is reached. */
+  it("y la que queda sola porque las demás ya se leyeron, también", () => {
+    const todos = many(3, (index) => ({ quote: `frase ${index}` }));
+    const plan = planDistillation(todos, { skip: new Set(["v0", "v1"]) });
+
+    expect(plan.chunks).toEqual([]);
+    expect(plan.thin.map((one) => one.id)).toEqual(["v2"]);
+  });
+
+  it("en cuanto el proyecto gana una segunda cita, se planea como cualquiera", () => {
+    const antes = planDistillation([verdict({ id: "solo" })]);
+    expect(antes.chunks).toEqual([]);
+
+    const despues = planDistillation([verdict({ id: "solo" }), verdict({ id: "nueva" })]);
+    expect(despues.chunks).toHaveLength(1);
+    expect(despues.thin).toEqual([]);
+  });
+
+  it("lo ya leído no cuenta como delgado: no está pendiente de nada", () => {
+    const plan = planDistillation([verdict({ id: "leida" })], { skip: new Set(["leida"]) });
+
+    expect(plan.chunks).toEqual([]);
+    expect(plan.thin).toEqual([]);
+  });
+
+  it("planChunks es la misma planificación, sin la lista de lo que se deja fuera", () => {
+    const todos = [
+      ...many(4, (index) => ({ quote: `frase ${index}` })),
+      verdict({ id: "solo", identity: "git:sola" }),
+    ];
+    expect(planChunks(todos)).toEqual(planDistillation(todos).chunks);
   });
 });
 
@@ -609,29 +713,22 @@ describe("una funcionalidad no es un gusto", () => {
   const built = buildPrompt(chunk);
 
   /*
-    The language is dictated by the quotes and not by the person asking. It is the arrangement of
-    §2s lowered by one level, and here it hurts more: observation is the material from which
-    everything else comes. A sweep done without the header of language left 260 observations in
-    English on a corpus written in Spanish, and the entire portrait came out in a language that
-    the person had not used even once.
+    The language comes from the quotes, not from a policy: a fixed «in English» was measured to
+    leave 260 English observations over a Spanish corpus, and the portrait could not be read by
+    the person it described. The evidence itself travels verbatim either way.
    */
-  it("no fija ningún idioma: lo mandan las citas", () => {
-    expect(built.prompt).toContain("el mismo idioma en el que está escrita la cita");
-    expect(built.prompt).toContain("No traduzcas");
-    /*
-      “in English” does appear, and it is not the language of the sentence: it is the form that
-      the name of a coined subject must have, which is an identifier and ends as a header in the
-      file. What cannot appear is a command about the language of what is written.
-     */
-    expect(built.prompt).not.toContain("Escribe las observaciones en");
-    expect(built.prompt).not.toContain("en castellano");
-    expect(built.system).not.toContain("castellano");
-    expect(built.system).not.toContain("inglés");
+  it("asks for observations in the language of the quotes, and never a translated quote", () => {
+    expect(built.prompt).toContain("in the language the quotes it cites are written in");
+    expect(built.prompt).toContain("Do not translate or rewrite the source");
+    expect(built.system).toContain("in the language");
+    expect(built.system).not.toMatch(/\bin English\b/);
+    expect(built.prompt).not.toMatch(/Write[^"\n]*\bin English\b/);
+    for (const item of chunk.verdicts) expect(built.prompt).toContain(item.quote);
   });
 
-  it("la regla va antes de la materia, donde se lee al escribir la frase", () => {
-    const regla = built.prompt.indexOf("Una funcionalidad no es un gusto");
-    const materia = built.prompt.indexOf("cada observación dice DE QUÉ VA");
+  it("states the feature boundary before topic classification", () => {
+    const regla = built.prompt.indexOf("A feature is not a preference");
+    const materia = built.prompt.indexOf("Each observation states WHAT IT IS ABOUT");
     expect(regla).toBeGreaterThan(-1);
     expect(regla).toBeLessThan(materia);
   });
@@ -645,8 +742,8 @@ describe("una funcionalidad no es un gusto", () => {
     Without this half, the rule discards good material: almost all of the quotes in this corpus
     are requests for functionality, and many carry a taste within.
    */
-  it("deja sacar el gusto que lleve dentro una petición de funcionalidad", () => {
-    expect(built.prompt).toContain("sí puedes sacar el gusto que lleve dentro");
+  it("allows extracting a preference embedded in a feature request", () => {
+    expect(built.prompt).toContain("You may extract the preference within a");
   });
 });
 

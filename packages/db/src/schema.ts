@@ -10,7 +10,65 @@ import {
   real,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
+
+/** Installed programs and their work survive catalog rescans and project retirement. */
+export const apps = pgTable("apps", {
+  id: text("id").primaryKey(),
+  pkg: text("pkg").notNull(),
+  version: text("version"),
+  stagedVersion: text("staged_version"),
+  previousVersion: text("previous_version"),
+  protocol: text("protocol"),
+  status: text("status").notNull().default("absent"),
+  enabled: boolean("enabled").notNull().default(true),
+  manifest: jsonb("manifest"),
+  requirements: jsonb("requirements"),
+  requirementsAt: timestamp("requirements_at", { withTimezone: true }),
+  settings: jsonb("settings").$type<{ brain: string; voice: boolean }>()
+    .notNull().default({ brain: "none", voice: false }),
+  error: text("error"),
+  installedAt: timestamp("installed_at", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const appJobs = pgTable("app_jobs", {
+  id: text("id").primaryKey(),
+  appId: text("app_id").notNull().references(() => apps.id, { onDelete: "cascade" }),
+  identity: text("identity").notNull(),
+  workspaceId: text("workspace_id"),
+  tool: text("tool").notNull(),
+  input: jsonb("input").$type<Record<string, unknown>>().notNull(),
+  status: text("status").$type<"pending" | "running" | "cancelling" | "cancelled" | "failed" | "done">()
+    .notNull().default("pending"),
+  progress: jsonb("progress").$type<{
+    stage: string; progress: number; total?: number; message: string; at: string;
+  }>(),
+  result: jsonb("result").$type<Record<string, unknown>>(),
+  error: text("error"),
+  appVersion: text("app_version").notNull(),
+  pid: integer("pid"),
+  dedupeKey: text("dedupe_key").notNull(),
+  /** Reserved before launch, released only after a receipt; unknown paid work stays charged. */
+  reservedCalls: integer("reserved_calls").notNull().default(0),
+  requestedAt: timestamp("requested_at", { withTimezone: true }).notNull().defaultNow(),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+}, (table) => [
+  index("app_jobs_identity_idx").on(table.identity, table.requestedAt),
+  index("app_jobs_status_idx").on(table.status),
+  uniqueIndex("app_jobs_dedupe_live").on(table.dedupeKey)
+    .where(sql`status in ('pending', 'running', 'cancelling')`),
+]);
+
+export const appWorkspaces = pgTable("app_workspaces", {
+  appId: text("app_id").notNull().references(() => apps.id, { onDelete: "cascade" }),
+  identity: text("identity").notNull(),
+  workspaceId: text("workspace_id").notNull(),
+  rootAtCreation: text("root_at_creation").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [primaryKey({ columns: [table.appId, table.identity] })]);
 
 /**
  * Catalog outline.
@@ -475,6 +533,25 @@ export const agentActivities = pgTable(
   ],
 );
 
+/**
+ * Recoverable session distillation. Project ownership follows the session when a catalog entry
+ * moves; keeping another project_id here would strand queued work at the old folder.
+ */
+export const memoryJobs = pgTable("memory_jobs", {
+  sessionId: text("session_id").primaryKey().references(() => agentSessions.id, { onDelete: "cascade" }),
+  status: text("status").$type<"pending" | "running" | "deferred" | "failed" | "complete">().notNull().default("pending"),
+  attempts: integer("attempts").notNull().default(0),
+  availableAt: timestamp("available_at", { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  /** Rotates on every claim, so an expired worker cannot finish another worker's attempt. */
+  leaseToken: text("lease_token"),
+  reason: text("reason"),
+  /** Counts and coverage only; source excerpts and model output belong in neither receipt nor logs. */
+  receipt: jsonb("receipt").$type<Record<string, unknown>>(),
+}, (table) => [index("memory_jobs_ready_idx").on(table.status, table.availableAt)]);
+
 /** Work queue: what agents can pick up. */
 export const tasks = pgTable(
   "tasks",
@@ -757,6 +834,8 @@ export const servings = pgTable(
       .references(() => agents.id, { onDelete: "cascade" }),
     /** served · withheld */
     arm: text("arm").notNull(),
+    /** Null means ordinary delivery; only enrolled servings belong in an experiment comparison. */
+    experimentId: text("experiment_id"),
     /** The delivered — or withheld — notes: the same ones that would have traveled. */
     noteIds: jsonb("note_ids").notNull(),
     /** How much did the delivery weigh, in order to relate effect with size. */
@@ -871,6 +950,15 @@ export const decisions = pgTable("decisions", {
    */
   aiSummaryLang: text("ai_summary_lang"),
   /**
+   * The fingerprint of the material the description was written from: name, declared
+   * description, stack, services, stores, commit subjects, README. Like `mdReviewHash`, it says
+   * which version of the project the text refers to — and here it also saves money: pressing the
+   * button again on an unchanged project returns the saved text instead of paying a second call
+   * for the same paragraph. Null means written before the fingerprint existed and is treated as
+   * unknown, so the next press pays once and then stores it.
+   */
+  aiSummaryHash: text("ai_summary_hash"),
+  /**
    * The model's opinion on the agents' instruction file: contradictions, redundancy, what is
    * missing. Like the description: a call is required, it is requested manually (`panoma md
    * review`), it is signed with model and date, and it is never regenerated on its own. The
@@ -892,6 +980,16 @@ export const decisions = pgTable("decisions", {
    * label, url?, email?, note? }].
    */
   accounts: jsonb("accounts"),
+  /**
+   * What "open everything" opens for this project, in order: the plan.
+   *
+   * A list of steps by key —`editor:cursor`, `terminal`, `link:service:repository`—, plus the one
+   * command a terminal step may carry and the address of a link the owner added by hand. In
+   * decisions and not in projects for the same reason as the accounts: a person wrote it, and a
+   * folder that moves must not lose it. Shape and rules in `apps/web/lib/open-all.ts`; whatever
+   * is not a plan reads back as "no plan".
+   */
+  openPlan: jsonb("open_plan"),
   /**
    * The latest verdict of 'does this still compile?'.
    *
@@ -1066,6 +1164,81 @@ export const verdicts = pgTable(
     index("verdicts_identity_idx").on(table.identity, table.createdAt),
     // The review screen always asks the same thing: 'give me what I haven't looked at yet'.
     index("verdicts_accepted_idx").on(table.accepted),
+  ],
+);
+
+/**
+ * Human narratives preserve the opening request and structured briefs as well as reactions.
+ * They belong to stable project identities, without a project foreign key: moving or rescanning
+ * a folder must not erase what its owner said. A read marker records completed extraction even
+ * when the model found no decision episode. Source material remains separate from model output.
+ */
+export const narratives = pgTable(
+  "narratives",
+  {
+    id: text("id").primaryKey(),
+    identity: text("identity").notNull(),
+    source: text("source").notNull(),
+    sessionId: text("session_id").notNull(),
+    at: timestamp("at", { withTimezone: true }).notNull(),
+    kind: text("kind", { enum: ["opening", "reaction", "brief"] }).notNull(),
+    text: text("text").notNull(),
+    /** Agent delivery for interpretation only; it is never evidence of the owner's judgment. */
+    context: text("context"),
+    truncated: boolean("truncated").notNull().default(false),
+    readAt: timestamp("read_at", { withTimezone: true }),
+    /**
+     * When a paid pass over this record came back unusable. The next pass takes the records that
+     * never failed first, so one batch the model cannot ground rotates behind the rest instead of
+     * being re-selected —and re-paid— on every click until the day's budget is gone.
+     */
+    failedAt: timestamp("failed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("narratives_identity_idx").on(table.identity, table.at),
+    index("narratives_read_idx").on(table.readAt, table.at),
+  ],
+);
+
+/**
+ * Decision episodes retain goals, tradeoffs and exceptions before any preference is summarized.
+ * History fields cite their human narrative; owner-authored episodes have no model attribution.
+ * Dismissal is a durable owner decision and is never overwritten by repeated extraction.
+ * Like narratives, these records survive a project disappearing from the catalog.
+ */
+export const decisionEpisodes = pgTable(
+  "decision_episodes",
+  {
+    id: text("id").primaryKey(),
+    identity: text("identity"),
+    /** Explicit owner revision link; the earlier episode remains available as decision history. */
+    supersedesId: text("supersedes_id"),
+    origin: text("origin", { enum: ["owner", "history"] }).notNull(),
+    fields: jsonb("fields").notNull(),
+    model: text("model"),
+    status: text("status", { enum: ["active", "dismissed"] }).notNull().default("active"),
+    /**
+     * When this decision stops applying, or null for one that never does — which is every row
+     * written before 6-Sep-2026 and the default for every new one. Nothing expires by itself: the
+     * owner writes the date, and only the delivery to an agent reads it.
+     *
+     * The owner gives a calendar day and it is stored as that day at 23:59:59.999 **UTC**, so the
+     * decision holds through the end of that day. A date carries no timezone, and dressing one up
+     * as a local midnight is the bug this avoids: the same `2026-12-31` would mean a different
+     * instant on every machine that wrote it.
+     *
+     * It is a column and not a field of `fields` because `episodeId` hashes `fields`: a date in
+     * there would change the identifier of a record whose testimony never changed, so an
+     * idempotent retry of the same save would store a second copy instead of returning the first.
+     */
+    validUntil: timestamp("valid_until", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("decision_episodes_identity_idx").on(table.identity, table.status, table.createdAt),
+    index("decision_episodes_supersedes_idx").on(table.supersedesId),
   ],
 );
 
@@ -1434,10 +1607,16 @@ export const modelCalls = pgTable(
   "model_calls",
   {
     id: text("id").primaryKey(),
-    /** look · distill · classify · synthesize. Which organ spent: the budget is handled separately. */
+    /**
+     * Which organ spent: look · distill · classify · synthesize · memory · ask · rehearse ·
+     * episodes · describe · review · probe. The list lives in `apps/web/lib/spend-settings.ts`
+     * (`FAMILY_KINDS`), and the budgets are applied per family there, not per kind.
+     */
     kind: text("kind").notNull(),
     provider: text("provider").notNull(),
     model: text("model").notNull(),
+    appId: text("app_id"),
+    appJobId: text("app_job_id"),
     /** The identity of the project that was being looked at, when there was one. */
     identity: text("identity"),
     /** Null when the provider does not publish the consumption. See the block above. */

@@ -1,6 +1,7 @@
 import { revalidatePath } from "next/cache";
-import { addHumanNote, decideNote, resolveProject } from "@panoma/db";
-import { anchorNote } from "@/lib/sentinels";
+import { redactSecrets } from "@panoma/core";
+import { addHumanNote, decideNote, listProjectNotes, resolveProject, validTrigger } from "@panoma/db";
+import { extractNoteAnchors } from "@/lib/sentinels";
 import { db } from "@/lib/db";
 import { sameOrigin } from "@/lib/guard";
 import { localeFrom, t } from "@/lib/i18n";
@@ -36,9 +37,10 @@ export async function POST(request: Request) {
     action?: "add" | "approve" | "discard";
     id?: string;
     body?: string;
+    where?: string;
   };
 
-  if (!body.slug) return Response.json({ error: t(locale, "api.missingProject") }, { status: 400 });
+  if (!body || typeof body !== "object" || typeof body.slug !== "string" || !body.slug) return Response.json({ error: t(locale, "api.missingProject") }, { status: 400 });
   const { db: database } = await db();
   const project = await resolveProject(database, { slug: body.slug });
   if (!project) return Response.json({ error: t(locale, "api.noProject") }, { status: 404 });
@@ -50,33 +52,37 @@ export async function POST(request: Request) {
 
   switch (body.action) {
     case "add": {
-      const result = await addHumanNote(database, { projectId: project.id, body: body.body ?? "" });
+      if (typeof body.body !== "string") return refusal(locale, { refused: "tooLong", max: 500 });
+      if (body.where !== undefined && (typeof body.where !== "string" || !validTrigger(body.where.trim()))) {
+        return refusal(locale, { refused: "badTrigger" });
+      }
+      const text = redactSecrets(body.body.trim());
+      if (text.length === 0 || text.length > 500) return refusal(locale, { refused: "tooLong", max: 500 });
+      const trigger = body.where?.trim() || null;
+      const sentinels = await extractNoteAnchors({ body: text, root: project.root, trigger });
+      const result = await addHumanNote(database, { projectId: project.id, body: text, ...(trigger ? { trigger } : {}), sentinels });
       if ("refused" in result) return refusal(locale, result);
-      // The customs: the routes that the note mentions and exist today become its sentinels.
-      await anchorNote(database, { noteId: result.id, body: body.body ?? "", root: project.root });
       return done();
     }
     case "approve":
     case "discard": {
-      if (!body.id) return Response.json({ error: t(locale, "notes.gone") }, { status: 400 });
-      const result = await decideNote(database, body.id, body.action === "approve" ? "approved" : "discarded");
+      if (typeof body.id !== "string" || !body.id) return Response.json({ error: t(locale, "notes.gone") }, { status: 400 });
+      // Read the immutable body within this project before calculating its replacement anchors.
+      const notes = await listProjectNotes(database, project.id, ["approved", "proposed", "challenged"]);
+      const note = notes.find((item) => item.id === body.id);
+      if (!note) return Response.json({ error: t(locale, "notes.gone") }, { status: 409 });
+      const sentinels = body.action === "approve"
+        ? await extractNoteAnchors({ body: note.body, root: project.root, trigger: note.trigger })
+        : undefined;
+      const result = await decideNote(database, body.id, body.action === "approve" ? "approved" : "discarded", {
+        projectId: project.id,
+        ...(sentinels ? { sentinels } : {}),
+      });
       if (!result.decided) {
         if (result.reason === "overBudget" || result.reason === "sleepingFull") {
           return refusal(locale, { refused: result.reason, used: result.used ?? 0, budget: result.budget ?? 0 });
         }
         return Response.json({ error: t(locale, "notes.gone") }, { status: 409 });
-      }
-      if (body.action === "approve" && result.body) {
-        // Also in the re-approval of a challenged one: the current basis is that of the last yes,
-        // so the anchors are re-extracted from the SAVED body against today's record — never from
-        // what the client says. The trigger travels with them: the basis of a dormant one is its
-        // guaranteed foundation and is monitored like any other anchor.
-        await anchorNote(database, {
-          noteId: body.id,
-          body: result.body,
-          root: project.root,
-          trigger: result.trigger ?? null,
-        });
       }
       return done();
     }
@@ -103,11 +109,7 @@ function refusal(
         : result.refused === "sleepingFull"
           ? t(locale, "notes.sleepingFull")
           : result.refused === "badTrigger"
-            ? /*
-                From the file, triggers are not written (yet), but the type forces you to say
-                something, and saying something generic would be lying about the reason.
-               */
-              t(locale, "notes.badTrigger")
+            ? t(locale, "notes.badTrigger")
             : t(locale, "notes.pendingFull");
   return Response.json({ error: message }, { status: 400 });
 }

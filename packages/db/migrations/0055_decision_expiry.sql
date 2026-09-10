@@ -1,0 +1,1 @@
+ALTER TABLE "decision_episodes" ADD COLUMN "valid_until" timestamp with time zone;

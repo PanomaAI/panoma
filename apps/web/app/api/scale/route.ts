@@ -31,6 +31,7 @@ export async function GET(request: Request) {
 
   return Response.json({
     ablation: ablationEnabled() ? "on" : "off",
+    experimentId: "memory-v1",
     ...report,
     /*
       The double exam lives in the same report: the scale is the instrument, and coverage and

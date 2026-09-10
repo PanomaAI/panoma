@@ -3,7 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { CatalogClient, describeLocation } from "./client";
-import { formatContext, formatRecall, formatTasks, type Context } from "./format";
+import { formatContext, formatJournalEntry, formatRecall, formatTasks, type Context, type RecallEntry } from "./format";
 
 /**
  * Server MCP of Panoma.
@@ -52,19 +52,35 @@ server.registerTool(
     description:
       "The brief for this project: what changed since yesterday and which agent changed it, " +
       "which proposals are parked waiting on a human decision, which tasks are yours to pick " +
-      "up, and what it is built with — stack, outdated dependencies, known vulnerabilities, and " +
+      "up, the decisions the owner recorded here with their reasons and exceptions, and what " +
+      "it is built with — stack, outdated dependencies, known vulnerabilities, and " +
       "what other AI agents did here before you. Call it when you start working, before you go " +
       "exploring files, and again every day you come back: half of what it carries changes from " +
       "one night to the next. If the project is not in the catalog, it analyses it and enrols " +
-      "it on the spot, so it works the first time too.",
-    inputSchema: location,
+      "it on the spot, so it works the first time too. Before editing, pass files with the " +
+      "project-relative paths you plan to touch: this also returns their approved local rules " +
+      "in every connected client. Before starting a job, or when you are stuck on an error, " +
+      "pass task — one sentence saying what you are about to do or what you are looking at — " +
+      "and the rules and owner decisions whose words overlap it come back with the matched " +
+      "words as the reason.",
+    inputSchema: {
+      ...location,
+      files: z.array(z.string().min(1).max(2048)).max(30).optional()
+        .describe("Files to check for applicable project memory, relative to the project root. At most 30."),
+      task: z.string().min(1).max(1000).optional()
+        .describe(
+          "What you are about to do, or the error you are looking at, in one sentence. Returns the " +
+          "approved rules and owner decisions whose words overlap it, with the matched words as the " +
+          "reason. Pair it with files.",
+        ),
+    },
   },
-  async ({ path }) =>
+  async ({ path, files, task }) =>
     tool(async () => {
       const where = await describeLocation(path);
       const context = await client.post<Context & { projectId: string }>(
         "/api/agent/context",
-        where,
+        { ...where, ...(files !== undefined ? { files } : {}), ...(task !== undefined ? { task } : {}) },
       );
       return formatContext(context);
     })(),
@@ -126,7 +142,7 @@ server.registerTool(
       "panoma_context serves only approved notes, under a shared budget. For what you *did*, " +
       "use panoma_log instead — the journal records events; memory keeps rules. If the fact " +
       "belongs to one PLACE — a file or directory — add `where`: the note then sleeps outside " +
-      "the budget and fires exactly when an agent is about to touch that path.",
+      "the budget. Retrieve its rule before editing with panoma_context and the files input.",
     inputSchema: {
       ...location,
       note: z.string().describe("The durable fact, in one or two sentences."),
@@ -165,22 +181,29 @@ server.registerTool(
       "Search this project's full journal — everything any agent ever logged here, not just " +
       "the recent window panoma_context shows. Use it for history: “how was the broken catalog " +
       "fixed”, “did anyone already try upgrading X”. Words or a \"quoted phrase\"; matches only " +
-      "what was logged, in the language it was logged in. For durable rules, the memory block " +
-      "in panoma_context already has them.",
+      "what was logged, in the language it was logged in. Results include matched excerpts and " +
+      "entry IDs. Pass entryId to read a complete original in bounded segments; continue with " +
+      "its nextOffset. Continue a search with its nextCursor and the same query. For durable " +
+      "rules use panoma_context, with files for rules attached to specific paths.",
     inputSchema: {
       ...location,
-      query: z.string().describe("What to look for — words, or a \"quoted phrase\"."),
+      query: z.string().min(1).max(1000).optional().describe("Search words or a quoted phrase. Omit when opening an entryId."),
+      cursor: z.string().max(4096).optional().describe("The nextCursor of a search, copied verbatim with the same query."),
+      entryId: z.string().max(128).optional().describe("An ID returned by this project's journal search. Opens the original."),
+      offset: z.number().int().nonnegative().optional().describe("The nextOffset returned by an original entry read."),
     },
   },
-  async ({ path, query }) =>
+  async ({ path, query, cursor, entryId, offset }) =>
     tool(async () => {
       const where = await describeLocation(path);
       const result = await client.post<{
         project: string;
         query: string;
         matches: Parameters<typeof formatRecall>[1];
-      }>("/api/agent/journal", { ...where, query });
-      return formatRecall(result.query, result.matches);
+        nextCursor?: string | null;
+        entry?: RecallEntry;
+      }>("/api/agent/journal", { ...where, query, cursor, entryId, offset });
+      return result.entry ? formatJournalEntry(result.entry) : formatRecall(result.query, result.matches, result.nextCursor);
     })(),
 );
 

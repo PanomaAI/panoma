@@ -2,8 +2,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
-import { listSessionActivities, LOG_DETAILS_MAX, LOG_SUMMARY_MAX, logActivity, openSession, searchJournal } from "./agents";
+import { eq, sql } from "drizzle-orm";
+import { LOG_DETAILS_MAX, LOG_SUMMARY_MAX, logActivity, openSession, readJournalEntry, searchJournal, searchJournalPage } from "./agents";
+import { sessionMemoryWindow } from "./memory-jobs";
 import type { Database } from "./client";
 import * as t from "./schema";
 
@@ -95,7 +96,9 @@ describe("la sala de lectura", () => {
 
 describe("lo que una sesión dejó escrito", () => {
   it("devuelve la visita entera y en orden de llegada, que es como se lee una historia", async () => {
-    const historia = await listSessionActivities(db, session);
+    // The distiller's reader: the newest window, handed back in arrival order so it reads as a story.
+    const { activities: historia, omitted } = await sessionMemoryWindow(db, session);
+    expect(omitted).toBe(0);
     expect(historia.map((a) => a.summary)).toEqual([
       "Arreglado el catálogo roto",
       "Migrada la base a PG18",
@@ -144,5 +147,57 @@ describe("la boca de la bitácora", () => {
     expect(row?.details).toContain("[secret-redacted]");
     expect(row?.details).not.toContain("sk-ant");
     expect(row?.details, "la prosa alrededor sobrevive").toContain("caducada");
+  });
+});
+
+describe("journal evidence remains reachable", () => {
+  it("returns the matching passage after a long prefix, with a stable original ID", async () => {
+    const details = `${"Unrelated setup. ".repeat(100)} The final fix uses evidencepassage here.`;
+    const entry = await logActivity(db, { agentId: "ag-j", projectId: PROJECT, sessionId: session, kind: "decision", summary: "A resolved incident", details });
+    if ("refused" in entry) throw new Error("Fixture was refused.");
+    const page = await searchJournalPage(db, PROJECT, "evidencepassage");
+    expect(page.matches).toHaveLength(1);
+    expect(page.matches[0]).toMatchObject({ id: entry.id });
+    expect(page.matches[0]!.excerpt).toContain("evidencepassage");
+    expect(page.matches[0]!.excerpt.length).toBeLessThanOrEqual(1_202);
+    expect(page.nextCursor).toBeNull();
+  });
+
+  it("pages past twelve entries without losing equal timestamps or accepting a cursor from another search", async () => {
+    const ids = Array.from({ length: 25 }, (_, i) => `journal_page_${String(i).padStart(2, "0")}`);
+    await db.insert(t.agentActivities).values(ids.map((id) => ({
+      id, agentId: "ag-j", projectId: PROJECT, sessionId: session, kind: "note", summary: "pageproof",
+      createdAt: sql`'2026-09-06T12:00:00.000123Z'::timestamptz`,
+    })));
+    const first = await searchJournalPage(db, PROJECT, "pageproof");
+    expect(first.matches).toHaveLength(12);
+    expect(first.nextCursor).not.toBeNull();
+    const second = await searchJournalPage(db, PROJECT, "pageproof", first.nextCursor!);
+    const third = await searchJournalPage(db, PROJECT, "pageproof", second.nextCursor!);
+    expect([...first.matches, ...second.matches, ...third.matches].map((hit) => hit.id)).toEqual(ids);
+    expect(third.nextCursor).toBeNull();
+    await expect(searchJournalPage(db, PROJECT, "different", first.nextCursor!)).rejects.toThrow("Invalid journal cursor");
+    await expect(searchJournalPage(db, "another-project", "pageproof", first.nextCursor!)).rejects.toThrow("Invalid journal cursor");
+    await expect(searchJournalPage(db, PROJECT, "pageproof", "invalid")).rejects.toThrow("Invalid journal cursor");
+  });
+
+  it("reads every character of the original in bounded segments and refuses a different project's ID", async () => {
+    const summary = "Complete original";
+    const details = `${"Evidence with context. ".repeat(340)} Final exception: preserve the existing data.`;
+    const entry = await logActivity(db, { agentId: "ag-j", projectId: PROJECT, sessionId: session, kind: "decision", summary, details });
+    if ("refused" in entry) throw new Error("Fixture was refused.");
+    let offset: number | null = 0;
+    let original = "";
+    while (offset !== null) {
+      const segment = await readJournalEntry(db, PROJECT, entry.id, offset);
+      expect(segment).toBeDefined();
+      expect(segment!.text.length).toBeLessThanOrEqual(4_000);
+      original += segment!.text;
+      offset = segment!.nextOffset;
+    }
+    expect(original).toBe(`${summary}\n\n${details}`);
+    expect(await readJournalEntry(db, "another-project", entry.id)).toBeUndefined();
+    await expect(readJournalEntry(db, PROJECT, entry.id, -1)).rejects.toThrow("offset");
+    await expect(readJournalEntry(db, PROJECT, entry.id, original.length + 1)).rejects.toThrow("offset");
   });
 });

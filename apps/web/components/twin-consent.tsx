@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useT } from "./i18n-provider";
-import { ActionButton } from "./primitives";
+import { ActionButton, ActionError, Card } from "./primitives";
 
 /*
   The only question that Twin asks, and why there is exactly one.
@@ -62,8 +62,8 @@ export function TwinConsent({
   }
 
   return (
-    <section className="mt-12 rounded-lg border border-edge px-4 py-4">
-      <p className="eyebrow">{translate("twin.consentTitle")}</p>
+    <Card as="section" tone="plain" className="mt-8" aria-labelledby="twin-consent-title">
+      <h2 id="twin-consent-title" className="text-base font-semibold">{translate("twin.consentTitle")}</h2>
       <p className="mt-2 max-w-2xl text-sm leading-relaxed">{translate("twin.consentBody")}</p>
       {/*
          The figure, and if it would fit with it. A permission question without the number next to
@@ -87,11 +87,15 @@ export function TwinConsent({
         </ActionButton>
         <span className="font-mono text-xs text-faint">{translate("twin.consentRevoke")}</span>
       </div>
+      {/*
+         The refusal of the one question on this screen, announced. It was a bare paragraph on
+         `text-idle` — 2.15:1, the worst of the five inks the owner keeps below AA — with no role
+         at all, so a yes that was not saved reached only the eye that happened to be on it.
+         `ActionError` carries `role="alert"`, and the sources card next door already took it.
+        */}
       {error && (
-        <p className="mt-2 font-mono text-xs text-idle">
-          {translate("twin.saveFailed", { detail: error })}
-        </p>
+        <ActionError text={translate("twin.saveFailed", { detail: error })} className="mt-2" />
       )}
-    </section>
+    </Card>
   );
 }

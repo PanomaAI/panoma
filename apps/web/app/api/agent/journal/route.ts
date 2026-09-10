@@ -1,4 +1,4 @@
-import { resolveProject, searchJournal } from "@panoma/db";
+import { readJournalEntry, resolveProject, searchJournalPage } from "@panoma/db";
 import { requireAgent } from "@/lib/agent-auth";
 import { localeFrom, t } from "@/lib/i18n";
 
@@ -19,17 +19,29 @@ export async function POST(request: Request) {
   const auth = await requireAgent(request);
   if ("error" in auth) return auth.error;
 
-  const body = (await request.json().catch(() => ({}))) as {
+  const payload = await request.json().catch(() => ({})) as unknown;
+  const body = (payload !== null && typeof payload === "object" && !Array.isArray(payload) ? payload : {}) as {
     cwd?: string;
     remote?: string;
     slug?: string;
     query?: string;
+    cursor?: string;
+    entryId?: string;
+    offset?: number;
   };
 
-  const query = (body.query ?? "").trim();
-  if (query === "") {
+  const query = typeof body.query === "string" ? body.query.trim() : "";
+  const reading = body.entryId !== undefined;
+  if ([body.cwd, body.remote, body.slug].some((value) => value !== undefined && typeof value !== "string")) {
+    return Response.json({ error: "Project location fields must be strings." }, { status: 400 });
+  }
+  if (reading ? (typeof body.entryId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(body.entryId) ||
+      body.query !== undefined || body.cursor !== undefined ||
+      (body.offset !== undefined && (!Number.isSafeInteger(body.offset) || body.offset < 0))) :
+    (query === "" || query.length > 1_000 || body.offset !== undefined ||
+      (body.cursor !== undefined && typeof body.cursor !== "string"))) {
     return Response.json(
-      { error: "Missing 'query'. Say what you are looking for — words, or a \"quoted phrase\"." },
+      { error: "Supply a query of 1–1000 characters with an optional cursor, or an entryId with an optional non-negative offset." },
       { status: 400 },
     );
   }
@@ -37,16 +49,25 @@ export async function POST(request: Request) {
   const project = await resolveProject(auth.database, body);
   if (!project) return Response.json({ error: t(locale, "api.noProject") }, { status: 404 });
 
-  const matches = await searchJournal(auth.database, project.id, query);
-  return Response.json({
-    project: project.slug,
-    query,
-    matches: matches.map((hit) => ({
-      agent: hit.agent,
-      kind: hit.kind,
-      summary: hit.summary,
-      details: hit.details,
-      at: hit.at,
-    })),
-  });
+  try {
+    if (reading) {
+      const entry = await readJournalEntry(auth.database, project.id, body.entryId!, body.offset);
+      return entry ? Response.json({ project: project.slug, entry }) :
+        Response.json({ error: "No journal entry in this project matches that entryId." }, { status: 404 });
+    }
+    const page = await searchJournalPage(auth.database, project.id, query, body.cursor);
+    return Response.json({
+      project: project.slug,
+      query,
+      matches: page.matches.map((hit) => ({
+        id: hit.id, agent: hit.agent, kind: hit.kind, summary: hit.summary,
+        // Older clients still read details; both fields contain the matched passage, not the prefix.
+        details: hit.excerpt, excerpt: hit.excerpt, at: hit.at,
+      })),
+      nextCursor: page.nextCursor,
+    });
+  } catch (error) {
+    if (error instanceof RangeError) return Response.json({ error: error.message }, { status: 400 });
+    throw error;
+  }
 }

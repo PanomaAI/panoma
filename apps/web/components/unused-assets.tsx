@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { AssetReport } from "@panoma/core";
 import { useT } from "./i18n-provider";
 import { formatBytes } from "@/lib/format-bytes";
-import { ActionButton, ActionError } from "./primitives";
+import { ActionButton, ActionError, Card, EmptyState } from "./primitives";
 
 /**
  * Resources that no code file mentions.
@@ -70,9 +70,7 @@ export function UnusedAssets({ projectId }: { projectId: string }) {
       </p>
 
       {report.unused.length === 0 ? (
-        <p className="mt-3 rounded border border-edge bg-surface p-4 text-sm text-smoke">
-          {translate("project.assetsAllUsed")}
-        </p>
+        <EmptyState className="mt-3" title={translate("project.assetsAllUsed")} />
       ) : (
         <>
           <p className="mt-3 font-display text-2xl font-semibold">
@@ -102,9 +100,9 @@ export function UnusedAssets({ projectId }: { projectId: string }) {
       )}
 
       {report.dynamicDirs.length > 0 && (
-        <p className="mt-4 rounded border border-edge bg-surface p-3 font-mono text-[11px] text-smoke">
+        <Card pad="sm" className="mt-4 font-mono text-[11px] text-smoke">
           {translate("project.assetsDynamic", { dirs: report.dynamicDirs.join(", ") })}
-        </p>
+        </Card>
       )}
 
       <p className="mt-3 font-mono text-[11px] text-faint">{translate("project.assetsCaveat")}</p>

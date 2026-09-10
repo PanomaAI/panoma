@@ -951,15 +951,32 @@ export function renderPanomaBlock(data: PanomaBlockData): string {
     );
   }
 
+  /*
+    The advisories are sorted up here, above the dependency row, because that row counts them.
+
+    The block used to take its «with security advisories» figure from `deps.vulns` —a number
+    composed by whoever called— and print the names from `data.advisories`, a list composed
+    somewhere else. Two independent inputs for one question, and nothing in between making them
+    agree. On 8-Sep-2026 panoma's own `AGENTS.md` said «0 with security advisories» and
+    «Advisories: `vitest` (GHSA-82fw-gwwq-j7x9)» two lines apart, and both lines were being read
+    as verified fact by every agent that opened the repository.
+
+    So the block asks one question and answers it once: **the figure is the length of the very
+    list the block is about to name**, and `deps.vulns` is only believed when there is no list to
+    count. The parenthesis is clamped for the same reason — 'critical' cannot exceed the total it
+    qualifies. `agentsmd-stable.test.ts` holds the invariant.
+   */
+  const advisories = [...(data.advisories ?? [])].sort(
+    (a, b) => byCode(a.package, b.package) || byCode(a.id, b.id),
+  );
+
   if (data.deps) {
     const parts = [`${data.deps.direct} direct`];
     if (data.deps.outdated !== undefined) parts.push(`${data.deps.outdated} outdated`);
-    if (data.deps.vulns !== undefined) {
-      parts.push(
-        `${data.deps.vulns} with security advisories${
-          data.deps.critical ? ` (${data.deps.critical} critical)` : ""
-        }`,
-      );
+    const vulns = advisories.length > 0 ? advisories.length : data.deps.vulns;
+    if (vulns !== undefined) {
+      const critical = Math.min(data.deps.critical ?? 0, vulns);
+      parts.push(`${vulns} with security advisories${critical ? ` (${critical} critical)` : ""}`);
     }
     rows.push(`- Dependencies: ${parts.join(" · ")}`);
   }
@@ -973,9 +990,6 @@ export function renderPanomaBlock(data: PanomaBlockData): string {
     );
   }
 
-  const advisories = [...(data.advisories ?? [])].sort(
-    (a, b) => byCode(a.package, b.package) || byCode(a.id, b.id),
-  );
   if (advisories.length) {
     const shown = advisories.slice(0, 6).map((a) => `\`${plain(a.package, 60)}\` (${plain(a.id, 40)})`);
     const extra = advisories.length > 6 ? ` · and ${advisories.length - 6} more` : "";

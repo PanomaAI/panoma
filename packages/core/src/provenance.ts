@@ -575,8 +575,8 @@ function sortedKeys(counts: Map<string, number>): string[] {
  * It was needed because the previous two methods failed at the same time in the most embarrassing
  * possible case: **Panoma marked its own repository as foreign.** Its `LICENSE` says «Copyright
  * (c) 2026 Jesus Castillo», git signs as `jesus89x2`, and the GitHub account is `jesus89x2`;
- * neither of the two resembles the name written in letters. The personal folder,
- * `/Users/ana`, does.
+ * neither of the two resembles the name written in letters. The personal folder, whose last
+ * segment is the account the machine logs in as, does.
  *
  * Generic account names are ruled out: in a `admin` or a `user` the match would be coincidental
  * and would turn any license that carries that word into 'yours'.
@@ -609,8 +609,9 @@ function namesOverlap(text: string, name: string): boolean {
   const donde = flat(text);
 
   /*
-    First pasted, and this is what is missing for the system account: `jesuscastillo` does not
-    appear with that spacing in «Jesus Castillo», but it does if the spaces are removed from both.
+    First pasted, and this is what is missing for the system account: a login written as one
+    word —`janedoe`— does not appear with that spacing in «Jane Doe», but it does if the spaces
+    are removed from both.
     Comparing it this way catches the name written in any way.
    */
   const lettersOnly = (value: string) => flat(value).replace(/[^\p{L}\p{N}]+/gu, "");

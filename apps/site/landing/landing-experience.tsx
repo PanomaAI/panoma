@@ -1096,7 +1096,7 @@ export function LandingExperience({
            is that half of that is not in the code, so no matter how much they read, they won't
            find it.
            That's what is sold here: the startup. And as a bonus, that two agents stop stepping on
-           each other, which is the only one of the six tools that solves a problem that only
+           each other, which is the only one of the nine tools that solves a problem that only
            appears when you have more than one.
           */}
         <section className={styles.hands} id="agents" aria-label={text.hands.aria}>
@@ -1135,7 +1135,7 @@ export function LandingExperience({
            and because the reader can break it in thirty seconds.
            And then it answered two questions at once: the headline said how to start and the list
            said where your data ends up. Now the section has a single subject, the headline gives
-           the reason on which the four promises hang —there is no server— and each promise has
+           the reason on which the five promises hang —there is no server— and each promise has
            its mechanism. 'Your credentials stay where they are' without explaining why it is a
            'trust me,' and that is the only thing that cannot be asked for right when talking
            about credentials.
@@ -1189,8 +1189,8 @@ export function LandingExperience({
                what the command gives, and that the catalog comes afterward.
                The thing about «`panoma up` only knows how to lift within the monorepo» is no
                longer true since the catalog travels in the npm package — `scan` itself concludes
-               with «The next step is the app: npx Panoma up». That this page does not offer that
-               command anywhere is a pending decision, not a limitation.
+               with «The next step is the app: npx Panoma up». This page offers that command
+               itself now: `COMMAND_UP`, in the hero and in this same closing.
               */}
             <p className={styles.closeGrow}>{text.close.grow}</p>
 
@@ -1507,8 +1507,8 @@ function FilmSection({ text }: { text: LandingCopy }) {
     The strip filler is written by hand on the node, not by state.
     It progresses in two hundred steps per section —that fineness is what makes the bar not look
     fake— and as a state that meant hundreds of repaints of this section by reproduction, each one
-    reconciling the seven buttons, their fillings, and the seven phrases, to move a `transform`
-    from a single node. The section (`beat`) does stay in state: it changes seven times and truly
+    reconciling the five buttons, their fillings, and the five phrases, to move a `transform`
+    from a single node. The section (`beat`) does stay in state: it changes five times and truly
     changes the tree —which button is marked, which phrase is read—. The filling does not change
     the tree, it changes a number.
    */

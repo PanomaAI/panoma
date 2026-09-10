@@ -121,6 +121,15 @@ export interface CliRunOptions {
    */
   command?: string;
   timeoutMs?: number;
+  /**
+   * Where the agent is launched from. Without it, the server's own cwd.
+   *
+   * `complete()` passes a neutral temporary directory on purpose: these agents discover the
+   * instruction files of the folder they start in —CLAUDE.md, AGENTS.md, a `.claude/` of
+   * settings— and load them into the call, so a one-line question launched from the panoma
+   * repository carried the whole repository's context and paid for it. A folder with nothing in
+   * it is the only cwd that adds nothing.
+   */
   cwd?: string;
 }
 

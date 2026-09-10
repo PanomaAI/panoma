@@ -1,7 +1,10 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+
+const databaseGate = vi.hoisted(() => vi.fn(() => { throw new Error("The gate must precede the database"); }));
+vi.mock("@/lib/db", () => ({ db: databaseGate }));
 
 /**
  * The four doors that operate, called for real and from outside the house.
@@ -105,6 +108,33 @@ afterAll(() => {
   delete process.env["PANOMA_OPERATOR_KEY"];
 });
 
+describe("decision memory is restricted to the local operator", () => {
+  it("rejects remote mutations, source inspection and paid extraction before opening the catalog", async () => {
+    const episodes = await import("./twin/episodes/route");
+    const learning = await import("./twin/episodes/learn/route");
+    /*
+      And the export, which carries the same testimony out as one file: the notes in every state,
+      the decisions with their reasons and the distiller's receipts. Reading it from the network
+      with the network key alone is exactly what `GET /api/twin/episodes` already refuses.
+     */
+    const memoryExport = await import("./memory/export/route");
+    const actions = [
+      { handler: episodes.POST, path: "/api/twin/episodes", method: "POST" },
+      { handler: episodes.GET, path: "/api/twin/episodes?id=example", method: "GET" },
+      { handler: learning.POST, path: "/api/twin/episodes/learn", method: "POST" },
+      { handler: memoryExport.GET, path: "/api/memory/export?slug=example", method: "GET" },
+    ];
+    for (const action of actions) {
+      const request = new Request(`http://0.0.0.0:4173${action.path}`, {
+        method: action.method,
+        headers: { host: DE_LA_RED, origin: `http://${DE_LA_RED}`, "sec-fetch-site": "same-origin" },
+      });
+      expect((await action.handler(request)).status).toBe(403);
+      expect((await action.handler(desdeOtraPestana(action.path, action.method))).status).toBe(403);
+    }
+  });
+});
+
 describe("desde la red, con clave y todo, estas puertas no se abren", () => {
   it("proponer una actualización", async () => {
     const { POST } = await import("./runs/route");
@@ -140,6 +170,21 @@ describe("desde la red, con clave y todo, estas puertas no se abren", () => {
   });
 
   /*
+    And the plan of "open everything", which is the same launchers several at a time — plus the
+    save action, which decides what the next click starts. Both halves of the POST refuse.
+   */
+  it("abrir todo lo del plan, o cambiar el plan", async () => {
+    const { POST } = await import("./open/all/route");
+    for (const body of [
+      { id: "x", action: "run" },
+      { id: "x", action: "save", plan: { steps: [{ key: "terminal", command: "rm -rf ~" }] } },
+    ]) {
+      const response = await POST(desdeLaRed("/api/open/all", "POST", body));
+      expect(response.status).toBe(403);
+    }
+  });
+
+  /*
     The three from Twin, which are the ones that slipped in. None of them starts a process—hence
     the doctrinal test didn't look at them—and the three decide on the most intimate part of the
     disk: granting permission to read the history, opening it, and writing the file that all the
@@ -164,6 +209,16 @@ describe("desde la red, con clave y todo, estas puertas no se abren", () => {
     const { POST } = await import("./twin/mine/route");
     const response = await POST(desdeLaRed("/api/twin/mine", "POST", {}));
     expect(response.status).toBe(403);
+  });
+
+  it("requires the operator before previewing or rehearsing a private decision", async () => {
+    const { POST } = await import("./twin/rehearse/route");
+    for (const dryRun of [true, false]) {
+      const response = await POST(desdeLaRed("/api/twin/rehearse", "POST", {
+        question: "Inline or modal?", dryRun,
+      }));
+      expect(response.status).toBe(403);
+    }
   });
 
   it("escribir el retrato que leen todos tus agentes", async () => {
@@ -405,6 +460,20 @@ describe("desde la pestaña de al lado, estas puertas tampoco se abren", () => {
       ruta: "/api/open",
       carga: () => import("./open/route"),
     },
+    {
+      nombre: "qué podría abrir un proyecto, y su plan",
+      ruta: "/api/open/all?id=x",
+      carga: () => import("./open/all/route"),
+    },
+    /*
+      And the spend: which models this person pays for, how much they use them and the caps
+      that hold each organ back. The same inventory `/api/ai` keeps behind this door.
+     */
+    {
+      nombre: "what the models cost today, and the caps that hold each organ back",
+      ruta: "/api/spend",
+      carga: () => import("./spend/route"),
+    },
   ];
 
   for (const { nombre, ruta, carga } of PUERTAS) {
@@ -443,5 +512,67 @@ describe("desde la pestaña de al lado, estas puertas tampoco se abren", () => {
       const elCli = new Request(`http://${EN_CASA}${ruta}`, { headers: { host: EN_CASA } });
       expect(sameOrigin(elCli), `${ruta} rechaza al CLI`).toBeUndefined();
     }
+  });
+});
+
+
+describe("official app routes stop before input or the database", () => {
+  type Door = { path: string; method: string; load: () => Promise<(request: Request) => Promise<Response>> };
+  const operations = ["install", "browser", "update", "rollback", "enable", "disable",
+    "uninstall", "clean", "doctor", "check"];
+  const doors: Door[] = [
+    ...operations.map((operation) => ({
+      path: `/api/apps/panoma-video/${operation}`, method: "POST", load: async () => {
+        const { POST } = await import("./apps/[id]/[operation]/route");
+        return (request: Request) => POST(request, { params: Promise.resolve({ id: "panoma-video", operation }) });
+      },
+    })),
+    { path: "/api/apps/panoma-video/settings", method: "PATCH", load: async () => {
+      const { PATCH } = await import("./apps/[id]/settings/route");
+      return (request) => PATCH(request, { params: Promise.resolve({ id: "panoma-video" }) });
+    } },
+    ...(["POST", "DELETE"] as const).map(method => ({
+      path: "/api/apps/panoma-video/credentials", method, load: async () => {
+        const handlers = await import("./apps/[id]/credentials/route");
+        return (request: Request) => handlers[method](request, { params: Promise.resolve({ id: "panoma-video" }) });
+      },
+    })),
+    { path: "/api/apps/panoma-video/jobs", method: "POST", load: async () => {
+      const { POST } = await import("./apps/[id]/jobs/route");
+      return (request) => POST(request, { params: Promise.resolve({ id: "panoma-video" }) });
+    } },
+    { path: "/api/apps/jobs/job-1/cancel", method: "POST", load: async () => {
+      const { POST } = await import("./apps/jobs/[jobId]/cancel/route");
+      return (request) => POST(request, { params: Promise.resolve({ jobId: "job-1" }) });
+    } },
+  ];
+  for (const door of doors) {
+    it(door.path, async () => {
+      const handler = await door.load();
+      for (const request of [comoEnProduccion(door.path, door.method, {}), desdeOtraPestana(door.path, door.method)]) {
+        databaseGate.mockClear();
+        const readBody = vi.spyOn(request, "json");
+        expect((await handler(request)).status).toBe(403);
+        expect(readBody).not.toHaveBeenCalled();
+        expect(databaseGate).not.toHaveBeenCalled();
+      }
+    });
+  }
+
+  it("read-only app routes reject a foreign tab before touching the catalog", async () => {
+    const [list, detail, jobs, job, artifact, legal] = await Promise.all([
+      import("./apps/route"), import("./apps/[id]/route"), import("./apps/[id]/jobs/route"),
+      import("./apps/jobs/[jobId]/route"), import("./apps/jobs/[jobId]/artifact/route"), import("./apps/[id]/legal/route"),
+    ]);
+    const byApp = { params: Promise.resolve({ id: "panoma-video" }) };
+    const byJob = { params: Promise.resolve({ jobId: "job-1" }) };
+    databaseGate.mockClear();
+    const responses = await Promise.all([
+      list.GET(desdeOtraPestana("/api/apps")), detail.GET(desdeOtraPestana("/api/apps/panoma-video"), byApp),
+      jobs.GET(desdeOtraPestana("/api/apps/panoma-video/jobs"), byApp), job.GET(desdeOtraPestana("/api/apps/jobs/job-1"), byJob),
+      artifact.GET(desdeOtraPestana("/api/apps/jobs/job-1/artifact"), byJob), legal.GET(desdeOtraPestana("/api/apps/panoma-video/legal"), byApp),
+    ]);
+    expect(responses.map(response => response.status)).toEqual([403, 403, 403, 403, 403, 403]);
+    expect(databaseGate).not.toHaveBeenCalled();
   });
 });

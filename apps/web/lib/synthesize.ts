@@ -133,10 +133,11 @@ export interface BuiltSynthesis {
  * to compare it with, and the citations at the end. The other way around, the model reads twenty
  * sentences before knowing for what purpose and ends up paraphrasing them.
  *
- * **No language.** It is the arrangement of §2s raised by one floor: the merge that came out in
- * English because the button was pressed from a browser in English replaced two phrases in
- * Spanish. What matters is the language of the observations, which the model has in front of it;
- * the surfaces are translated, what is saved is not.
+ * **The language of a belief is the language of its observations.** The same rule as the
+ * distiller's, for the same measured reason —see `buildPrompt` there—: the browser locale does
+ * not control model output, and neither does a fixed policy. Instructions are English because
+ * only the model reads them; the observations, the signed beliefs and the quotations travel
+ * verbatim and stored rows are never migrated.
  */
 export function buildSynthesisPrompt(
   topic: string,
@@ -183,7 +184,7 @@ export function buildSynthesisPrompt(
    */
   const material = wrapUntrusted(
     [
-      "OBSERVACIONES",
+      "OBSERVATIONS",
       ...labelledObs.map(observationLine),
       ...standingBlock(labelledBeliefs),
       ...graveyardBlock(graveyard),
@@ -192,12 +193,12 @@ export function buildSynthesisPrompt(
   );
 
   const prompt = [
-    `Abajo van observaciones sobre una persona, todas de la misma materia: ${topic}. Cada`,
-    "una la sacó un modelo de algo que ella escribió mientras trabajaba, y trae el proyecto",
-    "y la fecha en que lo dijo.",
+    `Below are observations about one person, all on the same topic: ${topic}. A model`,
+    "derived each from something the person wrote while working. Each includes the",
+    "project and date of the supporting statement.",
     "",
-    `Escribe las creencias de esta persona sobre ${topic}. Una creencia es lo que queda`,
-    "cuando varias observaciones dicen lo mismo de maneras distintas.",
+    `Write this person's beliefs about ${topic}. A belief is the shared meaning left`,
+    "when several observations express the same preference in different ways.",
     "",
     /*
       The budget in characters and not in sentences, because the real limit is in characters:
@@ -206,10 +207,10 @@ export function buildSynthesisPrompt(
       five short ones, which is precisely the decision that corresponds to it and not to a
       constant.
      */
-    `Todo lo que escribas de esta materia tiene que caber en ${budget} caracteres contando`,
-    `las de abajo que ya estén escritas. Como mucho ${MAX_BELIEFS} creencias, y muchas menos si`,
-    "con menos está dicho: un tema con quince frases no es un retrato más fino, es una lista",
-    "que se promedia hasta no significar nada.",
+    `Everything written for this topic must fit within ${budget} characters, including`,
+    `the existing beliefs below. Return at most ${MAX_BELIEFS} beliefs, and fewer when fewer`,
+    "express the evidence: a topic with fifteen statements becomes a list whose meaning",
+    "is lost when averaged together.",
     "",
     /*
       And what to do when they don't fit, which is the missing part and the one that went wrong.
@@ -219,36 +220,35 @@ export function buildSynthesisPrompt(
       demand operational resilience.' Neither of the two can be broken, so neither of the two
       measures anything, and yet they take up space.
      */
-    "Si no caben todas las que ves, escribe menos y enteras. Una creencia recortada hasta",
-    "caber deja de poder comprobarse, y entonces no ocupa poco: ocupa para nada.",
+    "If they do not all fit, write fewer complete beliefs. A belief shortened until its",
+    "meaning cannot be verified wastes the space it occupies.",
     "",
-    "Reglas:",
-    "- Habla de UNA cosa por creencia, en una frase, hablándole a ella: «quieres X», «no",
-    `  soportas Y». Como mucho ${MAX_STATEMENT_CHARS} caracteres.`,
-    "- Una creencia tiene que poder incumplirse: alguien mira una entrega suya y dice si la",
-    "  rompe. «Exiges resistencia operativa» no se puede incumplir —es una etiqueta, no una",
-    "  regla—; «quieres que siga en pie cuando un proveedor deja de contestar» sí. Si para",
-    "  saber si se cumple hay que preguntarle a ella qué quiso decir, no la escribas.",
-    "- Cada creencia nombra las observaciones que la sostienen, con su etiqueta exacta. Sin",
-    "  ninguna no es una creencia, es una ocurrencia tuya. Las etiquetas van solo en",
-    '  "observations": dentro de la frase son ruido que después nadie puede corregir.',
-    "- Junta lo que se repita. Cinco observaciones diciendo lo mismo son UNA creencia con",
-    "  cinco etiquetas detrás, y esa es la parte del trabajo que importa: si devuelves las",
-    "  cinco por separado no has sintetizado nada.",
-    "- Una creencia que sería verdad de cualquier programador no vale. Si al leerla no se",
-    "  distingue a esta persona de la de al lado, no la escribas.",
-    "- Escribe cada creencia en el mismo idioma en el que están escritas las observaciones",
-    "  que la sostienen. No traduzcas: esas palabras salieron de las suyas.",
-    "- Segunda persona siempre. Nada de «él» ni «ella»: quien va a leer esto es ella misma.",
+    "Rules:",
+    '- Express ONE idea per belief, in one sentence, addressing the person: "you want X",',
+    `  "you cannot stand Y". At most ${MAX_STATEMENT_CHARS} characters.`,
+    "- A belief must be possible to violate: someone can inspect a delivery and decide",
+    '  whether it breaks the rule. "You demand operational resilience" is a label;',
+    '  "you want the application to keep working when a provider stops responding" is',
+    "  verifiable. Omit a belief if checking it requires asking what the person meant.",
+    "- Each belief names its supporting observations using their exact labels. Without",
+    "  any supporting observations, it is your invention. Labels belong only in",
+    '  "observations", not inside the statement.',
+    "- Combine repetition. Five observations expressing the same preference become ONE",
+    "  belief with five supporting labels. Returning them separately is not synthesis.",
+    "- A belief that would be true of any programmer is not useful. Do not write it if",
+    "  it fails to distinguish this person from someone else.",
+    "- Write each belief in the language its supporting observations are written in. If they",
+    "  mix languages, use the one most of them share. Do not translate or rewrite source",
+    "  quotations or signed beliefs.",
+    '- Always use second person, never "he" or "she": the reader is the person described.',
     ...standingRules(labelledBeliefs),
     ...graveyardRule(graveyard),
     "",
-    "Contesta con un array JSON y nada más: sin vallas de código, sin explicación delante",
-    "ni detrás.",
+    "Return only a JSON array: no code fences and no explanation before or after it.",
     `[{"belief":"b1","statement":"…","observations":["o3","o7","o12"]}]`,
     "",
-    "`belief` solo cuando estés reescribiendo una de las de arriba; si es nueva, no lo",
-    "pongas. Si el material no da para ninguna creencia, contesta [].",
+    "Use `belief` only when rewriting an existing inferred belief; omit it for a new one.",
+    "If the material supports no belief, return [].",
     "",
     material,
   ].join("\n");
@@ -272,28 +272,28 @@ function standingRules(beliefs: { label: string; signed: boolean }[]): string[] 
 
   if (inferred) {
     out.push(
-      "Abajo, debajo de LO QUE YA SE DIJO, van las creencias que ya existen de esta materia y",
-      "que escribió una máquina —las `[bN]`—, así que las puedes cambiar enteras.",
-      "Devuelve las que sigan valiendo, con su etiqueta en «belief» y afinadas si la evidencia",
-      "nueva las afina. Las que no devuelvas se retiran, así que no las omitas por descuido:",
-      "omitir una es decir que la evidencia ya no la sostiene.",
+      "Under EXISTING BELIEFS are the machine-written beliefs on this topic, labelled",
+      "`[bN]`. You may rewrite them entirely. Return those that remain supported, with",
+      'their label in "belief", refining them when new evidence warrants it.',
+      "Beliefs you do not return are retired. Do not omit one by accident: omission means",
+      "the evidence no longer supports it.",
     );
   }
 
   if (signed) {
     out.push(
       "",
-      "Y las `[fN]` las escribió ELLA. No las reescribas y no las repitas con otras palabras.",
-      'Puedes proponer sustituirlas, poniendo sus etiquetas en "replaces":',
+      "The person explicitly signed the `[fN]` beliefs. Do not rewrite or paraphrase them.",
+      'You may propose replacements by putting their labels in "replaces":',
       `  {"replaces":["f1","f3"], "statement":"…", "observations":["o2","o5"]}`,
-      "No se cambiará nada: se le preguntará a ella, con las suyas enteras delante. Hazlo en dos",
-      "casos y en ningún otro: cuando la evidencia nueva diga algo más preciso que la suya, y",
-      "**cuando varias de esas digan lo mismo** — entonces nombra todas las que se juntan en una",
-      "sola propuesta. Es la única forma de que su retrato encoja: lo que ella firmó no lo puedes",
-      "juntar tú, solo puedes preguntarlo.",
+      "Nothing changes automatically: the person will be asked, with their complete",
+      "existing statements available. Propose a replacement only when new evidence is",
+      "more precise, or when several signed beliefs express the same thing. In the latter",
+      "case, name all beliefs to combine in one proposal. Signed beliefs can only be",
+      "combined through this explicit question to the person.",
       "",
-      "Y no escribas al lado una creencia nueva que diga lo mismo que una suya. Eso deja el",
-      "retrato con las dos, y el fichero tiene un tope: acaba no cabiendo nada.",
+      "Do not add a new belief that repeats a signed one. Both would remain in the",
+      "portrait and consume its limited space.",
     );
   }
 
@@ -303,7 +303,7 @@ function standingRules(beliefs: { label: string; signed: boolean }[]): string[] 
 /** The beliefs that already exist, inside the fence: are text that came from a history. */
 function standingBlock(beliefs: { label: string; statement: string }[]): string[] {
   if (beliefs.length === 0) return [];
-  return ["", "LO QUE YA SE DIJO", ...beliefs.map((one) => `[${one.label}] ${one.statement}`)];
+  return ["", "EXISTING BELIEFS", ...beliefs.map((one) => `[${one.label}] ${one.statement}`)];
 }
 
 /**
@@ -316,22 +316,23 @@ function graveyardRule(graveyard: string[]): string[] {
   if (graveyard.length === 0) return [];
   return [
     "",
-    "Y abajo, debajo de LO QUE DIJO QUE NO ERA, van frases que se le dijeron y contestó que no",
-    "son ella. No las vuelvas a decir, ni con otras palabras.",
+    "Under REJECTED BELIEFS are statements the person said did not describe them.",
+    "Do not repeat them, including in different words.",
   ];
 }
 
 /** The cemetery, inside the boundary: these are its phrases from its history, like everything else. */
 function graveyardBlock(graveyard: string[]): string[] {
   if (graveyard.length === 0) return [];
-  return ["", "LO QUE DIJO QUE NO ERA", ...graveyard.map((one) => `- ${one}`)];
+  return ["", "REJECTED BELIEFS", ...graveyard.map((one) => `- ${one}`)];
 }
 
 const SYSTEM = [
-  "Eres un lector de las palabras de una sola persona. No eres un consultor de diseño ni",
-  "un manual de estilo: tu único material son observaciones sobre lo que esa persona dijo",
-  "mientras trabajaba, y tu único trabajo es decir qué creencia hay debajo de las que se",
-  "repiten. Llano, concreto y sin adornos.",
+  "Read the words of one person. Your material consists only of observations about what",
+  "they said while working. Identify the beliefs supported by repeated observations; do",
+  "not supply design advice or a style guide. Write each belief in plain, concrete words, in",
+  "the language of the observations it rests on. Preserve source quotations and signed beliefs",
+  "in their original language.",
 ].join(" ");
 
 /**

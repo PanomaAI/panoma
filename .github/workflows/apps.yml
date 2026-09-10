@@ -1,0 +1,96 @@
+name: Optional apps
+
+# The manager of the optional apps, on the systems nobody here develops on.
+#
+# It exists because of what this half of the product does: it runs `npm install` through a
+# guardian process, kills process trees, resolves `npm` without trusting `PATH`, and builds the
+# environment a child inherits by name. Every one of those is a place where Windows differs, and
+# this project's own history says so — a `.cmd` that spawned mute, a `.pathname` that is a URL
+# component and not a path, and the fourteen failures a sibling project found the first time it
+# ran there. Until this workflow, the whole of `@panoma/apps` had only ever executed on one Mac.
+#
+# `tests.yml` already runs the entire suite on Windows once a week, and these tests ride along in
+# it. That is the safety net; this is the button. A change to the manager gets its answer on the
+# pull request instead of the following Monday, and it costs three minutes rather than fifteen
+# because it runs the app suites alone: no Next build, no browser, no rendering.
+#
+# What is deliberately **not** here is the end-to-end run (`PANOMA_E2E=1`). That one installs a
+# real `@panoma/video` tarball and films a project, so it needs an artifact from the other
+# repository and a fixture product to film, and neither is a line in a workflow. It is written
+# down in `docs/open-questions.md` under whoever decides it.
+
+on:
+  # Only when the pull request touches this half. The rest of the catalog is `tests.yml`'s job.
+  pull_request:
+    paths:
+      - "packages/apps/**"
+      - "packages/db/src/apps.ts"
+      - "apps/web/lib/app-*.ts"
+      - "apps/web/lib/apps*.ts"
+      - "apps/web/app/api/apps/**"
+      - "apps/cli/src/apps.ts"
+      - "apps/cli/src/video.ts"
+      - ".github/workflows/apps.yml"
+  workflow_dispatch:
+    inputs:
+      macos:
+        description: "Also run on macOS. It bills at ten times Linux and is the machine this is written on, so it is rarely worth it."
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apps-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  manager:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      # Windows is the reason this workflow exists; Linux is what a contributor's machine will be.
+      # A red on one is still worth knowing when the other is red too.
+      fail-fast: false
+      matrix:
+        os: ${{ github.event.inputs.macos == 'true' && fromJSON('["windows-latest", "ubuntu-latest", "macos-latest"]') || fromJSON('["windows-latest", "ubuntu-latest"]') }}
+
+    # Bash everywhere, Windows included: a quotation mark must not mean one thing in PowerShell
+    # and another in the other two. The run has to fail because of the code.
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The web and the CLI read `@panoma/*` from `dist/`. Only the packages: building the site
+      # would be minutes of Next for tests that never render a page.
+      - run: pnpm --filter "./packages/*" build
+
+      # The manager, the guardians, the containment, the durable jobs, the doors and the two
+      # terminal surfaces. `apps-e2e.test.ts` skips itself without `PANOMA_E2E`.
+      - name: The app suites
+        run: >
+          pnpm exec vitest run
+          packages/apps/src
+          packages/db/src/apps.test.ts
+          apps/web/lib/app-artifact.test.ts
+          apps/web/lib/app-client.test.ts
+          apps/web/lib/app-jobs.test.ts
+          apps/web/lib/apps-api.test.ts
+          apps/web/lib/apps-view.test.ts
+          apps/web/lib/desktop-keys.test.ts
+          apps/web/lib/guard.test.ts
+          apps/web/app/api/gates.test.ts
+          apps/cli/src/apps.test.ts
+          apps/cli/src/apps-package.test.ts

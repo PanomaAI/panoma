@@ -1,4 +1,5 @@
 import pc from "picocolors";
+import { say } from "./messages";
 
 /**
  * The main help of the CLI: the first thing seen by someone who has just installed it.
@@ -22,7 +23,7 @@ ${pc.bold("YOUR DAY")}
                                (panoma next <project> <assignment> opens your agent on it)
   panoma north                 what “finished” means in each project, and how many don’t say
   panoma north <project> "…"   write it, or replace the one there after showing it to you
-  panoma open <project>        open it in your editor (--folder · --terminal)
+  panoma open <project>        open it in your editor (--folder · --terminal · --all)
   panoma scan [path]           analyze one project, or every project under the path
 
 ${pc.bold("RITUALS")}
@@ -30,6 +31,9 @@ ${pc.bold("RITUALS")}
   panoma up <folder>           start it and fill it from that folder, in one go
   panoma up --network          and open it to your local network, with a key
   panoma down                  stop it
+${say("apps.help")}
+${say("apps.videoHelp")}
+${say("apps.doctorHelp")}
   panoma enrich                fetch latest versions and vulnerabilities for the catalog
   panoma run <project> <package>  propose a dependency upgrade: installs it, runs the
                                tests, and leaves a branch with the patch for you to review
@@ -42,6 +46,8 @@ ${pc.bold("RITUALS")}
   panoma md init               adds a self-maintaining context block to AGENTS.md
                                (needs the catalog up, like md sync)
   panoma md sync               regenerate that block (needs the catalog up)
+  panoma memory export <project>  the project's memory as one JSON file: its notes in every
+                               state, its decisions and the extraction receipts (--out <file>)
 
 ${pc.bold("DIAGNOSTICS")} ${pc.dim("(first-day questions)")}
   panoma disk                  how much disk the catalog takes and how much regenerates itself
@@ -50,12 +56,17 @@ ${pc.bold("DIAGNOSTICS")} ${pc.dim("(first-day questions)")}
   panoma review [path]         what is wrong and provable without opening it: images that
                                do not say what they show, broken links, stray colours and
                                corners. No model, nothing spent
-  panoma describe <project>    ask the model to explain what a project is about
-  panoma md review             the model's opinion on your CLAUDE.md (paid)
+  panoma describe <project>    ask the model to explain what a project is about; an
+                               unchanged project answers from what was saved (--force
+                               asks again anyway)
+  panoma md review             the model's opinion on your CLAUDE.md (paid; --force asks
+                               again even if the file did not change)
   panoma ai                    which model Panoma uses and how to connect one
   panoma ai use <provider>     pick a provider (--model <name> to pin which one)
   panoma ai key <provider>     store an API key (read from stdin, never from an argument)
   panoma ai ask <question>     check that the connection works (--provider <which>)
+  panoma spend                 what the models cost today and this month, and who holds
+                               each organ back (--json for the whole receipt)
 
 ${pc.bold("YOUR TWIN")} ${pc.dim("(what your agents already know about you)")}
   panoma twin sources          which agent histories are on this disk, how big they are
@@ -79,13 +90,15 @@ ${pc.bold("YOUR TWIN")} ${pc.dim("(what your agents already know about you)")}
 
 ${pc.bold("OPTIONS")}
   --json                       print the raw analysis as JSON
-  --out <file>                 write the JSON to a file
+  --out <file>                 with scan and memory export, write the JSON to a file
   --verbose, -v                show dependencies and the health breakdown
   --duplicates, -d             only the families of copies of the same project
   --save                       send the result to the catalog (needs the web app running)
   --api <url>                  catalog address (default http://localhost:4173)
   --folder                     with open, reveal the folder in the file browser
   --terminal                   with open, open a terminal already in the project
+  --all                        with open, open everything the project's plan lists: links,
+                               terminal, editor, agent; with twin distill, chain passes
   --install                    with agent-key, write this folder's .mcp.json;
                                with hooks, set up the passive capture
   --remove                     with hooks, undo what --install left behind
@@ -114,6 +127,7 @@ ${pc.bold("EXAMPLES")}
   panoma                       the first thing in the morning
   panoma next                  and the second: what to do, with the fact behind it
   panoma open kestrel          open kestrel in your editor
+  panoma open kestrel --all    open its links, terminal and editor in one go
   panoma up --on-boot          keep the catalog alive without thinking about it
   panoma scan                  analyze the current directory
   panoma scan ~/Desktop        find and analyze every project underneath

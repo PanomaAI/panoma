@@ -52,7 +52,29 @@ export interface Context {
    * previous catalog does not send it, and there 'did not come' is not 'does not exist'.
    */
   notes?: { body: string; createdBy: string }[];
+  pathNotes?: { id: string; body: string; createdBy: string; trigger: string; files: string[] }[];
+  memoryFiles?: string[];
   noteUsage?: { used: number; budget: number; sleeping?: number; pending: number };
+  /**
+   * The decisions the owner recorded for this project, in their own words: what they chose, why,
+   * when it holds and when it does not. Optional like `notes`, and for the same reason.
+   */
+  decisions?: Decision[];
+  /**
+   * Memory selected by the words of the task the agent sent: sleeping notes and owner decisions
+   * past the recency brief, each with the task words that matched it. All three arrive together
+   * and only when a task was sent; an older catalog sends none, and there 'did not come' is
+   * 'not asked', not 'nothing matched'.
+   */
+  taskNotes?: { id: string; body: string; createdBy: string; trigger: string; matched: string[] }[];
+  taskDecisions?: (Decision & { matched: string[] })[];
+  taskOmitted?: { notes: number; decisions: number };
+  /**
+   * Whether the anchored notes were re-checked against the disk before this delivery. `skipped`
+   * says why they were not; `unverified` counts anchors that could not be read. Optional: an
+   * older catalog does not report it.
+   */
+  sentinels?: { checked: number; unverified: number; skipped?: "remote" | "root-missing" };
   /**
    * What has appeared since the last time this agent looked.
    *
@@ -65,6 +87,18 @@ export interface Context {
   pending?: Pending[];
   /** Present only when the project has entered the catalog in this same call. */
   enrolled?: { root: string; at: string };
+}
+
+export interface Decision {
+  id: string;
+  decision: string;
+  rationale?: string;
+  conditions?: string;
+  exceptions?: string;
+  scope: "project" | "general";
+  recordedAt: string;
+  incomplete?: true;
+  source?: string;
 }
 
 export interface Delta {
@@ -150,7 +184,7 @@ const MAX = {
   gitAgents: 6,
   proposals: 8,
   proposalSummary: 220,
-  /** Top of the entire document, in characters. Last network, not the first one. */
+  /** Document size, including omission notices. Oversized memory gets an explicit refusal. */
   document: 24_000,
 };
 
@@ -164,6 +198,7 @@ const REASON_WINDOW: Record<Delta["reason"], string> = {
 
 export function formatContext(context: Context): string {
   const { project } = context;
+  const background: string[][] = [];
 
   const lines: string[] = [
     `# ${neutralizeInline(project.name)}`,
@@ -189,8 +224,9 @@ export function formatContext(context: Context): string {
     )} (${project.health.score}/100)`,
     "",
   ];
+  const header = lines.join("\n").trimEnd();
 
-  if (context.enrolled) lines.push(...renderEnrolled(context.enrolled), "");
+  if (context.enrolled) background.push(renderEnrolled(context.enrolled));
 
   // The description comes from manifest or README of the project. If the project is a clone, it was
   // written by an unknown person.
@@ -199,31 +235,38 @@ export function formatContext(context: Context): string {
     limit: MAX.description,
     includeNote: false,
   });
-  if (description) lines.push("## What it is", description, "");
+  if (description) background.push(["## What it is", description]);
 
   /*
-    What changes every night goes before what changes every month.
-    The backlog, the overdue dependencies, and the notices move in weeks: if they led the
-    document, today's context would be yesterday's word for word, and the daily call would have no
-    reward. New commits and stalled proposals do change from one day to the next, so they take the
-    spot that is read first—and, in passing, the spot that survives the final cut if the document
-    runs too long.
+    Recent changes lead the optional background. Complete memory gets its budget first; even a
+    large delta or proposal queue must not crowd out a rule needed before editing.
    */
-  if (context.delta) lines.push(...renderDelta(context.delta, context.recentWork), "");
+  if (context.delta) background.push(renderDelta(context.delta, context.recentWork));
   if (context.pending && context.pending.length > 0) {
-    lines.push(...renderPending(context.pending), "");
+    background.push(renderPending(context.pending));
   }
 
   /*
-    Memory goes up even if it changes little, and it does not contradict the rule from above:
-    delta counts **state** and this counts **rules** — the only thing in the document that asks to
-    be read before acting, like the taste in AGENTS.md. It can afford this because it is tiny by
-    contract: the budget shown by header is the one that guarantees it goes in full, without
-    '...and N more' — serving memory halfway would be not having memory.
+    Memory is served before background because its rules must be read before acting. Its own
+    budget guarantees complete bodies; the document cap may omit background, never half a rule.
     The percentage is not decoration: it is the visible half of the cap that refuses to compact.
     An agent who sees it full suggests consolidating instead of adding, which is exactly the
     conversation that the budget exists to provoke.
    */
+  /*
+    The patrol's confession travels once, before any anchored note, wherever the memory starts.
+    A rule that names a file is read as "checked this morning" because that is what the patrol
+    usually guarantees; when it could not look — the catalog is remote, the root is not on this
+    disk — the file claims in the notes are exactly as old as the last time somebody did.
+   */
+  const patrolNotice = sentinelNotice(context.sentinels);
+  let patrolTold = false;
+  const tellPatrol = () => {
+    if (!patrolNotice || patrolTold) return;
+    lines.push(patrolNotice, "");
+    patrolTold = true;
+  };
+
   if (context.notes && context.notes.length > 0) {
     const usage = context.noteUsage
       ? ` [${Math.round((context.noteUsage.used / Math.max(context.noteUsage.budget, 1)) * 100)}% — ${context.noteUsage.used}/${context.noteUsage.budget} chars]`
@@ -249,16 +292,102 @@ export function formatContext(context: Context): string {
     /* The sleepy ones are announced by number, never by body: they are served on their route, not here. */
     if (context.noteUsage?.sleeping) {
       lines.push(
-        `(${context.noteUsage.sleeping} more sleep on path triggers and fire when their files are touched.)`,
+        `(${context.noteUsage.sleeping} more sleep on path triggers. Retrieve them before editing with panoma_context and files, or with task.)`,
       );
     }
+    tellPatrol();
     lines.push("");
   } else if (context.noteUsage && (context.noteUsage.pending > 0 || context.noteUsage.sleeping)) {
     const bits: string[] = [];
     if (context.noteUsage.pending > 0) bits.push(`${context.noteUsage.pending} proposed and awaiting review`);
     if (context.noteUsage.sleeping) bits.push(`${context.noteUsage.sleeping} asleep on path triggers`);
-    lines.push(`No always-on project memory (${bits.join("; ")}).`, "");
+    lines.push(`No always-on project memory (${bits.join("; ")}).`);
+    tellPatrol();
+    lines.push("");
   }
+
+  if (context.pathNotes && context.pathNotes.length > 0) {
+    tellPatrol();
+    const body = context.pathNotes.map((note) => {
+      /*
+        The reason it is here: the first file that woke it, and how many more did. Skipped when
+        the trigger is that very file — an exact path says it already — and capped like the
+        trigger, because thirty of these are paid for out of the same indivisible block.
+       */
+      const [first, ...rest] = note.files;
+      const reason = first === undefined || first === note.trigger
+        ? ""
+        : ` — matches ${neutralizeInline(first, 120)}${rest.length > 0 ? ` (+${rest.length} more)` : ""}`;
+      return `- ${neutralizeInline(note.trigger, 120)}${reason}\n${note.body}`;
+    }).join("\n\n");
+    lines.push(
+      "## Project memory for the requested files",
+      wrapUntrusted(body, { origin: "notes", limit: body.length, includeNote: false }),
+      "Owner-approved rules whose path triggers match the files you supplied. Read each complete rule before editing.",
+      "",
+    );
+  } else if (context.memoryFiles && context.memoryFiles.length > 0) {
+    lines.push("No approved path-specific rules match the requested files.", "");
+  }
+
+  /*
+    What the words of the task woke up. Inside the indivisible block, and before the owner's
+    recency decisions, for the same reason the path rules are: it is what the agent asked for by
+    name, and a rule delivered for a reason is read before one delivered by date. Every line
+    carries the words that matched it, and the lead sentence says what a matched word is — a
+    reason to read, not proof that the rule applies. The agent that reads "matched “build”" on a
+    rule about a different build knows to move on; without the reason, it would apply it.
+   */
+  if (context.taskNotes !== undefined || context.taskDecisions !== undefined) {
+    tellPatrol();
+    const taskNotes = context.taskNotes ?? [];
+    const taskDecisions = context.taskDecisions ?? [];
+    lines.push("## Project memory for your task");
+    if (taskNotes.length === 0 && taskDecisions.length === 0) {
+      lines.push("Nothing approved matches the words of your task.");
+    } else {
+      const body = [
+        ...taskNotes.map((note) =>
+          `- ${neutralizeInline(note.body, 500)} — ${matchedIn(note)}; sleeps on ${neutralizeInline(note.trigger, 120)}`,
+        ),
+        ...taskDecisions.map((one) => `${renderDecision(one)} — matched ${quoted(one.matched)} in decision`),
+      ].join("\n");
+      lines.push(
+        wrapUntrusted(body, { origin: "notes", limit: Math.max(4000, body.length), includeNote: false }),
+        "",
+        "Owner-approved rules and decisions whose words overlap your task. The matched words are " +
+          "the reason they are here, not proof they apply; read each one against what you are doing.",
+      );
+    }
+    const left = omittedSentence(context.taskOmitted);
+    if (left) lines.push(left);
+    lines.push("");
+  }
+
+  /*
+    The owner's decisions go right after the memory, and for the same reason it goes up: they are
+    rules to read before acting, not state. Each one carries its reasons and its exceptions
+    because that is the whole point of keeping an episode instead of a preference — an agent that
+    knows when a decision does not apply can tell the person, instead of applying it anyway.
+    Owner-written, so no `createdBy`; wrapped all the same, because the wrapper bounds where the
+    part that is not the instruction starts and ends, it does not classify who wrote it.
+   */
+  if (context.decisions && context.decisions.length > 0) {
+    const body = context.decisions.map(renderDecision).join("\n");
+    lines.push(
+      "## Owner decisions",
+      wrapUntrusted(body, { origin: "notes", limit: Math.max(4000, body.length), includeNote: false }),
+      "",
+      "Decisions the owner recorded in their own words, with their reasons. Follow them where " +
+        "their conditions hold; where an exception applies or a condition is not met, say so and " +
+        "ask before deviating.",
+      "",
+    );
+  }
+
+  // Collect each background section whole, including its heading and all data wrappers.
+  const memoryEnd = lines.length;
+  const finishBackgroundSection = () => background.push(lines.splice(memoryEnd));
 
   const byKind = new Map<string, string[]>();
   // Total order: by type and then by name. Without it, the order is what `ORDER BY confidence DESC`
@@ -279,6 +408,7 @@ export function formatContext(context: Context): string {
       lines.push(`- …and ${context.stack.length - MAX.stack} more`);
     }
     lines.push("");
+    finishBackgroundSection();
   }
 
   // Alerts come before updates: it's the only thing that could be blowing up right now.
@@ -308,6 +438,7 @@ export function formatContext(context: Context): string {
       lines.push(`…and ${sorted.length - MAX.vulnerabilities} more advisories`);
     }
     lines.push("");
+    finishBackgroundSection();
   }
 
   const { outdated, total, unpinned } = context.dependencies;
@@ -332,6 +463,7 @@ export function formatContext(context: Context): string {
   }
   if (deps.length > MAX.dependencies) lines.push(`- …and ${deps.length - MAX.dependencies} more`);
   lines.push("");
+  finishBackgroundSection();
 
   if (context.openTasks.length > 0) {
     const tasks = [...context.openTasks].sort(
@@ -365,6 +497,7 @@ export function formatContext(context: Context): string {
     const totalTasks = context.openTaskTotal ?? tasks.length;
     if (totalTasks > MAX.tasks) lines.push(`…and ${totalTasks - MAX.tasks} more open tasks`);
     lines.push("");
+    finishBackgroundSection();
   }
 
   if (context.recentWork.length > 0) {
@@ -395,22 +528,96 @@ export function formatContext(context: Context): string {
   } else {
     lines.push("No agent has logged any work in this project yet.");
   }
+  finishBackgroundSection();
 
-  const text = lines.filter((line, index, all) => line !== "" || all[index - 1] !== "").join("\n");
+  const required = lines.join("\n").trimEnd();
+  const sections = background.map((section) => section.join("\n").trim()).filter(Boolean);
+  const complete = [required, ...sections].join("\n\n");
+  if (complete.length <= MAX.document) return complete;
 
-  /*
-    Last net, and it is said out loud.
-    The caps per section should be enough; this one only comes into play if someone falls short
-    when faced with data we hadn't seen. Cutting silently would be the worst of both worlds: the
-    agent is left without half the context and thinks they have it all.
-   */
-  if (text.length <= MAX.document) return text;
-  return (
-    `${text.slice(0, MAX.document)}\n\n` +
-    `[Panoma cut here: this project's context runs past ${MAX.document} characters. What is ` +
-    `missing are the sections below; ask for them with the specific tools (panoma_tasks) if ` +
-    `you need them.]`
-  );
+  const omitted = "[Panoma omitted background sections to keep this briefing bounded. Project memory is complete, including the rules pinned to the files you named and the matches for your task; request panoma_context without files or task, panoma_tasks or panoma_recall for more.]";
+  // Many tiny notes can fit the body budget while their author metadata exceeds this target.
+  // Refuse that read explicitly: a partial collection could hide an exception to a delivered rule.
+  if (required.length + omitted.length + 2 > MAX.document) {
+    return `${header}\n\n[Project memory could not be delivered within the ${MAX.document}-character briefing limit. No memory rules, task matches, owner decision previews or background sections are included. This is not an absence of memory. Request fewer files or a narrower task, or ask the owner to consolidate the project's notes before relying on this briefing.]`;
+  }
+  const kept = [required];
+  let used = required.length + omitted.length + 2;
+  for (const section of sections) {
+    if (used + section.length + 2 > MAX.document) continue;
+    kept.push(section);
+    used += section.length + 2;
+  }
+  return [...kept, omitted].join("\n\n");
+}
+
+/**
+ * One owner decision, as the agent reads it: the decision, its reasons joined by dashes, the
+ * scope and the date, the incomplete warning and the source. Shared by the recency section and
+ * the task section so that the same decision reads the same wherever it was selected from.
+ */
+function renderDecision(one: Decision): string {
+  const parts = [`- ${neutralizeInline(one.decision, 300)}`];
+  if (one.rationale) parts.push(`because ${neutralizeInline(one.rationale, 300)}`);
+  if (one.conditions) parts.push(`when ${neutralizeInline(one.conditions, 300)}`);
+  if (one.exceptions) parts.push(`except ${neutralizeInline(one.exceptions, 300)}`);
+  const incomplete = one.incomplete ? " [Incomplete record: do not apply until the owner supplies the full decision and its conditions.]" : "";
+  const source = one.source ? ` Source: ${neutralizeInline(one.source, 500)}` : "";
+  return `${parts.join(" — ")} (${one.scope === "project" ? "this project" : "every project"}, ${one.recordedAt})${incomplete}${source}`;
+}
+
+/** The matched words, quoted and neutralized: they came from the agent's own task, but through the catalog. */
+function quoted(words: string[]): string {
+  return words.map((word) => `“${neutralizeInline(word, 60)}”`).join(", ");
+}
+
+/**
+ * Where a note matched: in its body, in its trigger, or both. The catalog sends the words, not
+ * the place; the place is recomputed here by the same folding the catalog matched with, so that
+ * "matched “db” in trigger" tells the agent the rule was pinned to a path its task named.
+ */
+function matchedIn(note: { body: string; trigger: string; matched: string[] }): string {
+  const body = words(note.body);
+  const trigger = words(note.trigger);
+  const inBody = note.matched.filter((word) => body.has(word));
+  const inTrigger = note.matched.filter((word) => !body.has(word) && trigger.has(word));
+  const elsewhere = note.matched.filter((word) => !body.has(word) && !trigger.has(word));
+  const parts: string[] = [];
+  if (inBody.length > 0) parts.push(`${quoted(inBody)} in body`);
+  if (inTrigger.length > 0) parts.push(`${quoted(inTrigger)} in trigger`);
+  if (elsewhere.length > 0) parts.push(quoted(elsewhere));
+  return `matched ${parts.join(" and ")}`;
+}
+
+/** The words of a text, folded like the catalog folds them. Only for locating a match, never for ranking. */
+function words(text: string): Set<string> {
+  return new Set(text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []);
+}
+
+/** "3 more notes and 1 more decision matched but did not fit" — with the count and the noun agreeing. */
+function omittedSentence(omitted: Context["taskOmitted"]): string | undefined {
+  if (!omitted || (omitted.notes <= 0 && omitted.decisions <= 0)) return undefined;
+  const parts: string[] = [];
+  if (omitted.notes > 0) parts.push(`${omitted.notes} more ${omitted.notes === 1 ? "note" : "notes"}`);
+  if (omitted.decisions > 0) parts.push(`${omitted.decisions} more ${omitted.decisions === 1 ? "decision" : "decisions"}`);
+  return `${parts.join(" and ")} matched but did not fit; narrow the task or ask the owner to consolidate.`;
+}
+
+/**
+ * The patrol's confession, when there is one to make. The reason is named because the cure
+ * differs: a remote catalog will never check, a missing root may be a disk not mounted today.
+ */
+function sentinelNotice(sentinels: Context["sentinels"]): string | undefined {
+  if (!sentinels) return undefined;
+  if (!sentinels.skipped && sentinels.unverified <= 0) return undefined;
+  const reason = sentinels.skipped === "remote"
+    ? "the catalog is remote."
+    : sentinels.skipped === "root-missing"
+      ? "the project root is not on this disk."
+      : sentinels.unverified === 1
+        ? "one of their anchors could not be read."
+        : `${sentinels.unverified} of their anchors could not be read.`;
+  return `(Anchored notes were not re-checked against the disk before this delivery: ${reason} Treat their file claims as unverified.)`;
 }
 
 /**
@@ -734,7 +941,8 @@ export function formatTasks(
  */
 export function formatRecall(
   query: string,
-  matches: { agent: string; kind: string; summary: string; details: string | null; at: string }[],
+  matches: { id?: string; agent: string; kind: string; summary: string; details: string | null; excerpt?: string; at: string }[],
+  nextCursor?: string | null,
 ): string {
   if (matches.length === 0) {
     return (
@@ -746,13 +954,51 @@ export function formatRecall(
   const body = matches
     .map((hit) => {
       const day = hit.at.slice(0, 10);
-      const detail = hit.details ? `\n${indentBody(hit.details, 600)}` : "";
-      return `- ${day} · ${neutralizeInline(hit.agent, 60)} [${neutralizeInline(hit.kind, 20)}] ${neutralizeInline(hit.summary, 300)}${detail}`;
+      const evidence = hit.excerpt ?? (hit.details ? legacyRecallExcerpt(hit.details, query) : null);
+      const detail = evidence ? `\n${indentBody(evidence, evidence.length)}` : "";
+      const id = hit.id ? `\n  Original: panoma_recall entryId="${neutralizeInline(hit.id, 128)}"` : "";
+      return `- ${day} · ${neutralizeInline(hit.agent, 60)} [${neutralizeInline(hit.kind, 20)}] ${neutralizeInline(hit.summary, 300)}${detail}${id}`;
     })
     .join("\n");
 
   return [
     `Journal matches for “${neutralizeInline(query, 120)}” (newest first):`,
-    wrapUntrusted(body, { origin: "journal", limit: 10_000, includeNote: false }),
+    wrapUntrusted(body, { origin: "journal", limit: body.length, includeNote: false }),
+    ...(nextCursor ? [`More results: call panoma_recall with the same query and cursor="${neutralizeInline(nextCursor, 4096)}".`] : []),
+  ].join("\n");
+}
+
+/** Older catalogs return full details without an excerpt; keep their late matches visible too. */
+function legacyRecallExcerpt(details: string, query: string): string {
+  if (details.length <= 1_200) return details;
+  const terms = query.replace(/(?:^|\s)-(?:"[^"]*"|\S+)/g, " ").match(/[\p{L}\p{N}_-]+/gu) ?? [];
+  const positions = terms.filter((term) => term.toLowerCase() !== "or").map((term) =>
+    new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "iu").exec(details)?.index ?? -1,
+  ).filter((position) => position >= 0);
+  const start = positions.length ? Math.max(0, Math.min(...positions) - 100) : 0;
+  const end = Math.min(details.length, start + 1_200);
+  return `${start > 0 ? "…" : ""}${details.slice(start, end)}${end < details.length ? "…" : ""}`;
+}
+
+export interface RecallEntry {
+  id: string;
+  agent: string;
+  kind: string;
+  summary: string;
+  at: string;
+  text: string;
+  offset: number;
+  totalChars: number;
+  nextOffset: number | null;
+}
+
+/** Original journal text stays bounded and framed as evidence, with an explicit continuation. */
+export function formatJournalEntry(entry: RecallEntry): string {
+  return [
+    `Journal original ${neutralizeInline(entry.id, 128)} · ${neutralizeInline(entry.agent, 60)} [${neutralizeInline(entry.kind, 20)}] ${neutralizeInline(entry.at, 40)}`,
+    `Characters ${entry.offset}–${entry.offset + entry.text.length} of ${entry.totalChars}.`,
+    wrapUntrusted(entry.text, { origin: "journal", limit: entry.text.length, includeNote: false }),
+    entry.nextOffset === null ? "End of entry." :
+      `Continue with panoma_recall entryId="${neutralizeInline(entry.id, 128)}" offset=${entry.nextOffset}.`,
   ].join("\n");
 }

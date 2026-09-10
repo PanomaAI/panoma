@@ -177,3 +177,56 @@ describe("el guion de PowerShell", () => {
   });
 });
 
+
+import { composeCommandScript } from "./launcher";
+
+/**
+ * The terminal step of "open everything" with a command in it. The command is the owner's and is
+ * meant for a shell, so what these tests fix is the envelope: the folder cannot escape its quote,
+ * the command reaches the owner's shell as one argument, and the window outlives it.
+ */
+describe("the script that opens a terminal and runs the owner's command", () => {
+  it("goes to the folder, quoted, and hands the command to the interactive shell as one argument", () => {
+    const script = composeCommandScript({ root: "/Users/x/brand assets/web app", command: "pnpm run dev" });
+    const lines = script.split("\n");
+    expect(lines[0]).toBe("#!/bin/sh");
+    expect(lines).toContain("cd '/Users/x/brand assets/web app' || exit 1");
+    // `$SHELL -ic`, not `sh`: `pnpm` lives on the PATH that `.zshrc` builds.
+    expect(lines).toContain(`"\${SHELL:-/bin/sh}" -ic 'pnpm run dev'`);
+    // And an interactive shell afterwards, so the window stays when the server stops.
+    expect(lines.at(-2)).toBe(`exec "\${SHELL:-/bin/sh}" -i`);
+  });
+
+  it("a quote inside the command stays inside the argument", () => {
+    const script = composeCommandScript({ root: "/tmp/p", command: "echo 'it'\"'\"'s' && ls" });
+    const line = script.split("\n").find((l) => l.includes(" -ic "))!;
+    // Everything the owner wrote is inside one single-quoted argument; outside only the shell.
+    expect(line.replace(/'(?:[^']|'\\'')*'/g, "X")).toBe(`"\${SHELL:-/bin/sh}" -ic X`);
+  });
+
+  /*
+    The case that broke Windows for every project whose start command is one word. `quoteForShell`
+    returns a safe token bare —right for `Invoke-Expression`, which reads it in argument mode— and
+    the echo line puts it inside parentheses, where PowerShell wants a value expression. A `.ps1`
+    is parsed whole before its first line runs, so `make` took the entire script down: the window
+    opened, printed a parser error and ran nothing, while the server said the step had opened.
+   */
+  it("a one-word command is quoted too, or the whole script fails to parse", () => {
+    for (const command of ["make", "cargo", ".\\dev.ps1", "npm.cmd"]) {
+      const script = composeCommandScript({ root: "C:\\p", command, shell: "powershell" });
+      expect(script, command).toContain(`Write-Host ('  > ' + '${command}')`);
+      expect(script, command).toContain(`Invoke-Expression '${command}'`);
+    }
+  });
+
+  it("in PowerShell, single quotes doubled and the folder by literal path", () => {
+    const script = composeCommandScript({
+      root: "C:\\Users\\ana\\it's [old]",
+      command: "pnpm run dev; echo 'ok'",
+      shell: "powershell",
+    });
+    expect(script).toContain("Set-Location -LiteralPath 'C:\\Users\\ana\\it''s [old]'");
+    expect(script).toContain("Invoke-Expression 'pnpm run dev; echo ''ok'''");
+    expect(script.includes("\r\n")).toBe(true);
+  });
+});

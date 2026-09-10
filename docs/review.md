@@ -10,9 +10,10 @@ measure.
 **No test reads this document.** The list of files watched by `apps/cli/src/commands.test.ts`
 is written by hand and does not include `docs/review.md`. What is watched is what it
 describes: `packages/core/src/critic.test.ts` (the mechanical critic's silences, each class of
-false positive with its innocent case), `packages/core/src/design.test.ts` and
-`apps/web/lib/twin-wiring.test.ts`, which reads [twin.md](twin.md) and goes red if an organ
-changes its wiring without the table saying so.
+false positive with its innocent case), `packages/core/src/design.test.ts`,
+`packages/core/src/screenshot.test.ts` (the two ceilings, and that a read uses the one its
+caller asks for and not the provider's) and `apps/web/lib/twin-wiring.test.ts`, which reads
+[twin.md](twin.md) and goes red if an organ changes its wiring without the table saying so.
 
 ## Why two yardsticks and not one
 
@@ -287,16 +288,43 @@ from going any further once the number is on the screen.
 
 | cap | value | what it bounds |
 | --- | --- | --- |
-| `MAX_SCREENSHOT_BYTES` | 3,500,000 | the file: the provider's five megs minus what base64 inflates |
+| `MAX_SCREENSHOT_BYTES` | 3,500,000 | **what travels**: the provider's five megs minus what base64 inflates |
+| `MAX_FITTABLE_BYTES` | 16,000,000 | **what may be opened off this disk** when the capture is going to be reduced first |
+| `SHOT_MAX_EDGE` | 1,568 | the long edge a reduced capture is fitted to, in `apps/web/lib/spend-settings.ts` |
+| `MAX_FIT_PIXELS` | 40,000,000 | what the decoder will hold in memory to reduce one, in `packages/core/src/image.ts` |
 | `SMALL_SCREENSHOT_WIDTH` | 480 | below this it warns, it does not reject |
 | `MAX_FINDINGS` | 6 | findings per look |
 | `MAX_FINDING_CHARS` | 220 | each field of the finding |
 | `MIN_CITATIONS` | 1 | how many citations a finding has to resolve |
 | `PROFILE_LIMIT` | 5,000 | how much of the portrait fits inside the prompt |
-| `LOOKS_PER_DAY` | 20 | looks per day (`PANOMA_LOOK_BUDGET`) |
+| `FACTORY_CAPS.look` | 20 | looks a day out of the box, in `apps/web/lib/spend-settings.ts`; the Spend screen or `PANOMA_LOOK_BUDGET` moves it |
 
-An image is never shrunk: it is rejected with the size right there. There is no image library
-in the repository, and the system tools that do know how to do it —`sips`— exist on one of
+**Two of those numbers are ceilings, and they measure two different acts.** An image is
+still never shrunk in silence to get under the provider's: shrinking what a model is going to
+judge, without saying so, changes the judgment behind the back of whoever asked for it. Since
+6-Sep-2026 it can be shrunk when its owner asks — `fit` on the Spend screen, to a long edge of
+1,568 px, said out loud before spending and again on the receipt ([budgets.md](budgets.md)) —
+and the reduction happens on the way out, on the bytes about to travel.
+
+That is why the second ceiling exists. Until that day `MAX_SCREENSHOT_BYTES` was applied by
+`readScreenshot` when the file was **opened off this disk**, which is another act with another
+price: reading a local file costs milliseconds and no provider is involved, so a six-megabyte
+capture was refused before anybody could do anything with it. Now there is something to do with
+it, so the doors read with the ceiling the choice asks for —`readCeiling` in
+`apps/web/lib/look.ts`: `MAX_FITTABLE_BYTES` under `fit`, the provider's number under `full`,
+because there what is read is exactly what leaves— and the strict one is enforced where it
+belongs, on what comes out of `fitForLook`. A 5K screen or a full-page capture passes 3.5 MB
+routinely and is still an ordinary screen; above sixteen megabytes it is an export, a poster or
+a scan, and it is refused all the same.
+
+Neither ceiling is a promise that the call happens. When the choice was honoured as far as it
+went —a JPEG, a palette PNG, a capture with more pixels than the decoder holds— and the result
+is still over the provider's number, the surface refuses with the size and the reason instead
+of sending it: a paid call that comes back as an error about encoding is worse, and a look
+dropped in silence is worse still.
+
+No image library came in with any of it: the arithmetic is `node:zlib` and PNG only, written by
+hand, because the system tools that do know how to do it —`sips`— exist on one of
 the three systems in the CI matrix. The type comes from the bytes and never from the
 extension: a `.png` that is a JPEG on the inside is the most normal thing in the world, and
 declaring it wrong gets it rejected by the provider halfway through a call already paid for.
@@ -368,8 +396,8 @@ recent one in the mailbox, and only if its digest has never been looked at. The 
 part puts a hard ceiling on it: an agent in a loop leaving two hundred screenshots produces
 one look per round, not two hundred. The "only if it is new" part is what makes this converge.
 
-The brakes are checked in order, and the order matters: first the daily one (`LOOKS_PER_DAY`,
-twenty) and then the split (`autoLookCap`, half of it). If the general cap is spent it makes
+The brakes are checked in order, and the order matters: first the daily one (`capFor("look")`,
+twenty out of the box) and then the split (`autoLookCap`, half of it). If the general cap is spent it makes
 no difference that there is automatic budget left. The reserve exists because the failure to
 protect against is not the spending itself but how it is split: without it, the agent in a
 loop eats the budget by noon and the person who opens the screen at five runs into a 429 over

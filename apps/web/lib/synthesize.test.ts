@@ -59,12 +59,12 @@ describe("el encargo de una materia", () => {
     returned 'You prioritize real costs.' and 'You demand operational resistance.': four beliefs
     trimmed to fit in two hundred characters, none verifiable, all occupying space.
    */
-  it("pide creencias que se puedan incumplir, y no etiquetas", () => {
-    expect(built.prompt).toContain("tiene que poder incumplirse");
+  it("requires beliefs that can be violated rather than vague labels", () => {
+    expect(built.prompt).toContain("must be possible to violate");
   });
 
-  it("y dice qué hacer cuando no caben: menos y enteras", () => {
-    expect(built.prompt).toContain("escribe menos y enteras");
+  it("requires fewer complete beliefs when the budget cannot fit them all", () => {
+    expect(built.prompt).toContain("write fewer complete beliefs");
   });
 
   /* From the date only the day goes: the time tells nothing to anyone and it is twenty characters. */
@@ -92,9 +92,9 @@ describe("el encargo de una materia", () => {
     expect(built.beliefs.get("f1")).toEqual({ id: "f-uno", signed: true });
   });
 
-  it("dice que lo firmado no se reescribe, y que preguntarlo es otra cosa", () => {
-    expect(built.prompt).toContain("las escribió ELLA");
-    expect(built.prompt).toContain("se le preguntará a ella");
+  it("protects signed beliefs and requires asking before replacing them", () => {
+    expect(built.prompt).toContain("explicitly signed");
+    expect(built.prompt).toContain("the person will be asked");
   });
 
   /*
@@ -120,39 +120,36 @@ describe("el encargo de una materia", () => {
     What doesn’t return is withdrawn, so it must be said: omitting a belief through neglect and
     omitting it because the evidence no longer supports it have the same consequence.
    */
-  it("avisa de que omitir una inferida es retirarla", () => {
-    expect(built.prompt).toContain("Las que no devuelvas se retiran");
+  it("explains that omitted inferred beliefs are retired", () => {
+    expect(built.prompt).toContain("Beliefs you do not return are retired");
   });
 
   /* A veto is negative evidence: without showing it, the same thing would have to be vetoed every week. */
-  it("el cementerio va dentro del encargo", () => {
-    expect(built.prompt).toContain("contestó que no");
+  it("includes the rejection history in the assignment", () => {
+    expect(built.prompt).toContain("the person said did not describe them");
     expect(built.prompt).toContain("Te gustan los carruseles.");
   });
 
-  it("sin nada enterrado no se dice nada del cementerio", () => {
+  it("omits rejection instructions when there are no rejected beliefs", () => {
     const limpio = buildSynthesisPrompt("cli", OBSERVACIONES, [], []);
-    expect(limpio.prompt).not.toContain("contestó que no");
+    expect(limpio.prompt).not.toContain("the person said did not describe them");
   });
 
-  it("sin retrato previo, el encargo no habla de él", () => {
+  it("omits signed-belief instructions when no portrait exists", () => {
     const primero = buildSynthesisPrompt("cli", OBSERVACIONES, [], []);
-    expect(primero.prompt).not.toContain("las escribió ELLA");
+    expect(primero.prompt).not.toContain("explicitly signed");
     expect(primero.beliefs.size).toBe(0);
   });
 
-  /*
-    The language is determined by the observations and not by who presses the button. It is the
-    arrangement of §2s raised one floor: a merge came out in English because the browser was in
-    English, and it replaced two phrases in Spanish.
-   */
-  it("no fija ningún idioma: lo mandan las observaciones", () => {
-    expect(built.prompt).toContain("el mismo idioma en el que están escritas");
-    expect(built.prompt).toContain("No traduzcas");
-    for (const idioma of ["castellano", "inglés"]) {
-      expect(built.prompt, `el encargo no fija un idioma: ${idioma}`).not.toContain(idioma);
-      expect(built.system, `ni el papel: ${idioma}`).not.toContain(idioma);
-    }
+  // The language of a belief is the language of its observations: see `buildPrompt` in distill.
+  it("asks for beliefs in the language of the observations, never translating quotes or signed beliefs", () => {
+    expect(built.prompt).toContain("in the language its supporting observations are written in");
+    expect(built.prompt).toContain("Do not translate or rewrite source");
+    expect(built.system).toContain("in the language of the observations");
+    expect(built.system).not.toMatch(/\bin English\b/);
+    expect(built.prompt).not.toMatch(/Write[^"\n]*\bin English\b/);
+    for (const observation of OBSERVACIONES) expect(built.prompt).toContain(observation.statement);
+    expect(built.prompt).toContain("[f1] No soportas la decoración que distrae.");
   });
 
   /* The cap is non-negotiable: a topic with six hundred observations does not fit in any window. */
@@ -177,14 +174,14 @@ describe("el encargo de una materia", () => {
     portrait without making any mistakes that the file rejects — 3,189 against 3,000, and the only
     solution was to manually veto thirty-five.
    */
-  it("le dice cuánto espacio tiene esta materia, en caracteres", () => {
+  it("states the topic budget in characters", () => {
     const acotado = buildSynthesisPrompt("design", OBSERVACIONES, [], [], 640);
-    expect(acotado.prompt).toContain("caber en 640 caracteres");
+    expect(acotado.prompt).toContain("fit within 640 characters");
     expect(acotado.budget).toBe(640);
   });
 
-  it("y que lo ya escrito cuenta dentro de ese espacio", () => {
-    expect(built.prompt).toContain("contando");
+  it("counts existing beliefs within the same budget", () => {
+    expect(built.prompt).toContain("including\nthe existing beliefs");
   });
 });
 

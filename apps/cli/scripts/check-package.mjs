@@ -21,7 +21,7 @@
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -53,6 +53,8 @@ const requisitos = [
   ["app/node_modules/@panoma/core/dist", "el núcleo", "pnpm -r build && pnpm --filter panoma run build:app"],
   ["app/node_modules/@panoma/db/migrations", "las migraciones", "pnpm --filter panoma run build:app"],
   ["app/node_modules/@panoma/mcp/dist/index.js", "el servidor MCP", "pnpm --filter panoma run build:app"],
+  ["app/node_modules/@panoma/apps/dist/index.js", "the app manager", "pnpm --filter @panoma/apps build && pnpm --filter panoma run build:app"],
+  ["app/apps/web/.next-bundle/server/app/api/apps/route.js", "the apps API", "pnpm --filter panoma run build:app"],
   ["app/node_modules/@electric-sql/pglite/dist", "la base de datos", "pnpm --filter panoma run build:app"],
   ["THIRD-PARTY-NOTICES.md", "los avisos de licencia de terceros", "pnpm --filter panoma run build:app"],
 ];
@@ -64,6 +66,79 @@ if (faltan.length > 0) {
     "Un paquete así se instala sin protestar y falla en la máquina de quien lo descarga.",
     [...new Set(faltan.map(([, , como]) => como))].join("\n    "),
   );
+}
+
+/*
+  And that the MCP server STARTS, which is not the same as being there.
+
+  The requirement above has checked the file since it was written, and the file was there in every
+  one of the seven published versions in which the server was dead on arrival: an ESM bundle
+  importing a CJS-only `yaml`, which throws while loading. Nothing caught it, because that is how
+  MCP fails — an agent whose server does not start simply comes up without the tools and says
+  nothing, on any screen, ever.
+
+  So it is started here and asked the first question of the protocol. The catalog is not needed and
+  must not be: `PANOMA_API` points at a closed port on purpose, so that a server which reached for
+  the network before answering would fail here rather than on someone's machine. Twenty seconds is
+  far more than the answer takes (measured: well under one), and it is a ceiling, not a wait.
+ */
+const servidorMcp = join(app, "node_modules", "@panoma", "mcp", "dist", "index.js");
+if (existsSync(servidorMcp)) {
+  const saludo =
+    JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: "2024-11-05",
+        capabilities: {},
+        clientInfo: { name: "panoma-prepack", version: "0" },
+      },
+    }) + "\n";
+  const arranque = spawnSync(process.execPath, [servidorMcp], {
+    input: saludo,
+    encoding: "utf8",
+    timeout: 20_000,
+    env: { ...process.env, PANOMA_API: "http://127.0.0.1:1", PANOMA_KEY: "" },
+  });
+  const responde = arranque.status === 0 && /"serverInfo"/.test(arranque.stdout ?? "");
+  if (!responde) {
+    const motivo =
+      arranque.error?.message ??
+      (arranque.signal ? `lo mató la señal ${arranque.signal}` : (arranque.stderr ?? "").trim().split("\n")[0]) ??
+      "no contestó al saludo del protocolo";
+    pega(
+      "El servidor MCP viaja pero no arranca",
+      `Se instala igual y el agente sale sin herramientas, sin decir nada:\n    ${motivo || "no contestó al saludo del protocolo"}`,
+      "pnpm --filter @panoma/mcp build && pnpm --filter panoma run build:app",
+    );
+  }
+}
+
+/*
+  App management has two runtime boundaries: the external package and the Next route containing
+  the stdio MCP client. Import both from the packaged tree, without opening a catalog or starting
+  an app. A file-existence check would miss absent zod/AJV dependencies or broken CJS interop.
+ */
+const appManager = join(app, "node_modules", "@panoma", "apps", "dist", "index.js");
+const appsRoute = join(app, "apps", "web", ".next-bundle", "server", "app", "api", "apps", "route.js");
+if (existsSync(appManager) && existsSync(appsRoute)) {
+  const smoke = spawnSync(process.execPath, ["--input-type=module", "--eval", [
+    'import { pathToFileURL } from "node:url";',
+    'const manager = await import(pathToFileURL(process.argv[1]).href);',
+    'if (!manager.OFFICIAL.some(app => app.id === "panoma-video")) throw new Error("official app missing");',
+    'await import(pathToFileURL(process.argv[2]).href);',
+  ].join("\n"), appManager, appsRoute], {
+    cwd: app, encoding: "utf8", timeout: 20_000,
+    env: { ...process.env, PANOMA_NO_UPDATE_CHECK: "1" },
+  });
+  if (smoke.status !== 0) {
+    pega(
+      "The packaged app manager or MCP client cannot load",
+      smoke.error?.message ?? (smoke.stderr ?? "").trim().slice(0, 2_000),
+      "pnpm --filter @panoma/apps build && pnpm --filter panoma run build:app",
+    );
+  }
 }
 
 /*
@@ -265,6 +340,25 @@ if (!shrink) {
   }
 
   /*
+    And its own version, which is the number the document promised was watched and was not.
+
+    The file carries the package's version twice —`version` and `packages[""].version`— and it is
+    regenerated by hand, so a release that only bumps `package.json` leaves it behind without a
+    word: `panoma@0.1.10` was packaged on 6-Sep-2026 carrying a shrinkwrap that still said
+    `0.1.9`, and nothing anywhere said so. [release.md](../../docs/release.md) already claimed
+    that `prepack` refuses when the two drift apart. Now it does.
+   */
+  const versionDelPaquete = leerJson(join(cli, "package.json"))?.version;
+  const enShrink = [shrink.version, shrink.packages?.[""]?.version];
+  if (versionDelPaquete && enShrink.some((v) => v !== versionDelPaquete)) {
+    pega(
+      `El npm-shrinkwrap.json dice ${enShrink.join(" y ")} y el paquete es ${versionDelPaquete}`,
+      "Se regenera a mano, así que una versión nueva lo deja atrás sin protestar.",
+      `pon ${versionDelPaquete} en "version" y en packages[""].version de apps/cli/npm-shrinkwrap.json`,
+    );
+  }
+
+  /*
     And to really travel, which is different from being here next door.
     `files` is a whitelist, and npm **does not** add the shrinkwrap on its own. Measured on August
     28, 2026 with npm 11.19.0, in a three-file package made separately to isolate it: with
@@ -298,6 +392,8 @@ function recorrer(base, visita) {
 const trazas = [];
 const entornos = [];
 const nativos = [];
+const manifiestos = [];
+const anidados = [];
 let bytes = 0;
 let ficheros = 0;
 
@@ -308,6 +404,42 @@ if (existsSync(app)) {
     if (nombre.endsWith(".nft.json")) trazas.push(ruta);
     if (/^\.env($|\.)/.test(nombre)) entornos.push(ruta);
     if (nombre.endsWith(".node")) nativos.push(ruta);
+    if (nombre !== "package.json") return;
+    const dentro = relative(app, ruta).replace(/\\/g, "/");
+    if (!dentro.split("/").includes("node_modules")) {
+      manifiestos.push(dentro);
+      return;
+    }
+    /*
+      A manifest inside a package that is not the manifest OF that package.
+
+      There are 120 of them today and every one holds something up, which is why this looks at
+      what they say and not at where they are. 111 live under `next/dist/compiled/`: Next
+      declares no `exports`, so `next/dist/compiled/<x>` resolves as a plain directory through
+      that nested `main`, and 30 of them have no `index.js` to fall back on. The other 9 declare
+      no name: they are `{"type": "..."}` markers and `main` redirections, and
+      `@swc/helpers/_/_interop_require_default/` is a folder that contains **nothing but** its
+      manifest. Both kinds would be destroyed by the obvious rule.
+
+      The kind this counts is the third, which declares a name and is nobody's package. There
+      was one: `fast-uri` publishes a `benchmark/` folder with a manifest of its own —
+      `{"name": "benchmark", "version": "1.0.0", "dependencies": {"tinybench", "uri-js"}}` — so
+      a scanner reading the tarball counted three packages that are not here, one of them
+      published by an npm account that no longer exists. Nothing installed, nothing ran; what
+      travelled was a false statement about what we redistribute. It left with the MCP SDK's
+      HTTP transport on 6-Sep-2026, and this stays so the next one does not arrive unremarked.
+     */
+    /*
+      Its own manifest or somebody else's: what is left after the last `node_modules` says so.
+      `fast-uri/package.json` leaves two segments and `@panoma/mcp/package.json` leaves three
+      starting with the scope; anything longer is inside another package's folder.
+     */
+    const tramos = dentro.split("/");
+    const resto = tramos.slice(tramos.lastIndexOf("node_modules") + 1);
+    const esSuyo = resto.length === 2 || (resto.length === 3 && resto[0].startsWith("@"));
+    if (!esSuyo && !dentro.includes("node_modules/next/dist/compiled/") && leerJson(ruta)?.name) {
+      anidados.push(dentro);
+    }
   });
 }
 
@@ -333,6 +465,70 @@ if (nativos.length > 0) {
       nativos.slice(0, 5).map((r) => relative(cli, r)).join("\n    "),
     "revisa la poda de pack-app.mjs",
   );
+}
+/*
+  The manifests outside `node_modules`, which are two and say what they say.
+
+  `pack-app.mjs` deletes the one from the monorepo —which announced eslint, vitest and tsup, none
+  of which travel— and leaves the web one with what Node reads. But `app/` is in `.gitignore` and
+  gets packaged from whatever is on disk that day, so a stale directory, or a Next that moves
+  where it writes them, brings the old one back without saying a word.
+
+  And the direction that hurts most is the other one. If `.next-bundle/package.json` goes
+  missing, the server says «✓ Ready» and then answers 500 on every route; if the web one loses
+  its `type`, the server dies at its first `import` on Node 22.0 to 22.6, which `engines` still
+  admits. Neither failure is visible when packaging: both are visible on the machine of whoever
+  installs it.
+ */
+if (anidados.length > 0) {
+  pega(
+    `${anidados.length} manifiestos de otro paquete dentro de un paquete`,
+    `Nadie los instala ni los ejecuta, y un escáner los lee como dependencias nuestras:\n    ` +
+      anidados.slice(0, 8).join("\n    "),
+    "poda esa carpeta en pack-app.mjs, o quita de raíz la dependencia que la trae",
+  );
+}
+
+const MANIFIESTOS = {
+  "apps/web/package.json": { type: "module", vacío: ["dependencies", "devDependencies", "scripts"] },
+  "apps/web/.next-bundle/package.json": { type: "commonjs", vacío: [] },
+};
+if (existsSync(app)) {
+  const sobran = manifiestos.filter((m) => !(m in MANIFIESTOS));
+  const faltan = Object.keys(MANIFIESTOS).filter((m) => !manifiestos.includes(m));
+  if (sobran.length > 0) {
+    pega(
+      `Manifiestos de más dentro del paquete: ${sobran.join(", ")}`,
+      "Declaran dependencias que no viajan, y quien lea el tarball lee algo que no es cierto.",
+      "pnpm --filter panoma run build:app",
+    );
+  }
+  if (faltan.length > 0) {
+    pega(
+      `Falta un manifiesto que sí hace falta: ${faltan.join(", ")}`,
+      "Sin él el servidor arranca y contesta 500, o muere en su primer import. No se ve al empaquetar.",
+      "pnpm --filter panoma run build:app",
+    );
+  }
+  for (const [ruta, { type, vacío }] of Object.entries(MANIFIESTOS)) {
+    if (faltan.includes(ruta)) continue;
+    const meta = leerJson(join(app, ...ruta.split("/"))) ?? {};
+    if (meta.type !== type) {
+      pega(
+        `${ruta} viaja con type ${JSON.stringify(meta.type)} y tiene que ser "${type}"`,
+        "Es lo que decide si Node lee ese árbol como ESM o como CommonJS.",
+        "pnpm --filter panoma run build:app",
+      );
+    }
+    const declarados = vacío.filter((campo) => meta[campo] !== undefined);
+    if (declarados.length > 0) {
+      pega(
+        `${ruta} declara ${declarados.join(", ")} y no debería`,
+        "Nada dentro lo lee, y lo que nombra —react-icons, recharts, seis workspace:*— no viaja.",
+        "pnpm --filter panoma run build:app",
+      );
+    }
+  }
 }
 /*
   The database engine, without trusting the filename.

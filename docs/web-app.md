@@ -10,9 +10,9 @@ describes the local product only.
 
 Five tests watch over it: `apps/web/app/styles/styles.test.ts` (the list and the order of the
 `@import`s), `apps/web/components/project-views.test.ts` (the ten views of the card and their
-anchors), `apps/web/components/modal-keyboard.test.ts` (the three modal dialogs),
+anchors), `apps/web/components/modal-keyboard.test.ts` (the four modal dialogs),
 `apps/web/lib/locale-required.test.ts` (no component assumes the language) and
-`apps/web/app/(app)/skip-target.test.ts` (the target of the skip link). **The table of sixteen
+`apps/web/app/(app)/skip-target.test.ts` (the target of the skip link). **The table of seventeen
 screens on this page is watched by no test**: it was checked by hand against the file tree and
 against each component's `fetch` calls.
 
@@ -20,8 +20,16 @@ against each component's `fetch` calls.
 
 `app/(app)/layout.tsx` is the only root layout there is: it paints the `<html>` and the
 `<body>`, pulls in `globals.css`, the Inter typeface, the dictionary provider, the search one,
-the shell with the sidebar and —on every visit— one PostgreSQL query to get the numbers for the
-summary.
+the shell with the sidebar and —on every visit— one PostgreSQL query to get the navigation
+badges. A visible catalog overview groups its state breakdown, monitored folders, watcher
+status, recent activity and latest recorded commit. Copies and hidden projects stay separated
+because they are excluded from its total. Warnings and recorded activity are readable without
+opening a menu; only the detailed activity report and folder editing tools are folded.
+
+Sharing and discreet mode are explicit buttons next to the project heading. A separate toolbar
+keeps all filters visible together, with labelled sorting and list/grid controls. Its interaction
+hint explains selection and opening. The latest-commit link uses the commit timestamp and subject;
+it makes no claim about which project the user last opened, and has no description fallback.
 
 That it sits inside the `(app)` group and not in `app/layout.tsx` is inherited from when there
 were two of them here: the catalog and the public site, each with its own envelope, because
@@ -41,7 +49,7 @@ group and there is no `app/layout.tsx`. The day somebody moves it up, that test 
 The 404 carries all its styles inline and is bilingual by hand, without going through `t`, for
 the same reason: it cannot count on anything the envelope mounts.
 
-## The shell mounts once, not sixteen times
+## The shell mounts once, not seventeen times
 
 `AppShell` mounts in the `(app)` layout, not on every page. Before, each screen painted its own
 bar, and the ones that passed it no stats —all of them but the front page— left the catalog
@@ -49,43 +57,48 @@ summary blank: **navigating to "Packages" made half the sidebar disappear**. On 
 six pages passed it an "← inventory" link as a child that the component discarded without ever
 painting.
 
-The layout does four things and only four: it resolves the language once per request with
+The layout does five things: it resolves the language once per request with
 `getLocale()` and hands it to the `lang` attribute and to the `I18nProvider`; it paints the skip
 link as the first child of the `<body>`; it wraps everything in `SearchProvider`, which is the
 sole owner of the search term —the bar and the grid are sisters, not parent and daughter—; and
 it computes the stats with `shellStats()`, wrapped in `try/catch`, because **a catalog that does
-not open has to leave the sidebar without numbers, not the application blank**.
+not open has to leave the sidebar without numbers, not the application blank**. The fifth is
+`versionNotice()`, three small local files that decide whether this catalog has anything to say
+about its own version; it costs no network and answers `undefined` for anything it cannot
+establish, so a server that does not know which panoma it is stays quiet
+([update-notice.md](update-notice.md)).
 
-The layout and the sixteen pages declare `export const dynamic = "force-dynamic"`: the shell
+The layout and the seventeen pages declare `export const dynamic = "force-dynamic"`: the shell
 reads the catalog on every request, so there is nothing to prerender.
 
-The sidebar is twelve sections (`SIDEBAR_ITEMS`, `app-shell.tsx:71-86`), in this order: `/`
+The sidebar is fourteen sections (`SIDEBAR_ITEMS`, `app-shell.tsx`), in this order: `/`
 Projects (the only one with `exact: true`, or it would be a prefix of everything), `/bridge`,
-`/runs`, `/unsaved`, `/agents`, `/twin`, `/ai`, `/packages`, `/search`, `/credentials`,
-`/copies`, `/disk`. At the top what gets looked at every day, at the bottom the diagnostics.
+`/spend`, `/runs`, `/unsaved`, `/agents`, `/apps`, `/twin`, `/ai`, `/packages`, `/search`,
+`/credentials`, `/copies`, `/disk`. At the top what gets looked at every day, at the bottom the diagnostics.
 `/hidden` is not on the list on purpose: it is a wastebasket you can trust, reached from
 wherever you set something aside, not a place you go to.
 
-## The sixteen screens
+## The seventeen screens
 
 They are all server components that read the catalog and delegate the interaction to the
-fifty-five routes of `app/api`. The right-hand column is the routes the components of that
+sixty-two routes of `app/api`. The right-hand column is the routes the components of that
 screen call; **to every one of them you have to add `/api/catalog` and `/api/open`, which belong
-to the ⌘K palette and are therefore in all sixteen**. Where a row repeats `/api/open` it is
+to the ⌘K palette and are therefore in all seventeen**. Where a row repeats `/api/open` it is
 because the screen itself calls it too, from its own open buttons.
 
 | route | what it answers | which API it calls |
 | --- | --- | --- |
 | `/` | what is on the disk and what moved | `watch` · `project` · `roots` · `open` |
-| `/p/[slug]` | everything about a project, in ten views | twenty routes, listed below |
-| `/bridge` | what is left to switch on, in five steps | `hooks` |
+| `/p/[slug]` | everything about a project, in ten views | twenty-one routes, listed below |
+| `/bridge` | four setup steps, memory activity and system status | `hooks` |
 | `/runs` | which agent proposals are waiting for a decision | none: it is a read |
 | `/runs/[id]` | one proposal with its steps and its patch | `runs/{id}` (PATCH) |
 | `/unsaved` | what work can be lost, and the command that saves it | `open` |
 | `/agents` | which agents there are and what they did | `agent/mcp` · `agent/keys` · `open` |
-| `/twin` | the portrait: beliefs, corpus and spend | six `twin/*` routes, below |
+| `/twin` | the portrait: beliefs, corpus and spend | nine `twin/*` routes, below |
 | `/twin/look` | screenshots and findings | `twin/{shot,look,assign}` · `assignments/launch` |
 | `/ai` | which model Panoma thinks with and where the credential comes from | `ai` |
+| `/spend` | provider usage today and over the last thirty days, with estimates distinguished from missing pricing or token measurements; eight functions pair their purpose, usage and daily cap; model rates, currency, screenshot size and pause share one settings form | `spend` (the form POSTs; the page itself reads the ledger and `spend.json` through `lib/spend-report.ts`, the same assembly `GET /api/spend` answers with) |
 | `/packages` | which dependencies the portfolio shares | none: it is a read |
 | `/search` | where a text shows up in everybody's code | `search` · `open` |
 | `/credentials` | which secrets are written on the disk | `secrets` |
@@ -93,12 +106,12 @@ because the screen itself calls it too, from its own open buttons.
 | `/disk` | how many bytes come back with one command | `disk` |
 | `/hidden` | what was set aside, and how to bring it back | `project` |
 
-The twenty of the card, which is the screen that concentrates almost everything that writes:
+The twenty-one of the card, which is the screen that concentrates almost everything that writes:
 `accounts`, `assets`, `assignments`, `assignments/launch`, `check`, `consultations`,
 `describe`, `environment`, `hooks`, `md/apply`, `md/inspect`, `md/repair`, `md/review`,
-`notes`, `open`, `project`, `rescan`, `runs`, `tasks` and `twin/critique`. And the six of the
-portrait: `twin/sources`, `twin/mine`, `twin/distill`, `twin/classify`, `twin/synthesize` and
-`twin/taste`.
+`notes`, `open`, `open/all`, `project`, `rescan`, `runs`, `tasks` and `twin/critique`. And the nine of the
+portrait: `twin/sources`, `twin/mine`, `twin/distill`, `twin/classify`, `twin/synthesize`,
+`twin/taste`, `twin/episodes`, `twin/episodes/learn` and `twin/rehearse`.
 
 Three screens call no API of their own —`/runs`, `/packages` and `/copies`—, and that is not a
 shortcoming: **they are reads of the catalog and they offer not one button that writes**.
@@ -110,7 +123,7 @@ network.
 all of it, already masked. A server component that opened the credentials file would publish the
 secrets in the HTML in development mode, which is exactly how `panoma up` runs.
 
-## The ten views of the card, and the switch that changes them
+## The eleven views of the card, and the switch that changes them
 
 `PROJECT_VIEWS` (`apps/web/components/project-views.ts:30-53`) is the list, and it is one half
 of a contract: the other half are the frames of `p/[slug]/page.tsx`, and a tab that paints with
@@ -125,6 +138,7 @@ test can import it— and why `project-views.test.ts` checks both halves.
 | `retomar` | `resume` | `retomar` |
 | `cuentas` | `accounts` | `cuentas` |
 | `encargos` | `assignments` | `encargos` |
+| `memoria` | `memory` | — |
 | `md` | `md` | — |
 | `dependencias` | `dependencies` | `dependencias`, `security`, `seguridad` |
 | `agentes` | `agents` | `agentes`, `log`, `bitacora` |
@@ -132,7 +146,7 @@ test can import it— and why `project-views.test.ts` checks both halves.
 
 **The `id` is in Spanish and the URL in English, and both things are deliberate.** The `id` is
 not an address: it is the mark by which the stylesheet shows one frame and hides the other
-eight, so renaming it forces you to touch the CSS and from outside nothing shows. The anchor
+nine, so renaming it forces you to touch the CSS and from outside nothing shows. The anchor
 does show —it gets pasted into a chat, saved in a bookmark— and that is why it is an identifier
 and goes in English. The Spanish aliases are not going away: a link saved three months ago has
 to keep opening its section.
@@ -171,7 +185,7 @@ Three decisions inside the palette that do not show:
 
 - **While the catalog is loading, the keyboard does nothing.** `if (projects === null) return;`
   at the top of `onKeyDown`. The results slot says "loading" and there is no list in sight, but
-  `commands` already carries the fourteen destinations of `DESTINATIONS` —the twelve sections of
+  `commands` already carries the sixteen destinations of `DESTINATIONS` —the fourteen sections of
   the bar plus `/twin/look` and `/hidden`—: a ↵ right after opening with ⌘K —the natural gesture
   of whoever is about to type a name— navigated to the first of them. An action whoever fired it
   had not seen.
@@ -197,8 +211,9 @@ catalog into a journey as long as the catalog.
 ## `usePreference`, and why it also remembers the old name
 
 `apps/web/components/use-preference.ts`. Everything goes to `localStorage` under the `panoma:`
-prefix. There are eight preferences, spread over three components —`project-store.tsx` takes
-five, `share-panel.tsx` two and `open-menu.tsx` one—:
+prefix. There are eight preferences, spread over four components —`project-store.tsx` takes
+five, `share-panel.tsx` two, and `open:preferred-destination` is read by two: `open-menu.tsx`,
+which writes it, and `open-all.tsx`, which lets it lead the suggestion of «Open everything»—:
 
 | key | what it remembers | what it used to be called |
 | --- | --- | --- |
@@ -248,10 +263,12 @@ friction being looked for.
 ## Papers, width breakpoints and discreet mode
 
 **Paper** is what this house calls a solid background the application paints text on. There are
-thirteen, and they are enumerated in `contrast.test.ts` (`PAPELES`): the three general ones
-(`surface`, `raised`, `ground`), the two of each screen (`paper-catalog`/`paper-sheet`,
-`wash-catalog`/`wash-sheet`), `inset`, `selected` and the four danger tints. It matters because
-the contrast of a text color is not one number: it is thirteen.
+ten, and they are enumerated in `contrast.test.ts` (`PAPELES`): the three general ones
+(`surface`, `raised`, `ground`), `wash-catalog`, `inset`, `selected` and the four danger tints.
+There were thirteen, and the three that went — `paper-catalog`, `paper-sheet`, `wash-sheet` — did
+not go because anybody trimmed the list: they were the per-screen papers, and the day the two
+screen palettes merged into one they stopped existing as values. It matters because the contrast
+of a text color is not one number: it is ten.
 
 The width breakpoints left are five —1,180, 980, 900, 760 and 680 px—, though the 680 one is
 only used by the share card (`share.css:240`). The one that decides the shape of the application
@@ -262,10 +279,10 @@ is 760:
   `useLayoutEffect`. A `requestAnimationFrame` adds `sidebar-ready` afterwards, so the
   transition does not fire on the first paint.
 - **Below 760 px** the bar stops being lateral: it becomes a row of 66 px stuck to the foot,
-  with `grid-template-columns: repeat(5, 1fr)`. The fold button, the wordmark, the `⌘ K`, the
-  catalog summary and `.sidebar-foot` are hidden. And `nav a:nth-child(n + 6)` is hidden too:
-  **of the twelve sections, on mobile there are only five in sight** — Projects, Bridge, Runs,
-  Unbacked and MCP. The other seven are reached with ⌘K or by link.
+  with `grid-template-columns: repeat(5, 1fr)`. The fold button, the wordmark, `⌘ K`
+  and `.sidebar-foot` are hidden. The first four destinations stay visible — Projects, Bridge,
+  Spend and Runs — and More opens the remaining sections. Catalog information remains visible
+  in the main content, and the ES/EN control stays beside the computer icon in the top bar.
 
 That `.sidebar-foot` disappears on mobile and in the rail has a legal consequence, not an
 aesthetic one: that is where the link to the source code that AGPL-3.0 §13 asks for lives. Which
@@ -282,7 +299,7 @@ the preferences.
 
 **`vitest` does not transform `.tsx`, and that is on purpose.** The `include` of
 `vitest.config.ts` is six patterns and all six end in `*.test.ts`; in the whole repository there
-is not one `.test.tsx` (there are 177 `.test.ts` files). There is no DOM environment, React is
+is not one `.test.tsx` (there are 237 `.test.ts` files). There is no DOM environment, React is
 not mounted and nothing is rendered.
 
 The consequence is direct and has to be said out loud: **whatever stays inside a component is
@@ -299,6 +316,10 @@ code with nobody to defend it**. That is why every piece with rules of its own i
 | `components/search-query.ts` | which term corresponds to an address |
 | `components/run-result.ts` | how the answer from `/api/runs` is classified |
 | `components/ai-state.ts` | the state of the `/ai` panel |
+| `lib/spend-settings.ts` | the eight caps, their precedence (pause · variable · `spend.json` · factory) and the strict patch of the settings form |
+| `lib/spend-view.ts` | the sums, the local-day buckets, the family lines, and the price of a window |
+| `lib/spend-format.ts` | the client-safe half: money and token formatting, the cost of one row, usage detail and missing-measurement checks, the dictionary keys of families, kinds and sources — it exists because `spend-settings.ts` reads a file and the client form cannot import it |
+| `lib/spend-report.ts` | the whole answer of the spend screen, assembled once for the page, `GET /api/spend` and `POST /api/spend` |
 
 And out of that comes the odd shape of the accessibility and structure tests too: **they read
 the text of the code instead of rendering it**. What they check —that an attribute is present,
@@ -313,7 +334,7 @@ them, so the line numbers it reports are still the file's.
 
 ## What it does not do / known limits
 
-- **The table of sixteen screens is watched by nothing.** A new screen, or one that starts
+- **The table of seventeen screens is watched by nothing.** A new screen, or one that starts
   calling another route, leaves this page out of date in silence. The ten views of the card are
   defended (`project-views.test.ts`), and so is the order of the stylesheet (`styles.test.ts`);
   the inventory of screens is not.

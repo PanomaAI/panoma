@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { hooksInstalledIn, bridgePending, bridgeSteps, type BridgeReport } from "./bridge";
+import { hooksInstalledIn, bridgePending, bridgeProgress, bridgeSteps, type BridgeReport } from "./bridge";
 
 /**
  * The bridge is tested by its two decisions: that detecting the hooks is truly reading the disk,
@@ -158,6 +158,30 @@ describe("la bitácora es consecuencia, no paso", () => {
     const steps = bridgeSteps(report(0));
     expect(bridgePending(steps)).toBe(0);
     expect(steps[4]!.kind).toBe("consequence");
+  });
+
+  it("reports setup ready even before the first journal entry", () => {
+    const progress = bridgeProgress(bridgeSteps(report(0)));
+
+    expect(progress.setupSteps.map((step) => step.id)).toEqual(["catalog", "model", "agent", "hooks"]);
+    expect(progress).toMatchObject({ completed: 4, total: 4, pending: 0, ready: true });
+    expect(progress.next).toBeUndefined();
+    expect(bridgeProgress(bridgeSteps(report(12)))).toEqual(progress);
+  });
+
+  it("reports only the first unfinished setup step as next", () => {
+    const steps = bridgeSteps({
+      ...report(0),
+      model: { active: null, envKeys: 0 },
+      agents: { keys: 1, connected: 0 },
+      hooks: { checked: 5, installed: 0, installable: 5 },
+    });
+    const progress = bridgeProgress(steps);
+
+    expect(progress).toMatchObject({ completed: 1, total: 4, pending: 3, ready: false });
+    expect(progress.next?.id).toBe("model");
+    expect(progress.setupSteps.filter((step) => step.state === "next")).toEqual([progress.next]);
+    expect(progress.pending).toBe(bridgePending(steps));
   });
 
   it("y nunca lleva la flecha, porque una flecha es una instrucción", () => {

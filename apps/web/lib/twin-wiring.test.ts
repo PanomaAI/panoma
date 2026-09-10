@@ -43,6 +43,16 @@ interface Organ {
 
 const ORGANS: Organ[] = [
   {
+    title: "Decision memory",
+    symbol: "TwinMemory",
+    wiredIn: ["apps/web/app/(app)/twin/page.tsx"],
+  },
+  {
+    title: "Narrative capture",
+    symbol: "toNarratives",
+    wiredIn: ["apps/web/app/api/twin/mine/route.ts"],
+  },
+  {
     title: "Inventory",
     symbol: "inventoryHistory",
     wiredIn: ["apps/web/app/api/twin/sources/route.ts", "apps/web/app/api/twin/mine/route.ts"],
@@ -93,6 +103,16 @@ const ORGANS: Organ[] = [
     // The watcher is its automatic shot —the signal, and the straggler `backfillReviews` that
     // covers what has never been checked—; the other is `panoma review` at the terminal.
     wiredIn: ["apps/web/lib/watch.ts"],
+  },
+  {
+    title: "Direct teaching",
+    symbol: "TwinTeach",
+    wiredIn: ["apps/web/app/(app)/twin/page.tsx"],
+  },
+  {
+    title: "Decision rehearsal",
+    symbol: "rehearse",
+    wiredIn: ["apps/web/app/api/twin/rehearse/route.ts"],
   },
   {
     title: "Critic with eyes",

@@ -78,4 +78,21 @@ describe("community documents do not shadow one another", () => {
     expect(canonical).toContain("translations/README.es.md");
     expect(translation).toContain("../README.md");
   });
+
+  /*
+    The AGPL applies with no notice at all, but a notice that names the holder is what defeats
+    an "innocent infringement" defence, and it must name a person or an entity, never the trade
+    name alone. This line was once reported missing by a grep that spelled "(c)" while the files
+    spell "(C)": a fact that is only ever grepped for is a fact that gets misread. Three readers
+    see it — the repository, its translation, and the npm page, which is apps/cli/README.md —
+    and npm's own author field is the fourth.
+  */
+  it("names the copyright holder wherever a reader or npm looks", () => {
+    const HOLDER = /Copyright (?:\(C\)|©) 2026 Jesus Castillo/;
+    for (const path of ["README.md", "translations/README.es.md", "apps/cli/README.md"]) {
+      expect(readFileSync(new URL(path, root), "utf8"), path).toMatch(HOLDER);
+    }
+    const manifest = JSON.parse(readFileSync(new URL("apps/cli/package.json", root), "utf8"));
+    expect(manifest.author).toBe("Jesus Castillo");
+  });
 });

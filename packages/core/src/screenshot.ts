@@ -32,6 +32,27 @@ import { readFile, stat } from "node:fs/promises";
   changing what it judges without telling anyone, and the system tools that do know how to do this
   —`sips`— exist in one of the three systems of the CI matrix. It is rejected based on size, which
   is what allows trimming or exporting to JPEG with judgment.
+  What changed on 6-Sep-2026 is not this, it is who decides. On the Spend screen the owner can
+  ask for the capture to travel reduced to its long edge; then `fitScreenshot`, in `image.ts`,
+  does the arithmetic —by hand, with `node:zlib`, without a dependency and reading only PNG, for
+  the same three reasons above— and the reduction is said out loud before spending and again on
+  the receipt. That is the whole difference: what was refused was shrinking in silence, not
+  shrinking. This module keeps refusing by size, and it shrinks nothing.
+  ── Two ceilings, because they measure two different acts ────────────────────────────────────
+  The 3.5 MB above is what a provider accepts, and it still governs **what travels**: that number
+  does not move. What moved is where it was being applied. It was checked when the file was opened
+  **off this disk**, which is another act with another price: reading a local file costs
+  milliseconds, and nothing about that reading is bounded by what a provider will receive. So a
+  6 MB capture was refused before anybody could do anything with it — and since the choice on the
+  Spend screen there is something to do with it, because with `fit` the capture is reduced to a
+  long edge of 1,568 px before it leaves, which lands it far under the cap.
+  `MAX_FITTABLE_BYTES` is the ceiling for that reading, and it is bigger for the same reason: a
+  5K screen or a full-page capture passes 3.5 MB routinely and is still an ordinary screen. Above
+  sixteen megabytes it is refused all the same, and that is not timidity — a file that big is an
+  export, a poster or a scan, and not a screen anybody wants judged. Which of the two ceilings
+  applies is the caller's business: whoever is going to reduce the capture reads with the
+  generous one and enforces the strict one on the bytes that travel; whoever sends the file as it
+  is has only one number, and it is the provider's.
  */
 
 /** The four types that today are accepted by the three families of providers. */
@@ -75,6 +96,14 @@ export class ScreenshotError extends Error {
  * inflates.
  */
 export const MAX_SCREENSHOT_BYTES = 3_500_000;
+
+/**
+ * The reading limit when the capture is going to be reduced first, in bytes. See header.
+ *
+ * It governs what may be opened from this disk, not what may be sent: whoever reads with this
+ * number owes the strict one to the bytes that end up travelling.
+ */
+export const MAX_FITTABLE_BYTES = 16_000_000;
 
 /**
  * Below this, it is not a screen, it is a thumbnail.

@@ -9,114 +9,175 @@
   warning, danger—, not to render each question in a different shade.
  */
 
+/*
+  Eight declarations lived here and all eight now say what `:root` says. The class stays for two
+  reasons: it is a door a dark theme would come through — `styles/README.md` asks that it not be
+  dissolved — and it is where this screen turns on antialiasing and paints its ground.
+ */
 .project-detail-page {
-  --ink: var(--color-ink-sheet);
-  --paper: var(--color-paper-sheet);
-  --card: var(--color-surface);
-  --muted: var(--color-ink-muted-sheet);
-  --faint: var(--color-ink-faint-sheet);
-  --line: var(--color-line-sheet);
-  --line-strong: var(--color-line-strong-sheet);
-  --wash: var(--color-wash-sheet);
-  background: var(--paper);
+  background: var(--page);
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
 }
 
+/*
+  The only rule in this file that keeps its numbers, and not by oversight. `styles.test.ts` pins
+  this shell in its table of page measures and compares the body of the rule as TEXT, so a token
+  here fails the geometry guard even though it resolves to the same pixels. What the three numbers
+  mean is written down instead: 1184 is this screen's page measure, 28 is `--space-14` and 88 is
+  `--page-foot`. Moving any of them means editing that table, which is the friction it is for.
+ */
 .project-detail-page__inner {
   width: min(100% - 64px, 1184px);
   margin: 0 auto;
-  padding: 28px 0 88px;
+  padding: var(--space-14) 0 var(--page-foot);
 }
 
+/*
+  `position: relative` and no `z-index`, and the absence is the deliberate half.
+  The two do different things and only one of them is needed here. Relative keeps this header
+  among the positioned elements, which is what holds it over the plain content that follows;
+  a number on top of that opens a STACKING CONTEXT, and everything rendered inside is then sealed
+  under that number. This header carried 12, and the three dialogs that hang off it asked their
+  curtain for `--z-overlay` —70— and got 12, against `.app-sidebar`'s 40: the screen darkened as
+  far as this column and a press over the bar still answered the bar's link. The curtains are on
+  the `body` now, so no ancestor is their ceiling any more; what this line does is take away a
+  ceiling that was guarding nothing and would have been the next thing's. Both dropdowns of this
+  header carry `--z-dropdown` themselves, and with the number gone not one of eighty points probed
+  inside them is painted over — at 1440, where the header is two columns, and at 1100, where it is
+  one and the ⋯ menu opens over the board.
+ */
 .project-hero {
   position: relative;
-  z-index: var(--z-hero);
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 36px;
+  gap: var(--space-18);
 }
 
 .project-hero__identity {
   display: flex;
   min-width: 0;
   align-items: flex-start;
-  gap: 22px;
+  gap: var(--space-12);
 }
 
 .project-hero__copy {
   min-width: 0;
-  padding-top: 2px;
+  padding-top: var(--space-1);
 }
 
 .project-hero__copy h1 {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 11px;
+  gap: var(--space-6);
   color: var(--ink);
-  font-size: clamp(2rem, 3vw, 2.55rem);
-  font-weight: 650;
-  letter-spacing: -0.045em;
-  line-height: 1.05;
+  font-size: var(--type-hero);
+  font-weight: var(--weight-title);
+  letter-spacing: var(--track-hero);
+  line-height: var(--lead-flat);
 }
 
 .project-hero__copy h1 code {
   color: var(--faint);
   font-family: var(--font-mono);
-  font-size: 0.88rem;
-  font-weight: 500;
-  letter-spacing: 0;
+  font-size: var(--type-sm);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--track-flat);
 }
 
 .project-hero__description {
   max-width: 42rem;
-  margin-top: 10px;
+  margin-top: var(--space-5);
   color: var(--muted);
-  font-size: 1.02rem;
-  letter-spacing: -0.015em;
-  line-height: 1.5;
+  font-size: var(--type-base);
+  letter-spacing: var(--track-tight);
+  line-height: var(--lead-snug);
 }
 
+/*
+  The five facts of the header, in three columns.
+  It was a `flex` row with the divider on `.project-hero__fact + .project-hero__fact`, and that
+  rule is only true while the row does not wrap. It always wrapped: this column shares the header
+  with the action bar and never gets the 44rem it asks for, so the fifth fact landed on a second
+  line indented by a divider with nothing to its left, and the two lines touched because the row
+  gap was zero. The shape below is the one `.project-inventory-grid` already uses further down
+  this same page — three columns, a divider on every cell that does not open a row, a rule above
+  the second row — so the sheet has one table for a list of facts and not two.
+ */
 .project-hero__facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   max-width: 44rem;
-  margin: 16px 0 0;
+  margin: var(--space-8) 0 0;
   padding: 0;
 }
 
 .project-hero__fact {
   display: grid;
-  gap: 4px;
-  min-width: 5.5rem;
-  padding: 0 18px 0 0;
+  align-content: start;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-5) var(--space-9) var(--space-5) 0;
 }
 
-.project-hero__fact + .project-hero__fact {
-  padding-left: 18px;
+.project-hero__fact:not(:nth-child(3n + 1)) {
+  padding-left: var(--space-9);
   border-left: 1px solid var(--line);
+}
+
+.project-hero__fact:nth-child(n + 4) {
+  border-top: 1px solid var(--line);
+}
+
+/* A branch is named by whoever created it, and some of those names are a sentence. */
+.project-hero__fact dt,
+.project-hero__fact dd {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .project-hero__fact dt {
   color: var(--faint);
   font-family: var(--font-mono);
-  font-size: 0.62rem;
-  font-weight: 500;
-  letter-spacing: 0.12em;
+  font-size: var(--type-3xs);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--track-caps);
   text-transform: uppercase;
 }
 
 .project-hero__fact dd {
   margin: 0;
   color: var(--ink);
-  font-size: 0.84rem;
-  font-weight: 600;
+  font-size: var(--type-sm);
+  font-weight: var(--weight-semibold);
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
-  line-height: 1.2;
+  letter-spacing: var(--track-tight);
+  line-height: var(--lead-tight);
+}
+
+/*
+  Health is the only one of the five facts with a scale, and it was the only one written as a bare
+  number. The figure keeps the size of its neighbours — the row is a list of facts, not a
+  dashboard, and the ring further down this page is where the score is the subject — and what
+  places it is the total set beside it in the ink of a caption.
+ */
+.project-hero__fact--health dd {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.project-hero__fact--health dd strong {
+  font-weight: var(--weight-title);
+}
+
+.project-hero__fact--health dd span {
+  color: var(--muted);
+  font-size: var(--type-2xs);
+  font-weight: var(--weight-medium);
 }
 
 .project-health-grade {
@@ -126,21 +187,21 @@
 .project-hero__path {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-5);
   max-width: 44rem;
-  margin-top: 14px;
-  padding-top: 12px;
+  margin-top: var(--space-7);
+  padding-top: var(--space-6);
   border-top: 1px solid var(--line);
   color: var(--faint);
   font-family: var(--font-mono);
-  font-size: 0.7rem;
+  font-size: var(--type-2xs);
 }
 
 .project-hero__path-label {
   flex: none;
-  letter-spacing: 0.12em;
+  letter-spacing: var(--track-caps);
   text-transform: uppercase;
-  font-size: 0.62rem;
+  font-size: var(--type-3xs);
 }
 
 .project-hero__path-value {
@@ -157,9 +218,9 @@
 
 .project-hero__path .open-project-action button {
   min-height: 28px;
-  padding: 0 9px;
-  font-size: 0.68rem;
-  gap: 5px;
+  padding: 0 var(--space-5);
+  font-size: var(--type-2xs);
+  gap: var(--space-3);
 }
 
 .project-hero__path .open-project-action button svg {
@@ -171,7 +232,7 @@
   position: relative;
   display: grid;
   justify-items: end;
-  gap: 9px;
+  gap: var(--space-5);
   flex: none;
 }
 
@@ -179,7 +240,7 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 9px;
+  gap: var(--space-5);
 }
 
 .open-project-action {
@@ -187,29 +248,40 @@
   min-width: 0;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 6px;
+  gap: var(--space-3);
 }
 
+/*
+  With backing, because this pair is not painted only here.
+  `.project-more-button` never leaves the project sheet, but `.open-project-action` travels with
+  `OpenFolder`, and «Unsaved work» renders it on a `.legacy-page`, a screen that declares no
+  palette at all. There `--line-strong`, `--card` and `--muted` resolve to nothing, the three
+  declarations are dropped, and the button was left with no border and no fill: a label that reads
+  as text and that nobody presses. The fallbacks name the sheet values, which is the look this
+  control was drawn with.
+ */
 .open-project-action button,
-.project-more-button {
+.project-more-button,
+.create-video {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: var(--space-4);
   min-height: 38px;
-  padding: 0 14px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--corner-sm);
-  background: var(--card);
-  color: var(--muted);
-  font-size: 0.75rem;
-  font-weight: 580;
+  padding: 0 var(--space-7);
+  border: 1px solid var(--line-strong, var(--color-edge-bright));
+  border-radius: var(--corner-xs);
+  background: var(--card, var(--color-surface));
+  color: var(--muted, var(--color-ink-muted));
+  font-size: var(--type-xs);
+  font-weight: var(--weight-semibold);
   cursor: pointer;
   transition: border-color var(--duration-medium) ease, background-color var(--duration-medium) ease, color var(--duration-medium) ease, transform var(--duration-medium) ease;
 }
 
 .open-project-action button svg,
-.project-more-button svg {
+.project-more-button svg,
+.create-video svg {
   width: 17px;
   height: 17px;
   flex: none;
@@ -217,7 +289,8 @@
 }
 
 .open-project-action button:hover,
-.project-more-button:hover {
+.project-more-button:hover,
+.create-video:hover {
   border-color: var(--ink, var(--color-accent));
   color: var(--ink, var(--color-accent));
 }
@@ -234,20 +307,21 @@
   border-color: var(--ink, var(--color-accent));
   background: var(--ink, var(--color-accent));
   color: var(--paper, var(--color-surface));
-  font-size: 0.8rem;
+  font-size: var(--type-xs);
 }
 
 .open-project-action--primary button:hover {
   border-color: var(--color-ink-pressed);
   background: var(--color-ink-pressed);
-  color: var(--paper);
+  /* Backed like the rule above it: the same appearance, and it can land on the same screens. */
+  color: var(--paper, var(--color-surface));
 }
 
 .open-project-action__error {
   max-width: 260px;
   color: var(--color-danger);
-  font-size: 0.7rem;
-  line-height: 1.4;
+  font-size: var(--type-2xs);
+  line-height: var(--lead-snug);
 }
 
 .project-more-button {
@@ -262,6 +336,18 @@
 }
 
 /*
+  "Create video", between the button that opens the whole desk and the one that opens the project
+  in one place. It wears the quiet outline of the ⋯ beside it, because it is not the action of
+  this header but the second one, and the 46 of everything else in the row: it used to arrive from
+  the Apps sheet at 40 and sit three pixels low next to four controls that all agree on a height.
+  It is a link when the app is installed and a button when it is not — the second one asks first
+  — so nothing that dresses it may name an element.
+ */
+.create-video {
+  min-height: 46px;
+}
+
+/*
   The split button of the tile: open where always, or unfold the rest.
   It inherits the black from the main button that was already there — it doesn't compete with
   anything on the page — and the arrow is attached to it, separated by a one-pixel line of the
@@ -272,7 +358,7 @@
   position: relative;
   display: inline-grid;
   justify-items: end;
-  gap: 6px;
+  gap: var(--space-3);
 }
 
 .open-menu__split {
@@ -285,33 +371,33 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: var(--space-4);
   min-height: 46px;
   border: 1px solid var(--ink, var(--color-accent));
   background: var(--ink, var(--color-accent));
   color: var(--paper, var(--color-surface));
-  font-size: 0.8rem;
-  font-weight: 580;
+  font-size: var(--type-xs);
+  font-weight: var(--weight-semibold);
   cursor: pointer;
   transition: background-color var(--duration-medium) ease, opacity var(--duration-medium) ease;
 }
 
 .open-menu__primary {
   min-width: 168px;
-  padding: 0 15px;
-  border-radius: var(--corner-sm) 0 0 var(--corner-sm);
+  padding: 0 var(--space-8);
+  border-radius: var(--corner-xs) 0 0 var(--corner-xs);
 }
 
 /* Without the arrow, the button is a single one and is fully rounded. */
 .open-menu__split > .open-menu__primary:only-child {
-  border-radius: var(--corner-sm);
+  border-radius: var(--corner-xs);
 }
 
 .open-menu__toggle {
   width: 38px;
   padding: 0;
   border-left: 1px solid var(--color-on-ink-edge);
-  border-radius: 0 var(--corner-sm) var(--corner-sm) 0;
+  border-radius: 0 var(--corner-xs) var(--corner-xs) 0;
 }
 
 .open-menu__primary:hover:not(:disabled),
@@ -329,12 +415,12 @@
 .open-menu--compact .open-menu__primary,
 .open-menu--compact .open-menu__toggle {
   min-height: 34px;
-  font-size: 0.78rem;
+  font-size: var(--type-xs);
 }
 
 .open-menu--compact .open-menu__primary {
   min-width: 0;
-  padding: 0 12px;
+  padding: 0 var(--space-6);
 }
 
 .open-menu--compact .open-menu__toggle {
@@ -363,8 +449,8 @@
   right: 0;
   z-index: var(--z-dropdown);
   width: 246px;
-  padding: 7px;
-  border: 1px solid var(--line-strong, var(--color-line-strong-catalog));
+  padding: var(--space-4);
+  border: 1px solid var(--line-strong, var(--color-edge-bright));
   border-radius: var(--corner);
   background: var(--card, var(--color-surface));
   box-shadow: var(--shadow-menu);
@@ -391,15 +477,15 @@
 .open-menu__item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-5);
   width: 100%;
   min-height: 42px;
-  padding: 0 10px;
+  padding: 0 var(--space-5);
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--corner);
   background: transparent;
   color: var(--color-smoke);
-  font-size: 0.76rem;
+  font-size: var(--type-xs);
   text-align: left;
   cursor: pointer;
 }
@@ -428,12 +514,12 @@
 
 .open-menu__item-copy small {
   color: var(--color-faint);
-  font-size: 0.66rem;
+  font-size: var(--type-2xs);
 }
 
 .open-menu__item-copy small b {
   color: var(--color-chalk);
-  font-weight: 650;
+  font-weight: var(--weight-title);
 }
 
 .open-menu__item .open-menu__default-check {
@@ -450,16 +536,168 @@
   same, which is exactly the error that brought this list.
  */
 .open-menu__item.is-first-of-group {
-  margin-top: 5px;
-  padding-top: 5px;
-  border-top: 1px solid var(--line);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  /*
+    Backed like `.open-menu__list` above: this menu also hangs from the catalog panel. Both screens
+    happen to declare `--line`, so today the fallback never fires; it is written so the rule does
+    not depend on that coincidence.
+   */
+  border-top: 1px solid var(--line, var(--color-edge));
 }
 
 .open-menu__error {
   max-width: 260px;
   color: var(--color-danger);
-  font-size: 0.7rem;
+  font-size: var(--type-2xs);
   text-align: right;
+}
+
+/*
+  "Open everything", next to the split button.
+  Outlined and the same height, so that the two read as one row of controls: the black one opens
+  the project in one place, this one opens the whole desk. The bolt is the only thing that
+  changes between them, and it is enough — the label says the rest.
+ */
+.open-all {
+  position: relative;
+  display: inline-grid;
+  justify-items: end;
+  gap: var(--space-3);
+}
+
+/*
+  The two go together and read as one control: what opens everything, and the way back to what
+  "everything" means. The second one exists because the catalog panel has no ⋯ menu, so without it
+  a saved plan could be run there forever and never changed.
+ */
+.open-all__pair {
+  display: flex;
+  align-items: stretch;
+}
+
+.open-all__button,
+.open-all__configure {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  min-height: 46px;
+  border: 1px solid var(--ink, var(--color-accent));
+  background: var(--card, var(--color-surface));
+  color: var(--ink, var(--color-accent));
+  font-size: var(--type-xs);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+  transition: background-color var(--duration-medium) ease, color var(--duration-medium) ease, opacity var(--duration-medium) ease;
+}
+
+.open-all__button {
+  padding: 0 var(--space-8);
+  border-radius: var(--corner-xs) 0 0 var(--corner-xs);
+}
+
+.open-all__configure {
+  width: 38px;
+  padding: 0;
+  border-left: 0;
+  border-radius: 0 var(--corner-xs) var(--corner-xs) 0;
+}
+
+/*
+  The label reserves the wider of the two words it can hold. See `open-all.tsx` for why the one
+  that is not being said is hidden and not removed.
+ */
+.open-all__label {
+  display: grid;
+}
+
+.open-all__label > span {
+  grid-area: 1 / 1;
+}
+
+.open-all__label > span:last-child,
+.open-all__label[data-busy] > span:first-child {
+  visibility: hidden;
+}
+
+.open-all__label[data-busy] > span:last-child {
+  visibility: visible;
+}
+
+.open-all__button svg,
+.open-all__configure svg {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  stroke-width: 1.7;
+}
+
+.open-all__button:hover,
+.open-all__configure:hover {
+  background: color-mix(in srgb, var(--ink, var(--color-accent)) 8%, var(--card, var(--color-surface)));
+}
+
+/*
+  Busy is said with `aria-busy` and not with `disabled`, because a disabled button loses the focus
+  it holds: the dialog would then give the keyboard back to the body when it closed. The look is
+  the same; what changes is that the button is still there for whoever was standing on it.
+ */
+.open-all__button[aria-busy="true"] {
+  opacity: 0.62;
+  cursor: wait;
+}
+
+.open-all--compact .open-all__button,
+.open-all--compact .open-all__configure {
+  min-height: 34px;
+  font-size: var(--type-xs);
+}
+
+.open-all--compact .open-all__button {
+  padding: 0 var(--space-6);
+}
+
+.open-all--compact .open-all__configure {
+  width: 30px;
+}
+
+.open-all--compact .open-all__button svg,
+.open-all--compact .open-all__configure svg {
+  width: 15px;
+  height: 15px;
+}
+
+/*
+  What happened, under the button: one line, and under it the steps that did not open, each with
+  its reason. It is the same answer the terminal prints, in the same order.
+ */
+/*
+  The region is always in the markup so a reader announces what appears inside it; empty, it takes
+  no space of its own — hence `:empty` instead of mounting and unmounting the element.
+ */
+.open-all__notice:empty {
+  display: none;
+}
+
+.open-all__notice {
+  display: grid;
+  gap: var(--space-2);
+  max-width: 300px;
+  color: var(--muted, var(--color-smoke));
+  font-size: var(--type-2xs);
+  line-height: var(--lead-snug);
+  text-align: right;
+}
+
+.open-all__notice ul {
+  display: grid;
+  gap: var(--space-1);
+  color: var(--color-danger);
+}
+
+.open-all__notice b {
+  font-weight: var(--weight-title);
 }
 
 .project-overflow-menu {
@@ -468,7 +706,7 @@
   right: 0;
   z-index: var(--z-dropdown);
   width: 220px;
-  padding: 7px;
+  padding: var(--space-4);
   border: 1px solid var(--line-strong);
   border-radius: var(--corner);
   background: var(--card);
@@ -482,15 +720,15 @@
 .project-menu-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-5);
   width: 100%;
   min-height: 38px;
-  padding: 0 10px;
+  padding: 0 var(--space-5);
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--corner);
   background: transparent;
   color: var(--color-smoke);
-  font-size: 0.76rem;
+  font-size: var(--type-xs);
   text-align: left;
   cursor: pointer;
 }
@@ -521,9 +759,16 @@
   cursor: wait;
 }
 
+/*
+  The negative margin is `.project-overflow-menu`'s own padding, negated, which is what makes the
+  rule bleed to both edges instead of floating inside them. The two are one measure written twice,
+  so they move together: the day the menu's padding stops being `--space-4`, this stops being it
+  too. It was `7px` against `-7px` before, and the pair survived that only because nobody touched
+  either one.
+ */
 .project-menu-divider {
   height: 1px;
-  margin: 6px -7px;
+  margin: var(--space-3) calc(var(--space-4) * -1);
   background: var(--color-edge);
 }
 
@@ -531,12 +776,12 @@
 .project-menu-error {
   display: flex;
   align-items: flex-start;
-  gap: 7px;
-  margin: 5px 4px;
-  padding: 7px 8px;
-  border-radius: 7px;
-  font-size: 0.68rem;
-  line-height: 1.4;
+  gap: var(--space-4);
+  margin: var(--space-3) var(--space-2);
+  padding: var(--space-4);
+  border-radius: var(--corner);
+  font-size: var(--type-2xs);
+  line-height: var(--lead-snug);
 }
 
 .project-menu-notice svg {

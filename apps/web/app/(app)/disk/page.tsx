@@ -2,7 +2,8 @@ import Link from "next/link";
 import { getDiskTotals, listDiskUsage, stateOf, type DiskRow } from "@panoma/db";
 import { db } from "@/lib/db";
 import { MeasureDisk } from "@/components/measure-disk";
-import { ProjectIcon, StateDot, formatBytes, relativeDate } from "@/components/primitives";
+import { PageSection, PageShell } from "@/components/page-shell";
+import { Card, ProjectIcon, StateDot, Tag, formatBytes, relativeDate } from "@/components/primitives";
 import { Rich } from "@/components/rich-text";
 import { getLocale, t, type Locale } from "@/lib/i18n";
 
@@ -29,74 +30,82 @@ export default async function DiskPage() {
   ]);
 
   return (
-    <main id="app-main" tabIndex={-1} className="app-main legacy-page">
-      <section className="pt-12">
-        <p className="eyebrow">{t(locale, "nav.disk")}</p>
-        <h1 className="mt-2 font-display text-4xl font-semibold tracking-tight">
-          {totals.measured === 0
-            ? t(locale, "disk.empty")
-            : t(locale, "disk.title", { bytes: formatBytes(totals.reclaimableBytes) })}
-        </h1>
-        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-smoke">
-          {t(locale, "disk.intro")}
-        </p>
+    <PageShell
+      eyebrow={t(locale, "nav.disk")}
+      title={
+        totals.measured === 0
+          ? t(locale, "disk.empty")
+          : t(locale, "disk.title", { bytes: formatBytes(totals.reclaimableBytes) })
+      }
+      lead={t(locale, "disk.intro")}
+      headExtra={
+        /*
+           The four figures and the button that produces them are the header's, not the body's:
+           they are what the title says, spelled out, and the measurement is the one thing to do
+           on this screen when there is nothing below yet.
+          */
+        <>
+          {totals.measured > 0 && (
+            <dl className="mt-6 flex flex-wrap gap-x-10 gap-y-4">
+              <Metric label={t(locale, "disk.metricTotal")} value={formatBytes(totals.totalBytes)} />
+              <Metric
+                label={t(locale, "disk.metricReclaimable")}
+                value={formatBytes(totals.reclaimableBytes)}
+                detail={t(locale, "disk.metricShare", {
+                  n: Math.round((totals.reclaimableBytes / Math.max(totals.totalBytes, 1)) * 100),
+                })}
+                accent
+              />
+              <Metric
+                label={t(locale, "disk.metricDormant")}
+                value={formatBytes(totals.dormantReclaimableBytes)}
+                detail={t(locale, "disk.metricDormantDetail")}
+              />
+              <Metric label={t(locale, "disk.metricMeasured")} value={String(totals.measured)} />
+            </dl>
+          )}
 
-        {totals.measured > 0 && (
-          <dl className="mt-6 flex flex-wrap gap-x-10 gap-y-4">
-            <Metric label={t(locale, "disk.metricTotal")} value={formatBytes(totals.totalBytes)} />
-            <Metric
-              label={t(locale, "disk.metricReclaimable")}
-              value={formatBytes(totals.reclaimableBytes)}
-              detail={t(locale, "disk.metricShare", {
-                n: Math.round((totals.reclaimableBytes / Math.max(totals.totalBytes, 1)) * 100),
-              })}
-              accent
-            />
-            <Metric
-              label={t(locale, "disk.metricDormant")}
-              value={formatBytes(totals.dormantReclaimableBytes)}
-              detail={t(locale, "disk.metricDormantDetail")}
-            />
-            <Metric
-              label={t(locale, "disk.metricMeasured")}
-              value={String(totals.measured)}
-            />
-          </dl>
-        )}
-
-        <div className="mt-6">
-          <MeasureDisk measuredAt={totals.measuredAt?.toISOString() ?? null} />
-        </div>
-      </section>
-
+          <div className="mt-6">
+            <MeasureDisk measuredAt={totals.measuredAt?.toISOString() ?? null} />
+          </div>
+        </>
+      }
+    >
       {rows.length > 0 && (
-        <ul className="mt-10 space-y-2">
-          {rows.map((row) => (
-            <ProjectRow key={row.id} row={row} locale={locale} />
-          ))}
-        </ul>
-      )}
+        <PageSection>
+          <ul className="space-y-2">
+            {rows.map((row) => (
+              <ProjectRow key={row.id} row={row} locale={locale} />
+            ))}
+          </ul>
 
-      {rows.length > 0 && (
-        <p className="mt-8 rounded border border-edge bg-surface p-4 font-mono text-[11px] leading-relaxed text-faint">
-          <Rich
-            text={t(locale, "disk.rules")}
-            slots={{
-              generated: (
-                <>
-                  <code>node_modules</code>, <code>.dart_tool</code>, <code>Pods</code>…
-                </>
-              ),
-              ambiguous: (
-                <>
-                  <code>build</code>, <code>dist</code>, <code>vendor</code>
-                </>
-              ),
-            }}
-          />
-        </p>
+          {/*
+             The rules of the list, in the same frame as everything else that is a panel. Measured
+             before moving it: the markup writes `rounded border border-edge bg-surface` in four
+             places and `rounded-lg border border-edge` in thirty-six, so this panel was on the
+             4px corner of a minority nobody argued for. `Card` puts it on the 8px the other
+             thirty-six already draw.
+            */}
+          <Card className="mt-8 font-mono text-[11px] leading-relaxed text-faint">
+            <Rich
+              text={t(locale, "disk.rules")}
+              slots={{
+                generated: (
+                  <>
+                    <code>node_modules</code>, <code>.dart_tool</code>, <code>Pods</code>…
+                  </>
+                ),
+                ambiguous: (
+                  <>
+                    <code>build</code>, <code>dist</code>, <code>vendor</code>
+                  </>
+                ),
+              }}
+            />
+          </Card>
+        </PageSection>
       )}
-    </main>
+    </PageShell>
   );
 }
 
@@ -113,8 +122,16 @@ function Metric({
 }) {
   return (
     <div>
+      {/*
+         `text-2xl` and no longer `text-3xl`, and the reason is one step above it. The page title
+         came down from a fixed 36px to `--type-title`, which tops out at 28: at 30px these four
+         figures would have been the loudest thing on a screen whose own headline is quieter, and
+         the metric would have read as the heading. 24 puts them back underneath it — the same
+         inversion D2 fixed between the catalog and its seventeen secondary screens, one level
+         further in.
+        */}
       <dd
-        className={`font-display text-3xl font-semibold ${accent ? "text-accent" : "text-chalk"}`}
+        className={`font-display text-2xl font-semibold ${accent ? "text-accent" : "text-chalk"}`}
       >
         {value}
       </dd>
@@ -128,7 +145,7 @@ function ProjectRow({ row, locale }: { row: DiskRow; locale: Locale }) {
   const share = row.totalBytes > 0 ? row.reclaimableBytes / row.totalBytes : 0;
 
   return (
-    <li className="rounded-lg border border-edge bg-surface p-4">
+    <Card as="li">
       <div className="flex items-start gap-4">
         <ProjectIcon
           name={row.name}
@@ -143,9 +160,7 @@ function ProjectRow({ row, locale }: { row: DiskRow; locale: Locale }) {
             </Link>
             <StateDot state={stateOf(row.lastCommitAt)} withLabel locale={locale} />
             {row.copyOf && (
-              <span className="rounded border border-edge bg-raised px-1.5 font-mono text-[10px] text-faint">
-                {t(locale, "common.copyOf", { name: row.copyOf })}
-              </span>
+              <Tag tone="quiet">{t(locale, "common.copyOf", { name: row.copyOf })}</Tag>
             )}
             <span className="ml-auto font-mono text-xs">
               <span className="text-accent">{formatBytes(row.reclaimableBytes)}</span>
@@ -188,7 +203,7 @@ function ProjectRow({ row, locale }: { row: DiskRow; locale: Locale }) {
           </p>
         </div>
       </div>
-    </li>
+    </Card>
   );
 }
 

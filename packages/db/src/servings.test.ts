@@ -58,12 +58,14 @@ describe("el libro de entregas", () => {
       projectId: PROJECT,
       agentId: "ag-s",
       arm: "withheld",
+      experimentId: "memory-v1",
       noteIds: ["note_a", "note_b"],
       noteChars: 120,
     });
 
     const [row] = await db.select().from(t.servings);
     expect(row?.arm).toBe("withheld");
+    expect(row?.experimentId).toBe("memory-v1");
     // Those that WOULD HAVE served themselves: without them, the arms are not twins.
     expect(row?.noteIds).toEqual(["note_a", "note_b"]);
     expect(row?.noteChars).toBe(120);
@@ -75,8 +77,8 @@ describe("el informe: los brazos", () => {
     await db.insert(t.servings).values([
       // s1 has been alive for three days; s2, yesterday morning. Each one opens the window only
       // until midnight UTC of their day.
-      { id: "s1", projectId: PROJECT, agentId: "ag-s", arm: "served", noteIds: ["n1"], noteChars: 50, at: atUtc(3, 6) },
-      { id: "s2", projectId: PROJECT, agentId: "ag-s", arm: "withheld", noteIds: ["n1"], noteChars: 50, at: atUtc(1, 6) },
+      { id: "s1", projectId: PROJECT, agentId: "ag-s", arm: "served", experimentId: "memory-v1", noteIds: ["n1"], noteChars: 50, at: atUtc(3, 6) },
+      { id: "s2", projectId: PROJECT, agentId: "ag-s", arm: "withheld", experimentId: "memory-v1", noteIds: ["n1"], noteChars: 50, at: atUtc(1, 6) },
     ]);
     await db.insert(t.launches).values([
       // Within the s2 window (5 and 10 hours later, same day)…
@@ -98,7 +100,7 @@ describe("el informe: los brazos", () => {
     // The audit found that the 24-hour window crossed the midnight redraw and attributed to this
     // arm the gestures caused by the opponent the next day.
     await db.insert(t.servings).values([
-      { id: "s-noche", projectId: PROJECT, agentId: "ag-s", arm: "served", noteIds: ["n1"], noteChars: 50, at: atUtc(2, 23) },
+      { id: "s-noche", projectId: PROJECT, agentId: "ag-s", arm: "served", experimentId: "memory-v1", noteIds: ["n1"], noteChars: 50, at: atUtc(2, 23) },
     ]);
     await db.insert(t.launches).values([
       // Half an hour later, same day: account.
@@ -113,10 +115,25 @@ describe("el informe: los brazos", () => {
 
   it("la ventana de días corta: lo viejo no pesa", async () => {
     await db.insert(t.servings).values([
-      { id: "s-old", projectId: PROJECT, agentId: "ag-s", arm: "served", noteIds: [], noteChars: 0, at: hoursAgo(24 * 40) },
+      { id: "s-old", projectId: PROJECT, agentId: "ag-s", arm: "served", experimentId: "memory-v1", noteIds: [], noteChars: 0, at: hoursAgo(24 * 40) },
     ]);
     expect((await scaleReport(db, 30)).arms).toHaveLength(0);
     expect((await scaleReport(db, 60)).arms).toHaveLength(1);
+  });
+
+  it("keeps ordinary traffic and older experiments out of the experimental arms", async () => {
+    const input = { projectId: PROJECT, agentId: "ag-s", noteIds: ["n1"], noteChars: 50 };
+    await recordServing(db, { ...input, arm: "served" });
+    await recordServing(db, { ...input, arm: "served", experimentId: "previous-experiment" });
+    await recordServing(db, { ...input, arm: "served", experimentId: "memory-v1" });
+    await recordServing(db, { ...input, arm: "withheld", experimentId: "memory-v1" });
+
+    const report = await scaleReport(db);
+    expect(report.observationalServings).toBe(1);
+    expect(report.arms.map((arm) => ({ arm: arm.arm, servings: arm.servings }))).toEqual([
+      { arm: "served", servings: 1 }, { arm: "withheld", servings: 1 },
+    ]);
+    expect((await scaleReport(db, 30, "previous-experiment")).arms).toMatchObject([{ arm: "served", servings: 1 }]);
   });
 });
 

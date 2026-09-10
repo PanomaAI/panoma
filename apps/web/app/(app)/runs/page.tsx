@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { listAllRuns } from "@panoma/db";
 import { db } from "@/lib/db";
-import { relativeDate } from "@/components/primitives";
+import { PageSection, PageShell } from "@/components/page-shell";
+import { Card, relativeDate } from "@/components/primitives";
 import { RunStatusTag } from "@/components/run-status";
 import { IsolationTag } from "@/components/isolation";
 import { cliName } from "@/lib/cli-name";
@@ -18,36 +19,42 @@ export default async function RunsPage() {
   const [runs, locale] = await Promise.all([listAllRuns(database), getLocale()]);
 
   return (
-    <>
-
-      <main id="app-main" tabIndex={-1} className="app-main legacy-page">
-        <section className="pt-12">
-          <p className="eyebrow">{t(locale, "nav.activity")}</p>
-          <h1 className="mt-2 font-display text-4xl font-semibold tracking-tight">
-            {runs.length === 0
-              ? t(locale, "runs.empty")
-              : t(locale, runs.length === 1 ? "runs.countOne" : "runs.countMany", {
-                  n: runs.length,
-                })}
-          </h1>
-          <p className="mt-3 max-w-xl text-sm leading-relaxed text-smoke">
-            {t(locale, "runs.intro")}
-          </p>
-        </section>
-
+    <PageShell
+      eyebrow={t(locale, "nav.activity")}
+      title={
+        runs.length === 0
+          ? t(locale, "runs.empty")
+          : t(locale, runs.length === 1 ? "runs.countOne" : "runs.countMany", {
+              n: runs.length,
+            })
+      }
+      lead={t(locale, "runs.intro")}
+    >
+      <PageSection>
         {runs.length === 0 ? (
-          <section className="mt-10 rounded-lg border border-edge bg-surface p-6">
+          <Card pad="lg">
             <p className="text-sm text-smoke">{t(locale, "runs.tryHint")}</p>
             <pre className="mt-4 overflow-x-auto rounded border border-edge bg-ground p-4 font-mono text-xs text-chalk">
               {cliName()} run &lt;{t(locale, "runs.argProject")}&gt; &lt;{t(locale, "runs.argPackage")}&gt;
             </pre>
-          </section>
+          </Card>
         ) : (
-          <ul className="mt-10 space-y-2">
+          <ul className="space-y-2">
             {runs.map((run) => {
               const target = run.target as { packageName?: string; targetVersion?: string };
               return (
-                <li key={run.id} className="rounded-lg border border-edge bg-surface transition-colors hover:border-edge-bright">
+                /*
+                  The row is the same panel the primitive draws, with no padding of its own: the
+                  `<Link>` inside carries it, so the whole card is the target and not just the
+                  words. Only the hover edge is left here, which is the one thing the panel does
+                  not decide.
+                 */
+                <Card
+                  as="li"
+                  key={run.id}
+                  pad="none"
+                  className="transition duration-[var(--duration-fast)] hover:border-edge-bright"
+                >
                   <Link href={`/runs/${run.id}`} className="block p-4">
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                     <RunStatusTag status={run.status} verified={run.verified} locale={locale} />
@@ -67,12 +74,12 @@ export default async function RunsPage() {
                     </p>
                   )}
                   </Link>
-                </li>
+                </Card>
               );
             })}
           </ul>
         )}
-      </main>
-    </>
+      </PageSection>
+    </PageShell>
   );
 }

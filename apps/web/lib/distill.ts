@@ -75,16 +75,16 @@ import { estimateTokens, wrapUntrusted } from "@panoma/core";
  * synthesized separately, and both halves said the same thing.
  */
 export const TOPICS: { name: string; hint: string }[] = [
-  { name: "design", hint: "cómo se ve y se siente: composición, color, tipografía, espacio, movimiento" },
-  { name: "frontend", hint: "cómo se construye lo que se ve: componentes, estados, estilos, accesibilidad" },
-  { name: "backend", hint: "el servidor y sus datos: rutas, consultas, esquema, errores, rendimiento" },
-  { name: "cli", hint: "el terminal: comandos, salida, banderas, lo que imprime y lo que calla" },
-  { name: "testing", hint: "cómo se comprueba: qué se prueba, cuánto, contra qué, y qué se deja fuera" },
-  { name: "copy", hint: "las palabras: mensajes, documentación, nombres, tono, idioma" },
-  { name: "workflow", hint: "cómo trabaja con sus agentes: encargos, revisiones, commits, ritmo" },
-  { name: "tooling", hint: "las herramientas y la construcción: dependencias, empaquetado, tipos, CI" },
-  { name: "data", hint: "los datos y sus números: métricas, migraciones, formatos, privacidad" },
-  { name: "other", hint: "el cajón. Solo si de verdad no encaja en ninguna" },
+  { name: "design", hint: "look and feel: composition, color, typography, spacing, motion" },
+  { name: "frontend", hint: "building the interface: components, states, styles, accessibility" },
+  { name: "backend", hint: "the server and its data: routes, queries, schema, errors, performance" },
+  { name: "cli", hint: "the terminal: commands, output, flags, what is printed and what stays silent" },
+  { name: "testing", hint: "verification: what to test, how much, against what, and what to exclude" },
+  { name: "copy", hint: "language: messages, documentation, names, tone, locale" },
+  { name: "workflow", hint: "working with agents: assignments, reviews, commits, pace" },
+  { name: "tooling", hint: "tools and builds: dependencies, packaging, types, CI" },
+  { name: "data", hint: "data and its numbers: metrics, migrations, formats, privacy" },
+  { name: "other", hint: "fallback only when none of the other topics fits" },
 ];
 
 /** The names alone, to check what the model answers. */
@@ -116,6 +116,18 @@ export interface DistillChunk {
   verdicts: DistillVerdict[];
 }
 
+/** What a pass sends, and what no pass can send. See `planChunks`. */
+export interface DistillPlan {
+  chunks: DistillChunk[];
+  /**
+   * Unread verdicts that are the only ones left in their project. They are not sent, not marked
+   * and not paid for: an observation needs {@link MIN_CITATIONS} distinct citations from the same
+   * batch, so a batch of one is a call whose answer is `[]` before it is made. They stay unread
+   * until the project gains a sibling — another quote from a later session.
+   */
+  thin: DistillVerdict[];
+}
+
 /**
  * How many appointments are there at most in one batch.
  *
@@ -133,8 +145,8 @@ export const CHUNK_VERDICTS = 60;
  * 134,000 characters — about 33,500 tokens — in a single call, and no one decides that: the corpus
  * of the day decides. With this limit, the batch of long quotes takes ten and the batch of normal
  * quotes takes sixty, because the median of the corpus is one line. No quote is cut to fit: what
- * doesn't fit remains for the next batch, and a quote that alone exceeds the limit goes in anyway
- * and goes alone.
+ * doesn't fit remains for the next batch, and the first {@link MIN_CITATIONS} of a batch go in
+ * anyway, even past the limit — a batch below that count cannot yield anything (see `planChunks`).
  */
 export const CHUNK_CHARS = 24_000;
 
@@ -240,11 +252,20 @@ export interface BuiltPrompt {
  * With the filter, rotation between projects happens naturally: when the verdicts with the signal
  * from the project with the most are exhausted, the next one goes up. There is no need for a turn
  * mechanism because the turn **is** having used up the material.
+ *
+ * 5. **A project with a single unread verdict is not sent.** The parser refuses any observation
+ * with fewer than {@link MIN_CITATIONS} distinct citations from the batch, so a batch of one is a
+ * call —about a thousand tokens of instructions— whose answer is `[]` before it is made. Measured
+ * on 6-Sep-2026: the last pass over the author's corpus was paying that call for the lone quote of
+ * a project, marking nothing, and the corpus line said "1 left" forever. Those verdicts come out
+ * apart, in `thin`, unmarked and unpaid: the day the project gains a second quote they are planned
+ * like any other. The same rule cuts the request's `limit`: a remainder below the minimum is left
+ * for the next pass instead of becoming a batch that cannot answer.
  */
-export function planChunks(
+export function planDistillation(
   verdicts: DistillVerdict[],
   options: { limit?: number; skip?: ReadonlySet<string> } = {},
-): DistillChunk[] {
+): DistillPlan {
   const skip = options.skip;
   const byIdentity = new Map<string, DistillVerdict[]>();
   for (const verdict of verdicts) {
@@ -256,9 +277,14 @@ export function planChunks(
   }
 
   const chunks: DistillChunk[] = [];
+  const thin: DistillVerdict[] = [];
   for (const [identity, group] of byIdentity) {
-    const taken = fill([...group].sort(preferred));
-    if (taken.length > 0) chunks.push({ identity, verdicts: taken });
+    // Point 5 of the header: alone, a verdict cannot back anything, so it is not sent.
+    if (group.length < MIN_CITATIONS) {
+      thin.push(...group);
+      continue;
+    }
+    chunks.push({ identity, verdicts: fill([...group].sort(preferred)) });
   }
 
   chunks.sort(
@@ -268,7 +294,18 @@ export function planChunks(
       (a.identity < b.identity ? -1 : a.identity > b.identity ? 1 : 0),
   );
 
-  return budget(chunks.slice(0, MAX_CHUNKS), options.limit ?? MAX_VERDICTS_PER_RUN);
+  return {
+    chunks: budget(chunks.slice(0, MAX_CHUNKS), options.limit ?? MAX_VERDICTS_PER_RUN),
+    thin,
+  };
+}
+
+/** The batches of `planDistillation`, for whoever does not need to know what was left out. */
+export function planChunks(
+  verdicts: DistillVerdict[],
+  options: { limit?: number; skip?: ReadonlySet<string> } = {},
+): DistillChunk[] {
+  return planDistillation(verdicts, options).chunks;
 }
 
 /** What fits in a batch: by account and by characters, whichever runs out first. */
@@ -282,10 +319,12 @@ function fill(sorted: DistillVerdict[]): DistillVerdict[] {
     /*
       `break` and not `continue`: the list already comes in order of preference, so skipping a
       long appointment to fit two short ones behind it is putting two worse verdicts ahead of a
-      better one. And the first one always goes in, even if on its own it exceeds the limit,
-      because an empty batch is never fixed — that verdict does not shrink.
+      better one. And the first `MIN_CITATIONS` always go in, even if on their own they exceed the
+      limit: a batch below that count is never fixed — it cannot back a single observation, and
+      those verdicts do not shrink. The parser bounds a quote at 2,240 characters, so the excess
+      this allows is one quote past the limit, never a second block.
      */
-    if (taken.length > 0 && chars + weight > CHUNK_CHARS) break;
+    if (taken.length >= MIN_CITATIONS && chars + weight > CHUNK_CHARS) break;
     taken.push(verdict);
     chars += weight;
   }
@@ -293,13 +332,18 @@ function fill(sorted: DistillVerdict[]): DistillVerdict[] {
   return taken;
 }
 
-/** Cut the plan to the appointment budget, spending it in the already decided order. */
+/**
+ * Cut the plan to the appointment budget, spending it in the already decided order.
+ *
+ * A remainder below `MIN_CITATIONS` is not emitted: a batch of one cannot answer, so it would be a
+ * paid call for nothing. It stays unread for the next pass, which plans it whole.
+ */
 function budget(chunks: DistillChunk[], limit: number): DistillChunk[] {
   let left = Math.min(limit, MAX_VERDICTS_PER_RUN);
   const kept: DistillChunk[] = [];
 
   for (const chunk of chunks) {
-    if (left <= 0) break;
+    if (left < MIN_CITATIONS) break;
     const verdicts = chunk.verdicts.slice(0, left);
     left -= verdicts.length;
     kept.push({ identity: chunk.identity, verdicts });
@@ -360,10 +404,15 @@ export function labelChunk(chunk: DistillChunk): LabelledQuote[] {
  * anything. Without this rule, half of the statements in the first test described how they ask
  * for things rather than what they ask for.
  *
- * The language of the statements is that of the viewer, not of the corpus: the quotes are keyboard
- * Spanish and the resulting sentence is read in the interface, which is in two languages. The
- * prompt itself remains in Spanish, like that of `describe` and `md/review` — it is the voice of
- * the house, not a surface.
+ * **The language of an observation is the language of its quotes.** Not the browser's, and not
+ * a fixed one: the browser's is the §2s failure raised a floor —a merge came out in English
+ * because the button was pressed from a browser in English and replaced two phrases in
+ * Spanish—, and a fixed one is worse, because it was measured: a pass without this rule left
+ * 260 observations in English over a corpus written in Spanish, and the whole portrait came out
+ * in a language the person had not used even once. `TASTE.md` exists so the person can read it
+ * and say "I don't think that"; a portrait in someone else's language cannot be read that way.
+ * Instructions to the model are English, which is another thing: the model reads them, nobody
+ * else does. Source quotations travel verbatim and stored rows are never migrated.
  */
 export function buildPrompt(chunk: DistillChunk): BuiltPrompt {
   const labelled = labelChunk(chunk);
@@ -375,53 +424,45 @@ export function buildPrompt(chunk: DistillChunk): BuiltPrompt {
   });
 
   const prompt = [
-    "Abajo van citas literales de una persona reaccionando a lo que sus agentes de",
-    "programación le entregaron, todas del mismo proyecto. Van numeradas —[c1], [c2],",
-    "…— y cada una trae su fecha, las señales que detectó el motor y, cuando la había,",
-    "la entrega que la provocó.",
+    "Below are verbatim quotes from one person reacting to deliveries from their coding",
+    "agents, all from the same project. They are labelled [c1], [c2], and so on. Each",
+    "includes its date, signals detected by the engine and, when available, the assistant",
+    "delivery that prompted the reaction. Assistant context is not the person's evidence.",
     "",
-    `Saca de dos a ${MAX_STATEMENTS} observaciones sobre cómo le gusta a ESTA persona que`,
-    "quede su trabajo, escritas HABLÁNDOLE A ELLA: «quieres X», «no soportas Y».",
+    `Extract two to ${MAX_STATEMENTS} observations about how THIS person wants their work`,
+    'to turn out, addressing them directly: "you want X", "you cannot stand Y".',
     "",
-    "Reglas. Las dos primeras son eliminatorias:",
-    `- Cada observación cita al menos ${MIN_CITATIONS} etiquetas de las de arriba, con su`,
-    "  nombre exacto. Lo que no puedas sostener con dos citas no lo escribas: aquí sobra",
-    "  una observación de menos y no sobra ninguna de más.",
-    "- Una observación que sería verdad de cualquier programador no vale para nada.",
-    "  «Prefiere el código limpio» no dice nada de nadie. Si al leerla no se distingue a",
-    "  esta persona de la de al lado, tírala.",
-    "- Una funcionalidad no es un gusto. «Quieres que la aplicación funcione como una",
-    "  bandeja de audio para escuchar publicaciones mientras trabajas» describe qué hace ESE",
-    "  producto, no cómo le gusta a esta persona que quede su trabajo. De una petición de",
-    "  funcionalidad sí puedes sacar el gusto que lleve dentro —«que se vea limpio», «que no",
-    "  cargue la pantalla»—; la funcionalidad en sí, no.",
-    "- Habla de sus preferencias, no de buenas prácticas: «quieres X», nunca «conviene X».",
-    "- Segunda persona siempre. Nada de «él», «ella» ni «esta persona» dentro de la",
-    "  observación: quien va a leer esto es ella misma, en su propio retrato, y además no",
-    "  sabes quién es. En tercera persona el modelo acaba eligiendo un género por su",
-    "  cuenta, y en la misma tanda salieron «He wants» y «She wants» de la misma persona.",
-    "- El material está escrito deprisa y sin acentos («no me gusto», «quitalo», «asi»).",
-    "  Eso es cómo escribe, no lo que prefiere: ninguna observación sobre su ortografía ni",
-    "  sobre su forma de pedir las cosas.",
-    `- Una sola frase por observación, de ${MAX_STATEMENT_CHARS} caracteres como mucho.`,
-    /*
-      The language is dictated by the quotes and not by the person asking. It is the §2s
-      arrangement lowered a floor: there a merge came out in English because the button was
-      pressed from a browser in English and replaced two phrases in Spanish. Here it is worse,
-      because the observation is the material from which everything else comes: a sweep done
-      without the header of language left 260 observations in English over a corpus written in
-      Spanish, and the entire portrait came out in a language that the person had not used even
-      once.
-     */
-    "- Escribe cada observación en el mismo idioma en el que está escrita la cita que la",
-    "  sostiene. No traduzcas: esas palabras las escribió ella.",
-    "- No repitas la cita dentro de la observación; para eso van las citas aparte.",
+    "Rules. The first two are disqualifying:",
+    `- Each observation cites at least ${MIN_CITATIONS} labels from the list using their`,
+    "  exact names. Do not write anything that cannot be supported by two quotes: omitting",
+    "  an observation is preferable to adding an unsupported one.",
+    "- An observation that would be true of any programmer is not useful.",
+    '  "Prefers clean code" distinguishes nobody. Discard observations that do not',
+    "  distinguish this person from someone else.",
+    '- A feature is not a preference. "You want the application to work as an audio',
+    '  tray for listening to posts while working" describes THAT product, not how this',
+    "  person wants their work to turn out. You may extract the preference within a",
+    '  feature request, such as "keep it visually clean" or "avoid a crowded screen",',
+    "  but not the feature itself.",
+    '- Describe preferences, not best practices: "you want X", never "X is advisable".',
+    '- Always use second person. Do not write "he", "she" or "this person" inside an',
+    "  observation: the reader is the person whose portrait this is. Their identity and",
+    "  gender are unknown; do not infer either from how they write.",
+    "- The source may contain hurried spelling, missing accents or typos. These describe",
+    "  how the person typed, not what they prefer. Make no observations about spelling",
+    "  or the manner in which they ask for things.",
+    `- One sentence per observation, at most ${MAX_STATEMENT_CHARS} characters.`,
+    // The language comes from the quotes, never from a policy or from the browser: see the header.
+    "- Write each observation in the language the quotes it cites are written in. If they mix",
+    "  languages, use the one most of them share. Do not translate or rewrite the source",
+    "  quotations; they remain the person's own words.",
+    "- Do not repeat a quote inside an observation; citations are provided separately.",
     /*
       And not the labels within the sentence, which is a measured failure: the model wrote «You
       want enforced backend truth: o2,o5,o6,o7» and that string ended up in the portrait. It is
       requested here and cleaned below, like everything this file asks of a model.
      */
-    "- No pongas las etiquetas dentro de la frase. Van solo en \"citations\".",
+    '- Do not put labels inside the sentence. They belong only in "citations".',
     "",
     /*
       Repeating oneself here is no longer a problem. Before, every sentence was a proposal that
@@ -432,10 +473,10 @@ export function buildPrompt(chunk: DistillChunk): BuiltPrompt {
       once; asking for it here, with sixty quotes from a single project in front of you, was
       asking it to deduce a portrait by looking through a crack.
      */
-    "Repetir una idea que ya salió en otra tanda no es un problema: esto es material, no",
-    "un resumen. Lo que se repite es justo lo que después se va a poder afirmar.",
+    "An idea appearing in another batch may appear again: this is evidence, not a summary.",
+    "Repeated evidence is what later makes a supported belief possible.",
     "",
-    "Y cada observación dice DE QUÉ VA, con una sola de estas materias:",
+    "Each observation states WHAT IT IS ABOUT using one of these topics:",
     ...TOPICS.map((one) => `- ${one.name}: ${one.hint}.`),
     "",
     /*
@@ -444,16 +485,15 @@ export function buildPrompt(chunk: DistillChunk): BuiltPrompt {
       `topicOf` in the engine, so asking for it here is for the filter below to have something to
       accept instead of sending everything to the drawer.
      */
-    "Si de verdad no encaja en ninguna, puedes escribir una materia nueva: una sola palabra",
-    "en minúsculas y en inglés. Hazlo solo cuando la observación quede claramente peor en",
-    "«other»; una materia nueva por observación no es una clasificación.",
+    "If none fits, you may introduce a new topic: one lowercase word in English. Do this",
+    'only when "other" would be clearly less useful; inventing a topic for each',
+    "observation is not classification.",
     "",
-    "Contesta con un array JSON y nada más: sin vallas de código, sin explicación delante",
-    "ni detrás.",
+    "Return only a JSON array: no code fences and no explanation before or after it.",
     `[{"topic":"design","statement":"…","citations":["c3","c17"]}]`,
     "",
-    "Si el material no da para ninguna observación, contesta []. Es una respuesta correcta",
-    "y es mejor que una frase que no puedas sostener.",
+    "If the material supports no observation, return []. That is a valid response and",
+    "preferable to an unsupported statement.",
     "",
     quotes,
   ].join("\n");
@@ -462,10 +502,10 @@ export function buildPrompt(chunk: DistillChunk): BuiltPrompt {
 }
 
 const SYSTEM = [
-  "Eres un lector de las palabras de una sola persona. No eres un consultor de diseño ni un",
-  "manual de estilo: tu único material son frases que esa persona escribió a sus agentes de",
-  "programación mientras trabajaba, y tu único trabajo es decir qué se repite en ellas. Llano,",
-  "concreto y sin adornos, y en el idioma en el que ella escribe.",
+  "Read the words of one person. Your material consists only of statements they wrote to",
+  "their coding agents while working. Identify repeated preferences; do not supply design",
+  "advice or a style guide. Write each observation in plain, concrete words, in the language",
+  "of the quotes it rests on, without translating or rewriting the source quotations.",
 ].join(" ");
 
 /**
@@ -518,8 +558,8 @@ export function stripLabels(statement: string, prefix: string): string {
 function entryLines({ label, verdict }: LabelledQuote): string {
   const signals = verdict.signals.length > 0 ? ` · ${verdict.signals.join(", ")}` : "";
   const head = `[${label}] ${verdict.at.toISOString().slice(0, 10)}${signals}`;
-  const context = verdict.context ? `\n  le habían entregado: ${verdict.context}` : "";
-  return `${head}${context}\n  dijo: ${verdict.quote}`;
+  const context = verdict.context ? `\n  assistant delivery: ${verdict.context}` : "";
+  return `${head}${context}\n  owner said: ${verdict.quote}`;
 }
 
 /**

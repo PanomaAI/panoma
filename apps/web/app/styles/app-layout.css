@@ -10,129 +10,43 @@
   regardless of how long the input text is.
  */
 .nav-badge {
+  flex: none;
   margin-left: auto;
   min-width: 20px;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--color-idle) 18%, white);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--corner-pill);
+  background: color-mix(in srgb, var(--color-idle) 18%, var(--color-surface));
   color: var(--color-warn-ink);
   font-family: var(--font-mono);
-  font-size: 0.67rem;
-  font-weight: 600;
+  font-size: var(--type-2xs);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
   text-align: center;
 }
 
 .app-sidebar nav a.is-active .nav-badge {
-  background: color-mix(in srgb, var(--color-idle) 26%, white);
-}
-
-.catalog-summary {
-  /*
-    `auto` and not a fixed height: with a magic number here, adding an entry to the menu pushed
-    the summary off the screen. The gap is distributed by the flex, not me.
-   */
-  margin-top: auto;
-  padding: 18px 15px;
-  border: 1px solid var(--color-edge);
-  border-radius: 12px;
-  background: var(--color-surface);
-  box-shadow: var(--shadow-summary);
-}
-
-.catalog-summary__title {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--color-edge);
-}
-
-.catalog-summary__title > svg {
-  width: 20px;
-  height: 20px;
-  color: var(--color-accent);
-  stroke-width: 1.8;
-}
-
-.catalog-summary__title p,
-.catalog-summary__title span {
-  display: block;
-}
-
-.catalog-summary__title strong {
-  font-size: 0.84rem;
-}
-
-/* Only the folded form is taught; there it replaces the whole sentence. */
-.catalog-summary__count {
-  display: none;
-}
-
-.catalog-summary__title span {
-  margin-top: 2px;
-  color: var(--color-smoke);
-  font-size: 0.72rem;
-}
-
-.catalog-summary dl {
-  display: grid;
-  gap: 9px;
-  margin-top: 14px;
-}
-
-.catalog-summary dt {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--color-smoke);
-  font-size: 0.74rem;
-}
-
-.summary-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-}
-
-.summary-dot--live { background: var(--color-live); }
-/*
-  The same amber as the pause on the grid and on the health dial: the bar point and the token
-  state have to be recognizably the same state.
- */
-.summary-dot--paused { background: var(--color-idle); }
-.summary-dot--dormant { background: var(--color-dormant); }
-.summary-dot--muted { background: var(--color-nogit); }
-
-/*
-  The copies, behind a line.
-  They are not included in the total above —`notACopy` excludes them— so in the same column they
-  looked like part of the 32 when they are 44 separately. The rule says it without a word.
- */
-.catalog-summary__aside {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--color-edge);
+  background: color-mix(in srgb, var(--color-idle) 26%, var(--color-surface));
+  color: var(--color-warn-ink);
 }
 
 /*
-  The slogan and the language selector share a row: the bar is fixed, it does not scroll, and on a
-  laptop the footer already touches the bottom edge — there is no room for another line here.
+  The local promise and source remain outside the scrollable navigation.
  */
 .sidebar-foot {
   display: flex;
   flex: none;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin: 16px 4px 0;
+  gap: var(--space-4);
+  margin: var(--space-8) var(--space-2) 0;
 }
 
 .sidebar-update {
   display: grid;
-  gap: 3px;
+  gap: var(--space-2);
   color: var(--color-faint);
-  font-size: 0.67rem;
-  line-height: 1.45;
+  font-size: var(--type-2xs);
+  line-height: var(--lead-snug);
 }
 /*
   The link to the source has to look like a link: Tailwind’s reset makes it identical to the
@@ -150,43 +64,12 @@
   text-decoration-color: currentColor;
 }
 
-/*
-  The language selector, with the same anatomy as .view-switch but at foot scale: it is a
-  preference that is touched once, not an everyday tool.
- */
-.lang-toggle {
-  display: flex;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--color-edge);
-  border-radius: 7px;
-  background: var(--color-ground);
-}
-
-.lang-toggle button {
-  padding: 3px 8px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--color-faint);
-  font-size: 0.62rem;
-  font-weight: 700;
-  letter-spacing: 0.07em;
-  cursor: pointer;
-}
-
-.lang-toggle button.is-active {
-  background: var(--color-surface);
-  color: var(--color-smoke);
-  box-shadow: var(--shadow-toggle);
-}
-
 .app-main {
-  width: calc(100% - 228px);
+  width: calc(100% - var(--sidebar-width));
   max-width: 1600px;
   min-height: 100vh;
-  margin-left: 228px;
-  padding-top: 74px;
+  margin-left: var(--sidebar-width);
+  padding-top: var(--bar-height);
 }
 
 /*
@@ -202,8 +85,12 @@
  */
 @media (min-width: 761px) {
   html.sidebar-collapsed .app-sidebar {
-    width: 68px;
-    /* The sides narrow so that the link, which measures 46, is centered on the track. */
+    width: var(--sidebar-rail);
+    /*
+      The sides narrow so that the link, which measures 46, is centered on the track. That 11px is
+      the arithmetic of those two — (68 - 46) / 2 — and not a step of the spacing grid: rounding it
+      up to 12 would leave the link 44 wide and shrink a hit area the sheet chose at 46.
+     */
     padding-right: 11px;
     padding-left: 11px;
   }
@@ -247,6 +134,7 @@
     left: 50%;
     width: 28px;
     height: 28px;
+    /* Half the ring, negated: this margin is the box's own geometry, not a step of the grid. */
     margin: -14px 0 0 -14px;
   }
 
@@ -257,100 +145,19 @@
     right: 2px;
     min-width: 17px;
     margin-left: 0;
-    padding: 0 4px;
-    font-size: 0.6rem;
-    line-height: 1.6;
+    padding: 0 var(--space-2);
+    font-size: var(--type-3xs);
+    line-height: var(--lead-body);
   }
 
-  /*
-    The summary and the language also survive the folding, in their short version.
-    They would disappear because they didn’t fit, and not fitting was a problem of the long
-    format, not of the data: how many projects there are and how many are active is exactly what
-    is glanced at while working, and sending the menu to expand to see it turns it into something
-    that is checked on purpose instead of something that is known. In 46 pixels, the figure and
-    three rows of dot and number fit; what is left over are the words, and those are counted by
-    the `title` when hovering over it.
-   */
-  /*
-    It is tightened until the rail does not occupy a higher position than the extended bar. It
-    matters because the bar is fixed and does not scroll: on a laptop the foot already touches the
-    edge, and a rail taller than the original would have pushed the language off the screen in the
-    exact windows — which are the same ones where one folds the menu.
-   */
-  html.sidebar-collapsed .catalog-summary {
-    padding: 10px 4px;
-    border-radius: 10px;
-  }
-
-  html.sidebar-collapsed .catalog-summary__title {
-    flex-direction: column;
-    align-items: center;
-    gap: 0;
-    padding-bottom: 8px;
-  }
-
-  /*
-    The icon is the same as the one for 'Projects' in the menu, two fingers above: repeating it in
-    the lane adds nothing and takes up half the width.
-   */
-  html.sidebar-collapsed .catalog-summary__title > svg {
-    display: none;
-  }
-
-  html.sidebar-collapsed .catalog-summary__count {
-    display: block;
-    font-size: 1rem;
-    line-height: 1.1;
-  }
-
-  html.sidebar-collapsed .catalog-summary dl {
-    gap: 6px;
-    margin-top: 8px;
-  }
-
-  html.sidebar-collapsed .catalog-summary dt {
-    justify-content: center;
-    gap: 5px;
-    font-size: 0.72rem;
-  }
-
-  /*
-    The caption loses the motto —three lines of prose don't fit— and it keeps the language, which
-    is the only thing that is pressed. The two acronyms are stacked because in a row they measure
-    68 and the lane gives 46.
-   */
+  /* The installation panel in the top bar keeps the source accessible while the rail is folded. */
   html.sidebar-collapsed .sidebar-foot {
-    justify-content: center;
-    margin: 10px 0 0;
-  }
-
-  html.sidebar-collapsed .sidebar-update {
     display: none;
   }
 
-  html.sidebar-collapsed .lang-toggle {
-    flex-direction: column;
-  }
-
-  html.sidebar-collapsed .lang-toggle button {
-    padding: 2px 6px;
-  }
-
-  /* The words of the summary and of the long paragraph: out of sight, inside the tree. */
-  html.sidebar-collapsed .summary-label,
-  html.sidebar-collapsed .catalog-summary__title p {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-
-  html.sidebar-collapsed .app-main,
-  html.sidebar-collapsed .legacy-page {
-    width: calc(100% - 68px);
-    margin-left: 68px;
+  html.sidebar-collapsed .app-main {
+    width: calc(100% - var(--sidebar-rail));
+    margin-left: var(--sidebar-rail);
   }
 }
 
@@ -364,33 +171,155 @@ html.sidebar-ready .app-sidebar {
     padding var(--duration-slow) var(--ease-drawer);
 }
 
-html.sidebar-ready .app-main,
-html.sidebar-ready .legacy-page {
+html.sidebar-ready .app-main {
   transition:
     margin-left var(--duration-slow) var(--ease-drawer),
     width var(--duration-slow) var(--ease-drawer);
 }
 
-.content-page {
-  width: min(100% - 48px, 1080px);
+/*
+  ── The page shell ────────────────────────────────────────────────────────────
+  One shell where there were four, and the component that writes it is
+  `components/page-shell.tsx`.
+
+  The four answered the same question with different numbers: `.legacy-page` below subtracted the
+  sidebar by hand and padded 122/32/96, `.content-page` centred 1080 inside a 48px gutter, the
+  catalog centred 1240 inside 64 and the project sheet centred 1184 inside 64. Three measures,
+  three gutters, three top gaps and two feet. Here **only the measure varies**, and it varies by
+  name rather than by whoever was looking at the screen that afternoon.
+
+  The gutter, the top gap and the foot are the catalog's own 64 / 28 / 88. The catalog is the
+  screen the product is for, so it is the one the other shells come to and not the other way
+  round; that is also why the title in `.page-shell__head` is the catalog's fluid `--type-title`
+  and no longer the fixed 36px the eighteen secondary screens shouted with. See `docs/theme.md`,
+  D2 — it is the owner's decision.
+
+  The 122px of the old shell was 74 of top bar plus 48 of its own. Only the second half lives
+  here, as the 28 below: the bar is still `.app-main`'s `padding-top`, which this shell inherits
+  by being an `.app-main` too instead of replacing its padding wholesale.
+
+  `.legacy-page` is gone. It stayed alive underneath while the pages moved one at a time, and the
+  orphan-class guard in `styles.test.ts` is what said the last one had: a hook with nothing on the
+  other end. Four of its rules went with it, including the one that cancelled `pt-12` for fifteen
+  pages and not the `py-12` of three.
+ */
+.page-shell__inner {
   margin: 0 auto;
-  padding: 48px 0 96px;
+  padding: var(--space-14) 0 var(--page-foot);
 }
 
-.legacy-page {
-  width: calc(100% - 228px);
-  max-width: none;
-  padding: 122px 32px 96px;
+/* Prose, forms, settings. The same 1080 `.content-page` and the legacy children already measured. */
+.page-shell--text .page-shell__inner {
+  width: min(100% - 64px, 1080px);
 }
 
-.legacy-page > * {
-  width: min(100%, 1080px);
-  margin-right: auto;
-  margin-left: auto;
+/* The project sheet. */
+.page-shell--sheet .page-shell__inner {
+  width: min(100% - 64px, 1184px);
 }
 
-.legacy-page > .pt-12,
-.legacy-page > header.pt-12 {
-  padding-top: 0;
+/* The catalog, and anything else that lays out a grid of cards. */
+.page-shell--wide .page-shell__inner {
+  width: min(100% - 64px, 1240px);
 }
 
+/*
+  The header the eighteen pages used to repeat, letter for letter, in their own markup.
+  Fifteen of them opened with `pt-12` and three with `py-12`, and the rule further down cancels
+  only the first spelling — so those three sat 48px below their fifteen siblings for as long as
+  they have existed, because the two class names read alike. There is nothing left to spell twice.
+ */
+.page-shell__title {
+  margin-top: var(--space-4);
+  font-family: var(--font-display);
+  font-size: var(--type-title);
+  font-weight: var(--weight-title);
+  letter-spacing: var(--track-title);
+  line-height: var(--lead-tight);
+}
+
+.page-shell__lead {
+  /*
+    42rem is `max-w-2xl`, which is what all fifteen of those headers already capped their lead at.
+    It is a measure of the line and not a step of the spacing grid, and it is in `rem` so that it
+    grows with the reader's own font size.
+   */
+  max-width: 42rem;
+  margin-top: var(--space-6);
+  color: var(--color-smoke);
+  font-size: var(--type-sm);
+  line-height: var(--lead-body);
+}
+
+/* The line of figures under the lead: monospaced, faint, and only on the pages that count things. */
+.page-shell__note {
+  margin-top: var(--space-8);
+  color: var(--color-faint);
+  font-family: var(--font-mono);
+  font-size: var(--type-xs);
+}
+
+/*
+  A block under the header. The pages wrote this gap by hand as `mt-8`, `mt-10` and `mt-12`:
+  three values for one idea, none of them decided.
+ */
+.page-shell__section {
+  margin-top: var(--space-16);
+}
+
+.page-shell__section-title {
+  margin-bottom: var(--space-6);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--color-edge);
+}
+
+/*
+  Below the fold-line the bar is a dock at the foot, `.app-main` has already dropped its margin,
+  and a 64px gutter would eat a sixth of a phone. 28 and 26 are what `.catalog-screen__inner`
+  narrows to at this same cut, and they are the same two numbers here because it is the same
+  shell.
+  Two things about this block are deliberate. It is written with `.page-shell` in front so that it
+  weighs the same as the three measure rules above — with the bare class it would lose to every
+  one of them and narrow nothing. And it lives in this file rather than in `responsive.css`
+  because the rule it narrows is thirty lines above it; nothing in that sheet names `.page-shell`,
+  so the order between the two decides nothing here.
+ */
+@media (max-width: 760px) {
+  .page-shell .page-shell__inner {
+    width: calc(100% - 28px);
+    padding-top: 26px;
+    /*
+      And the foot is 28 and not 88, because below this cut `.app-main` is already padding 66px to
+      clear the dock. `.legacy-page` used to override that padding wholesale with a shorthand and
+      landed on 94px of total foot; the shell inherits it instead, so the 88 above would stack on
+      top of the 66 and give 154 — a phone screen ending in a hand's width of nothing. 28 + 66 is
+      the 94 that was there before, arrived at from two rules rather than one.
+     */
+    padding-bottom: var(--space-14);
+  }
+}
+
+
+/* Optional apps share the catalog's quiet controls, including a visible keyboard focus. */
+.apps-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: var(--space-4) var(--space-7);
+  border: 1px solid var(--color-edge-bright);
+  border-radius: var(--corner);
+  background: var(--color-surface);
+  color: var(--color-chalk);
+  font-size: var(--type-xs);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+}
+.apps-button:hover { background: var(--color-raised); }
+.apps-button:disabled { opacity: 0.5; cursor: default; }
+.apps-button-primary { background: var(--color-accent); color: var(--color-surface); }
+.apps-button-primary:hover { background: var(--color-chalk); }
+.apps-button:focus-visible, .mobile-more:focus-visible, .mobile-sections a:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}

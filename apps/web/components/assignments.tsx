@@ -7,7 +7,7 @@ import { RunButton } from "./run-button";
 import { useT } from "./i18n-provider";
 import { useCopied } from "./use-copied";
 import { useLocalAgent, type LocalAgent } from "./use-local-agent";
-import { ActionButton } from "./primitives";
+import { ActionButton, Card } from "./primitives";
 
 /**
  * The tasks section: what the card offers to do, not just to read.
@@ -228,7 +228,9 @@ export function Assignments({
   }
 
   return (
-    <div className="rounded-lg border border-edge bg-surface px-4 py-1">
+    /* `pad="none"`: the rows carry their own vertical rhythm and their own separator, so the panel
+       pads sideways only. See `Row` below. */
+    <Card pad="none" className="px-4 py-1">
       {assignments.map((assignment) => (
         <RedactedRow
           key={assignment.kind}
@@ -270,7 +272,7 @@ export function Assignments({
           }
         />
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -320,25 +322,37 @@ function RedactedRow({
              installed on this machine.
             */}
           {agent.available && (
-            <button
+            /* The black of the product is `accent` (#0b0b0d), the same as the «open in editor»
+               button: in a row with three ways, the immediate one is the one that is seen.
+               `size="sm"` is the 11px step this button was already written at by hand — it was one
+               of the twelve near-clones that differed from a tone by size alone. */
+            <ActionButton
+              tone="accent"
+              size="sm"
               type="button"
               onClick={onLaunch}
+              busy={launching}
+              busyLabel={t("assignment.launching")}
               disabled={ocupado}
               title={t("assignment.launchTitle", { agent: agent.agent ?? "" })}
-              // The black of the product is `accent` (#0b0b0d), the same as the «open in editor»
-              // button: in a row with three ways, the immediate one is the one that is seen.
-              className="rounded border border-accent bg-accent px-3 py-1.5 font-mono text-[11px] text-white transition-opacity hover:opacity-85 disabled:opacity-50"
             >
-              {t(launching ? "assignment.launching" : "assignment.launch")}
-            </button>
+              {t("assignment.launch")}
+            </ActionButton>
           )}
           {enCola ? (
-            <span className="inline-flex items-center gap-1 rounded border border-edge bg-raised px-3 py-1.5 font-mono text-[11px] text-faint">
+            /*
+               A sign and not a control: there is nothing to press once it is in the queue. It keeps
+               the BUTTON's box —`min-h-[26px] px-2.5 py-1`, the `sm` step— and not the pill's,
+               because what it lines up with is the button it replaces, and a pill here would leave
+               a hole in the row. It is the one place in this file that writes the geometry out.
+              */
+            <span className="inline-flex min-h-[26px] items-center gap-1 rounded border border-edge bg-raised px-2.5 py-1 font-mono text-[11px] text-faint">
               <HiOutlineCheck aria-hidden /> {t("assignment.queued")}
             </span>
           ) : (
             <ActionButton
               tone="raised"
+              size="sm"
               type="button"
               onClick={onAssign}
               busy={assigning}

@@ -4,7 +4,14 @@ import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Database } from "./client";
 import * as t from "./schema";
-import { modelSpendByKind, modelSpendToday, saveModelCall, startOfDay } from "./queries";
+import {
+  listModelCalls,
+  modelSpendByKind,
+  modelSpendByModel,
+  modelSpendToday,
+  saveModelCall,
+  startOfDay,
+} from "./queries";
 
 /**
  * The book of spending: what has been called today, and what 'today' is.
@@ -52,12 +59,17 @@ beforeEach(async () => {
 });
 
 /** A call with a hand-written date: `saveModelCall` always writes 'now'. */
-async function callAt(kind: string, at: Date, usage?: { input: number; output: number }) {
+async function callAt(
+  kind: string,
+  at: Date,
+  usage?: { input: number; output: number },
+  through: { provider: string; model: string } = { provider: "openai", model: "gpt-de-prueba" },
+) {
   await db.insert(t.modelCalls).values({
     id: `${kind}-${at.getTime()}-${Math.round(at.getTime() % 1000)}-${kind.length}`,
     kind,
-    provider: "openai",
-    model: "gpt-de-prueba",
+    provider: through.provider,
+    model: through.model,
     inputTokens: usage?.input ?? null,
     outputTokens: usage?.output ?? null,
     images: 0,
@@ -185,6 +197,107 @@ describe("el gasto por clases", () => {
     expect(spend).toEqual([
       { kind: "consolidate", calls: 1, input: 7, output: 3, unmetered: 0, images: 0 },
     ]);
+  });
+
+  /*
+    The upper bound, which the spend screen needs for a closed window —'yesterday'— and the brakes
+    never pass. Exclusive on purpose: the row written exactly at the next midnight belongs to the
+    next day, or two adjacent windows would count it twice.
+   */
+  it("an until bound leaves out what happened at or after it", async () => {
+    const since = new Date(2026, 7, 21, 0, 0, 0);
+    const until = new Date(2026, 7, 22, 0, 0, 0);
+    await callAt("look", new Date(2026, 7, 21, 9, 0, 0), { input: 100, output: 10 });
+    await callAt("look", new Date(2026, 7, 22, 0, 0, 0), { input: 200, output: 20 });
+    await callAt("look", new Date(2026, 7, 22, 8, 0, 0), { input: 300, output: 30 });
+
+    const spend = await modelSpendByKind(db, since, until);
+    expect(spend).toEqual([{ kind: "look", calls: 1, input: 100, output: 10, unmetered: 0, images: 0 }]);
+    expect((await modelSpendByKind(db, since)).map((one) => one.calls), "without it, open-ended").toEqual([3]);
+  });
+});
+
+/**
+ * The receipt by provider and model, which is where a price can be attached: a rate is per pair,
+ * not per organ, and a look through two providers costs two different amounts of money.
+ */
+describe("the spend by provider and model", () => {
+  it("groups by the pair and orders by provider, then model", async () => {
+    const since = new Date(2026, 7, 21, 0, 0, 0);
+    await callAt("look", new Date(2026, 7, 21, 9, 0, 0), { input: 100, output: 10 }, { provider: "openai", model: "gpt-b" });
+    await callAt("distill", new Date(2026, 7, 21, 9, 1, 0), { input: 500, output: 50 }, { provider: "anthropic", model: "claude-z" });
+    await callAt("look", new Date(2026, 7, 21, 9, 2, 0), { input: 200, output: 20 }, { provider: "openai", model: "gpt-a" });
+    await callAt("classify", new Date(2026, 7, 21, 9, 3, 0), { input: 300, output: 30 }, { provider: "openai", model: "gpt-b" });
+
+    const spend = await modelSpendByModel(db, since);
+    expect(spend.map((one) => `${one.provider}/${one.model}`)).toEqual([
+      "anthropic/claude-z",
+      "openai/gpt-a",
+      "openai/gpt-b",
+    ]);
+    expect(spend[2], "two kinds through the same pair are one line").toMatchObject({
+      calls: 2,
+      input: 400,
+      output: 40,
+    });
+  });
+
+  it("keeps the unmetered calls apart from the token sum", async () => {
+    const since = new Date(2026, 7, 21, 0, 0, 0);
+    await callAt("ask", new Date(2026, 7, 21, 9, 0, 0), { input: 100, output: 10 }, { provider: "claude-cli", model: "session" });
+    await callAt("ask", new Date(2026, 7, 21, 9, 5, 0), undefined, { provider: "claude-cli", model: "session" });
+
+    const [row] = await modelSpendByModel(db, since);
+    expect(row).toEqual({
+      provider: "claude-cli",
+      model: "session",
+      calls: 2,
+      input: 100,
+      output: 10,
+      unmetered: 1,
+      images: 0,
+    });
+  });
+
+  it("honours the until bound like the receipt by kind", async () => {
+    await callAt("look", new Date(2026, 7, 21, 9, 0, 0), { input: 100, output: 10 });
+    await callAt("look", new Date(2026, 7, 22, 9, 0, 0), { input: 200, output: 20 });
+
+    const spend = await modelSpendByModel(db, new Date(2026, 7, 21), new Date(2026, 7, 22));
+    expect(spend.map((one) => one.input)).toEqual([100]);
+  });
+});
+
+/**
+ * The raw lines, for whoever groups them by local day in JavaScript. The database runs in UTC and
+ * cannot cut a day where this machine does; see the header of `startOfDay`.
+ */
+describe("the lines of the ledger", () => {
+  it("returns them oldest first, with unknown usage as null and never as zero", async () => {
+    const since = new Date(2026, 7, 21, 0, 0, 0);
+    await callAt("look", new Date(2026, 7, 21, 11, 0, 0), { input: 100, output: 10 });
+    await callAt("ask", new Date(2026, 7, 21, 9, 0, 0));
+    await callAt("distill", new Date(2026, 7, 20, 23, 0, 0), { input: 900, output: 90 });
+
+    const rows = await listModelCalls(db, { since });
+    expect(rows.map((one) => one.kind), "before the cutoff stays out; the rest, in order").toEqual(["ask", "look"]);
+    expect(rows[0]).toMatchObject({ kind: "ask", input: null, output: null, images: 0, identity: null });
+    expect(rows[0]!.createdAt.getTime()).toBe(new Date(2026, 7, 21, 9, 0, 0).getTime());
+    expect(rows[1]).toMatchObject({ provider: "openai", model: "gpt-de-prueba", input: 100, output: 10 });
+  });
+
+  it("stops at the until bound and at the limit", async () => {
+    const since = new Date(2026, 7, 21, 0, 0, 0);
+    for (const hour of [9, 10, 11, 12]) {
+      await callAt("look", new Date(2026, 7, 21, hour, 0, 0), { input: hour, output: 1 });
+    }
+    await callAt("look", new Date(2026, 7, 22, 9, 0, 0), { input: 500, output: 1 });
+
+    const window = await listModelCalls(db, { since, until: new Date(2026, 7, 22, 0, 0, 0) });
+    expect(window.map((one) => one.input)).toEqual([9, 10, 11, 12]);
+
+    const capped = await listModelCalls(db, { since, limit: 2 });
+    expect(capped.map((one) => one.input), "the oldest survive a cap, so a chart truncates at its end").toEqual([9, 10]);
   });
 });
 

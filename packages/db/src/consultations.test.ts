@@ -7,10 +7,12 @@ import type { Database } from "./client";
 import {
   CONSULT_MAX,
   CONSULT_PENDING_MAX,
+  STALE_MAX_DAYS,
   doubleReport,
   draftConsultation,
   labelConsultation,
   listProjectConsultations,
+  pendingConsultations,
   recordConsultation,
   staleDrafting,
 } from "./consultations";
@@ -128,6 +130,33 @@ describe("la cola no se atasca sola", () => {
                                   // not just the age
 
     expect((await staleDrafting(db, PROJECT)).map((row) => row.id)).toEqual([vieja, media]);
+  });
+
+  it("staleDrafting stops at the exam's window: a draft older than it is paid for and never counted", async () => {
+    const inside = await asked("still inside the window");
+    const beyond = await asked("a season old");
+    const backdate = async (id: string, days: number) =>
+      db.update(t.consultations).set({ createdAt: new Date(Date.now() - days * 86_400_000) }).where(eq(t.consultations.id, id));
+    await backdate(inside, STALE_MAX_DAYS - 1);
+    await backdate(beyond, STALE_MAX_DAYS + 1);
+
+    expect((await staleDrafting(db, PROJECT)).map((row) => row.id)).toEqual([inside]);
+    // The row beyond the window is left as it is: still `drafting`, still in the record.
+    expect((await listProjectConsultations(db, PROJECT)).find((row) => row.id === beyond)?.status).toBe("drafting");
+  });
+
+  it("pendingConsultations counts what the person can empty, and it is the number the queue stops at", async () => {
+    expect(await pendingConsultations(db, PROJECT)).toBe(0);
+    const fresh = await asked("fresh, its writer on the way");
+    await draftConsultation(db, await asked("drafted, unlabelled"), { answer: "x", beliefIds: ["b-1"] });
+    await draftConsultation(db, await asked("abstained: data, not queue"), { abstained: true });
+    const labelled = await asked("labelled already");
+    await draftConsultation(db, labelled, { answer: "x", beliefIds: ["b-1"] });
+    await labelConsultation(db, labelled, "backed");
+    expect(await pendingConsultations(db, PROJECT)).toBe(2);
+    // A stranded draft stops counting after a day.
+    await db.update(t.consultations).set({ createdAt: new Date(Date.now() - 25 * 3_600_000) }).where(eq(t.consultations.id, fresh));
+    expect(await pendingConsultations(db, PROJECT)).toBe(1);
   });
 });
 

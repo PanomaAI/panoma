@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { OPEN_STATUSES } from "@/lib/tasks";
 import { TaskStatus } from "./activity";
 import { useLocale, useT } from "./i18n-provider";
-import { ActionButton, ActionError } from "./primitives";
+import { ActionButton, ActionError, Field } from "./primitives";
 
 /**
  * Write a message for your agent and see it waiting.
@@ -113,13 +113,20 @@ export function CaptureTask({ slug, tasks }: { slug: string; tasks: CapturedTask
       </div>
 
       <form onSubmit={capture} className="flex flex-wrap items-center gap-2">
-        <input
+        {/*
+           `hideLabel` and not a bare `aria-label`: the word is the same one, it stays in the
+           accessibility tree, and it now arrives attached to the box instead of being an attribute
+           somebody can drop. The design has no room for a visible label on this one line.
+          */}
+        <Field
+          label={t("task.fieldLabel")}
+          hideLabel
+          size="sm"
+          className="min-w-0 flex-1"
           value={title}
           onChange={(event) => setTitle(event.target.value)}
           maxLength={MAX_TITLE}
           placeholder={t("task.placeholder")}
-          aria-label={t("task.fieldLabel")}
-          className="min-w-0 flex-1 rounded border border-edge bg-raised px-2.5 py-1.5 text-xs text-chalk placeholder:text-faint focus:border-accent focus:outline-none"
         />
         <ActionButton
           tone="raised"

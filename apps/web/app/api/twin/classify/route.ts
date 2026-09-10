@@ -1,4 +1,4 @@
-import { complete, resolveCredential } from "@panoma/ai";
+import { complete, resolveCredential, type CompleteResult } from "@panoma/ai";
 import { estimateTokens } from "@panoma/core";
 import {
   listBeliefs,
@@ -11,7 +11,8 @@ import {
 import { db } from "@/lib/db";
 import { sameOrigin } from "@/lib/guard";
 import { buildClassifyPrompt, parseTopics, planBatches } from "@/lib/classify";
-import { READING_KINDS, readBudgetFrom } from "@/lib/reads";
+import { READING_KINDS } from "@/lib/reads";
+import { capFor } from "@/lib/spend-settings";
 import { modelErrorParts } from "@/lib/model-errors";
 import { localeFrom, t, type Locale } from "@/lib/i18n";
 
@@ -91,8 +92,11 @@ export async function POST(request: Request) {
   const batches = planBatches(pending);
   const prompts = batches.map((batch) => buildClassifyPrompt(batch));
 
-  /* The day's brake, shared with distilling and synthesizing. See `lib/reads.ts`. */
-  const cap = readBudgetFrom(process.env["PANOMA_READ_BUDGET"]);
+  /*
+    The day's brake, shared with distilling and synthesizing. See `lib/reads.ts`; the number
+    itself comes from `spend-settings.ts`, which is what the Spend screen moves.
+   */
+  const { cap } = await capFor("read");
   const spent = await modelSpendToday(database, READING_KINDS);
   if (spent.calls >= cap) {
     return Response.json(
@@ -117,7 +121,8 @@ export async function POST(request: Request) {
         0,
       ),
       provider: credential.provider.id,
-      model: credential.model || "sesión",
+      // The same fallback `complete()` writes to the ledger for a session agent: one name, not two.
+      model: credential.model || "session",
     });
   }
 
@@ -125,10 +130,26 @@ export async function POST(request: Request) {
   let minted = 0;
   let dropped = 0;
   let unreadable = 0;
+  let truncated = 0;
   let failure: unknown;
 
   /* It goes up batch by batch, for the same reason as in distillation: one run can be up to twelve. */
   let calls = spent.calls;
+
+  /*
+    It is noted when the response comes back, just like in distillation: a batch that is lost in
+    a network error has not been read by anyone, and saying yes would turn the receipt into
+    advertising. Per answer, because the retry below is a second call with its own row.
+   */
+  const paid = async (answer: CompleteResult) => {
+    calls += 1;
+    await saveModelCall(database, {
+      kind: KIND,
+      provider: answer.provider,
+      model: answer.model,
+      ...(answer.usage ? { input: answer.usage.input, output: answer.usage.output } : {}),
+    });
+  };
 
   for (const built of prompts) {
     if (calls >= cap) break;
@@ -144,19 +165,27 @@ export async function POST(request: Request) {
       failure = error;
       break;
     }
-    calls += 1;
+    await paid(answer);
 
     /*
-      It is noted when the response comes back, just like in distillation: a batch that is lost in
-      a network error has not been read by anyone, and saying yes would turn the receipt into
-      advertising.
+      A cut answer is asked again, once, with twice the room, while the batch is in hand. The
+      reason is next to the same loop in the distillation route: the next pass would send the
+      same input at the same cap and get cut at the same place. Not at the brake, and not twice.
      */
-    await saveModelCall(database, {
-      kind: KIND,
-      provider: answer.provider,
-      model: answer.model,
-      ...(answer.usage ? { input: answer.usage.input, output: answer.usage.output } : {}),
-    });
+    if (answer.stopReason === "length" && calls < cap) {
+      truncated += 1;
+      try {
+        answer = await complete({
+          system: built.system,
+          prompt: built.prompt,
+          maxTokens: MAX_ANSWER_TOKENS * 2,
+        });
+      } catch (error) {
+        failure = error;
+        break;
+      }
+      await paid(answer);
+    }
 
     const read = parseTopics(answer.text, built.labels);
     if (read.unreadable) unreadable += 1;
@@ -181,6 +210,8 @@ export async function POST(request: Request) {
     minted,
     dropped,
     ...(unreadable > 0 ? { unreadable } : {}),
+    /* Answers cut by the output limit and asked again with double room. See the loop. */
+    ...(truncated > 0 ? { truncated } : {}),
     left: (await listObservations(database, { classified: false })).length,
   };
 

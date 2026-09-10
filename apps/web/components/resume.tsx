@@ -5,6 +5,7 @@ import type { RunCommand, Runbook } from "@panoma/core";
 import { CopyCommand } from "./copy-button";
 import { inFolder, type Shell } from "./command";
 import { useLocale, useT } from "./i18n-provider";
+import { Card, Tag } from "./primitives";
 import type { MessageKey } from "@/lib/i18n";
 
 /**
@@ -230,11 +231,8 @@ export function Resume({
           </p>
           <ul className="flex flex-wrap gap-1.5">
             {runbook.missingEnv.map((key) => (
-              <li
-                key={key}
-                className="rounded border border-edge bg-raised px-1.5 py-0.5 font-mono text-[10px] text-smoke"
-              >
-                {key}
+              <li key={key}>
+                <Tag>{key}</Tag>
               </li>
             ))}
           </ul>
@@ -246,9 +244,9 @@ export function Resume({
 
 function Block({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-lg border border-edge bg-surface p-4">
+    <Card as="section">
       <h3 className="eyebrow mb-2.5">{title}</h3>
       {children}
-    </section>
+    </Card>
   );
 }

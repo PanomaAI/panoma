@@ -4,14 +4,17 @@ import {
   NOTE_MAX,
   NOTE_PENDING_MAX,
   listProjectNotes,
-  listSessionActivities,
+  sessionMemoryWindow,
   modelSpendToday,
   noteUsage,
   proposeNote,
+  queueWrite,
   saveModelCall,
   validTrigger,
+  withMemoryJobLease,
   type Database,
 } from "@panoma/db";
+import { capFor } from "@/lib/spend-settings";
 
 /*
   The distiller: the memory that writes itself, with the gate intact.
@@ -41,88 +44,182 @@ import {
  */
 export const DISTILL_KIND = "memory";
 
-/** Distillations per day, unless `PANOMA_DISTILL_BUDGET` says otherwise. */
-const DISTILLS_PER_DAY = 12;
-
 /** With just one activity there is no story to reread: it would be paying to paraphrase. */
 const MIN_ACTIVITIES = 2;
 
 /** Candidates per session, at most. A session that 'discovers' six things is summarizing. */
 const MAX_CANDIDATES = 3;
 
+/*
+  Room for the answer, and the one retry that buys more of it.
+  Five hundred tokens hold three facts with their paths and little else, which is the point: a
+  model that needs more room is summarizing. But a cut answer is a different failure from a bad
+  one —`stopReason: "length"` says which— and until 6-Sep-2026 both went to the same place: the
+  job failed, the counter went up by one, and the worker claimed it again with the same prompt
+  and the same ceiling, so the third payment bought the same truncated answer as the first. Now a
+  cut answer is asked for again once, immediately and with double the room, and what is still
+  unreadable after that is final. See `runDistillation`.
+ */
 const MAX_ANSWER_TOKENS = 500;
 
-/** The same contract as `budgetFrom` of the critic: empty or invalid → the factory one. */
-export function distillBudgetFrom(value: string | undefined): number {
-  if (value === undefined || value.trim() === "") return DISTILLS_PER_DAY;
-  const limit = Number(value.trim());
-  if (!Number.isInteger(limit) || limit < 0) return DISTILLS_PER_DAY;
-  return limit;
+/*
+  The source envelope: how much of the session's journal travels in the single paid call.
+  Raised from 24,000 characters on 6-Sep-2026, together with the window that feeds it
+  (`MEMORY_SESSION_WINDOW`, from 50 records to 100), so that a long session arrives whole
+  instead of arriving with its beginning cut off — and the beginning is where the goal of the
+  session usually is.
+  ── Why one bigger call and not several ────────────────────────────────────────────────
+  The alternative was a coverage cursor: keep the small envelope and walk the session in
+  several calls. The arithmetic refuses it. Every extra call repeats the whole system prompt
+  and the 4,000-character block of existing memory, so six calls over a session of 300
+  records pay that fixed overhead six times over, and they spend six of the twelve
+  distillations the day allows — half of the budget on a single session. One call of 36,000
+  characters sends about half again as much input as today and still costs one slot.
+  ── What this does not fix ─────────────────────────────────────────────────────────────
+  A session whose records do not fit in this envelope still loses the oldest of them. That
+  loss is counted rather than hidden: `coverage.omitted` travels in the receipt the worker
+  stores, and it is where the owner sees that a reading was partial.
+ */
+const JOURNAL_LIMIT = 36_000;
+
+/** How much of the existing memory travels with the journal. See `byOwnerDecision`. */
+const MEMORY_LIMIT = 4000;
+
+export interface DistillCoverage {
+  total: number;
+  selected: number;
+  omitted: number;
+  clipped: number;
 }
 
 /**
- * How it ended, for whoever wants to look at it. The route that fires it does not look at it: it
- * is background.
+ * The durable worker saves this receipt for the project screen. Source text and model output are
+ * never part of that status record: codes and counts only. `calls` is how many paid calls the
+ * session cost —one, or two when the first answer came back cut— so the owner can see that a
+ * session was charged twice without opening the ledger.
  */
 export type DistillReceipt =
-  | { did: "thin" | "queueFull" | "budget" | "unreadable" }
-  | { did: "distilled"; proposed: number; dropped: number };
+  | { did: "thin" | "queueFull" | "budget"; coverage?: DistillCoverage }
+  | { did: "unreadable"; coverage: DistillCoverage; calls: number }
+  | { did: "distilled"; proposed: number; dropped: number; coverage: DistillCoverage; calls: number }
+  /** Paid and understood, and then the publication failed. Travels inside `DistillPublishError`. */
+  | { did: "unpublished"; candidates: number; coverage: DistillCoverage; calls: number };
+
+/**
+ * The paid call succeeded and the publish step did not.
+ *
+ * The worker needs to tell this apart from a provider that threw before any answer: that one is
+ * transient and earns its three attempts with backoff, while this one has already paid for a
+ * readable answer and only lost the last step —a lease that stopped being current, a write that
+ * failed—. The candidates cannot travel in the receipt (they are model output, and the receipt
+ * holds none), so what the worker does with this is spend the attempts down to one more claim: a
+ * second payment at most, never a third.
+ */
+export class DistillPublishError extends Error {
+  constructor(readonly receipt: DistillReceipt & { did: "unpublished" }, readonly origin: unknown) {
+    super("Memory work was paid for and could not be published.");
+    this.name = "DistillPublishError";
+  }
+}
+
+/** Approved and challenged (the owner decided, or is deciding) before proposed, before discarded. */
+const MEMORY_RANK: Record<string, number> = { approved: 0, challenged: 0, proposed: 1, discarded: 2 };
+
+/**
+ * The order the existing memory travels in. Stable, so that within a rank the notes keep the order
+ * `listProjectNotes` gave them —newest first— and a note keeps its neighbours from one run to the
+ * next. Exported to be able to test the cut without paying for a call.
+ */
+export function byOwnerDecision<T extends { status: string }>(notes: readonly T[]): T[] {
+  return [...notes].sort((a, b) => (MEMORY_RANK[a.status] ?? 3) - (MEMORY_RANK[b.status] ?? 3));
+}
 
 /**
  * The order. Exported to be able to test it without paying for a call.
  *
- * In Spanish like the Twin prompts, with the output language set separately: the notes must come
- * out in the language of the material, because they will be read by whoever wrote that material.
- * Everything foreign travels wrapped — the log was written by an agent who read third-party text,
- * and the existing notes as well.
+ * The technical prompt is English; proposed notes retain the source material's language.
+ * Whole recent records fit before wrapping, so a context cap never silently removes the final
+ * resolution of a session. Older omitted records and individually clipped legacy data are counted.
  */
 export function buildDistillPrompt(input: {
   activities: { kind: string; summary: string; details: string | null; filesTouched: string[] }[];
   existing: { body: string; status: string }[];
-}): { system: string; prompt: string } {
+  total?: number;
+}): { system: string; prompt: string; coverage: DistillCoverage } {
   const system = [
-    "Eres el destilador de memoria de panoma, un catálogo local de proyectos de código.",
-    "Te llega la bitácora de UNA sesión de trabajo de un agente sobre un proyecto. Tu único",
-    "trabajo es decidir si esa sesión descubrió algún hecho DURABLE del proyecto: algo que",
-    "seguirá siendo verdad el mes que viene y que cualquier agente debería saber antes de",
-    "tocar nada. Ejemplos del tipo de hecho que buscas: «los tests exigen build antes en un",
-    "árbol frío», «el servidor del puerto 4173 es build de producción y no recoge código».",
-    "",
-    "Reglas:",
-    "- NO resumas la sesión. Lo que PASÓ ya está en la bitácora; tú buscas lo que SIGUE SIENDO VERDAD.",
-    `- Cada hecho: una o dos frases, ${NOTE_MAX - 100} caracteres como mucho, en el mismo idioma que el material.`,
-    "- Nada que ya esté en la memoria existente, ni nada equivalente a una nota descartada: un descarte es la persona diciendo que no.",
-    "- En la duda, fuera. Cero hechos es la respuesta correcta para la mayoría de las sesiones.",
-    "- Si un hecho es de un SITIO concreto —un directorio o fichero que la sesión tocó—, dilo",
-    '  con `where`: la ruta tal como aparece en la bitácora. Un hecho del proyecto entero va sin `where`.',
-    `- Contesta SOLO con un array JSON, ${MAX_CANDIDATES} elementos como mucho: cadenas, u objetos`,
-    '  `{"note": "...", "where": "ruta"}`. Sin nada, contesta [].',
+    "You propose durable project memory from the journal of one agent work session.",
+    "A useful fact should still matter next month, such as a required build before testing.",
+    "Do not summarize the session. The journal records what happened; memory records what remains true.",
+    `Each fact must be one or two sentences, at most ${NOTE_MAX - 100} characters, in the language of its source material.`,
+    "Do not repeat existing memory. Discarded notes are the owner's rejection; challenged notes await the owner's decision and must not be proposed again.",
+    "Records are chronological. Later corrections and final resolutions supersede earlier tentative claims.",
+    "The coverage statement identifies omitted or clipped source material. Do not fill gaps or treat an unresolved attempt as a durable fact.",
+    "When evidence is incomplete, conflicting or uncertain, leave it out. Most sessions should yield no facts.",
+    "If a fact concerns a file or directory touched in the session, include its literal journal path as where; omit where for project-wide facts.",
+    `Return ONLY a JSON array with at most ${MAX_CANDIDATES} items: strings or objects {"note":"...","where":"path"}. Return [] when none qualify.`,
   ].join("\n");
 
-  const journal = input.activities
-    .map((a) => {
-      const files = a.filesTouched.length > 0 ? `\n  ficheros: ${a.filesTouched.slice(0, 12).join(", ")}` : "";
-      return `- [${a.kind}] ${a.summary}${a.details ? `\n  ${a.details.slice(0, 400)}` : ""}${files}`;
-    })
-    .join("\n");
+  const selected: string[] = [];
+  let chars = 0;
+  let clipped = 0;
+  for (const activity of [...input.activities].reverse()) {
+    const files = activity.filesTouched.filter((path) => path.length <= 2048).slice(0, 12);
+    const omittedFiles = activity.filesTouched.length - files.length;
+    const detail = activity.details && activity.details.length > 8000
+      ? `[Earlier detail text omitted]\n${activity.details.slice(-8000)}` : activity.details;
+    const record = {
+      kind: activity.kind.slice(0, 80), summary: activity.summary.slice(-500), details: detail,
+      files, omittedFiles,
+    };
+    const line = JSON.stringify(record);
+    let fitted = line;
+    if (fitted.length > JOURNAL_LIMIT) {
+      record.files = [];
+      record.omittedFiles = activity.filesTouched.length;
+      fitted = JSON.stringify(record);
+    }
+    // Escaped legacy text can be larger than its character count. Preserve its final excerpt,
+    // mark the omission, and always send valid whole JSON rather than a chopped record.
+    while (fitted.length > JOURNAL_LIMIT && record.details) {
+      record.details = `[Earlier detail text omitted]\n${record.details.slice(-Math.floor(record.details.length / 2))}`;
+      fitted = JSON.stringify(record);
+    }
+    if (selected.length && chars + fitted.length + 1 > JOURNAL_LIMIT) break;
+    selected.unshift(fitted);
+    chars += fitted.length + 1;
+    if (detail !== activity.details || omittedFiles > 0 || fitted !== line || activity.summary.length > 500 || activity.kind.length > 80) clipped++;
+  }
+  const coverage = {
+    total: input.total ?? input.activities.length, selected: selected.length,
+    omitted: (input.total ?? input.activities.length) - selected.length, clipped,
+  };
+  const journal = selected.join("\n");
 
+  /*
+    The owner's decisions first. The block is cut at its limit from the end, and until 6-Sep-2026
+    it arrived newest-first with every status mixed, so a memory that overflowed lost its OLDEST
+    APPROVED notes —the durable ones, the ones a proposal must not repeat— while the discarded of
+    last week travelled whole. Now the cut eats discarded before proposed and proposed before
+    approved.
+   */
   const memory =
     input.existing.length === 0
-      ? "La memoria del proyecto está vacía."
+      ? "The project's memory is empty."
       : wrapUntrusted(
-          input.existing.map((n) => `- [${n.status}] ${n.body}`).join("\n"),
-          { origin: "notes", limit: 4000, includeNote: false },
+          byOwnerDecision(input.existing).map((n) => `- [${n.status}] ${n.body}`).join("\n"),
+          { origin: "notes", limit: MEMORY_LIMIT, includeNote: false },
         );
 
   const prompt = [
-    "La bitácora de la sesión:",
-    wrapUntrusted(journal, { origin: "journal", limit: 8000 }),
+    `Journal coverage: total ${coverage.total}; selected ${coverage.selected}; omitted earlier records ${coverage.omitted}; clipped records ${coverage.clipped}.`,
+    "Selected session journal, oldest to newest:",
+    wrapUntrusted(journal, { origin: "journal", limit: journal.length }),
     "",
-    "La memoria existente (approved ya se sabe; proposed ya está esperando; discarded es un no de la persona):",
+    "Existing memory (approved, proposed, discarded and challenged):",
     memory,
   ].join("\n");
 
-  return { system, prompt };
+  return { system, prompt, coverage };
 }
 
 /**
@@ -189,21 +286,45 @@ function normalized(body: string): string {
 }
 
 /**
- * Reread the session that has just closed and propose what is durable. Running in the background:
- * the route that triggers it has already responded, and a fallen distiller owes nothing to anyone
- * — memory loses a source, not the session its record.
+ * Reread a closed session and propose durable facts. The persistent worker calls this outside
+ * the HTTP turn, with a lease guard on publication; retries keep the journal intact. All paid
+ * calls share a queue so concurrent sessions cannot spend the final daily slot twice.
  */
 export async function distillSession(
   database: Database,
   input: { projectId: string; identity: string | null; sessionId: string },
+  ownership?: { leaseToken: string; isActive: () => boolean },
 ): Promise<DistillReceipt> {
-  const activities = await listSessionActivities(database, input.sessionId);
+  const queues = runtime.panomaDistillQueues ??= new WeakMap();
+  const turn = (queues.get(database) ?? Promise.resolve()).then(() => runDistillation(database, input, ownership));
+  queues.set(database, turn.then(() => undefined, () => undefined));
+  return turn;
+}
+
+const runtime = globalThis as unknown as { panomaDistillQueues?: WeakMap<Database, Promise<void>> };
+
+async function runDistillation(
+  database: Database,
+  input: { projectId: string; identity: string | null; sessionId: string },
+  ownership?: { leaseToken: string; isActive: () => boolean },
+): Promise<DistillReceipt> {
+  const { activities, total } = await sessionMemoryWindow(database, input.sessionId);
   if (activities.length < MIN_ACTIVITIES) return { did: "thin" };
 
   const usage = await noteUsage(database, input.projectId);
   if (usage.pending >= NOTE_PENDING_MAX) return { did: "queueFull" };
 
-  const cap = distillBudgetFrom(process.env["PANOMA_DISTILL_BUDGET"]);
+  /*
+    The cap is checked per process, not under a database lock. Within one process the distill
+    queue serializes the check and the paid call, so two jobs cannot both read "one call left"
+    and both pay. Across processes —a remote catalog served by several servers— they can: each
+    reads the same count before either records its call, so N processes would exceed the cap by
+    at most N−1 calls a day. A bound of that size is cheaper than holding a lock through a
+    model call — and nobody pays it today, because since 6-Sep-2026 the worker only drains a
+    local catalog. That deferral is exactly about this: whoever lifts it accepts both the
+    server's bill and this bound. See `memory-worker.ts` and `docs/open-questions.md`.
+   */
+  const { cap } = await capFor("memory");
   const spent = await modelSpendToday(database, DISTILL_KIND);
   if (spent.calls >= cap) return { did: "budget" };
 
@@ -211,6 +332,7 @@ export async function distillSession(
     "approved",
     "proposed",
     "discarded",
+    "challenged",
   ]);
 
   /*
@@ -230,51 +352,91 @@ export async function distillSession(
   }));
   const touched = shaped.flatMap((a) => a.filesTouched);
 
-  const built = buildDistillPrompt({ activities: shaped, existing });
-  const answer = await complete({
-    system: built.system,
-    prompt: built.prompt,
-    maxTokens: MAX_ANSWER_TOKENS,
-  });
+  const built = buildDistillPrompt({ activities: shaped, existing, total });
+  if (ownership && !ownership.isActive()) throw new Error("Memory work stopped before extraction.");
 
-  await saveModelCall(database, {
-    kind: DISTILL_KIND,
-    provider: answer.provider,
-    model: answer.model,
-    identity: input.identity,
-    ...(answer.usage ? { input: answer.usage.input, output: answer.usage.output } : {}),
-  });
+  /*
+    The ledger row goes in before the answer is read, once per call: the same order as
+    `look-run`, and the reason is in the header. `calls` is the in-loop brake of the read routes,
+    here for a loop of at most two.
+   */
+  let calls = spent.calls;
+  const ask = async (maxTokens: number) => {
+    const answer = await complete({ system: built.system, prompt: built.prompt, maxTokens });
+    calls += 1;
+    await queueWrite(() => saveModelCall(database, {
+      kind: DISTILL_KIND,
+      provider: answer.provider,
+      model: answer.model,
+      identity: input.identity,
+      ...(answer.usage ? { input: answer.usage.input, output: answer.usage.output } : {}),
+    }));
+    return answer;
+  };
 
-  const candidates = parseCandidates(answer.text);
-  if (candidates === undefined) return { did: "unreadable" };
-
-  const known = new Set(existing.map((note) => normalized(note.body)));
-  let proposed = 0;
-  let dropped = 0;
-
-  for (const candidate of candidates.slice(0, MAX_CANDIDATES)) {
-    const body = candidate.body.trim();
-    if (body.length === 0 || body.length > NOTE_MAX || known.has(normalized(body))) {
-      dropped++;
-      continue;
-    }
-    const trigger = whereToTrigger(candidate.where, touched);
-    const result = await proposeNote(database, {
-      projectId: input.projectId,
-      body,
-      createdBy: "distiller",
-      ...(trigger !== undefined ? { trigger } : {}),
-    });
-    if ("refused" in result) {
-      dropped++;
-      // The queue filled up between the brake and now: the rest no longer fits and there is no
-      // insistence.
-      if (result.refused === "pendingFull") break;
-      continue;
-    }
-    known.add(normalized(body));
-    proposed++;
+  let answer = await ask(MAX_ANSWER_TOKENS);
+  let candidates = parseCandidates(answer.text);
+  /*
+    Cut and unreadable: once more, with double the room, if the day still has a call in it and
+    nobody has asked this worker to stop. Cut and readable is left alone —the array closed before
+    the ceiling— because paying again for what is already in hand is the waste this exists to
+    avoid. A retry the cap refuses leaves the answer unreadable, and unreadable is final: the
+    alternative was deferring the job to tomorrow to pay the same 500-token call again first.
+   */
+  if (
+    candidates === undefined &&
+    answer.stopReason === "length" &&
+    calls < cap &&
+    (ownership === undefined || ownership.isActive())
+  ) {
+    answer = await ask(MAX_ANSWER_TOKENS * 2);
+    candidates = parseCandidates(answer.text);
   }
+  const paid = calls - spent.calls;
+  const found = candidates;
+  if (found === undefined) return { did: "unreadable", coverage: built.coverage, calls: paid };
 
-  return { did: "distilled", proposed, dropped };
+  const commit = async (tx: Database): Promise<DistillReceipt> => {
+    if (ownership && !ownership.isActive()) throw new Error("Memory work stopped before publication.");
+    // The owner or another agent may have added a note while the model answered. Recheck under
+    // the write transaction, and publish nothing if a different worker reclaimed this lease.
+    const current = await listProjectNotes(tx, input.projectId, ["approved", "proposed", "discarded", "challenged"]);
+    const known = new Set([...existing, ...current].map((note) => normalized(note.body)));
+    let proposed = 0;
+    let dropped = 0;
+    for (const candidate of found.slice(0, MAX_CANDIDATES)) {
+      const body = candidate.body.trim();
+      if (body.length === 0 || body.length > NOTE_MAX || known.has(normalized(body))) {
+        dropped++;
+        continue;
+      }
+      const trigger = whereToTrigger(candidate.where, touched);
+      const result = await proposeNote(tx, {
+        projectId: input.projectId, body, createdBy: "distiller",
+        ...(trigger !== undefined ? { trigger } : {}),
+      });
+      if ("refused" in result) {
+        dropped++;
+        if (result.refused === "pendingFull") return { did: "queueFull", coverage: built.coverage };
+        continue;
+      }
+      known.add(normalized(body));
+      proposed++;
+    }
+    return { did: "distilled", proposed, dropped, coverage: built.coverage, calls: paid };
+  };
+  const unpublished = (origin: unknown) => new DistillPublishError(
+    { did: "unpublished", candidates: found.length, coverage: built.coverage, calls: paid },
+    origin,
+  );
+  let saved;
+  try {
+    saved = await queueWrite(() => ownership
+      ? withMemoryJobLease(database, input.sessionId, ownership.leaseToken, commit, input.projectId)
+      : database.transaction(async (tx) => ({ current: true as const, value: await commit(tx) })));
+  } catch (error) {
+    throw unpublished(error);
+  }
+  if (!saved.current) throw unpublished(new Error("Memory work lease is no longer current."));
+  return saved.value;
 }

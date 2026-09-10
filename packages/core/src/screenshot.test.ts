@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { deflateSync } from "node:zlib";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  MAX_FITTABLE_BYTES,
   MAX_SCREENSHOT_BYTES,
   ScreenshotError,
   readScreenshot,
@@ -261,6 +262,30 @@ describe("lo que no se puede mirar", () => {
       await escribir("tocho.bin", Buffer.alloc(MAX_SCREENSHOT_BYTES + 1024, 0)),
     );
     expect(error.bytes).toBe(MAX_SCREENSHOT_BYTES + 1024);
+  });
+});
+
+/*
+  And the two ceilings, which are two numbers about two different acts: what a provider accepts,
+  and what may be opened from this disk when the capture is going to be reduced before it leaves.
+  The invariant is the only thing that can be checked without executing anything, and it is worth
+  checking: edited the wrong way round, `fit` would go back to refusing the very captures the
+  second ceiling was written to rescue, and nothing else in the repository would say so.
+ */
+describe("the two ceilings", () => {
+  it("keeps the one for reading above the one for sending", () => {
+    expect(MAX_FITTABLE_BYTES).toBeGreaterThan(MAX_SCREENSHOT_BYTES);
+  });
+
+  it("reads with the ceiling the caller asks for, not with the provider's", async () => {
+    const capture = Buffer.concat([png(4, 4), Buffer.alloc(MAX_SCREENSHOT_BYTES, 0x20)]);
+    const path = await escribir("de-cinco-megas.png", capture);
+
+    expect((await problema(path)).problem).toBe("too-big");
+
+    const read = await readScreenshot(path, { maxBytes: MAX_FITTABLE_BYTES });
+    expect(read.bytes).toBe(capture.length);
+    expect(read.mediaType).toBe("image/png");
   });
 });
 

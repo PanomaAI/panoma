@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { desktopPreference } from "@/lib/open-all";
 
 /**
  * A preference that survives reloading the page.
@@ -32,7 +33,11 @@ export function usePreference<T>(
     try {
       const stored = window.localStorage.getItem(`panoma:${key}`);
       if (stored !== null) {
-        setValue(JSON.parse(stored) as T);
+        const parsed = JSON.parse(stored) as T;
+        const next = key === "open:preferred-destination" && typeof parsed === "string"
+          ? desktopPreference(parsed) as T : parsed;
+        setValue(next);
+        if (next !== parsed) window.localStorage.setItem(`panoma:${key}`, JSON.stringify(next));
         return;
       }
       if (!legacyKey) return;

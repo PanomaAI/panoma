@@ -244,6 +244,53 @@ await rm(join(destino, "apps", "web", "node_modules"), { recursive: true, force:
 aviso(`aplanados ${vistos.size} paquetes de npm y ${panoma.length} @panoma/* en copias reales`);
 
 /*
+  And the two manifests that come along inside the standalone and that nobody in there reads.
+
+  `app/package.json` is the manifest of the monorepo, and it is not written for the package: the
+  tracing points at the root of the repository —that is what `outputFileTracingRoot` says— and
+  copies it like one more traced file. So the tarball published eslint, vitest, tsup, tsx and
+  typescript, none of which travel, and a `packageManager` that Corepack would obey for anyone
+  running a command from inside the installed folder. It is deleted whole: the only `.js` under
+  `app/` outside `node_modules` is `apps/web/server.js`, and that one has its own manifest
+  beside it.
+
+  `apps/web/package.json` Next does write on purpose, and it is a verbatim copy of ours: it
+  declared `react-icons` and `recharts` —which are inside `.next-bundle` and not in
+  `node_modules`— and six `workspace:*` that no npm tool can resolve. Of everything in it, one
+  field holds weight: `type`, which is what tells Node that the `server.js` Next emitted is ESM.
+  Without it the server dies at its first `import` on Node 22.0 to 22.6, which `engines` still
+  admits.
+
+  Neither of the two is about size: they are two files that state, in the published package,
+  dependencies that are not inside it. Whoever reads the tarball —a scanner, an SBOM, a
+  person— reads a lie.
+
+  What is NOT touched is `apps/web/.next-bundle/package.json`, the `{"type": "commonjs"}` that
+  `next build` writes into its own output directory. Without it the server says «✓ Ready» and
+  then answers 500 on every route. That is why two paths are deleted here by name and never a
+  pattern.
+ */
+const manifiestoWeb = leerJson(join(web, "package.json")) ?? {};
+await rm(join(destino, "package.json"), { force: true });
+await writeFile(
+  join(destino, "apps", "web", "package.json"),
+  JSON.stringify(
+    {
+      name: manifiestoWeb.name,
+      version: manifiestoWeb.version,
+      private: true,
+      type: manifiestoWeb.type ?? "module",
+      // If they ever appear, they resolve routes and have to travel; today apps/web has neither.
+      ...(manifiestoWeb.imports ? { imports: manifiestoWeb.imports } : {}),
+      ...(manifiestoWeb.exports ? { exports: manifiestoWeb.exports } : {}),
+    },
+    null,
+    2,
+  ) + "\n",
+);
+aviso("fuera el manifiesto del monorepo, y el de la web se queda en lo que Node lee");
+
+/*
   3. The dependencies of the `@panoma/*`, which the layout also doesn’t see.
   Same reason as `dist`: they are imported after `new Function`. The result was that
   `@panoma/core` traveled importing `yaml`, `ignore`, and `smol-toml` without any of them being in
@@ -259,6 +306,10 @@ aviso(`aplanados ${vistos.size} paquetes de npm y ${panoma.length} @panoma/* en 
   that the SDK drags and that here are never executed.
   They are resolved as Node will do at runtime, with `createRequire` from the package that
   requests them, and they are copied with their entire transitive tree.
+  The app manager is covered by the same directory scan, including its runtime zod dependency.
+  The web's MCP client is a static Next import: tracing follows the stdio client and its AJV
+  validator. Do not copy all web dependencies here or prune AJV as an unused HTTP transport;
+  the SDK client needs it even though no HTTP server transport is used.
  */
 function raizDelPaquete(nombre, desde) {
   const req = createRequire(join(desde, "package.json"));
@@ -669,6 +720,8 @@ const imprescindibles = [
   ["node_modules/@panoma/core", "el núcleo"],
   ["node_modules/@panoma/db/migrations", "las migraciones"],
   ["node_modules/@panoma/mcp/dist/index.js", "el servidor MCP"],
+  ["node_modules/@panoma/apps/dist/index.js", "the app manager"],
+  [`apps/web/${dist}/server/app/api/apps/route.js`, "the apps API and its MCP client"],
   ["node_modules/@electric-sql/pglite", "la base de datos"],
   ["node_modules/drizzle-orm", "el acceso a la base"],
 ];

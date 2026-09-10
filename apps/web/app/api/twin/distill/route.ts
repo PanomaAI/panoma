@@ -1,26 +1,28 @@
-import { complete, resolveCredential } from "@panoma/ai";
+import { complete, resolveCredential, type CompleteResult } from "@panoma/ai";
 import {
   corpusProgress,
-  markVerdictsDistilled,
   modelSpendToday,
   readVerdictIds,
   listProjectRoots,
   listVerdicts,
   resolveProject,
   saveModelCall,
-  saveObservations,
+  type CorpusProgress,
   type Database,
   type NewObservation,
+  type Verdict,
 } from "@panoma/db";
 import {
   MAX_VERDICTS_PER_RUN,
   buildPrompt,
   estimateRunTokens,
   parseObservations,
-  planChunks,
+  planDistillation,
   readLimit,
 } from "@/lib/distill";
-import { READING_KINDS, readBudgetFrom } from "@/lib/reads";
+import { READING_KINDS } from "@/lib/reads";
+import { capFor } from "@/lib/spend-settings";
+import { saveDistillationBatch } from "@/lib/distill-save";
 import { modelErrorParts } from "@/lib/model-errors";
 import { db } from "@/lib/db";
 import { sameOrigin } from "@/lib/guard";
@@ -137,7 +139,7 @@ export async function POST(request: Request) {
   }
 
   const { db: database } = await db();
-  const [stored, skip, corpus] = await Promise.all([
+  const [stored, skip] = await Promise.all([
     listVerdicts(database, {}),
     /*
       What has already been read is not sent again, and that is what makes distilling useful more
@@ -147,15 +149,25 @@ export async function POST(request: Request) {
       `planChunks` and in column `verdicts.distilled_at`.
      */
     readVerdictIds(database),
-    corpusProgress(database),
   ]);
-  // The one for the drill is the one before spending, which is what must be taught to decide.
   const usable = stored.filter((one) => one.accepted !== false);
 
-  const chunks = planChunks(usable, {
+  const { chunks, thin } = planDistillation(usable, {
     ...(limit.kind === "limit" ? { limit: limit.limit } : {}),
     skip,
   });
+  /*
+    What no pass can send, and so what the corpus line must not count as pending: the thin
+    verdicts —a project's only unread quote, see `planDistillation`— and the rejected ones nobody
+    read before rejecting. The two loops that chain passes, `--all` and the button, stop on
+    `total - read <= 0`; with these inside `total`, the line said "1 left" forever and each pass
+    paid a call for it. They stay in the catalog and in `corpusProgress`; what changes is what this
+    receipt calls the corpus.
+   */
+  const unplannable =
+    thin.length + stored.filter((one) => one.accepted === false && !skip.has(one.id)).length;
+  // The one for the drill is the one before spending, which is what must be taught to decide.
+  const corpus = reachable(progressOf(stored, skip), unplannable);
   /*
     The portrait no longer travels with the batch, and removing it is part of the change.
     When each sentence here was a proposal that had to be approved, repeating yourself cost
@@ -177,8 +189,10 @@ export async function POST(request: Request) {
     readings are worn out' would be a false answer to the question that was asked: it is not the
     budget that is lacking, it is the citations that are missing. That is answered by the empty
     receipt, which already exists and already explains what to do.
+    The cap comes from `spend-settings.ts`, read at request time: it is what the Spend screen
+    moves, and the pause and `PANOMA_READ_BUDGET` are resolved there and nowhere else.
    */
-  const cap = readBudgetFrom(process.env["PANOMA_READ_BUDGET"]);
+  const { cap } = await capFor("read");
   const spent = await modelSpendToday(database, READING_KINDS);
   if (chunks.length > 0 && spent.calls >= cap) {
     return Response.json(
@@ -198,7 +212,13 @@ export async function POST(request: Request) {
     and the CLI stops at `verdicts > 0` before reading either of the two.
    */
   if (chunks.length === 0) {
-    return Response.json({ verdicts: 0, estimatedTokens: 0, corpus });
+    return Response.json({
+      verdicts: 0,
+      estimatedTokens: 0,
+      corpus,
+      /* Said here above all: it is the answer to "why does it say nothing is left, with one unread". */
+      ...(thin.length > 0 ? { thin: thin.length } : {}),
+    });
   }
 
   let credential;
@@ -213,11 +233,12 @@ export async function POST(request: Request) {
     disclose which model is behind the session. It is repeated here so that the drill does not
     promise a different name from the one that later appears in the column.
    */
-  const model = credential.model || "sesión";
+  const model = credential.model || "session";
 
   if (body.dryRun === true) {
     return Response.json({
       verdicts: chunks.reduce((count, chunk) => count + chunk.verdicts.length, 0),
+      ...(thin.length > 0 ? { thin: thin.length } : {}),
       estimatedTokens: estimateRunTokens(prompts),
       provider: credential.provider.id,
       /*
@@ -238,13 +259,14 @@ export async function POST(request: Request) {
 
   const names = await projectNames(database, new Set(chunks.map((chunk) => chunk.identity)));
 
-  const rows: NewObservation[] = [];
+  let saved = 0;
   let label = `${credential.provider.id}/${model}`;
   let read = 0;
   let observed = 0;
   let minted = 0;
   let dropped = 0;
   let unreadable = 0;
+  let truncated = 0;
   let input = 0;
   let output = 0;
   let metered = false;
@@ -258,6 +280,33 @@ export async function POST(request: Request) {
     Whoever calls again will find 429 upstairs, which is where the reason is written.
    */
   let calls = spent.calls;
+
+  /*
+    Every answer goes to the expense book **before** anyone reads it, which is where 'what it has
+    cost today' comes from. It was missing, and the hole was seen from the screen: the book was
+    written only by the look, so an entire afternoon distilling left the receipt still in the five
+    looks of the morning. A round is a call—tokens, wait, and money—and not recording it does not
+    make it free, it only makes it invisible.
+    It goes per answer and not per loop pass because each answer is a call: merging five in a row
+    I would say was called once, which is exactly what the receipt has to refute — and the retry
+    below is a second call, with its own row.
+   */
+  const paid = async (answer: CompleteResult, identity: string) => {
+    calls += 1;
+    label = `${answer.provider}/${answer.model}`;
+    if (answer.usage) {
+      metered = true;
+      input += answer.usage.input;
+      output += answer.usage.output;
+    }
+    await saveModelCall(database, {
+      kind: KIND,
+      provider: answer.provider,
+      model: answer.model,
+      identity,
+      ...(answer.usage ? { input: answer.usage.input, output: answer.usage.output } : {}),
+    });
+  };
 
   for (const built of prompts) {
     if (calls >= cap) break;
@@ -273,31 +322,34 @@ export async function POST(request: Request) {
       failure = error;
       break;
     }
-    calls += 1;
-
-    label = `${answer.provider}/${answer.model}`;
-    if (answer.usage) {
-      metered = true;
-      input += answer.usage.input;
-      output += answer.usage.output;
-    }
+    await paid(answer, built.chunk.identity);
 
     /*
-      And it is noted in the expense book, which is where 'what it has cost today' comes from.
-      It was missing, and the hole was seen from the screen: the book was written only by the
-      look, so an entire afternoon distilling left the receipt still in the five looks of the
-      morning. A round is a call—tokens, wait, and money—and not recording it does not make it
-      free, it only makes it invisible.
-      It goes in here and not outside the loop because each batch is a call: merging five in a row
-      I would say was called once, which is exactly what the receipt has to refute.
+      A cut answer is asked again, once, with twice the room — and now, not tomorrow.
+      An answer that hit `maxTokens` is unreadable by construction —`parseObservations` discards a
+      truncated array whole— and until 6-Sep-2026 it went the way of any unreadable answer: the
+      batch stayed unmarked and the next pass sent **the same input at the same cap**, which cut
+      it at the same place. Two identical calls for the same nothing. The provider says why it
+      stopped (`stopReason`), so the second call can be the one that differs: same batch, double
+      room, immediately, while the batch is in hand. It counts against the cap like any call and
+      does not fire at the brake: at the cap, the cut answer falls through as unreadable, as before.
+      If the second is cut as well, it is treated as unreadable: a batch that does not fit in twice
+      the room is not going to fit by insisting, and the retry is once on purpose.
      */
-    await saveModelCall(database, {
-      kind: KIND,
-      provider: answer.provider,
-      model: answer.model,
-      identity: built.chunk.identity,
-      ...(answer.usage ? { input: answer.usage.input, output: answer.usage.output } : {}),
-    });
+    if (answer.stopReason === "length" && calls < cap) {
+      truncated += 1;
+      try {
+        answer = await complete({
+          system: built.system,
+          prompt: built.prompt,
+          maxTokens: MAX_ANSWER_TOKENS * 2,
+        });
+      } catch (error) {
+        failure = error;
+        break;
+      }
+      await paid(answer, built.chunk.identity);
+    }
 
     const byId = new Map(built.chunk.verdicts.map((one) => [one.id, one] as const));
     const project = names.get(built.chunk.identity);
@@ -328,15 +380,8 @@ export async function POST(request: Request) {
       Marked in full, and not just what the model ends up quoting: a quote that was sent and not
       used has already been judged, and sending it again is paying twice for the same trial.
      */
-    read += built.chunk.verdicts.length;
-    await markVerdictsDistilled(
-      database,
-      built.chunk.verdicts.map((one) => one.id),
-    );
-    observed += observations.length;
-
+    const rows: NewObservation[] = [];
     for (const proposal of observations) {
-      if (proposal.minted) minted += 1;
       rows.push({
         /*
           Never `null`. The column allows null for the observations of the entire portfolio and
@@ -373,18 +418,22 @@ export async function POST(request: Request) {
         model: label,
       });
     }
+
+    try {
+      saved += await saveDistillationBatch(
+        database,
+        built.chunk.verdicts.map((one) => one.id),
+        rows,
+      );
+    } catch (error) {
+      failure = error;
+      break;
+    }
+    read += built.chunk.verdicts.length;
+    observed += observations.length;
+    minted += observations.filter((one) => one.minted).length;
   }
 
-  /*
-    And nothing is thrown away before storing anymore.
-    When I was writing proposals, distilling twice I would stack two almost identical versions of
-    the same idea and the review screen would go from fifteen sentences to thirty without the
-    corpus having changed; you had to delete what was pending from each project before saving the
-    new. With evidence, there is nothing to clean: no one is going to read them one by one, and
-    what is repeated is precisely what later supports a belief. What cannot happen, however, is
-    that the same sentence appears twice, and `saveObservations` takes care of that.
-   */
-  const saved = await saveObservations(database, rows);
   const receipt = {
     verdicts: read,
     observed,
@@ -398,12 +447,18 @@ export async function POST(request: Request) {
      */
     ...(dropped > 0 ? { dropped } : {}),
     ...(unreadable > 0 ? { unreadable } : {}),
+    /* Answers cut by the output limit and asked again with double room. See the loop. */
+    ...(truncated > 0 ? { truncated } : {}),
+    /* What no pass can send: the lone unread quote of a project. See `planDistillation`. */
+    ...(thin.length > 0 ? { thin: thin.length } : {}),
     model: label,
     /*
       Recounted **after** saving, so it already includes what this past one just quoted. It is the
       difference between a receipt that says what there was and one that says where it leaves you:
       "you have read 406 of 2,264" is what answers the only question left at the end, which is
-      whether it is worth running it again.
+      whether it is worth running it again. The thin ones are still out: `corpusProgress` leaves
+      them and the rejected-unread out itself, so this figure and the one the Twin screen paints
+      come from the same count.
      */
     corpus: await corpusProgress(database),
     // Absent in the `cli` providers: they do not publish the consumption, and a zero there would be
@@ -413,6 +468,31 @@ export async function POST(request: Request) {
 
   if (failure === undefined) return Response.json(receipt);
   return modelFailure(locale, failure, receipt);
+}
+
+/**
+ * `corpusProgress`, added up from what this request already holds.
+ *
+ * The route reads every verdict and every read id to plan the pass, and `corpusProgress` read both
+ * again to count them: two full scans of the corpus per request, for two numbers that were already
+ * in memory. Same count as there — the read ones against the living rows, so a `twin forget` cannot
+ * leave "read 1,800 of 1,500". The recount after saving still asks the catalog: that one has to
+ * include what the pass just marked.
+ */
+function progressOf(stored: Verdict[], read: ReadonlySet<string>): CorpusProgress {
+  let seen = 0;
+  for (const one of stored) if (read.has(one.id)) seen += 1;
+  return { total: stored.length, read: seen };
+}
+
+/**
+ * The corpus as a pass can reach it: without what no pass will send.
+ *
+ * `read` is untouched —those were read— and never above `total`: the ones taken out are unread by
+ * definition, so the subtraction cannot cross it.
+ */
+function reachable(corpus: CorpusProgress, unplannable: number): CorpusProgress {
+  return { total: Math.max(corpus.total - unplannable, corpus.read), read: corpus.read };
 }
 
 /**

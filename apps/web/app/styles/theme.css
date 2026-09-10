@@ -1,32 +1,63 @@
 /*
   The Tailwind color swatches, and why they are still in a `@theme` block.
-  From here come the utilities that the code uses hundreds of: `text-faint`, `border-edge`,
+  From here come the utilities the code writes by the thousand: `text-faint`, `border-edge`,
   `bg-surface`, `text-accent`. Tailwind v4 generates them by reading this block, so moving these
-  fourteen colors to a regular `:root` would silently disable about seven hundred classes spread
+  FIFTEEN colors to a regular `:root` would silently disable more than a thousand classes spread
   across the components — no error, no warning: the elements would be left colorless and that's
   it.
+  Both figures used to be wrong, and in the same direction. It said fourteen colors because
+  `--color-fail` was added afterwards, on 25-Aug-2026, and nobody came back up here to count
+  again; and it said about seven hundred classes, which is what the `text-…` alone add up to.
+  Counted over `components/` and `app/(app)/` on 8-Sep-2026: 1,157 utilities, of which `text-…`
+  695, `border-…` 303, `bg-…` 155, plus two `decoration-…` and two `divide-…`. The exact figure
+  moves with every component written; the order of magnitude does not, and it is the order of
+  magnitude that the warning is about.
   What you CAN do is add. A new token here gains its utility; and tested on the installed version,
   Tailwind keeps those that are only used with `var()` and discards only those that nobody
   mentions.
+
+  ── Why every gray here reads R = G = B ────────────────────────────────────────────────
+  Until 8-Sep-2026 these grays carried a blue cast of between +1 and +31 on the blue channel and
+  the project sheet's did not, so the application was two palettes and the public site was a
+  third. The owner chose the neutral one, which is the sheet's and, letter for letter, the site's.
+  The conversion did not cost a single point of legibility, and that is not luck: a WCAG ratio is
+  a function of relative luminance ALONE, so a gray replaced by the neutral of equal luminance
+  keeps every figure it had. Eight of the ten grays were replaced by their exact luminance
+  match, and the largest error among those is 0.0025 — below what any of the guards can see.
+  The other two are deliberate exceptions, and the first of them is no longer a match at all.
+  `--color-smoke` is the workhorse gray — the markup writes `text-smoke` 257 times and the
+  sheets read it in 51 rules, more than any other color — and it cleared AA on white while
+  falling short on the papers it actually lands on, which is the one failure white cannot show.
+  The neutral conversion took it to #6f6f6f, better than the blue #667085 on every paper but
+  still 4.4093 on `--color-selected` and 4.4084 on `--color-danger-soft-deep`. On 8-Sep-2026 the
+  owner closed it: two more steps down to #6d6d6d, which is the first value on the ladder that
+  clears 4.5:1 on all ten papers — #6e6e6e reaches 4.4733 and does not. The cost is a luminance
+  change of 0.006 across two steps of 255, below the threshold of visibility; the gain is that
+  the most-written color in the product is above AA everywhere instead of on white only.
+  The second exception is `--color-dormant`, which moved from 2.5437:1 to 2.5528 because no
+  8-bit neutral lands on 2.54 — the ladder steps 2.5837, 2.5528, 2.5225. Its recorded figure
+  went up by a hundredth with it.
+  `--color-live`, `--color-idle`, `--color-warn` and `--color-fail` are hues, not grays, and are
+  untouched. See `docs/theme.md`, decisions D1 and D11.
   The full scale and the semantic roles live in `tokens.css`, which is imported right after.
  */
 
 @theme {
-  --color-ground: #f8f9fc;
+  --color-ground: #fafafa;
   --color-surface: #ffffff;
-  --color-raised: #f2f3f8;
-  --color-edge: #e5e7ef;
-  --color-edge-bright: #d8dbe6;
+  --color-raised: #f3f3f3;
+  --color-edge: #e6e6e6;
+  --color-edge-bright: #dddddd;
 
-  --color-chalk: #141722;
-  --color-smoke: #667085;
-  --color-faint: #98a2b3;
+  --color-chalk: #171717;
+  --color-smoke: #6d6d6d;
+  --color-faint: #a1a1a1;
 
   --color-live: #25b878;
   --color-idle: #f59e0b;
-  --color-dormant: #9aa3b2;
-  --color-nogit: #c8cdd6;
-  --color-accent: #0b0b0d;
+  --color-dormant: #a2a2a2;
+  --color-nogit: #cdcdcd;
+  --color-accent: #0b0b0b;
   /* The amber of the warnings, the same #b0800f that the health dial and the pause already use. */
   --color-warn: #b0800f;
   /*

@@ -25,7 +25,7 @@ describe("comandos que se pegan en un terminal", () => {
 
   it("sobrevive a una comilla simple dentro de la ruta", () => {
     // Close, escape, and reopen: it is the only way within single quotes.
-    expect(quoteForShell("/tmp/ana's app")).toBe(`'/tmp/jesus'\\''s app'`);
+    expect(quoteForShell("/tmp/ana's app")).toBe(`'/tmp/ana'\\''s app'`);
   });
 
   it("compone el comando entero", () => {

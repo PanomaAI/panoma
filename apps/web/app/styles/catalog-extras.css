@@ -10,33 +10,27 @@
   element but as another of the same. See `sitios.tsx`.
  */
 .sites {
-  margin-top: 10px;
+  margin-top: var(--space-5);
 }
 
 .sites__line {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-5);
   width: 100%;
-  min-height: 34px;
-  padding: 0 10px 0 12px;
-  border: 1px dashed var(--line-strong);
-  border-radius: 9px;
+  min-height: var(--space-20);
+  padding: 0 var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--corner);
   background: transparent;
   color: var(--ink-3);
-  font-size: 0.73rem;
+  font-size: var(--type-xs);
   text-align: left;
   cursor: pointer;
   transition: border-color var(--duration-fast) ease, color var(--duration-fast) ease, background-color var(--duration-fast) ease;
 }
 
-/*
-  Of dashed line, and it is the only thing that distinguishes it from the report.
-  The report tells what happened; this stripe marks the edge of what Panoma knows. The cut line
-  says ‘this is where what is seen ends’ without the need to write it, and at the same time it
-  lowers its rank: at rest it is almost invisible, which is what is assigned to something that is
-  consulted twice a year.
- */
+/* Quiet location metadata becomes a clearly bounded control on interaction. */
 .sites__line:hover {
   border-color: var(--ink-3);
   color: var(--ink-2);
@@ -44,8 +38,8 @@
 }
 
 .sites__line > svg {
-  width: 13px;
-  height: 13px;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
   flex: none;
 }
 
@@ -59,24 +53,24 @@
 
 .sites__action {
   flex: none;
-  font-size: 0.7rem;
+  font-size: var(--type-2xs);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
 .sites__detail {
-  margin-top: 8px;
-  padding: 12px 14px;
+  margin-top: var(--space-4);
+  padding: var(--space-6) var(--space-7);
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--corner);
   background: var(--paper);
   box-shadow: var(--shadow-lift);
 }
 
 .sites__detail ul {
   display: grid;
-  gap: 6px;
-  margin: 0 0 10px;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-5);
   padding: 0;
   list-style: none;
 }
@@ -84,8 +78,8 @@
 .sites__detail li {
   display: flex;
   align-items: baseline;
-  gap: 10px;
-  font-size: 0.74rem;
+  gap: var(--space-5);
+  font-size: var(--type-xs);
 }
 
 .sites__detail li code {
@@ -93,7 +87,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--ink);
-  font-size: 0.74rem;
+  font-size: var(--type-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -101,18 +95,18 @@
 .sites__detail li > span {
   flex: none;
   color: var(--ink-3);
-  font-size: 0.7rem;
+  font-size: var(--type-2xs);
 }
 
 .sites__detail li button,
 .sites__detail form button {
   flex: none;
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: var(--corner);
   background: var(--paper);
   color: var(--ink-2);
-  font-size: 0.7rem;
-  padding: 3px 9px;
+  font-size: var(--type-2xs);
+  padding: var(--space-2) var(--space-5);
   cursor: pointer;
   transition: border-color var(--duration-fast) ease, color var(--duration-fast) ease;
 }
@@ -122,24 +116,44 @@
   color: var(--bad);
 }
 
+/*
+  The red belongs to the answer that removes, and it is decided here.
+  The confirmation writes `sites__confirm` and not a utility because a utility cannot win in this
+  spot: Tailwind emits its own inside `@layer utilities`, and unlayered CSS outranks any layer, so
+  the `color` of the rule above was painting the destructive answer in the same gray as everything
+  else next to it.
+ */
+.sites__detail li button.sites__confirm {
+  color: var(--bad);
+}
+
+/*
+  And its neighbour is the way out of the question, so it is the one control here that never turns
+  red: it takes the same quiet hover as the button of the form and the one of the search.
+ */
+.sites__detail li button.sites__cancel:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
 .sites__detail form {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding-top: 10px;
+  gap: var(--space-4);
+  padding-top: var(--space-5);
   border-top: 1px solid var(--line);
 }
 
 .sites__detail form input {
   flex: 1;
   min-width: 0;
-  padding: 5px 9px;
+  padding: var(--space-3) var(--space-5);
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: var(--corner);
   background: var(--wash);
   color: var(--ink);
   font-family: inherit;
-  font-size: 0.74rem;
+  font-size: var(--type-xs);
 }
 
 /*
@@ -153,7 +167,7 @@
 .sites__detail form button {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--space-3);
 }
 
 .sites__detail form button:hover:not(:disabled) {
@@ -168,9 +182,9 @@
 
 .sites__note,
 .sites__error {
-  margin: 8px 0 0;
-  font-size: 0.7rem;
-  line-height: 1.5;
+  margin: var(--space-4) 0 0;
+  font-size: var(--type-2xs);
+  line-height: var(--lead-snug);
   color: var(--ink-3);
 }
 
@@ -181,27 +195,27 @@
 .sites__search {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-top: 10px;
+  gap: var(--space-5);
+  margin-top: var(--space-5);
 }
 
 .sites__search > span {
   color: var(--ink-3);
-  font-size: 0.7rem;
-  line-height: 1.4;
+  font-size: var(--type-2xs);
+  line-height: var(--lead-snug);
 }
 
 .sites__search button {
   display: inline-flex;
   flex: none;
   align-items: center;
-  gap: 5px;
-  padding: 4px 10px;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-5);
   border: 1px solid var(--line-strong);
-  border-radius: 7px;
+  border-radius: var(--corner);
   background: var(--paper);
   color: var(--ink-2);
-  font-size: 0.7rem;
+  font-size: var(--type-2xs);
   cursor: pointer;
   transition: border-color var(--duration-fast) ease, color var(--duration-fast) ease;
 }
@@ -219,9 +233,9 @@
 /* Proposals, not a list: the dotted border says they are not yours yet. */
 .sites__candidates {
   display: grid;
-  gap: 6px;
-  margin: 10px 0 0;
-  padding: 10px 0 0;
+  gap: var(--space-3);
+  margin: var(--space-5) 0 0;
+  padding: var(--space-5) 0 0;
   border-top: 1px dashed var(--line-strong);
   list-style: none;
 }
@@ -229,8 +243,8 @@
 .sites__candidates li {
   display: flex;
   align-items: baseline;
-  gap: 10px;
-  font-size: 0.74rem;
+  gap: var(--space-5);
+  font-size: var(--type-xs);
 }
 
 .sites__candidates li code {
@@ -238,7 +252,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--ink);
-  font-size: 0.74rem;
+  font-size: var(--type-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -246,17 +260,17 @@
 .sites__candidates li > span {
   flex: none;
   color: var(--ink-3);
-  font-size: 0.7rem;
+  font-size: var(--type-2xs);
 }
 
 .sites__candidates li button {
   flex: none;
-  padding: 3px 9px;
+  padding: var(--space-2) var(--space-5);
   border: 1px solid var(--line-strong);
-  border-radius: 7px;
+  border-radius: var(--corner);
   background: var(--paper);
   color: var(--ink);
-  font-size: 0.7rem;
+  font-size: var(--type-2xs);
   cursor: pointer;
 }
 
@@ -269,15 +283,20 @@
   The size of a letter and the color of the text itself: it is not an alarm, it is an
   acknowledgment of receipt. What it fixes is the feeling of a broken menu when `next dev` takes
   four seconds to compile a route that had never been requested.
+  It renders at three sizes in three places, and each one carries its own centring: 12px inline
+  here in the wide lane, 28px around the icon of the folded rail with its -14px pair in
+  `app-layout.css`, and 30px with a -15px pair on the phone in `responsive.css`. Only this one is
+  a mark standing beside a label, so only this one is on the icon ladder; the other two are rings
+  drawn around something else, and their halves have to keep matching them.
  */
 .nav-pending {
   display: inline-block;
-  width: 11px;
-  height: 11px;
+  width: var(--icon-xs);
+  height: var(--icon-xs);
   margin-left: auto;
   border: 1.5px solid currentColor;
   border-top-color: transparent;
-  border-radius: 50%;
+  border-radius: var(--corner-disc);
   opacity: 0.55;
   animation: nav-pending-spin var(--duration-spin) linear infinite;
 }
@@ -300,14 +319,14 @@
   }
 }
 
-/* The two new buttons on the bar: same weight as the view switcher. */
+/* Catalog actions use the same quiet control as the view switcher. */
 .catalog-tool {
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: 38px;
+  height: 38px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--corner);
   background: var(--paper);
   color: var(--ink-3);
   cursor: pointer;
@@ -326,8 +345,8 @@
 }
 
 .catalog-tool svg {
-  width: 15px;
-  height: 15px;
+  width: var(--icon);
+  height: var(--icon);
 }
 
 /*
@@ -336,6 +355,16 @@
   like a hole waiting to be loaded. It is a clear wording typical of Panoma: it does not use any
   color, shape, or pixel of the real project that could be recognized by whoever is looking at the
   screen.
+  Its corner answers to the icon it replaces and not to the box that holds it. `ProjectIcon` in
+  `primitives.tsx` rounds at `rounded-[22%]`, so at the tile's 76px the real icon draws a 16.72px
+  corner and at the row's 40px an 8.8px one. `--corner-lg` is 14 and `--corner` is 8: the tile
+  takes the large step, 2.72 from the icon, and the row the plain one, 0.8 from it.
+  That makes the mark rounder than the `--corner` tile it sits inside — 14 against 8, where before
+  it was 12 against 10 — and the gap is not the mistake it looks like. The real icon is rounder
+  still: 16.72 against the same 8, and it has drawn that way in every tile since the grid existed.
+  A stand-in that matched the tile instead would be the one object on the screen announcing which
+  projects are hidden. What moved this from 12 to 14 moved it TOWARDS the icon, from 4.72 away
+  to 2.72.
  */
 .catalog-private-mark {
   position: relative;
@@ -344,7 +373,7 @@
   overflow: hidden;
   flex: none;
   border: 1px solid var(--color-seal-edge);
-  border-radius: 12px;
+  border-radius: var(--corner-lg);
   background:
     linear-gradient(145deg, var(--color-seal-sheen), transparent 46%),
     var(--color-seal-face);
@@ -369,32 +398,161 @@
 .catalog-private-mark[data-variant="3"] { --private-shift: 12px; }
 
 .catalog-private-mark--tile {
-  width: 54px;
-  height: 54px;
+  width: 76px;
+  height: 76px;
 }
 
+/*
+  76 and 40 are the two `size` props `project-store.tsx` gives `ProjectIcon`, copied here because
+  the mark has to occupy exactly the icon's place for the grid not to shift. They are literals for
+  that reason and not because no step reaches them: a step would tie the seal to the rhythm of the
+  page instead of to the number in the markup, and the two would drift apart in silence.
+ */
 .catalog-private-mark--row {
   width: 40px;
   height: 40px;
-  border-radius: 10px;
+  border-radius: var(--corner);
 }
 
+/*
+  The band across the seal, and the inset of the stripes under it. Neither is an icon nor a step
+  of anything: they are this drawing's own geometry, and they move together — the stripes stop one
+  band-height in from each end, which is what keeps the field clear of the rounded caps. The sweep
+  took the pair from 7px to 8px and kept them equal, which is the part that mattered.
+ */
 .catalog-private-mark__seal {
   position: relative;
   z-index: var(--z-seal);
   width: 58%;
-  height: 7px;
-  border-radius: 999px;
+  height: 8px;
+  border-radius: var(--corner-pill);
   background: var(--color-seal-band);
   box-shadow: var(--shadow-seal-ring);
 }
 
 .catalog-private-mark__seal::after {
   position: absolute;
-  inset: 2px 7px;
+  inset: 2px 8px;
   border-radius: inherit;
   background: repeating-linear-gradient(90deg, var(--color-seal-stripe) 0 2px, transparent 2px 6px);
   content: "";
   opacity: 0.62;
 }
+/* Catalog facts and folder scope share a visible panel above the project controls. */
+.catalog-context {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-8) var(--space-12);
+  margin-bottom: var(--space-9);
+  padding: var(--space-8) var(--space-9);
+  border: 1px solid var(--line);
+  border-radius: var(--corner);
+  background: var(--paper);
+  color: var(--ink);
+}
 
+.catalog-context__summary,
+.catalog-context__folders { min-width: 0; }
+
+.catalog-context__heading {
+  margin: 0 0 var(--space-6);
+  color: var(--ink-2);
+  font-size: var(--type-xs);
+  font-weight: var(--weight-semibold);
+}
+
+.catalog-context .catalog-overview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-6);
+  margin: 0;
+}
+
+.catalog-context .catalog-overview .catalog-overview__states {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-9);
+}
+
+.catalog-context .catalog-overview .catalog-overview__aside {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  align-self: auto;
+  justify-content: flex-start;
+  gap: var(--space-4) var(--space-9);
+  padding: 0 0 0 var(--space-6);
+  border-top: 0;
+  border-left: 1px solid var(--line);
+}
+
+.catalog-context__folders {
+  align-self: stretch;
+  padding-left: var(--space-12);
+  border-left: 1px solid var(--line);
+}
+
+.catalog-context .sites { margin-top: 0; }
+.catalog-context .sites__line { align-items: flex-start; min-height: var(--space-16); padding: 0; }
+.catalog-context .sites__line > svg { margin-top: var(--space-1); }
+.catalog-context .sites__line > span:first-of-type { white-space: normal; overflow-wrap: anywhere; }
+.catalog-context .sites__detail { padding: var(--space-6); box-shadow: none; }
+.catalog-context .sites__detail li { flex-wrap: wrap; gap: var(--space-3) var(--space-5); }
+.catalog-context .sites__detail li code { flex-basis: 100%; }
+.catalog-context .sites__detail li button,
+.catalog-context .sites__detail form button,
+.catalog-context .sites__search button { max-width: 100%; min-height: var(--space-16); }
+.catalog-context .sites__detail form input { min-height: var(--space-18); }
+.catalog-context .sites__search { flex-wrap: wrap; }
+
+.catalog-context__warning {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: flex-start;
+  gap: var(--space-4);
+  margin: 0;
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--line);
+  color: var(--ink-2);
+  font-size: var(--type-xs);
+  line-height: var(--lead-snug);
+}
+
+.catalog-context__warning svg { flex: none; width: var(--icon); height: var(--icon); margin-top: var(--space-1); }
+.catalog-context > .catalog-context__heading,
+.catalog-context .catalog-down { grid-column: 1 / -1; }
+.catalog-context .catalog-down { width: 100%; max-width: none; margin: 0; padding: var(--space-7); }
+.catalog-context .catalog-down p { overflow-wrap: anywhere; }
+
+@media (max-width: 760px) {
+  .catalog-context {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-7);
+    padding: var(--space-7);
+  }
+
+  .catalog-context__folders {
+    padding: var(--space-7) 0 0;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .catalog-context .catalog-overview .catalog-overview__states {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-4) var(--space-9);
+  }
+
+  .catalog-context .catalog-overview {
+    align-items: stretch;
+  }
+
+  .catalog-context .catalog-overview .catalog-overview__states {
+    flex: 1;
+  }
+
+  .catalog-context .sites__detail form { flex-wrap: wrap; }
+  .catalog-context .sites__detail form input { flex-basis: 100%; }
+}

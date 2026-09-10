@@ -8,7 +8,7 @@ import { rowsToEdit, type AccountEntry } from "@/lib/accounts";
 import { postJson } from "@/lib/api";
 import { useT } from "./i18n-provider";
 import { useCopied } from "./use-copied";
-import { ActionError } from "./primitives";
+import { ActionButton, ActionError } from "./primitives";
 
 /*
   The project's accounts and links: the non-secret half of 'resume'.
@@ -285,14 +285,10 @@ export function ProjectAccounts({
             ))}
           </ul>
         )}
-        <button
-          type="button"
-          onClick={open}
-          className="mt-3 inline-flex items-center gap-1.5 rounded border border-edge px-2.5 py-1 font-mono text-[11px] text-smoke transition-colors hover:border-accent hover:text-accent"
-        >
+        <ActionButton tone="surface" size="sm" type="button" className="mt-3" onClick={open}>
           <HiOutlinePencilSquare className="h-3.5 w-3.5" aria-hidden />
           {translate(entries.length === 0 ? "accounts.addFirst" : "accounts.edit")}
-        </button>
+        </ActionButton>
       </div>
     );
   }
@@ -300,6 +296,15 @@ export function ProjectAccounts({
   return (
     <div className="project-accounts project-accounts--full">
       <div className="project-accounts-form">
+        {/*
+           The five controls of this row are NOT primitives, and the reason is `project-md.css`.
+           `.project-accounts-row` is a grid — one column below 901px, five above it — and the
+           inputs and the `×` are its direct children, placed by `grid-column`. `Field` wraps its
+           box in a `<label>`, so the label would become the grid item and the sheet's placement
+           would stop reaching the input; the sheet also dresses them (`border`, `--corner-xs`,
+           `--type-xs`, its own `aria-invalid` border) and that rule lives in a file this step does
+           not own. Converting them is the same commit as retiring those rules, not a drive-by.
+          */}
         {entries.map((entry, i) => (
           <div key={i} className="project-accounts-row">
             <input
@@ -344,23 +349,33 @@ export function ProjectAccounts({
           </div>
         ))}
         <div className="project-accounts-actions">
-          <button
+          {/*
+             The row of the editor's three actions, on the primitive's ladder: the addition and the
+             cancellation step back and the save is the accent. `.project-accounts-actions` is a
+             flex with its own gap, so nothing here needs a margin.
+            */}
+          <ActionButton
+            tone="surface"
+            size="sm"
             type="button"
             onClick={() => setEntries((c) => [...c, { label: "" }])}
             disabled={entries.length >= 24}
-            className="rounded border border-edge px-2.5 py-1 font-mono text-[11px] text-smoke transition-colors hover:border-accent hover:text-accent disabled:opacity-50"
           >
             {translate("accounts.addRow")}
-          </button>
-          <button
+          </ActionButton>
+          <ActionButton
+            tone="accent"
+            size="sm"
             type="button"
             onClick={save}
-            disabled={state === "saving"}
-            className="rounded border border-accent bg-accent px-2.5 py-1 font-mono text-[11px] text-white transition-opacity hover:opacity-85 disabled:opacity-50"
+            busy={state === "saving"}
+            busyLabel={translate("accounts.saving")}
           >
-            {translate(state === "saving" ? "accounts.saving" : "accounts.save")}
-          </button>
-          <button
+            {translate("accounts.save")}
+          </ActionButton>
+          <ActionButton
+            tone="quiet"
+            size="sm"
             type="button"
             onClick={() => {
               setEntries(initial);
@@ -368,10 +383,9 @@ export function ProjectAccounts({
               setError(null);
               setEditing(false);
             }}
-            className="font-mono text-[11px] text-faint transition-colors hover:text-smoke"
           >
             {translate("accounts.cancel")}
-          </button>
+          </ActionButton>
         </div>
         {/* The warning that matters: this is not a vault. */}
         <p className="project-accounts-warning">

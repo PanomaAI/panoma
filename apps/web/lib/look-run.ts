@@ -41,6 +41,17 @@ export interface LookImage {
   bytes: number;
   /** What was it called in the mailbox, when it came out of a mailbox. */
   shot?: string | undefined;
+  /**
+   * The capture as it is on the disk, when what travels is a reduction of it.
+   *
+   * It exists for the digest and for nothing else. The row is the memory of the deliveries —the
+   * watcher asks it "has this been looked at?" and the mailbox screen paints its badge from it—
+   * and what both hold in their hands is the file, not what was sent to the provider. Remembering
+   * a reduced capture by the digest of its reduction would make every one of those questions
+   * answer no, so the watcher would pay again for the same delivery on every pass and the badge
+   * would never appear.
+   */
+  whole?: string | undefined;
 }
 
 /** What returns is a look already made and already saved. */
@@ -103,7 +114,8 @@ export async function runLook(
   });
 
   const outcome = parseFindings(answer.text, built.labels);
-  const digest = digestOf(options.image.data);
+  // Of the file, never of what travelled. See `whole` in `LookImage`.
+  const digest = digestOf(options.image.whole ?? options.image.data);
 
   const lookId = await saveLook(database, {
     identity: options.identity,

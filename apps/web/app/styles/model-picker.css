@@ -14,6 +14,8 @@
 .model-picker {
   position: relative;
   display: flex;
+  /* A layout measurement, above the last step of the scale: the width this control wants in the
+     row before it starts giving ground. */
   flex: 1 1 240px;
   min-width: 0;
 }
@@ -21,9 +23,9 @@
 .model-picker__field {
   width: 100%;
   min-width: 0;
-  padding: 6px 40px 6px 10px;
+  padding: var(--space-3) var(--space-20) var(--space-3) var(--space-5);
   border: 1px solid var(--color-edge);
-  border-radius: 4px;
+  border-radius: var(--corner-xs);
   background: var(--color-raised);
 }
 
@@ -39,16 +41,21 @@
 
 .model-picker__toggle {
   position: absolute;
+  /* The three insets are the width of the field's own border, not a step of the space scale:
+     they exist so the arrow sits against the line and never on top of it. */
   top: 1px;
   right: 1px;
   bottom: 1px;
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Measured against the field's 40px of right padding, which keeps the text clear of this
+     arrow: the scale has no 30, and moving it would have to move that padding too. */
   width: 30px;
   border: 0;
   border-left: 1px solid var(--color-edge);
-  border-radius: 0 3px 3px 0;
+  /* The right cap of the field, so it takes the field's own corner. */
+  border-radius: 0 var(--corner-xs) var(--corner-xs) 0;
   background: transparent;
   color: var(--color-faint);
   cursor: pointer;
@@ -64,8 +71,8 @@
 }
 
 .model-picker__toggle svg {
-  width: 15px;
-  height: 15px;
+  width: var(--icon);
+  height: var(--icon);
   stroke-width: 2;
 }
 
@@ -79,16 +86,20 @@
  */
 .model-picker__list {
   position: absolute;
-  top: calc(100% + 4px);
+  top: calc(100% + var(--space-2));
   right: 0;
   left: 0;
   z-index: var(--z-dropdown);
+  /* A layout measurement, above the last step of the scale: how tall the list may grow before
+     it scrolls. */
   max-height: 260px;
   overflow-y: auto;
   margin: 0;
-  padding: 5px;
+  padding: var(--space-3);
   border: 1px solid var(--color-edge-bright);
-  border-radius: 6px;
+  /* A floating surface takes the surface corner; its rows below keep the small one, so the
+     children are never rounder than the box that holds them. */
+  border-radius: var(--corner);
   background: var(--color-surface);
   box-shadow: var(--shadow-popover);
   list-style: none;
@@ -97,12 +108,12 @@
 .model-picker__item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 5px 8px;
-  border-radius: 4px;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--corner-xs);
   color: var(--color-smoke);
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 0.72rem;
+  font-size: var(--type-xs);
   cursor: pointer;
 }
 
@@ -125,16 +136,28 @@
 
 .model-picker__tag {
   flex: none;
-  padding: 1px 6px;
+  padding: var(--space-1) var(--space-3);
   border: 1px solid var(--color-edge);
-  border-radius: 999px;
+  border-radius: var(--corner-pill);
   color: var(--color-faint);
-  font-size: 0.62rem;
+  font-size: var(--type-3xs);
 }
 
+/*
+  «No model matches», and it stays a class of this sheet rather than becoming
+  `EmptyState variant="note"` like the rest.
+
+  The reason is the same one `primitives.tsx` gives for `.model-picker__toggle` in its list of nine
+  controls that are deliberately not expressed in the tone × size grid: this is not a block on a
+  page, it is a line inside a popover that hangs off a field. Its density is the popover's — the
+  rows above it are `--type-3xs` — and the house note is `--type-sm`, which is larger than every
+  model name it would be standing in for. Two of the five sheet classes that said this sentence
+  merged in `overlays.css` because they really were one rule; this one is a third size for a third
+  surface, and forcing it up two steps would be tidying the name at the cost of the picker.
+ */
 .model-picker__empty {
-  padding: 6px 8px;
+  padding: var(--space-3) var(--space-4);
   color: var(--color-faint);
-  font-size: 0.7rem;
-  line-height: 1.45;
+  font-size: var(--type-2xs);
+  line-height: var(--lead-snug);
 }

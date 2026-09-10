@@ -4,12 +4,13 @@ import {
   readConsent,
   readableSources,
 } from "@panoma/core";
-import { remapObservations, resolveProject, saveVerdicts } from "@panoma/db";
+import { queueWrite, remapObservations, resolveProject, saveNarratives, saveVerdicts } from "@panoma/db";
 import { db } from "@/lib/db";
 import { localOperatorOnly, sameOrigin } from "@/lib/guard";
 import { planMine } from "@/lib/mine";
 import { distinctCwds, toVerdicts, type ReactionInput } from "@/lib/verdicts";
 import { localeFrom, t } from "@/lib/i18n";
+import { toNarratives } from "@/lib/narratives";
 
 /**
  * Read the history from the catalog, which until now could only be done from the terminal.
@@ -108,6 +109,9 @@ export async function POST(request: Request) {
   let remapped = 0;
   let unmatched = 0;
   let undated = 0;
+  let narrativesSaved = 0;
+  let narrativesUnmatched = 0;
+  let narrativesUndated = 0;
   const read: string[] = [];
   /*
     The ones yet to be granted, and **you can fatten halfway through**: `twin.json` is not the
@@ -119,7 +123,7 @@ export async function POST(request: Request) {
   const denied = [...plan.denied];
 
   for (const source of plan.ready) {
-    const outcome = await mineHistory(source, { limit: MAX_PER_SOURCE });
+    const outcome = await mineHistory(source, { limit: MAX_PER_SOURCE, captureNarratives: true });
     if (!outcome.allowed || outcome.result === undefined) {
       if (!denied.includes(source)) denied.push(source);
       continue;
@@ -127,6 +131,7 @@ export async function POST(request: Request) {
 
     read.push(source);
     const reactions = outcome.result.reactions as ReactionInput[];
+    const narratives = outcome.result.narratives ?? [];
 
     /*
       The same project resolution that POSTs `/api/twin/verdicts`, and that's why it is written in
@@ -134,13 +139,21 @@ export async function POST(request: Request) {
       routes, and two different criteria would split the same history in two ways.
      */
     const identities = new Map<string, string>();
-    for (const cwd of distinctCwds(reactions)) {
+    for (const cwd of distinctCwds([...reactions, ...narratives.map((row) => ({ ...row, reaction: row.text, signals: [] }))])) {
       const project = await resolveProject(database, { cwd });
       if (project?.identity) identities.set(cwd, project.identity);
     }
 
     const batch = toVerdicts(reactions, identities);
-    const stored = await saveVerdicts(database, batch.rows);
+    const narrativeBatch = toNarratives(narratives, identities);
+    const stored = await queueWrite(() => database.transaction(async (tx) => {
+      const verdicts = await saveVerdicts(tx, batch.rows);
+      const captured = await saveNarratives(tx, narrativeBatch.narratives);
+      return { ...verdicts, narratives: captured.inserted };
+    }));
+    narrativesSaved += stored.narratives;
+    narrativesUnmatched += narrativeBatch.unmatched;
+    narrativesUndated += narrativeBatch.undated;
     saved += stored.inserted;
     /*
       Those that were already there and have changed projects are counted separately, as in the
@@ -155,7 +168,7 @@ export async function POST(request: Request) {
   }
 
   /* The phrases of the portrait follow their quotes. See the path of verdicts. */
-  const restated = await remapObservations(database);
+  const restated = await queueWrite(() => remapObservations(database));
 
   return Response.json({
     read,
@@ -170,6 +183,9 @@ export async function POST(request: Request) {
     unmatched,
     undated,
     restated,
+    narrativesSaved,
+    narrativesUnmatched,
+    narrativesUndated,
     denied,
     unreadable: plan.unreadable,
   });

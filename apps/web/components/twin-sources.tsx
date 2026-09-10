@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useT } from "./i18n-provider";
-import { formatBytes } from "./primitives";
+import { ActionButton, ActionError, Card, formatBytes } from "./primitives";
 import type { ConsentState } from "@panoma/core";
 
 /*
@@ -79,51 +79,67 @@ export function TwinSources({ sources }: { sources: SourceView[] }) {
   const shown = rows.filter((row) => row.state !== "absent");
   if (shown.length === 0) {
     return (
-      <section className="mt-6 rounded-lg border border-edge px-4 py-4">
-        <p className="eyebrow">{translate("twin.sourcesTitle")}</p>
+      <Card as="section" tone="plain" aria-labelledby="twin-sources-title">
+        <h2 id="twin-sources-title" className="text-base font-semibold">{translate("twin.sourcesTitle")}</h2>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed">
           {translate("twin.sourcesNone")}
         </p>
-      </section>
+      </Card>
     );
   }
 
   return (
-    <section className="mt-6 rounded-lg border border-edge px-4 py-4">
-      <p className="eyebrow">{translate("twin.sourcesTitle")}</p>
+    <Card as="section" tone="plain" aria-labelledby="twin-sources-title">
+      <h2 id="twin-sources-title" className="text-base font-semibold">{translate("twin.sourcesTitle")}</h2>
       <p className="mt-2 max-w-2xl text-sm leading-relaxed">{translate("twin.sourcesLead")}</p>
 
+      {/*
+         One row per history, on a grid rather than a wrapped line: the answer sat immediately
+         after text of a different width in every row, so the two buttons that open 1.7 GB and
+         3.8 GB of private conversation landed at two different places on the screen. The decision
+         column is the same column for every source now.
+        */}
       <div className="mt-3 flex flex-col gap-2">
         {shown.map((row) => (
-          <div key={row.id} className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-xs">{row.label}</span>
-            <span className="font-mono text-xs text-faint">
-              {row.present
-                ? translate("twin.sourceSize", {
-                    files: row.files,
-                    size: formatBytes(row.bytes),
-                  })
-                : translate("twin.sourceGone")}
+          <div
+            key={row.id}
+            className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1"
+          >
+            <span className="min-w-0">
+              <span className="font-mono text-xs">{row.label}</span>{" "}
+              {/*
+                 The measure is not chrome: it is what turns «may I read your history» into a
+                 decision — nobody says yes to «your history», they say yes to 1.7 GB with a name
+                 in front. `--color-smoke` is the ink content is written in.
+                */}
+              <span className="font-mono text-xs text-smoke">
+                {row.present
+                  ? translate("twin.sourceSize", {
+                      files: row.files,
+                      size: formatBytes(row.bytes),
+                    })
+                  : translate("twin.sourceGone")}
+              </span>
             </span>
             {row.state === "noReader" ? (
-              <span className="font-mono text-xs text-idle">
+              <span className="justify-self-end font-mono text-xs text-idle">
                 {translate("twin.sourceNoReader")}
               </span>
             ) : (
-              <button
+              /* The two chains this ternary alternated are the `plain` and `accent` tones at the
+                 same box: the row that is already open offers the quiet way out, the one that is
+                 shut offers the black button. That is one prop now, not two class strings. */
+              <ActionButton
+                tone={row.state === "allowed" ? "plain" : "accent"}
                 type="button"
                 onClick={() => decide(row.id, row.state !== "allowed")}
+                busy={saving === row.id}
+                busyLabel={translate("twin.saving")}
                 disabled={saving !== null}
-                className={
-                  row.state === "allowed"
-                    ? "rounded border border-edge px-2.5 py-1 font-mono text-xs text-smoke transition-colors hover:border-chalk disabled:opacity-50"
-                    : "rounded border border-accent bg-accent px-2.5 py-1 font-mono text-xs text-white transition-opacity hover:opacity-85 disabled:opacity-50"
-                }
+                className="justify-self-end"
               >
-                {saving === row.id
-                  ? translate("twin.saving")
-                  : translate(row.state === "allowed" ? "twin.sourceRevoke" : "twin.sourceAllow")}
-              </button>
+                {translate(row.state === "allowed" ? "twin.sourceRevoke" : "twin.sourceAllow")}
+              </ActionButton>
             )}
           </div>
         ))}
@@ -137,7 +153,11 @@ export function TwinSources({ sources }: { sources: SourceView[] }) {
       <p className="mt-3 max-w-2xl font-mono text-xs text-faint">
         {translate("twin.sourcesRevokeNote")}
       </p>
-      {error && <p className="mt-2 font-mono text-xs text-idle">{error}</p>}
-    </section>
+      {/*
+         The permission card's only failure channel. `ActionError` carries `role="alert"`, which is
+         what a refused grant needs: the row goes back to how it was and nothing else says why.
+        */}
+      {error && <ActionError text={error} className="mt-2" />}
+    </Card>
   );
 }

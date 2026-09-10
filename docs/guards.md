@@ -9,7 +9,7 @@ of **exceptions** and never the list of cases.
 **What tests anchor this.** Three, and they cover different things:
 `apps/web/middleware.test.ts` checks the front door with sixteen cases;
 `apps/web/lib/guard.test.ts` checks that `sameOrigin` and `localOperatorOnly` decide right
-**and** walks the source of all 55 routes demanding the doctrine handler by handler;
+**and** walks the source of all 62 routes demanding the doctrine handler by handler;
 `apps/web/app/api/gates.test.ts` calls the real handlers and checks that they **answer 403 and
 do nothing** — a guard placed after the first query would pass the first test and leave the
 door open all the same. The figures on this page are recovered with `grep`, and the commands
@@ -39,7 +39,7 @@ if (blocked) return blocked;
 
 ## The middleware decides whether you get in, and no longer asks where you came from
 
-Its `matcher` covers **everything** —all 55 API routes and every page— except Next's static
+Its `matcher` covers **everything** —all 62 API routes and every page— except Next's static
 assets (`_next/static`, `_next/image`) and `favicon.ico`, which are let through so that the
 "you need the key" page itself can be seen. `/icon/[id]` is **not** exempt, on purpose: it
 comes out of the catalog, and a project's name is already information.
@@ -116,13 +116,13 @@ detail: with `-H 0.0.0.0` the server thought it was called `http://0.0.0.0:4173`
 its own interface, which arrives from `http://localhost:4173`. The open, rescan, hide and
 launch buttons returned 403, accusing the browser of coming from somewhere else.
 
-**The figures.** `sameOrigin` shows up in 49 of the 55 `route.ts`, with **60 calls** —there
-are files with several handlers—, and those 60 calls cover 60 of the 67 handlers. The other
-seven are the agent channel:
+**The figures.** `sameOrigin` shows up in 65 of the 72 `route.ts`, with **82 calls** —there
+are files with several handlers—, and those 82 calls cover 82 of the 90 handlers. The other
+eight are the agent channel:
 
 ```bash
-grep -rl 'sameOrigin(' --include=route.ts apps/web/app/api | wc -l    # 49
-grep -rho 'sameOrigin(' --include=route.ts apps/web/app/api | wc -l   # 60
+grep -rl 'sameOrigin(' --include=route.ts apps/web/app/api | wc -l    # 65
+grep -rho 'sameOrigin(' --include=route.ts apps/web/app/api | wc -l   # 82
 ```
 
 ## `localOperatorOnly` separates looking from ordering
@@ -147,7 +147,7 @@ When there is a key, the client's is looked for in two places, in this order: th
 browser— and failing that, the `panoma-operator` cookie, pulled out of the `cookie` header by
 hand because a route handler receives a bare `Request`, without `NextRequest`'s `cookies`.
 
-**The fifteen handlers that carry it**, across thirteen files:
+**The thirty handlers that carry it**, across twenty-four files:
 
 | route · method | why it carries it |
 | --- | --- |
@@ -157,23 +157,38 @@ hand because a route handler receives a bare `Request`, without `NextRequest`'s 
 | `GET /api/assignments/launch` | just answering costs probing three agents with a `--version` |
 | `POST /api/assignments/launch` | opens a terminal with an agent working |
 | `POST /api/open` | starts editors, terminals, apps and agents |
+| `POST /api/open/all` | the same launchers several at a time, plus a browser; and `save` decides what the next click starts |
 | `POST /api/roots` | `add` ends up in `analyzeProject`, which runs git inside the folder |
 | `POST /api/ingest` | rewrites: with `scope`, a `{"projects":[]}` empties the catalog |
+| `POST /api/apps/[id]/[operation]` | installs, updates, rolls back, enables and removes a program on this machine |
+| `PATCH /api/apps/[id]/settings` | choosing an app's provider decides what it may spend and what leaves this computer |
+| `POST /api/apps/[id]/jobs` | starts an app's work: a child process of its own, a browser, a render |
+| `POST /api/apps/jobs/[jobId]/cancel` | signals that child and takes its process tree down with it |
+| `GET /api/apps/[id]/credentials` | whether a provider key is stored is inventory of the owner's secrets, the same reason `GET /api/ai` carries it |
+| `POST /api/apps/[id]/credentials` | writes a provider key into `ai.json`… |
+| `DELETE /api/apps/[id]/credentials` | …and takes it out again |
 | `POST /api/agent/keys` | issues an agent key… |
 | `DELETE /api/agent/keys` | …and withdraws it |
 | `POST /api/agent/mcp` | writes into the owner's `~/.claude.json` |
 | `POST /api/twin/sources` | granting is deciding that this computer opens the private history |
 | `POST /api/twin/mine` | opens those files and stores them |
 | `POST /api/twin/taste` | writes `TASTE.md`, which every one of your agents reads |
+| `POST /api/twin/rehearse` | spends a model credential on the owner's behalf |
+| `GET /api/twin/episodes` | reads the owner's own testimony: decisions with their reasons and their evidence |
+| `POST /api/twin/episodes` | writes that testimony, revises it and dismisses it |
+| `POST /api/twin/episodes/learn` | opens the captured history and spends a credential on it |
+| `GET /api/memory/export` | carries a project's whole memory out as one file: the owner's notes in every state, their decisions with their reasons, the distiller's receipts |
+| `GET /api/spend` | the receipt names the models the owner pays for and how much they use them: the same inventory `GET /api/ai` keeps behind its guard |
+| `POST /api/spend` | raising the number of calls this machine will pay for is giving an order, not looking |
 | `POST /api/twin/look` | **only if** a screenshot of the inbox is asked for by name |
 
 ```bash
-grep -rl 'localOperatorOnly(' --include=route.ts apps/web/app/api | wc -l   # 13
-grep -rho 'localOperatorOnly(' --include=route.ts apps/web/app/api | wc -l  # 15
-grep -rl 'localOperatorOnly'  --include=route.ts apps/web/app/api | wc -l   # 19
+grep -rl 'localOperatorOnly(' --include=route.ts apps/web/app/api | wc -l   # 24
+grep -rho 'localOperatorOnly(' --include=route.ts apps/web/app/api | wc -l  # 30
+grep -rl 'localOperatorOnly'  --include=route.ts apps/web/app/api | wc -l   # 30
 ```
 
-The third figure is the interesting one: **19 files name the guard and only 13 call it**. The
+The third figure is the interesting one: **25 files name the guard and only 19 call it**. The
 remaining six name it in a comment to leave written down why they do **not** carry it
 —`north`, `search`, `md/apply`, `md/repair`, `environment` and `twin/assign`—, and those
 reasons are in [http-api.md](http-api.md). It is not decoration: it is how "decided" gets told
@@ -230,15 +245,15 @@ nobody was looking at them:
 With the list inverted, a new route arrives watched by default and whoever wants to leave it
 out has to write the reason. The six tests it runs today:
 
-1. The eight files in `EJECUTAN` carry **both** guards in every handler, except three
-   exempted with a written reason longer than 40 characters: `open GET`, `twin/sources GET`
-   and `twin/taste GET`.
+1. The nine files in `EJECUTAN` carry **both** guards in every handler, except four
+   exempted with a written reason longer than 40 characters: `open GET`, `open/all GET`,
+   `twin/sources GET` and `twin/taste GET`.
 2. Any route whose code matches
    `/\b(spawn|spawnSync|execFile|execFileSync|exec|run)\s*\(/` is in `EJECUTAN` or in
    `EXENTAS` with its reason longer than 40 characters — today `environment` and `search`.
 3. Anything that calls `readScreenshot` calls `localOperatorOnly` too.
 4. **Every** door carries `sameOrigin` or is in `SIN_SAMEORIGIN` with its reason.
-5. And the seven that get out of `sameOrigin` call `requireAgent`; if one of them stops
+5. And the eight that get out of `sameOrigin` call `requireAgent`; if one of them stops
    existing, the test says it is surplus on the list instead of keeping quiet.
 6. Anything that calls `mineHistory`, `setConsent` or `setInferredConsent` calls
    `localOperatorOnly` **and** `sameOrigin` too.
@@ -251,17 +266,18 @@ the POST next to it did call the guards. Now the file is split on `export async 
 
 ## `requireAgent` guards the agent channel, and why `sameOrigin` would be decoration there
 
-Seven handlers carry an agent key and do not carry `sameOrigin`: `agent/context`, `agent/log`,
-`agent/tasks`, `agent/tasks/[id]`, `agent/notes` (POST), `agent/journal` and `agent/consult`.
-They are not called by a browser but by the MCP server, which sends neither `Sec-Fetch-Site`
-nor `Origin` — `sameOrigin` would let them through anyway.
+Eight handlers carry an agent key and do not carry `sameOrigin`: `agent/context`, `agent/log`,
+`agent/tasks`, `agent/tasks/[id]`, `agent/notes` (POST), `agent/journal`, `agent/consult` and
+`agent/hello`, the one the MCP server calls once when it comes up. They are not called by a
+browser but by the MCP server, which sends neither `Sec-Fetch-Site` nor `Origin` —
+`sameOrigin` would let them through anyway.
 
 What does guard them is a `panoma_` + 24 bytes in base64url key —192 bits— stored only
 hashed and shown once (`packages/db/src/agents.ts:38`). It travels in
 `Authorization: Bearer`, and the MCP client reads it from `PANOMA_KEY`, with `PANOMA_API` as
 the catalog's address.
 
-The eighth handler under `/api/agent/*` goes the other way round: `GET /api/agent/notes`
+One handler under `/api/agent/*` goes the other way round: `GET /api/agent/notes`
 serves the `panoma signal` hook, which runs right before an agent edits a file and **has no
 key at all**, so it carries `sameOrigin` and not `requireAgent`.
 
@@ -312,5 +328,5 @@ can only have by being on the machine.
   Spanish. Debt noted in the file itself: bringing it into the dictionary would mean copying
   both texts by hand, because nothing of Next can be rendered there.
 - **No test checks the figures on this page.** `guard.test.ts` checks the doctrine, not the
-  count: if tomorrow there are 62 calls to `sameOrigin`, the test stays green and this
+  count: if tomorrow there are 70 calls to `sameOrigin`, the test stays green and this
   document is left lying. The `grep`s above are there so that gets found out in a minute.

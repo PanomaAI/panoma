@@ -59,7 +59,7 @@ export function OpenMenu({
    */
   compact?: boolean;
 }) {
-  const { remote, editors, apps, agents } = useOpenTarget();
+  const { remote, editors, desktopApps, agents } = useOpenTarget();
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<"ready" | "opening" | "open">("ready");
   const [error, setError] = useState<string | null>(null);
@@ -69,7 +69,7 @@ export function OpenMenu({
    */
   const [preferredDestination, setPreferredDestination] = usePreference(
     "open:preferred-destination",
-    "app:claude-app",
+    "desktop:claude-app",
   );
   const boxRef = useRef<HTMLDivElement>(null);
 
@@ -114,8 +114,8 @@ export function OpenMenu({
       name: editor.name,
       icon: BRAND_ICONS[editor.id] ?? HiOutlineFolder,
     })),
-    ...apps.map((app) => ({
-      key: `app:${app.id}`,
+    ...desktopApps.map((app) => ({
+      key: `desktop:${app.id}`,
       tool: "app" as const,
       target: app.id,
       name: app.name,
@@ -155,7 +155,7 @@ export function OpenMenu({
    */
   const primary =
     destinations.find((destination) => destination.key === preferredDestination) ??
-    destinations.find((destination) => destination.key === "app:claude-app") ??
+    destinations.find((destination) => destination.key === "desktop:claude-app") ??
     destinations[0]!;
   const Primary = primary.icon;
 

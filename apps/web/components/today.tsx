@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { HiChevronDown, HiOutlineArrowPath } from "react-icons/hi2";
 import { useLocale, useT } from "./i18n-provider";
-import { relativeTime } from "./primitives";
+import { ActionButton, relativeTime } from "./primitives";
 
 /**
- * The report of the day: the first thing you see when opening Panoma.
+ * Recent activity, between the catalog controls and projects, with the recorded period explicit.
  *
  * It is the only surface of the product designed to be read **every morning**, and it depends on
  * it that Panoma is an entry and not a report. The rule that organizes it: first what cannot
@@ -85,20 +85,25 @@ function OpenInEditor({ id, name }: { id: string; name: string }) {
     }
   }
 
+  /*
+    It was the only control in this file written by hand, and it wrote four things the theme has
+    since named: `rounded-md` — 6px, a radius D8 retired, leaving 4, 8 and 14 —, `font-semibold`
+    where every button in the app is `font-mono`, `disabled:opacity-60` where the tree settled on
+    50, and a box with no height at all. `tone="surface"` is what it meant: the same button as
+    `raised`, on the paper this row is painted on.
+   */
   return (
-    <button
+    <ActionButton
+      tone="surface"
       type="button"
       onClick={openCard}
-      disabled={state === "opening"}
+      busy={state === "opening"}
+      busyLabel={t("today.opening")}
       title={t("today.openNamed", { name: name })}
-      className="shrink-0 rounded-md border border-edge bg-surface px-2.5 py-1 text-xs font-semibold text-chalk transition hover:border-edge-bright hover:bg-raised disabled:opacity-60"
+      className="shrink-0"
     >
-      {state === "opening"
-        ? t("today.opening")
-        : state === "error"
-          ? t("today.openFailed")
-          : t("today.resume")}
-    </button>
+      {state === "error" ? t("today.openFailed") : t("today.resume")}
+    </ActionButton>
   );
 }
 
@@ -110,8 +115,9 @@ export function Today({ report }: { report: ReportView }) {
     Folded when arriving, always. One does not remember on purpose: if it stayed open, the screen
     would reopen every morning with half the view taken up by yesterday's things, which is exactly
     what was coming to be fixed. Opening it takes a click and it is read in full.
-   */
+  */
   const [isOpen, setOpen] = useState(false);
+  const detailId = useId();
   /*
     And what the critic saw alone. Enter `hasAny` because it is the only thing in the report that
     could have occurred without anyone touching a file: a catalog without new commits could have
@@ -138,19 +144,19 @@ export function Today({ report }: { report: ReportView }) {
     ? t("today.since", { when: relativeTime(report.since, locale) })
     : t("today.last24h");
 
-  // No news: one line and on to something else. An empty and cumbersome strip every morning would
-  // teach you to ignore it, which is the only sure way to kill this function.
+  // This describes the report's records, not a guarantee that the watcher is running.
   if (!hasAny) {
     return (
-      <p className="brief brief--quiet">
+      <section className="brief brief--quiet" aria-label={t("today.activity")}>
         <HiOutlineArrowPath aria-hidden />
-        <span>{t("today.nothing", { period: period })}</span>
-      </p>
+        <strong>{t("today.activity")}</strong>
+        <span>{t("today.nothing", { period })}</span>
+      </section>
     );
   }
 
   return (
-    <section className="brief" aria-label={t("today.title")}>
+    <section className="brief" aria-label={t("today.activity")}>
       {/*
          Folded, the report costs a line instead of a screen.
          It would open completely every morning and half of it would be eaten at first sight, so
@@ -161,33 +167,16 @@ export function Today({ report }: { report: ReportView }) {
       <button
         type="button"
         className="brief__line"
-        onClick={() => setOpen(!isOpen)}
+        onClick={() => setOpen((open) => !open)}
         aria-expanded={isOpen}
+        aria-controls={detailId}
       >
         <HiOutlineArrowPath aria-hidden />
-        <strong>{t("today.title")}</strong>
+        <strong>{t("today.activity")}</strong>
         <span className="brief__facts">
           {summary.proposals > 0 && (
             <span className="brief__decision">
-              {t(summary.proposals === 1 ? "today.waitingOne" : "today.waitingMany", {
-                n: summary.proposals,
-              })}
-            </span>
-          )}
-          {summary.commits > 0 && (
-            <span>
-              {t(summary.touchedProjects === 1 ? "today.inProjectsOne" : "today.inProjectsMany", {
-                c: t(summary.commits === 1 ? "today.commitOne" : "today.commitMany", {
-                  n: summary.commits,
-                }),
-                n: summary.touchedProjects,
-              })}
-              {summary.byAgents > 0 && ` ${t("today.fromAgents", { n: summary.byAgents })}`}
-            </span>
-          )}
-          {summary.born > 0 && (
-            <span>
-              {t(summary.born === 1 ? "today.bornOne" : "today.bornMany", { n: summary.born })}
+              {t("today.proposalCount", { n: summary.proposals })}
             </span>
           )}
           {/*
@@ -200,138 +189,159 @@ export function Today({ report }: { report: ReportView }) {
             */}
           {criticFindings > 0 && (
             <span className="brief__decision">
-              {t(criticFindings === 1 ? "today.criticOne" : "today.criticMany", {
-                n: criticFindings,
-              })}
+              {t("today.findingCount", { n: criticFindings })}
             </span>
           )}
+          {summary.commits > 0 && (
+            <span>{t("today.commitCount", { n: summary.commits })}</span>
+          )}
+          {summary.commits === 0 && summary.touchedProjects > 0 && (
+            <span>{t("today.projectCount", { n: summary.touchedProjects })}</span>
+          )}
+          {summary.born > 0 && (
+            <span>{t("today.bornCount", { n: summary.born })}</span>
+          )}
         </span>
-        <span className="brief__when">{period}</span>
         <HiChevronDown className="brief__arrow" aria-hidden />
       </button>
 
-      {isOpen && (
-        <div className="brief__detail">
-          {/*
-             What cannot continue without you goes first: an agent has already done the work.
-             It was an amber box and now it is ink on gray, like the emblem of the proposals in
-             the catalog below. What awaits a decision is marked with the strongest contrast on
-             the screen, not with an alarm color: amber and red are for things that go wrong, and
-             this is not going wrong — it is finished and waiting for a yes.
-            */}
-          {report.proposals.length > 0 && (
-            <div className="brief__decisions">
-              {/* The same key as the stripe on the card: it is the same notice on another screen. */}
-              <p className="brief__label">{t("proposals.waiting")}</p>
-              <ul>
-                {report.proposals.slice(0, 4).map((proposal) => (
-                  <li key={proposal.id}>
-                    <Link href={`/runs/${proposal.id}`}>
-                      {proposal.pkgName}
-                      {proposal.a ? ` → ${proposal.a}` : ""}
-                    </Link>
-                    <span className="brief__where">
-                      {t("today.inProject", { project: proposal.project })}
-                    </span>
-                    {/*
-                       When the same recipe has been tried several times, the most recent one is
-                       shown and the number of times it exists is stated. Keeping it silent would
-                       leave the list in disagreement with `/runs`, which counts them all.
-                      */}
-                    {proposal.repeats > 1 && (
-                      <span className="brief__attempts">
-                        {t("today.attempts", { n: proposal.repeats })}
+      <div id={detailId} hidden={!isOpen}>
+        {isOpen && (
+          <div className="brief__detail">
+            <p className="brief__when">{period}</p>
+            {/*
+               What cannot continue without you goes first: an agent has already done the work.
+               It was an amber box and now it is ink on gray, like the emblem of the proposals in
+               the catalog below. What awaits a decision is marked with the strongest contrast on
+               the screen, not with an alarm color: amber and red are for things that go wrong, and
+               this is not going wrong — it is finished and waiting for a yes.
+              */}
+            {report.proposals.length > 0 && (
+              <div className="brief__decisions">
+                {/* The same key as the stripe on the card: it is the same notice on another screen. */}
+                <p className="brief__label">{t("proposals.waiting")}</p>
+                <ul>
+                  {report.proposals.slice(0, 4).map((proposal) => (
+                    <li key={proposal.id}>
+                      <Link href={`/runs/${proposal.id}`}>
+                        {proposal.pkgName}
+                        {proposal.a ? ` → ${proposal.a}` : ""}
+                      </Link>
+                      <span className="brief__where">
+                        {t("today.inProject", { project: proposal.project })}
                       </span>
-                    )}
-                    <span className="brief__meta">
-                      {t(proposal.verified ? "proposals.testsGreen" : "proposals.unverified")}
-                      {" · "}
-                      {relativeTime(proposal.when, locale)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+                      {/*
+                         When the same recipe has been tried several times, the most recent one is
+                         shown and the number of times it exists is stated. Keeping it silent would
+                         leave the list in disagreement with `/runs`, which counts them all.
+                        */}
+                      {proposal.repeats > 1 && (
+                        <span className="brief__attempts">
+                          {t("today.attempts", { n: proposal.repeats })}
+                        </span>
+                      )}
+                      <span className="brief__meta">
+                        {t(proposal.verified ? "proposals.testsGreen" : "proposals.unverified")}
+                        {" · "}
+                        {relativeTime(proposal.when, locale)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
-          {/*
-             Where is what the critic saw, which is the question that remained unanswered.
-             Each project leads to the anchor of its assignments, which is where the file records
-             the findings one by one. They are arranged by quantity — that's what the query
-             dictates — because among three projects, the one with seven things matters before the
-             one with one.
-            */}
-          {(critic?.where?.length ?? 0) > 0 && (
-            <div className="brief__decisions">
-              <p className="brief__label">{t("today.criticWhere")}</p>
-              <ul>
-                {critic!.where!.slice(0, 4).map((one) => (
-                  <li key={one.slug}>
-                    <Link href={`/p/${one.slug}#assignments`}>{one.name}</Link>
-                    <span className="brief__meta">
-                      {t(one.findings === 1 ? "today.criticFindingOne" : "today.criticFindingMany", {
-                        n: one.findings,
-                      })}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+            {/*
+               Where is what the critic saw, which is the question that remained unanswered.
+               Each project leads to the anchor of its assignments, which is where the file records
+               the findings one by one. They are arranged by quantity — that's what the query
+               dictates — because among three projects, the one with seven things matters before the
+               one with one.
+              */}
+            {(critic?.where?.length ?? 0) > 0 && (
+              <div className="brief__decisions">
+                <p className="brief__label">{t("today.criticWhere")}</p>
+                <ul>
+                  {critic!.where!.slice(0, 4).map((one) => (
+                    <li key={one.slug}>
+                      <Link href={`/p/${one.slug}#assignments`}>{one.name}</Link>
+                      <span className="brief__meta">
+                        {t(one.findings === 1 ? "today.criticFindingOne" : "today.criticFindingMany", {
+                          n: one.findings,
+                        })}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
-          {report.projects.length > 0 && (
-            <ul className="brief__projects">
-              {report.projects.slice(0, 5).map((project) => (
-                <li key={project.slug}>
-                  <div>
-                    <Link href={`/p/${project.slug}`}>{project.name}</Link>
-                    {project.commits[0] && (
-                      <p className="brief__subject">
-                        {project.commits[0].subject}
-                        {project.commits[0].agent && (
-                          <span className="brief__agent">{project.commits[0].agent}</span>
+            {summary.commits > 0 && (
+              <p className="brief__meta">
+                {t(summary.touchedProjects === 1 ? "today.inProjectsOne" : "today.inProjectsMany", {
+                  c: t(summary.commits === 1 ? "today.commitOne" : "today.commitMany", {
+                    n: summary.commits,
+                  }),
+                  n: summary.touchedProjects,
+                })}
+                {summary.byAgents > 0 && ` ${t("today.fromAgents", { n: summary.byAgents })}`}
+              </p>
+            )}
+
+            {report.projects.length > 0 && (
+              <ul className="brief__projects">
+                {report.projects.slice(0, 5).map((project) => (
+                  <li key={project.slug}>
+                    <div>
+                      <Link href={`/p/${project.slug}`}>{project.name}</Link>
+                      {project.commits[0] && (
+                        <p className="brief__subject">
+                          {project.commits[0].subject}
+                          {project.commits[0].agent && (
+                            <span className="brief__agent">{project.commits[0].agent}</span>
+                          )}
+                        </p>
+                      )}
+                      <p className="brief__meta">
+                        {project.commits.length > 0 && (
+                          <>
+                            {t(project.commits.length === 1 ? "today.commitOne" : "today.commitMany", {
+                              n: project.commits.length,
+                            })}
+                            {" · "}
+                            {relativeTime(project.commits[0]!.at, locale)}
+                          </>
+                        )}
+                        {project.agents.length > 0 && (
+                          <>
+                            {project.commits.length > 0 && " · "}
+                            {project.agents
+                              .map((a) => t("today.agentNoted", { name: a.name, n: a.activities }))
+                              .join(", ")}
+                          </>
                         )}
                       </p>
-                    )}
-                    <p className="brief__meta">
-                      {project.commits.length > 0 && (
-                        <>
-                          {t(project.commits.length === 1 ? "today.commitOne" : "today.commitMany", {
-                            n: project.commits.length,
-                          })}
-                          {" · "}
-                          {relativeTime(project.commits[0]!.at, locale)}
-                        </>
-                      )}
-                      {project.agents.length > 0 && (
-                        <>
-                          {project.commits.length > 0 && " · "}
-                          {project.agents
-                            .map((a) => t("today.agentNoted", { name: a.name, n: a.activities }))
-                            .join(", ")}
-                        </>
-                      )}
-                    </p>
-                  </div>
-                  <OpenInEditor id={project.id} name={project.name} />
-                </li>
-              ))}
-            </ul>
-          )}
+                    </div>
+                    <OpenInEditor id={project.id} name={project.name} />
+                  </li>
+                ))}
+              </ul>
+            )}
 
-          {report.born.length > 0 && (
-            <p className="brief__born">
-              {t("today.born")}{" "}
-              {report.born.slice(0, 4).map((bornAt, i) => (
-                <span key={bornAt.slug}>
-                  {i > 0 && ", "}
-                  <Link href={`/p/${bornAt.slug}`}>{bornAt.name}</Link>
-                </span>
-              ))}
-            </p>
-          )}
-        </div>
-      )}
+            {report.born.length > 0 && (
+              <p className="brief__born">
+                {t("today.born")}{" "}
+                {report.born.slice(0, 4).map((bornAt, i) => (
+                  <span key={bornAt.slug}>
+                    {i > 0 && ", "}
+                    <Link href={`/p/${bornAt.slug}`}>{bornAt.name}</Link>
+                  </span>
+                ))}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
     </section>
   );
 }

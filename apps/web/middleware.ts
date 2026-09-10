@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { portIsOpen } from "@/lib/exposure";
 import { sameSecret } from "@/lib/same-secret";
+import { FONT_MONO, FONT_SANS, INK, INK_MUTED, INSET, PAGE } from "@/lib/theme-values";
 
 /**
  * The network gateway: address **and** credential, never just the address.
@@ -224,6 +225,37 @@ function unauthorized(request: NextRequest) {
     Everything beneath this door speaks of the catalog —project names, disk paths— and none of
     that can reach someone who hasn't entered yet. Rendering a Next page would mean executing its
     layout, and the layout queries the catalog.
+
+    Which is also why the six values below are interpolated from `lib/theme-values.ts`. This page
+    loads no stylesheet, so there is no `:root` here and a `var(--color-ink)` would resolve to
+    nothing — in CSS that is not an error: the declaration is discarded and the property keeps what
+    it inherited. Four of the six are colors, and two of those four had gone stale: this page was
+    still painting the palette as it was before 8-Sep-2026, which is the one page a stranger sees.
+
+    ## The dark block that used to be here, and why it is not
+
+    This page carried the application's only `@media (prefers-color-scheme: dark)` rule: four more
+    literals repainting the body, the paragraph and the code chip. It is gone, and the reasoning is
+    left here because deleting it silently is how it would come back.
+
+    It was not a dark theme. It was one page of a light application, and `base.css` still pins
+    `color-scheme: light` for every other one. A person who opened the network link on a phone at
+    night met a black page, typed the key, and landed in a white catalog: the door disagreed with
+    the room. Nothing else in the product has ever honoured that setting.
+
+    It could not be guarded either, which is what settles it. Its four values mirrored no token —
+    there is no dark palette for them to mirror — so after this step they would have been the last
+    colors in the application that nothing watches, in the file that most needs to be boring.
+
+    And the same call was already made, on this same tree: `docs/theme.md` D11 records that the two
+    inert `dark:` utilities were "removed rather than left to ambush" a future dark theme, because
+    they would have activated unreviewed at 2.15:1 the day one existed. These four were the same
+    thing at page scale.
+
+    The door D13 keeps open is still open, and it is not this one: a dark theme redefines the roles
+    on `:root` and on the three screen classes. When it lands, this page reads it from
+    `theme-values.ts` like every other value here — which is the point of that file having a
+    single source.
    */
   return new NextResponse(
     `<!doctype html><html lang="es"><meta charset="utf-8">
@@ -231,16 +263,13 @@ function unauthorized(request: NextRequest) {
 <title>Panoma · hace falta la clave</title>
 <style>
   body{margin:0;min-height:100dvh;display:grid;place-items:center;padding:24px;
-       background:#fbfbfc;color:#0e0f11;
-       font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+       background:${PAGE};color:${INK};
+       font:15px/1.55 ${FONT_SANS}}
   main{max-width:34rem}
   h1{margin:0 0 12px;font-size:1.25rem;letter-spacing:-0.01em}
-  p{margin:0 0 10px;color:#5c6169}
-  code{font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;
-       background:#f1f1f3;border-radius:6px;padding:2px 6px}
-  @media (prefers-color-scheme:dark){
-    body{background:#0e0f11;color:#f4f4f5}p{color:#a1a1aa}code{background:#1c1c20}
-  }
+  p{margin:0 0 10px;color:${INK_MUTED}}
+  code{font:13px/1.5 ${FONT_MONO};
+       background:${INSET};border-radius:6px;padding:2px 6px}
 </style>
 <main>
   <h1>Hace falta la clave</h1>

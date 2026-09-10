@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { HiOutlineEye, HiOutlineEyeSlash, HiOutlineTrash } from "react-icons/hi2";
 import { useT } from "./i18n-provider";
 import { useFocusTrap } from "./use-focus-trap";
@@ -181,7 +182,18 @@ function ConfirmDelete({
     return () => window.removeEventListener("keydown", onKey);
   }, [onCancel]);
 
-  return (
+  /*
+    Out to the `body`, and not because of where it looks better: because of where it can be seen
+    at all. This dialog is rendered inside the ⋯ menu, which is `position: absolute` with
+    `--z-dropdown` so it can cover the record underneath — and that number opens a stacking
+    context. Inside it the curtain's `--z-overlay` is not 70, it is 20, and 20 loses to the
+    sidebar's 40: the screen was darkened as far as the column and a press over the bar still
+    answered the bar's link. The menu needs its layer —measured: without it, thirty-three of forty
+    points inside the menu are painted over by the sheet below— so what moves is the dialog.
+    The menu stays open while this is on screen: `useDismissable` does not read a press inside an
+    `aria-modal` element as a press outside, which is the other half of this and is written there.
+   */
+  return createPortal(
     <div
       className="palette-backdrop"
       role="presentation"
@@ -236,6 +248,7 @@ function ConfirmDelete({
           </button>
         </div>
       </form>
-    </div>
+    </div>,
+    document.body,
   );
 }

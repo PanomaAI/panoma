@@ -31,7 +31,7 @@ export type OpenTarget = {
    * They go apart from the agents even if they share a brand: 'Claude' opens the application and
    * 'Claude Code' opens a terminal, and confusing them is the mistake that brought this list.
    */
-  apps: InstalledTool[];
+  desktopApps: InstalledTool[];
   agents: (InstalledTool & { broken?: string | null })[];
 };
 
@@ -42,7 +42,7 @@ export type OpenTarget = {
  * hiding the button that was about to be pressed for half a second is worse than showing too much
  * for half a second in the rare case.
  */
-const ASSUMED: OpenTarget = { remote: false, editor: null, editors: [], apps: [], agents: [] };
+const ASSUMED: OpenTarget = { remote: false, editor: null, editors: [], desktopApps: [], agents: [] };
 
 let pending: Promise<OpenTarget> | undefined;
 

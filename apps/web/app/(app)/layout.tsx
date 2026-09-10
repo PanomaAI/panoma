@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { getStats } from "@panoma/db";
 import { db } from "@/lib/db";
+import { versionNotice } from "@/lib/version-notice";
+import { refreshLatestIfDue } from "@/lib/version-refresh";
 import { bridgePending, bridgeReport, bridgeSteps } from "@/lib/bridge";
 import { cliName, isEphemeral } from "@/lib/cli-name";
 import { getLocale, t } from "@/lib/i18n";
@@ -51,7 +53,21 @@ export const dynamic = "force-dynamic";
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   // The language is resolved here, once per request, and from here it goes to the two worlds: to
   // the `lang` attribute for the browser and to the provider for the components.
-  const [stats, locale] = await Promise.all([shellStats(), getLocale()]);
+  /*
+    The version notice travels with the statistics because it costs the same as they do: three
+    small files that are already on this disk, no network and no route. `versionNotice()` swallows
+    every failure and answers `undefined`, so a catalog that cannot say which version it is stays
+    quiet instead of holding up the frame.
+   */
+  const [stats, locale, notice] = await Promise.all([shellStats(), getLocale(), versionNotice()]);
+
+  /*
+    And once a day the answer is refreshed, without anybody waiting for it — the same `void` the
+    front page uses to wake the watcher. This server runs for weeks, so whoever never opens a
+    terminal would otherwise be told about a release from the day they started, for ever. What it
+    learns lands on the next navigation; no screen is ever held up by npm.
+   */
+  void refreshLatestIfDue();
 
   return (
     <html lang={locale} className={inter.variable}>
@@ -77,7 +93,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
              share has to live above both of them.
             */}
           <SearchProvider>
-            <AppShell stats={stats} ephemeral={isEphemeral()} />
+            <AppShell stats={stats} ephemeral={isEphemeral()} notice={notice} />
             {children}
           </SearchProvider>
         </I18nProvider>

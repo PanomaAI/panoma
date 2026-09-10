@@ -1,4 +1,6 @@
 import { PHASE_DEVELOPMENT_SERVER } from "next/constants";
+import { createRequire } from "node:module";
+import { dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { NextConfig } from "next";
 
@@ -32,7 +34,27 @@ import type { NextConfig } from "next";
  * real JavaScript, not TypeScript.
  */
 
-const PACKAGE_MANAGERS = ["@panoma/core", "@panoma/db", "@panoma/enrich", "@panoma/runner", "@panoma/ai"];
+/*
+  Where the `next` that this application resolves lives, as a path relative to here.
+
+  It used to be a glob —`next@*`— and the wildcard was a trap that stayed shut for as long as the
+  whole repository was on one version. On 6-Sep-2026 `apps/web` moved to 15.5.25 for two critical
+  advisories and `apps/site` stayed on 15.5.23: two folders in the store, and `next@*` matched
+  both. Two whole copies of Next went into the same standalone —20 MB and 2167 files of the wrong
+  one, without even a `package.json`, so it did not even have a version to show— and `pack-app`
+  refused to package it. That refusal is the guard from the drizzle 0.38.4 episode doing its job,
+  and it is the only reason any of it was seen.
+
+  Asking Node is not tidiness: it is the same question the bundle asks at run time, so the answer
+  cannot drift from what really gets loaded. Windows answers with backslashes and these are globs,
+  hence the replace.
+ */
+const NEXT = relative(
+  dirname(fileURLToPath(import.meta.url)),
+  dirname(createRequire(import.meta.url).resolve("next/package.json")),
+).replace(/\\/g, "/");
+
+const PACKAGE_MANAGERS = ["@panoma/core", "@panoma/db", "@panoma/enrich", "@panoma/runner", "@panoma/ai", "@panoma/apps"];
 
 export default function config(phase: string): NextConfig {
   const dev = phase === PHASE_DEVELOPMENT_SERVER;
@@ -93,6 +115,28 @@ export default function config(phase: string): NextConfig {
     images: { unoptimized: true },
 
     /*
+      A screenshot travels inside the body, and the body had a ceiling nobody chose.
+
+      `panoma twin look --file` and the browser's picker both send the capture as base64 inside
+      the JSON, and base64 inflates by a third: the sixteen megabytes a capture may weigh on this
+      disk —`MAX_FITTABLE_BYTES`, which exists so a big local capture can be reduced instead of
+      refused— arrive as some twenty-one. Next clones the body so the middleware can read it and
+      cuts that clone at ten megabytes by default; the cut is not an error, it is a truncated
+      stream, so what reaches the route is a JSON that no longer parses. Measured on 6-Sep-2026
+      against `next dev` 15.5.23: a body of 10,485,408 B arrives whole and one of 10,493,408 B
+      arrives cut, with the warning `Request body exceeded 10 MB` in the server log.
+
+      Twenty-four megabytes, then, which is the twenty-one plus room for the rest of the request.
+      It is a limit on what this machine accepts from itself —the catalog listens on the loopback,
+      and with `--network` behind a key— and it does not change what leaves the machine: that is
+      still `MAX_SCREENSHOT_BYTES`, checked in the look route after the reduction.
+
+      It travels in the same `experimental` block as the switch below, and not in one of its own:
+      two keys with the same name in one object is the second one silently winning, which is the
+      kind of bug that leaves a limit looking configured and still cutting at ten.
+     */
+
+    /*
       With two root layouts, the path that Next generates for not found has none — it is not born
       in any group —, and since Next 15.5 this leaves the development server responding 500 to any
       unknown address. This switch is the output that Next gives: it makes it look at
@@ -101,7 +145,7 @@ export default function config(phase: string): NextConfig {
       `apps/web/app/not-found-view.test.ts` requires both as long as there is more than one root
       layout.
      */
-    experimental: { globalNotFound: true },
+    experimental: { globalNotFound: true, middlewareClientMaxBodySize: "24mb" },
 
     /*
       Packaging does not recheck types.
@@ -119,13 +163,15 @@ export default function config(phase: string): NextConfig {
         "../../packages/db/dist/**",
         "../../packages/db/migrations/**",
         "../../packages/db/package.json",
+        "../../packages/apps/dist/**",
+        "../../packages/apps/package.json",
         "../../node_modules/.pnpm/@electric-sql+pglite@*/node_modules/@electric-sql/pglite/dist/**",
         "../../node_modules/.pnpm/@electric-sql+pglite@*/node_modules/@electric-sql/pglite/package.json",
         "../../node_modules/.pnpm/drizzle-orm@*/node_modules/drizzle-orm/**",
-        "../../node_modules/.pnpm/next@*/node_modules/next/*.js",
-        "../../node_modules/.pnpm/next@*/node_modules/next/dist/server/**",
-        "../../node_modules/.pnpm/next@*/node_modules/next/dist/client/**",
-        "../../node_modules/.pnpm/next@*/node_modules/next/dist/shared/**",
+        `${NEXT}/*.js`,
+        `${NEXT}/dist/server/**`,
+        `${NEXT}/dist/client/**`,
+        `${NEXT}/dist/shared/**`,
       ],
     },
     outputFileTracingExcludes: {

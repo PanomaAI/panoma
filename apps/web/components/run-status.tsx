@@ -1,12 +1,21 @@
 import { t, type Locale, type MessageKey } from "@/lib/i18n";
+import { Tag, type TagTone } from "./primitives";
 
-const RUN_STYLE: Record<string, string> = {
-  proposed: "text-live border-live/30",
-  failed: "text-fail border-fail/30",
-  "no-changes": "text-faint border-edge",
-  running: "text-accent border-accent/30",
-  applied: "text-live border-live/30",
-  discarded: "text-faint border-edge",
+/*
+  How a run ended, as one of the pill's tones.
+  This was the third of the five colour maps that sat behind one word-pill, and four of its six
+  entries move with the merge: `proposed`, `failed`, `running` and `applied` were a coloured border
+  over `bg-raised` and now carry the hue's own tint at 10%, which is what every coloured pill in
+  the app renders. `--color-fail` over its own 10% tint is, on top of that, the one pairing
+  `contrast.test.ts` measures on every run — so the tinted form is also the measured one.
+ */
+const RUN_TONE: Record<string, TagTone> = {
+  proposed: "live",
+  failed: "fail",
+  "no-changes": "quiet",
+  running: "accent",
+  applied: "live",
+  discarded: "quiet",
 };
 
 /*
@@ -30,14 +39,9 @@ export function RunStatusTag({
 }) {
   return (
     <span className="inline-flex items-center gap-1.5">
-      <span
-        className={`rounded border bg-raised px-1.5 py-0.5 font-mono text-[10px] ${
-          RUN_STYLE[status] ?? RUN_STYLE["no-changes"]
-        }`}
-        title={status}
-      >
+      <Tag tone={RUN_TONE[status] ?? RUN_TONE["no-changes"]!} title={status}>
         {t(locale, `run.${status}` as MessageKey) ?? status}
-      </span>
+      </Tag>
       {status === "proposed" && (
         // The distinction is the product: a proposal without tests is not a verified proposal, and
         // mixing them would be exactly what makes a verifier useless.

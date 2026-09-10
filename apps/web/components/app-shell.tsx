@@ -6,31 +6,36 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { IconType } from "react-icons";
 import {
-  HiOutlineCircleStack,
+  HiOutlineBanknotes,
   HiOutlineChevronLeft,
   HiOutlineChevronRight,
+  HiOutlineCodeBracket,
+  HiOutlineCommandLine,
   HiOutlineLink,
   HiOutlineComputerDesktop,
   HiOutlineCpuChip,
   HiOutlineCube,
   HiOutlineFingerPrint,
+  HiOutlineFolder,
+  HiOutlineEllipsisHorizontal,
   HiOutlineKey,
   HiOutlineMagnifyingGlass,
   HiOutlinePlayCircle,
   HiOutlinePencilSquare,
-  HiOutlineSignal,
+  HiOutlineServer,
   HiOutlineSquare2Stack,
   HiOutlineSquares2X2,
 } from "react-icons/hi2";
 import { LOCALE_COOKIE, type Locale, type MessageKey } from "@/lib/i18n";
 import { CommandPalette } from "./command-palette";
-import { useLocale, useT } from "./i18n-provider";
+import { useCliName, useLocale, useT } from "./i18n-provider";
 import { useSearch } from "./search-provider";
 import { useDismissable } from "./use-dismissable";
+import type { VersionNotice } from "@/lib/version-notice";
 
 export type ShellStats = {
   projects: number;
-  /* The four states of `stateOf`, which add up to `projects`. See the breakdown below. */
+  /* The four states of `stateOf`, which add up to `projects`. */
   live: number;
   paused: number;
   dormant: number;
@@ -63,6 +68,8 @@ type NavItem = {
   label: MessageKey;
   icon: IconType;
   exact?: boolean;
+  /** A visual pause between everyday work, connected tools, and catalog diagnostics. */
+  groupStart?: boolean;
   /** `ShellStats` key whose value is displayed as a notice next to the name. */
   badge?: keyof ShellStats;
   /**
@@ -84,27 +91,37 @@ type NavItem = {
   scrolled down to the filters—and forced you to choose between two identical doors. Now there is
   one: the homepage *is* the catalog, so it is called by what it shows.
  */
+/*
+  How many sections fit in the mobile bar before «More» takes over. The number lives twice —here,
+  and as `nth-child(n + 5)` in `responsive.css`, where the bar hides the rest— because CSS cannot
+  read a constant. `styles.test.ts` compares the two, so moving one without the other fails
+  instead of hiding a section from both places at once.
+ */
+export const MOBILE_NAV_ITEMS = 4;
+
 const SIDEBAR_ITEMS: NavItem[] = [
-  { href: "/", label: "nav.projects", icon: HiOutlineSquares2X2, exact: true },
+  { href: "/", label: "nav.projects", icon: HiOutlineFolder, exact: true },
   // The bridge right below the projects, and not at the end with the health screens: this is where
   // everything lights up, and what lights up cannot live where no one reaches.
   {
     href: "/bridge",
     label: "nav.bridge",
-    icon: HiOutlineSignal,
+    icon: HiOutlineLink,
     badge: "bridgePending",
     badgeLabel: "shell.setupLeft",
   },
+  { href: "/spend", label: "nav.spend", icon: HiOutlineBanknotes },
   { href: "/runs", label: "nav.activity", icon: HiOutlinePlayCircle, badge: "proposedRuns" },
   { href: "/unsaved", label: "nav.unsaved", icon: HiOutlinePencilSquare, badge: "unsaved" },
-  { href: "/agents", label: "nav.agents", icon: HiOutlineLink },
+  { href: "/agents", label: "nav.agents", icon: HiOutlineCommandLine, groupStart: true },
+  { href: "/apps", label: "apps.title", icon: HiOutlineSquares2X2 },
   { href: "/twin", label: "nav.twin", icon: HiOutlineFingerPrint },
   { href: "/ai", label: "nav.ai", icon: HiOutlineCpuChip },
-  { href: "/packages", label: "nav.packages", icon: HiOutlineCube },
-  { href: "/search", label: "nav.searchCode", icon: HiOutlineMagnifyingGlass },
+  { href: "/packages", label: "nav.packages", icon: HiOutlineCube, groupStart: true },
+  { href: "/search", label: "nav.searchCode", icon: HiOutlineCodeBracket },
   { href: "/credentials", label: "nav.credentials", icon: HiOutlineKey },
   { href: "/copies", label: "nav.copies", icon: HiOutlineSquare2Stack },
-  { href: "/disk", label: "nav.disk", icon: HiOutlineCircleStack },
+  { href: "/disk", label: "nav.disk", icon: HiOutlineServer },
 ];
 
 function routeIsActive(pathname: string, item: NavItem): boolean {
@@ -120,7 +137,16 @@ function routeIsActive(pathname: string, item: NavItem): boolean {
  */
 const SOURCE_URL = "https://github.com/PanomaAI/panoma";
 
-export function AppShell({ stats, ephemeral }: { stats?: ShellStats; ephemeral?: boolean }) {
+export function AppShell({
+  stats,
+  ephemeral,
+  notice,
+}: {
+  stats?: ShellStats;
+  ephemeral?: boolean;
+  /** What this catalog has to say about its own version, when it has anything to say. */
+  notice?: VersionNotice;
+}) {
   const pathname = usePathname();
   const router = useRouter();
   const t = useT();
@@ -130,6 +156,17 @@ export function AppShell({ stats, ephemeral }: { stats?: ShellStats; ephemeral?:
   // coming apart.
   const { query, setQuery } = useSearch();
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreActive = SIDEBAR_ITEMS.slice(MOBILE_NAV_ITEMS).some((item) =>
+    routeIsActive(pathname, item),
+  );
+  const sidebarRef = useRef<HTMLElement>(null);
+  const moreButton = useRef<HTMLButtonElement>(null);
+  useDismissable(sidebarRef, moreOpen, (reason) => {
+    setMoreOpen(false);
+    if (reason === "escape") moreButton.current?.focus();
+  });
+  useEffect(() => { setMoreOpen(false); }, [pathname]);
 
   useLayoutEffect(() => {
     if (window.localStorage.getItem("panoma-shell-sidebar") === "hidden") {
@@ -159,12 +196,6 @@ export function AppShell({ stats, ephemeral }: { stats?: ShellStats; ephemeral?:
     router.push(params.size > 0 ? `/?${params.toString()}` : "/");
   }
 
-  /*
-    The language lives in a cookie and not in localStorage because the first rendering is done by
-    the server: a preference that the server cannot read would be applied late, with half the
-    interface flashing in the other language. One year of life — it is a preference, not a session
-    — and `router.refresh()` so that the server tree repaints immediately.
-   */
   function toggleSidebar() {
     setSidebarOpen((open) => {
       const next = !open;
@@ -173,6 +204,7 @@ export function AppShell({ stats, ephemeral }: { stats?: ShellStats; ephemeral?:
     });
   }
 
+  /* The server reads this cookie too, so refreshing keeps both rendered trees in one language. */
   function switchLanguage(next: Locale) {
     if (next === locale) return;
     document.cookie = `${LOCALE_COOKIE}=${next}; path=/; max-age=31536000; samesite=lax`;
@@ -236,16 +268,41 @@ export function AppShell({ stats, ephemeral }: { stats?: ShellStats; ephemeral?:
            'Explore' appeared lit on all pages because `/` is a prefix of any route. The top bar
            sticks to its own thing, which is searching.
           */}
-        <AccountButton ephemeral={ephemeral} />
+        <div className="topbar-actions">
+          <div className="lang-toggle" role="group" aria-label={t("shell.language")}>
+            <button
+              type="button"
+              onClick={() => switchLanguage("es")}
+              className={locale === "es" ? "is-active" : undefined}
+              aria-pressed={locale === "es"}
+              aria-label="Español"
+              lang="es"
+              title="Español"
+            >
+              ES
+            </button>
+            <button
+              type="button"
+              onClick={() => switchLanguage("en")}
+              className={locale === "en" ? "is-active" : undefined}
+              aria-pressed={locale === "en"}
+              aria-label="English"
+              lang="en"
+              title="English"
+            >
+              EN
+            </button>
+          </div>
+          <AccountButton ephemeral={ephemeral} notice={notice} />
+        </div>
       </header>
 
-      <aside id="app-sidebar" className="app-sidebar" aria-label={t("shell.sections")}>
+      <aside ref={sidebarRef} id="app-sidebar" className="app-sidebar" aria-label={t("shell.sections")}>
         {/*
-           Navigation and summary share the scrollable space. The footer is left out so that
-           language, local promise, and source do not disappear in low-height windows.
+           Navigation scrolls independently so the footer stays reachable in short windows.
           */}
         <div className="sidebar-scroll">
-          <nav>
+          <nav aria-label={t("shell.sections")}>
           {SIDEBAR_ITEMS.map((item) => {
             const Icon = item.icon;
             const active = routeIsActive(pathname, item);
@@ -255,6 +312,8 @@ export function AppShell({ stats, ephemeral }: { stats?: ShellStats; ephemeral?:
                 key={item.label}
                 href={item.href}
                 className={active ? "is-active" : undefined}
+                aria-current={active ? "page" : undefined}
+                data-group-start={item.groupStart || undefined}
                 /*
                   Folded, only the icon is visible, and an icon is guessed — it is not read. The
                   system label when hovered over is what makes the lane usable on the first day;
@@ -278,76 +337,31 @@ export function AppShell({ stats, ephemeral }: { stats?: ShellStats; ephemeral?:
               </Link>
             );
           })}
+          <button
+            ref={moreButton}
+            type="button"
+            className={moreActive ? "mobile-more is-active" : "mobile-more"}
+            aria-expanded={moreOpen}
+            aria-controls="mobile-sections"
+            onClick={() => setMoreOpen((shown) => !shown)}
+            aria-label={t("apps.moreSections")}
+          >
+            <HiOutlineEllipsisHorizontal aria-hidden />
+            <span>{t("apps.more")}</span>
+          </button>
           </nav>
+          {moreOpen && <div className="mobile-sections" id="mobile-sections">
+            <p>{t("apps.moreSections")}</p>
+            {SIDEBAR_ITEMS.slice(MOBILE_NAV_ITEMS).map((item) => {
+              const Icon = item.icon;
+              return <Link key={item.href} href={item.href} aria-current={routeIsActive(pathname, item) ? "page" : undefined}
+                onClick={() => setMoreOpen(false)}><Icon aria-hidden /><span>{t(item.label)}</span></Link>;
+            })}
+          </div>}
 
-          {stats && (
-            <div className="catalog-summary" aria-label={t("shell.summary")}>
-            <div className="catalog-summary__title">
-              <HiOutlineSquares2X2 aria-hidden />
-              <p>
-                <strong>{t("shell.summaryProjects", { n: stats.projects })}</strong>
-                <span>{t("shell.summaryScope")}</span>
-              </p>
-              {/*
-                 The same data in a lane: just the figure, because "65 projects / in your catalog"
-                 doesn't fit in 46 pixels nor split into two lines. `aria-hidden` goes there, and
-                 the paragraph above hides in plain sight but not from the reader, so whoever
-                 listens hears the whole sentence while the viewer sees the number —without
-                 anyone getting both things.
-                */}
-              <strong
-                className="catalog-summary__count"
-                title={`${t("shell.summaryProjects", { n: stats.projects })} · ${t("shell.summaryScope")}`}
-                aria-hidden
-              >
-                {stats.projects}
-              </strong>
-            </div>
-            {/*
-               The four states, and they add up to the total above.
-               They were two and didn't add up: it showed «32 projects · 7 active · 15 dormant»
-               —the ten on hold were missing, not appearing anywhere— and of those fifteen, only
-               seven appeared when filtering the grid by dormant, because the query combined the
-               dormant with the folders without a repository. A list that looks like a breakdown
-               has to break down: if it doesn't add up, whoever reads it will be left searching
-               for the rest.
-               The copies go behind a line because **they are not in that sum**: the count above
-               excludes them, so showing them in the same column made them seem like part of the
-               32 when they are 44 separate.
-              */}
-            <dl>
-              <SummaryRow label={t("shell.live")} value={stats.live} tone="live" />
-              <SummaryRow label={t("shell.paused")} value={stats.paused} tone="paused" />
-              <SummaryRow label={t("shell.dormant")} value={stats.dormant} tone="dormant" />
-              <SummaryRow label={t("shell.noGit")} value={stats.noGit} tone="muted" />
-            </dl>
-            {/*
-               Below the rule, because neither of these is in the sum above — and they are not
-               there for the same reason. The copies were set aside by the detector; the hidden
-               ones by the person reading this, one at a time. That is why hiding needs no counter
-               on the day it happens (the notice on the grid says where the project went, and does
-               not expire) and why it needs one a month later, when the figure is three short and
-               nothing else on the screen remembers why.
 
-               Only when there are any: a permanent «hidden 0» would teach a catalog with nothing
-               set aside to worry about a bin it has never used.
-              */}
-            <dl className="catalog-summary__aside">
-              <SummaryRow label={t("shell.copies")} value={stats.copies} tone="muted" />
-              {stats.hidden > 0 && (
-                <SummaryRow label={t("shell.hidden")} value={stats.hidden} tone="muted" />
-              )}
-            </dl>
-            </div>
-          )}
         </div>
 
-        {/*
-           On the same row as the slogan, not below it. The buttons say 'ES / EN' and not 'Español
-           / English': someone looking to change the language recognizes the pair of abbreviations
-           even if the interface is in the language they do not understand, which is exactly when
-           they need it.
-          */}
         <div className="sidebar-foot">
           {/*
              The link to the source, and it's not here out of courtesy.
@@ -367,26 +381,6 @@ export function AppShell({ stats, ephemeral }: { stats?: ShellStats; ephemeral?:
               {t("shell.footerSource")}
             </a>
           </p>
-          <div className="lang-toggle" role="group" aria-label={t("shell.language")}>
-            <button
-              type="button"
-              onClick={() => switchLanguage("es")}
-              className={locale === "es" ? "is-active" : undefined}
-              aria-pressed={locale === "es"}
-              title="Español"
-            >
-              ES
-            </button>
-            <button
-              type="button"
-              onClick={() => switchLanguage("en")}
-              className={locale === "en" ? "is-active" : undefined}
-              aria-pressed={locale === "en"}
-              title="English"
-            >
-              EN
-            </button>
-          </div>
         </div>
       </aside>
     </>
@@ -394,7 +388,7 @@ export function AppShell({ stats, ephemeral }: { stats?: ShellStats; ephemeral?:
 }
 
 /**
- * The round button in the corner, which until today did nothing.
+ * The installation button in the corner, which originally did nothing.
  *
  * It had an avatar, hand cursor, and `aria-label`, and no `onClick`. It's the same pattern as this
  * code criticizes two files beyond, on account of `⌘K` which was announced but didn't work: a
@@ -418,8 +412,16 @@ export function AppShell({ stats, ephemeral }: { stats?: ShellStats; ephemeral?:
  * longer called that, serving as the initial of an account that does not exist. A computer icon
  * says what the panel confirms — this is your machine, not your profile.
  */
-function AccountButton({ ephemeral }: { ephemeral?: boolean }) {
+function AccountButton({ ephemeral, notice }: { ephemeral?: boolean; notice?: VersionNotice }) {
   const t = useT();
+  /* `panoma` or `npx panoma`, so the commands the panel hands out are the ones that work here. */
+  const cli = useCliName();
+  const label =
+    notice === undefined
+      ? "shell.localAccount"
+      : notice.kind === "restart"
+        ? "shell.localAccountRestart"
+        : "shell.localAccountUpdate";
   const [open, setOpen] = useState(false);
   const holder = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
@@ -445,15 +447,49 @@ function AccountButton({ ephemeral }: { ephemeral?: boolean }) {
         type="button"
         className="account-button"
         aria-expanded={open}
-        aria-label={t("shell.localAccount")}
-        title={t("shell.localAccount")}
+        /*
+          The news is in the name and not only in the dot. A coloured dot says «something» to
+          whoever can see it and nothing at all to whoever cannot, and this button is the only
+          door to the panel that holds the sentence.
+         */
+        aria-label={t(label)}
+        title={t(label)}
         onClick={() => setOpen((shown) => !shown)}
       >
         <HiOutlineComputerDesktop aria-hidden />
+        {/*
+           Only while there is something to say, like the counters on the bar: a permanent mark
+           over a healthy state is furniture by the second day. It disappears on its own the moment
+           you update or restart — nobody has to dismiss it.
+          */}
+        {notice && <span className="account-dot" aria-hidden />}
       </button>
       {open && (
         <div className="account-card" role="dialog" aria-label={t("shell.localAccount")}>
           <strong>{t("shell.footerLocal")}</strong>
+          {/*
+             What to do about the version, when there is something to do. Two pieces of news and
+             never both: having already updated makes «update it» wrong, so the restart is the one
+             that shows. Same anatomy as the temporary-copy block below, and for the same reason —
+             it is news about this installation, not an alarm.
+            */}
+          {notice && (
+            <p className="account-update">
+              <strong>
+                {notice.kind === "restart"
+                  ? t("shell.restartReady", { running: notice.running })
+                  : t("shell.updateReady", { latest: notice.latest })}
+              </strong>
+              <br />
+              {notice.kind === "restart"
+                ? t("shell.restartHave", { installed: notice.installed })
+                : t("shell.updateHave", { running: notice.running })}
+              <br />
+              {notice.kind === "restart"
+                ? t("shell.restartHow", { cli })
+                : t(ephemeral ? "shell.updateHowNpx" : "shell.updateHowNpm", { cli })}
+            </p>
+          )}
           <p>{t("shell.accountNone")}</p>
           {/*
             Only when it is true, and inside the panel that already answers «what is this
@@ -472,32 +508,6 @@ function AccountButton({ ephemeral }: { ephemeral?: boolean }) {
           </a>
         </div>
       )}
-    </div>
-  );
-}
-
-function SummaryRow({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: number;
-  tone: "live" | "paused" | "dormant" | "muted";
-}) {
-  return (
-    <div>
-      {/*
-         The sign is wrapped to be able to hide it in the lane and leave the figure: a loose text
-         node cannot be selected from CSS. The `title` counts what the color dot keeps silent when
-         the word is not there.
-        */}
-      <dt title={label}>
-        <span className={`summary-dot summary-dot--${tone}`} aria-hidden />
-        <span className="summary-figure">
-          {value} <span className="summary-label">{label}</span>
-        </span>
-      </dt>
     </div>
   );
 }

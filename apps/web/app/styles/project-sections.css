@@ -1,8 +1,11 @@
 /*
   The deep sections of the file: proposals, dependencies, notices, context, inventory, resume, the
   build check, and services.
-  Step on `project-panels.css` in three rules on purpose —`.project-deep-heading`, its `h2` and
-  `.project-empty-state` —, so it has to go afterwards.
+  Step on `project-panels.css` in two rules on purpose —`.project-deep-heading` and its `h2`—, so
+  it has to go afterwards.
+  There was a third, `.project-empty-state`, and it was not a stomp on purpose: it was one class
+  whose layout lived there and whose ink lived here. It is declared once now, in
+  `project-panels.css`, where the rest of it always was.
  */
 
 .project-proposals-strip {
@@ -18,7 +21,7 @@
 
 .project-proposals-strip__card {
   border: 1px solid var(--line-strong);
-  border-radius: var(--corner-sm);
+  border-radius: var(--corner-xs);
   background: var(--card);
   transition: border-color var(--duration-medium) ease;
 }
@@ -36,7 +39,7 @@
 }
 
 .project-describe {
-  padding: 16px;
+  padding: var(--space-8);
   border: 1px solid var(--line);
   border-radius: var(--corner);
   background: var(--card);
@@ -45,7 +48,7 @@
 .project-describe__ask,
 .project-describe__rewrite {
   border: 1px solid var(--line-strong);
-  border-radius: var(--corner-sm);
+  border-radius: var(--corner-xs);
   background: var(--card);
   color: var(--muted);
   cursor: pointer;
@@ -68,9 +71,9 @@
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 16px;
-  margin-top: 20px;
-  padding: 17px 19px;
+  gap: var(--space-8);
+  margin-top: var(--space-10);
+  padding: var(--space-9) var(--space-10);
   scroll-margin-top: 106px;
   border: 1px solid var(--color-warn-edge-soft);
   border-radius: var(--corner);
@@ -85,30 +88,30 @@
 }
 
 .project-safety-strip h2 {
-  margin-top: 3px;
-  font-size: 0.9rem;
-  font-weight: 690;
+  margin-top: var(--space-2);
+  font-size: var(--type-sm);
+  font-weight: var(--weight-bold);
 }
 
 .project-safety-strip p:last-child {
-  margin-top: 3px;
+  margin-top: var(--space-2);
   color: var(--color-smoke);
-  font-size: 0.7rem;
+  font-size: var(--type-2xs);
 }
 
 .project-safety-actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--space-4);
   color: var(--color-warn-ink);
-  font-size: 0.7rem;
+  font-size: var(--type-2xs);
 }
 
 .project-deep-section,
 .project-utility-section {
-  margin-top: 24px;
-  padding: 24px;
+  margin-top: var(--space-12);
+  padding: var(--space-12);
   scroll-margin-top: 100px;
   border: 1px solid var(--line-strong);
   border-radius: var(--corner);
@@ -117,26 +120,33 @@
 
 .project-deep-heading {
   align-items: flex-end;
-  padding-bottom: 16px;
+  padding-bottom: var(--space-8);
   border-bottom: 1px solid var(--line);
 }
 
+/*
+  This is one of the three stomps on `project-panels.css`, and it only works because this file is
+  imported after it. Panels sets these h2 to `--type-base`; the deep heading is one step above at
+  `--type-lg`. They were 0.97rem and 1.18rem, so the override has to keep landing on a DIFFERENT
+  step. Put both on the same one and this line becomes a no-op that silently shrinks every deep
+  heading by the difference.
+ */
 .project-deep-heading h2 {
-  font-size: 1.18rem;
+  font-size: var(--type-lg);
 }
 
 .project-dependency-groups {
   display: grid;
-  gap: 22px;
-  margin-top: 18px;
+  gap: var(--space-12);
+  margin-top: var(--space-9);
 }
 
 .project-dependency-groups h3 {
-  margin-bottom: 8px;
+  margin-bottom: var(--space-4);
   color: var(--color-smoke);
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-size: var(--type-2xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--track-caps);
   text-transform: uppercase;
 }
 
@@ -152,7 +162,7 @@
   grid-template-columns: minmax(180px, 1fr) minmax(200px, 0.8fr) 150px;
   align-items: center;
   min-height: 54px;
-  padding: 0 14px;
+  padding: 0 var(--space-7);
 }
 
 .project-dependency-table > div + div {
@@ -167,14 +177,14 @@
 
 .project-dependency-table strong {
   font-family: var(--font-mono);
-  font-size: 0.71rem;
-  font-weight: 590;
+  font-size: var(--type-2xs);
+  font-weight: var(--weight-semibold);
 }
 
 .project-dependency-table small {
-  margin-top: 2px;
+  margin-top: var(--space-1);
   color: var(--color-faint);
-  font-size: 0.61rem;
+  font-size: var(--type-3xs);
 }
 
 .project-dependency-table [role="cell"]:last-child {
@@ -183,21 +193,21 @@
 
 .project-dependency-ok {
   color: var(--color-live);
-  font-size: 0.68rem;
-  font-weight: 600;
+  font-size: var(--type-2xs);
+  font-weight: var(--weight-semibold);
 }
 
 .project-advisory-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 18px;
+  gap: var(--space-6);
+  margin-top: var(--space-9);
 }
 
 .project-advisory-list article {
-  padding: 16px;
+  padding: var(--space-8);
   border: 1px solid var(--color-danger-edge-soft);
-  border-radius: 10px;
+  border-radius: var(--corner);
   background: var(--color-danger-soft-warm);
 }
 
@@ -205,41 +215,41 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-4);
 }
 
 .project-advisory-list strong {
   font-family: var(--font-mono);
-  font-size: 0.73rem;
+  font-size: var(--type-xs);
 }
 
 .project-advisory-list code {
   color: var(--color-faint);
   font-family: var(--font-mono);
-  font-size: 0.66rem;
+  font-size: var(--type-2xs);
 }
 
 .project-advisory-list article > p {
-  margin-top: 10px;
+  margin-top: var(--space-5);
   color: var(--color-smoke);
-  font-size: 0.72rem;
-  line-height: 1.55;
+  font-size: var(--type-xs);
+  line-height: var(--lead-body);
 }
 
 .project-advisory-list footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-top: 12px;
+  gap: var(--space-6);
+  margin-top: var(--space-6);
   color: var(--color-live);
-  font-size: 0.66rem;
+  font-size: var(--type-2xs);
 }
 
 .project-advisory-list footer a {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--space-3);
   color: var(--ink);
 }
 
@@ -251,13 +261,13 @@
 .project-context-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.65fr) minmax(280px, 0.85fr);
-  gap: 12px;
-  margin-top: 18px;
+  gap: var(--space-6);
+  margin-top: var(--space-9);
 }
 
 .project-context-card {
   min-width: 0;
-  padding: 20px;
+  padding: var(--space-10);
   border: 1px solid var(--line);
   border-radius: var(--corner);
   background: color-mix(in srgb, var(--card) 88%, var(--wash));
@@ -266,7 +276,7 @@
 .project-context-card__heading {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: var(--space-6);
 }
 
 .project-detail-icon {
@@ -274,7 +284,7 @@
   place-items: center;
   width: 34px;
   height: 34px;
-  border-radius: var(--corner-sm);
+  border-radius: var(--corner-xs);
   background: var(--wash);
   color: var(--ink);
 }
@@ -285,51 +295,51 @@
 }
 
 .project-context-card h3 {
-  font-size: 0.9rem;
-  font-weight: 680;
+  font-size: var(--type-sm);
+  font-weight: var(--weight-bold);
 }
 
 .project-context-card--origin > strong {
   display: block;
-  margin-top: 18px;
+  margin-top: var(--space-9);
   color: var(--ink);
-  font-size: 1rem;
-  line-height: 1.35;
+  font-size: var(--type-base);
+  line-height: var(--lead-snug);
 }
 
 .project-context-summary {
   max-width: 74ch;
-  margin-top: 16px;
+  margin-top: var(--space-8);
   color: var(--color-smoke);
-  font-size: 0.84rem;
-  line-height: 1.65;
+  font-size: var(--type-sm);
+  line-height: var(--lead-body);
 }
 
 .project-context-card .project-describe {
-  margin-top: 18px;
+  margin-top: var(--space-9);
   background: var(--card);
 }
 
 .project-origin-evidence-title {
-  margin-top: 18px;
+  margin-top: var(--space-9);
   color: var(--color-faint);
   font-family: var(--font-mono);
-  font-size: 0.64rem;
-  letter-spacing: 0.06em;
+  font-size: var(--type-3xs);
+  letter-spacing: var(--track-label);
   text-transform: uppercase;
 }
 
 .project-origin-evidence {
   display: grid;
-  gap: 7px;
-  margin-top: 9px;
-  padding-left: 17px;
+  gap: var(--space-4);
+  margin-top: var(--space-5);
+  padding-left: var(--space-9);
 }
 
 .project-origin-evidence li {
   color: var(--color-smoke);
-  font-size: 0.75rem;
-  line-height: 1.5;
+  font-size: var(--type-xs);
+  line-height: var(--lead-snug);
 }
 
 .project-origin-evidence a {
@@ -339,17 +349,10 @@
   text-underline-offset: 2px;
 }
 
-.project-empty-state {
-  margin-top: 16px;
-  color: var(--faint);
-  font-size: 0.78rem;
-  line-height: 1.55;
-}
-
 .project-inventory-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin-top: 18px;
+  margin-top: var(--space-9);
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: var(--corner);
@@ -357,10 +360,10 @@
 
 .project-inventory-grid > div {
   display: grid;
-  gap: 7px;
+  gap: var(--space-4);
   min-width: 0;
   min-height: 82px;
-  padding: 16px 18px;
+  padding: var(--space-8) var(--space-9);
 }
 
 .project-inventory-grid > div:not(:nth-child(3n + 1)) {
@@ -381,53 +384,53 @@
 .project-inventory-grid dt {
   color: var(--color-faint);
   font-family: var(--font-mono);
-  font-size: 0.64rem;
-  letter-spacing: 0.05em;
+  font-size: var(--type-3xs);
+  letter-spacing: var(--track-label);
   text-transform: uppercase;
 }
 
 .project-inventory-grid dd {
   color: var(--ink);
-  font-size: 0.82rem;
-  font-weight: 620;
+  font-size: var(--type-sm);
+  font-weight: var(--weight-semibold);
 }
 
 .project-resume-block {
-  margin-top: 16px;
+  margin-top: var(--space-8);
 }
 
 .project-resume-block > div {
-  gap: 12px;
+  gap: var(--space-6);
 }
 
 .project-resume-block section {
-  border-radius: 10px;
+  border-radius: var(--corner);
 }
 
 /* ── Does it still compile? — the verdict of Panoma check, inside Resume ── */
 
 .project-check-heading {
-  margin-top: 26px;
-  padding-top: 16px;
+  margin-top: var(--space-12);
+  padding-top: var(--space-8);
   border-top: 1px dashed color-mix(in srgb, currentColor 18%, transparent);
 }
 
 .project-check-heading h3 {
-  font-size: 0.8125rem;
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  font-size: var(--type-sm);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--track-flat);
 }
 
 .project-build-check {
-  margin-top: 10px;
+  margin-top: var(--space-5);
 }
 
 /* The error tail, just as it came out: monospaced, with its own scroll, without overflowing. */
 .project-build-check-reason {
-  margin-top: 8px;
-  padding: 10px 12px;
+  margin-top: var(--space-4);
+  padding: var(--space-5) var(--space-6);
   overflow-x: auto;
-  border-radius: 8px;
+  border-radius: var(--corner);
   background: color-mix(in srgb, currentColor 6%, transparent);
   /*
     `--mono` does not exist on this sheet: it is only declared by the landing modules, which are
@@ -435,8 +438,8 @@
     stack. `--font-mono` is the record of `theme.css`, which is the one that applied.
    */
   font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 1.5;
+  font-size: var(--type-2xs);
+  line-height: var(--lead-snug);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -445,62 +448,48 @@
 .project-service-list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 10px;
-  margin-top: 18px;
+  gap: var(--space-5);
+  margin-top: var(--space-9);
 }
 
 .project-stack-grid .technology-mark {
   min-height: 60px;
-  padding: 10px 12px;
+  padding: var(--space-5) var(--space-6);
   border: 1px solid var(--line);
-  border-radius: var(--corner-sm);
+  border-radius: var(--corner-xs);
   background: var(--card);
 }
 
 .project-log-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 18px;
+  gap: var(--space-6);
+  margin-top: var(--space-9);
 }
 
-.project-log-empty {
-  margin-top: 18px;
-  padding: 20px;
-  border: 1px dashed var(--color-edge-bright);
-  border-radius: 10px;
-  background: var(--color-raised);
-}
-
-.project-log-empty__what {
-  color: var(--color-chalk);
-  font-size: 0.95rem;
-}
-
-.project-log-empty__how {
-  max-width: 64ch;
-  margin: 6px 0 14px;
-  color: var(--color-smoke);
-  font-size: 0.875rem;
-  line-height: 1.55;
-}
+/*
+  `.project-log-empty` and its two children were here: a second dashed panel with a title at
+  `--type-base` — a size no other empty state in the application uses — for one block with one
+  writer. That block renders `EmptyState` now, so the frame, the corner and the two voices come
+  from `primitives.tsx` like every other emptiness, and there is nothing left for the sheet to say.
+ */
 
 .project-log-grid > article {
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--color-edge);
-  border-radius: 10px;
+  border-radius: var(--corner);
 }
 
 .project-log-grid h3 {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-4);
   min-height: 44px;
-  padding: 0 13px;
+  padding: 0 var(--space-7);
   border-bottom: 1px solid var(--color-edge);
-  font-size: 0.76rem;
-  font-weight: 680;
+  font-size: var(--type-xs);
+  font-weight: var(--weight-bold);
 }
 
 .project-log-grid h3 svg {
@@ -512,8 +501,8 @@
 .project-log-grid li {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 6px 9px;
-  padding: 10px 12px;
+  gap: var(--space-3) var(--space-5);
+  padding: var(--space-5) var(--space-6);
 }
 
 .project-log-grid li + li {
@@ -524,7 +513,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--color-smoke);
-  font-size: 0.68rem;
+  font-size: var(--type-2xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -533,17 +522,17 @@
   grid-column: 2;
   color: var(--color-faint);
   font-family: var(--font-mono);
-  font-size: 0.59rem;
+  font-size: var(--type-3xs);
 }
 
 .project-service-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-5);
   min-height: 64px;
-  padding: 11px 13px;
+  padding: var(--space-6) var(--space-7);
   border: 1px solid var(--line);
-  border-radius: var(--corner-sm);
+  border-radius: var(--corner-xs);
   background: var(--card);
 }
 
@@ -570,14 +559,14 @@
 }
 
 .project-service-item strong {
-  font-size: 0.78rem;
+  font-size: var(--type-xs);
 }
 
 .project-service-item small {
-  margin-top: 3px;
+  margin-top: var(--space-2);
   overflow: hidden;
   color: var(--color-smoke);
-  font-size: 0.68rem;
+  font-size: var(--type-2xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -586,27 +575,27 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 24px;
+  gap: var(--space-12);
 }
 
 .project-utility-section h2 {
-  margin-top: 3px;
-  font-size: 0.94rem;
+  margin-top: var(--space-2);
+  font-size: var(--type-base);
 }
 
 .project-view-frame .project-maintenance-utility {
-  padding-top: 24px;
+  padding-top: var(--space-12);
   border-top: 1px solid var(--line);
 }
 
 .project-page-footer {
   display: flex;
   align-items: center;
-  gap: 18px;
-  margin-top: 24px;
-  padding: 0 2px;
+  gap: var(--space-9);
+  margin-top: var(--space-12);
+  padding: 0 var(--space-1);
   color: var(--color-faint);
-  font-size: 0.66rem;
+  font-size: var(--type-2xs);
 }
 
 .project-page-footer a {

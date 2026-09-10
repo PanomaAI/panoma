@@ -36,10 +36,10 @@ English, like everything headed for a machine (`AGENT_LANGUAGE`).
 
 | tool | route | what it does |
 | --- | --- | --- |
-| `panoma_context` | `POST /api/agent/context` | the project briefing, and enrollment if it was not there |
+| `panoma_context` | `POST /api/agent/context` | the project briefing, rules for optional `files`, memory matched by the words of an optional `task`, and enrollment if it was not there |
 | `panoma_log` | `POST /api/agent/log` | records what the agent just did |
 | `panoma_remember` | `POST /api/agent/notes` | **proposes** a durable fact for memory |
-| `panoma_recall` | `POST /api/agent/journal` | searches the project's full journal |
+| `panoma_recall` | `POST /api/agent/journal` | searches the project's full journal and reads an original entry |
 | `panoma_ask` | `POST /api/agent/consult` | leaves a question of judgment for the twin |
 | `panoma_tasks` | `POST /api/agent/tasks` | lists the open and in-progress tasks |
 | `panoma_create_task` | `POST /api/agent/tasks` | creates a task (same route, with `title`) |
@@ -67,6 +67,49 @@ Its description asks the model to call it at the start, before it goes off explo
 and again every day it comes back. The promise holding that up is the delta's: half of what
 it brings changes from one night to the next.
 
+Since 5-Sep-2026 the briefing also carries the owner's recorded decisions for the project,
+under "Owner decisions": what they chose, why, when it applies and when it does not. Only
+owner-authored, active episodes with a decision travel —never the ones a model extracted—,
+six at most and 1,500 characters in all, and it is a read of the catalog like the notes: no
+model call. An agent that knows when a decision does not apply can say so instead of applying
+it anyway. The wire is `apps/web/lib/decision-brief.ts`, and its argument is in
+[decision-memory.md](decision-memory.md).
+
+Before editing, the agent can call the same tool with `files`: up to 30 literal paths
+relative to the cataloged project root. The response adds `pathNotes`, with each applicable
+approved rule once, its trigger and the files that matched it. Paths may contain spaces,
+parentheses, brackets and Unicode; traversal, absolute paths, control characters, backslashes
+and wildcards are rejected. These paths select catalog records; they do not open files.
+This works through the existing MCP tool in every connected client. It still requires the
+agent to supply the files: automatic delivery depends on an installed edit hook. Each
+delivered path rule names the first file that matched it, and how many more did, so the
+agent knows why it is reading it.
+
+Since 6-Sep-2026 the same tool also takes `task`: one sentence, 1,000 characters at most,
+saying what the agent is about to do or the error it is looking at. The route matches its
+words — diacritics folded, stop words dropped, numbers kept, the same `terms()` the Lab
+ranks beliefs with in `apps/web/lib/lexical.ts` — against the project's approved **sleeping**
+notes (body and trigger) and the owner's active decisions past the recency brief, and ranks
+by the rarity of the shared words. It answers with `taskNotes`, `taskDecisions` and
+`taskOmitted`, only when a task was sent: eight notes and four decisions at most, 4,000
+characters of note bodies and decision JSON between them, and the count of what matched but
+did not fit. Every item carries `matched`, the shared words rarest first, four at most. **A
+match is a reason to read the rule, not proof that it applies**: the formatter says so on
+every delivery, and the agent reads each one against what it is doing. Awake notes are never
+matched (they already travel whole), nor are the decisions the brief carries in the same
+response, nor proposed notes or extracted episodes: the task wakes nothing the owner did not
+approve. The selection is `apps/web/lib/task-memory.ts`, with no model call.
+
+In local mode the route reevaluates the project's note sentinels before reading memory,
+and the response says whether it could: `sentinels` carries `checked`, `unverified` and,
+when the patrol did not look at the disk, `skipped` — `remote` for a catalog on another
+machine, `root-missing` for a root that is not here. The formatter turns that into one line
+under the memory, so an anchored note's file claims are read as unverified instead of as
+checked this morning. Applicable path rules and task matches are delivered complete and
+remain outside memory ablation, like the hook's signals. A missing `pathNotes` field means
+an older server has no such delivery; an empty list with `memoryFiles` means those files were
+checked and no approved rules matched. The same reading applies to `taskNotes`.
+
 ### `panoma_log` — what happened, not what is still true
 
 It records a finished change, a decision worth remembering, or a snag. Its description says
@@ -74,9 +117,10 @@ explicitly **not** to call it for every edit: the journal is for what the next a
 need three months from now. It is also what fills the briefing's "since yesterday" — without
 it, tomorrow shows nothing but commits.
 
-With `closeSession: true` the route closes the session and fires memory distillation
-**without `await` and swallowing the error**. It is the hardest rule in the house: memory
-never delays the agent's turn. An oversized summary or oversized details give a 400 naming
+With `closeSession: true` the route atomically closes the session and enqueues its memory
+job once. It wakes the local worker without awaiting a model call. Jobs survive restarts;
+temporary failures and a full proposal queue no longer silently lose that session's chance
+to contribute memory. An oversized summary or oversized details give a 400 naming
 the field and its cap, not a 500, because a dumped build log used to blow up the `INSERT`
 against the text index limit and nobody knew why.
 
@@ -98,8 +142,9 @@ characters (`NOTE_MAX`), a `where` that is neither an exact relative path nor a 
 zone, or a queue of 20 proposals already waiting (`NOTE_PENDING_MAX`).
 
 The optional `where` is the note that sleeps: instead of spending budget in every turn's
-briefing, it is stored pinned to a path and delivered right before an agent touches that
-file. That is served by `GET /api/agent/notes` to the `panoma signal` hook, not by a tool.
+briefing, it is stored pinned to a path. Any client can retrieve it through `panoma_context`
+with `files` before editing. `GET /api/agent/notes` also serves it to the `panoma signal`
+hook where that hook is installed and the editing tool is supported.
 
 ### `panoma_recall` — the cold half
 
@@ -112,6 +157,18 @@ The query travels as a bound parameter to `websearch_to_tsquery`, which accepts 
 text: there is no syntax an agent can break from outside. And when there are no matches, the
 answer says the journal only knows what somebody wrote down — silence here is not proof that
 it did not happen.
+
+Search pages contain at most 12 entries. Each match carries a stable `id` and a bounded
+excerpt selected around matching text, including a match buried near the end of long details.
+The next page uses `nextCursor` with the same query. The cursor retains the exact database
+timestamp and ID, so entries written within the same millisecond are neither skipped nor
+repeated; it is bound to the project and query.
+
+To inspect the evidence, call `panoma_recall` with `entryId` instead of `query`. It returns
+the original summary and details in segments of at most 4,000 characters, with `nextOffset`
+when more remains. Repeat with that `offset` until the end. The read requires the same
+project: an ID does not grant access to another project's record. Returned text remains
+wrapped as journal evidence, and an excerpt never replaces the stored original.
 
 ### `panoma_ask` is written in the future tense because today it does not answer
 
@@ -164,30 +221,38 @@ attached.
 `packages/mcp/src/format.ts` composes it and it comes out as readable text, not as JSON: the
 consumer is a model, and an ordered summary gets used far better than a dump of objects.
 
-The order is not accidental. **What changes every night goes ahead of what changes every
-month.** The stack, the outdated dependencies and the advisories move on a scale of weeks:
-if they headed the document, today's context would be yesterday's word for word and the
-daily call would earn nothing. Besides, what comes first is what survives the final trim.
+Complete memory gets its budget before background: a large delta or proposal queue must not
+crowd out a rule needed before editing. Within the background, recent changes precede the
+stack and dependencies, so a repeat visit still makes new information easy to find.
 
 1. The name, the unverified-material warning, the path and the status with its health note.
-2. `Just enrolled in the catalog`, only if the project came in on this very call.
-3. `What it is` — the description from the manifest or from the README.
-4. `Since yesterday` — the delta.
-5. `Waiting on a decision` — finished proposals stalled waiting for a yes or a no.
-6. `Project memory` — the approved notes, with the percentage of budget spent.
-7. `Stack`, `Vulnerabilities`, `Dependencies`.
-8. `Open tasks` and `Recent work by other agents`.
+2. `Project memory` — the approved notes, with the percentage of budget spent.
+   When `files` is supplied, their applicable path rules follow in a separate memory block,
+   each naming the file that woke it. When `task` is supplied, `Project memory for your
+   task` follows with the notes and decisions whose words overlap it, each with its matched
+   words, and the count of what matched but did not fit.
+3. `Owner decisions` — the owner's recorded decisions with their reasons and exceptions.
+4. `Just enrolled in the catalog`, only if the project came in on this very call.
+5. `What it is` — the description from the manifest or from the README.
+6. `Since yesterday` — the delta.
+7. `Waiting on a decision` — finished proposals stalled waiting for a yes or a no.
+8. `Stack`, `Vulnerabilities`, `Dependencies`.
+9. `Open tasks` and `Recent work by other agents`.
 
 The unverified-material warning goes **ahead of everything and exactly once**. Ahead because
 it is the first thing the model reads and what frames the rest; once because repeating it
 after every block turns it into filler that gets skipped. The blocks are marked all the
 same: the warning explains what the mark means.
 
-Memory rides up top even though it barely changes, and that does not contradict the rule:
-the delta reports **state** and memory reports **rules**, which is the one thing in the
-document that asks to be read before acting. It can afford the spot because it is tiny by
-contract — a 2,000-character budget — and it goes whole, with no "…and N more": serving
-memory by halves is having no memory.
+Memory appears first because its rules must be read before acting. General rules have a
+2,000-character body budget; requested files can add up to 30 path rules of 500 characters
+each, and a task up to 8 notes and 4 decisions within 4,000 characters. Their complete
+bodies and the supplied decision fields remain intact when background sections no longer
+fit. The file reason on each path rule is paid for out of the same block: thirty rules at
+every maximum — 500-character bodies, 120-character triggers — with the awake memory and
+two decisions run about six hundred characters past the cap, and the formatter refuses
+them whole rather than cutting one; the test in `format.test.ts` keeps the largest shape
+that is promised to fit, with 100-character triggers.
 
 ### The seventeen caps
 
@@ -214,13 +279,19 @@ being able to hijack the rest of the document.
 | `gitAgents` | 6 | agents in the repository's running total |
 | `proposals` | 8 | stalled proposals |
 | `proposalSummary` | 220 | the summary of each proposal |
-| `document` | 24,000 | the whole document |
+| `document` | 24,000 | the briefing, including any omission or refusal notice |
 
-The last one is the **last net, not the first**: it only comes into play if some section cap
-falls short against data we had not seen before. And when it does, it says so — cutting in
-silence would be the worst of both worlds, because the agent loses half the context and
-believes it has all of it. Same with a task body trimmed in the briefing: it is told where
-the whole thing is, because a half-read assignment gets half-executed.
+The last one is the **last net, not the first**. Approved memory is indivisible: if the
+requested files match every sleeping note, all their bodies still travel, and so do the
+task matches. The formatter reserves their space, then adds whole background sections that
+fit, including the omission notice in the budget. Description, delta and pending proposals
+can also be omitted. It never cuts through a memory rule or a data wrapper to meet the
+document limit. If complete memory and its metadata alone cannot fit, it returns an
+explicit bounded refusal with no rules, task matches, decision previews or background. It
+asks for fewer files, a narrower task or owner consolidation, and does not mistake failed
+delivery for an absence of memory.
+A task body shortened
+in the briefing still points to the tool that serves it whole.
 
 Two more properties this file upholds that are not about presentation. The first: almost
 nothing that goes in there was written by whoever is asking, so it is marked as data and not
@@ -358,19 +429,20 @@ Three more precautions in the client, all of them from a failure that was measur
   bilingual, inherits the language of whoever was in front of it, and the agent got the same
   error in one language or another depending on who happened to be looking at the web app.
 
-## The eleven `/api/agent/*` handlers
+## The `/api/agent/*` handlers
 
-Nine `route.ts` files, eleven handlers. Seven authenticate with the agent key and **carry no
+Ten `route.ts` files, twelve handlers. Eight authenticate with the agent key and **carry no
 `sameOrigin`, on purpose**: they are called by the MCP server, which sends neither
 `Sec-Fetch-Site` nor `Origin`, so the guard would let them through anyway and would be
 decoration. The other four are not called by an agent.
 
 | handler | what it does | who may |
 | --- | --- | --- |
-| `POST /api/agent/context` | the briefing, the delta, what is pending, and enrollment | agent key |
-| `POST /api/agent/log` | records activity; closes the session and distills | agent key |
+| `POST /api/agent/hello` | the MCP server saying it is up, once, at startup; stamps `last_seen_at` | agent key |
+| `POST /api/agent/context` | the briefing, optional path rules, the delta, what is pending, the owner's recorded decisions, and enrollment | agent key |
+| `POST /api/agent/log` | records activity; closes the session and enqueues extraction | agent key |
 | `POST /api/agent/notes` | proposes a note (or rereads what was approved) | agent key |
-| `POST /api/agent/journal` | searches the full journal | agent key |
+| `POST /api/agent/journal` | searches the full journal or reads an original entry in bounded segments | agent key |
 | `POST /api/agent/consult` | leaves a question for the twin | agent key |
 | `POST /api/agent/tasks` | lists the open ones, or creates with `title` | agent key |
 | `PATCH /api/agent/tasks/[id]` | claims or closes a task | agent key |
@@ -404,10 +476,22 @@ Two paths, and both write the same block: a `command` that is the Node interpret
 `args` pointing at the built server, and an `env` with `PANOMA_API` and `PANOMA_KEY`.
 
 The `command` is the interpreter's path (`process.execPath`) and not the word "node": a hook
-or an MCP client can start up without your `PATH`, and there "node" does not exist. If the
-CLI cannot find the built server — neither in the monorepo nor packaged — it falls back to
-`npx -y @panoma/mcp` and says so; if it finds it in place but not built, it writes the block
-and warns.
+or an MCP client can start up without your `PATH`, and there "node" does not exist. If it
+finds the server in place but not built, it writes the block and warns: what is missing is a
+`build`, and naming it is more useful than refusing.
+
+If it finds no server at all — neither in the monorepo nor inside the package — it **refuses,
+before the key exists**. Until 5-Sep-2026 it fell back to `npx -y @panoma/mcp` instead, and
+that package is `private`: it is never published, so the fallback resolved to a 404 and left
+an entry in someone's `.mcp.json` that could not start. It stays private on purpose — the
+server already travels inside the `panoma` tarball with `@panoma/core` bundled into it, and
+published alone it would ask npm for that core, which is private too. So there is no third
+road, and the refusal goes ahead of the HTTP call for the same reason the npx refusal does: a
+key issued and never used is the row that makes the bridge count an agent that is not there.
+
+And `prepack` now **starts** the packaged server and asks it the protocol's first question,
+because checking that the file is present is what was already being done through the seven
+published versions in which the server was present and dead.
 
 ### From the terminal
 

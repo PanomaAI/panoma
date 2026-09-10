@@ -351,6 +351,76 @@
       "when": 1787699402270,
       "tag": "0049_las_piezas_de_la_frase_compuesta",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1788581213011,
+      "tag": "0050_twin_decision_memory",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1788654426147,
+      "tag": "0051_twin_learning_retry",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1788684000000,
+      "tag": "0052_memory_experiment_enrollment",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1788684000001,
+      "tag": "0053_memory_distillation_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1788684000002,
+      "tag": "0054_decision_revision_lookup",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1788716746040,
+      "tag": "0055_decision_expiry",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1788720317638,
+      "tag": "0056_ai_summary_hash",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1788783087195,
+      "tag": "0057_open_plan",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1788868372695,
+      "tag": "0058_apps",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1788868388163,
+      "tag": "0059_desktop_keys",
+      "breakpoints": true
     }
   ]
 }

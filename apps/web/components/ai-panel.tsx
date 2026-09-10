@@ -6,7 +6,7 @@ import { useT } from "./i18n-provider";
 import { readAiState } from "./ai-state";
 import { modelOptions, moveHighlight } from "@/lib/model-options";
 import { useDismissable } from "./use-dismissable";
-import { ActionButton } from "./primitives";
+import { ActionButton, Field } from "./primitives";
 import type { MessageKey } from "@/lib/i18n";
 
 /**
@@ -371,19 +371,22 @@ export function AiPanel() {
         <p role="status" className="font-mono text-[11px] leading-relaxed text-fail">
           {loadError}
         </p>
-        <button
+        <ActionButton
+          tone="raised"
+          size="sm"
           type="button"
+          className="mt-3"
           onClick={() => {
             setReloading(true);
             void load().finally(() => {
               if (mounted.current) setReloading(false);
             });
           }}
-          disabled={reloading}
-          className="mt-3 rounded border border-edge bg-raised px-2 py-0.5 font-mono text-[10px] text-smoke transition-colors hover:border-accent hover:text-accent disabled:opacity-50"
+          busy={reloading}
+          busyLabel={t("ai.retrying")}
         >
-          {t(reloading ? "ai.retrying" : "ai.retry")}
-        </button>
+          {t("ai.retry")}
+        </ActionButton>
       </div>
     );
   }
@@ -527,14 +530,15 @@ export function AiPanel() {
                       loading={busy === `usar:${session.id}`}
                       onChoose={() => use(session.id, session.name)}
                     />
-                    <button
+                    <ActionButton
+                      tone="quiet"
+                      size="sm"
                       type="button"
                       onClick={() => forget(session.id)}
                       disabled={busy !== null}
-                      className="font-mono text-[11px] text-faint transition-colors hover:text-fail disabled:opacity-50"
                     >
                       {t("ai.logout")}
-                    </button>
+                    </ActionButton>
                   </>
                 )}
               </div>
@@ -739,6 +743,14 @@ function ModelField({
           {t("ai.modelLabel")}
         </label>
 
+        {/*
+           The combobox is NOT the field primitive, and both halves of it are named exceptions.
+           `.model-picker__toggle` is the fourth of the nine `primitives.tsx` lists: an affix inside
+           a field, bordered on one side and inset by the field's own border width. And
+           `.model-picker__field` is the other half of that same control — the two share one box
+           drawn in `model-picker.css`, so giving the input its own border and radius would draw a
+           box inside the box. They move together or not at all.
+          */}
         <div className="model-picker" ref={box}>
           <input
             id={`model-${active.id}`}
@@ -821,14 +833,17 @@ function ModelField({
           )}
         </div>
 
-        <button
+        <ActionButton
+          tone="raised"
+          size="sm"
           type="button"
           onClick={fetchCatalog}
+          busy={searching}
+          busyLabel={t("ai.modelsLoading")}
           disabled={busy || searching}
-          className="rounded border border-edge bg-raised px-3 py-1.5 font-mono text-[11px] text-faint transition-colors hover:border-accent hover:text-accent disabled:opacity-50"
         >
-          {t(searching ? "ai.modelsLoading" : "ai.modelsFetch")}
-        </button>
+          {t("ai.modelsFetch")}
+        </ActionButton>
         <ActionButton
           tone="raised"
           type="submit"
@@ -928,7 +943,11 @@ function KeyRow({
            save it in its own store, which is one more place over which we no longer control
            anything.
           */}
-        <input
+        <Field
+          label={t("ai.keyLabel", { name: entry.name })}
+          hideLabel
+          size="sm"
+          className="min-w-0 flex-1"
           type="password"
           value={value}
           onChange={(event) => setValue(event.target.value)}
@@ -936,8 +955,6 @@ function KeyRow({
           spellCheck={false}
           maxLength={500}
           placeholder={entry.envVars[0] ?? t("ai.keyPlaceholder")}
-          aria-label={t("ai.keyLabel", { name: entry.name })}
-          className="min-w-0 flex-1 rounded border border-edge bg-raised px-2.5 py-1.5 font-mono text-xs text-chalk placeholder:text-faint focus:border-accent focus:outline-none"
         />
         <ActionButton
           tone="raised"
@@ -949,14 +966,15 @@ function KeyRow({
           {t("ai.save")}
         </ActionButton>
         {entry.masked && (
-          <button
+          <ActionButton
+            tone="quiet"
+            size="sm"
             type="button"
             onClick={onForget}
             disabled={busy !== null}
-            className="font-mono text-[11px] text-faint transition-colors hover:text-fail disabled:opacity-50"
           >
             {t("ai.forget")}
-          </button>
+          </ActionButton>
         )}
         {entry.signupUrl && (
           <a
@@ -990,6 +1008,12 @@ function Choose({
   const t = useT();
 
   if (active) {
+    /*
+      A `<span>` and not a control: there is nothing to press when the provider is already the one
+      in use. It keeps the button's box on purpose so the row does not jump when the state changes,
+      which is why it is not the `Tag` primitive — `Tag` is a word-pill at `px-1.5 py-0.5` and
+      would shrink this by a step in a row whose other item is a button.
+     */
     return (
       <span className="inline-flex shrink-0 items-center gap-1 rounded border border-edge bg-raised px-3 py-1.5 font-mono text-[11px] text-faint">
         <HiOutlineCheck aria-hidden /> {t("ai.inUse")}
@@ -998,18 +1022,24 @@ function Choose({
   }
 
   return (
-    <button
+    /*
+      Disabled and with the reason on the label: a turned-off button without explanation leaves
+      you guessing, and here the cause is always one of two and both can be fixed.
+      Its own `disabled:opacity-40` is gone with the chain: seven opacities across the tree became
+      the one the primitive carries, and this was the odd one.
+     */
+    <ActionButton
+      tone="raised"
+      size="sm"
       type="button"
+      className="shrink-0"
       onClick={onChoose}
+      busy={loading}
+      busyLabel={t("ai.choosing")}
       disabled={busy || !can}
-      /*
-        Disabled and with the reason on the label: a turned-off button without explanation leaves
-        you guessing, and here the cause is always one of two and both can be fixed.
-       */
       title={can ? undefined : t("ai.cantUse")}
-      className="shrink-0 rounded border border-edge bg-raised px-3 py-1.5 font-mono text-[11px] text-smoke transition-colors hover:border-accent hover:text-accent disabled:opacity-40"
     >
-      {t(loading ? "ai.choosing" : "ai.choose")}
-    </button>
+      {t("ai.choose")}
+    </ActionButton>
   );
 }

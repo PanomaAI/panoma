@@ -32,6 +32,7 @@ export type {
   VerdictSignal,
 } from "./claude-code";
 export { detectSignals } from "./claude-code";
+export type { Narrative } from "./shared";
 
 
 

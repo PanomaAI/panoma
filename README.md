@@ -84,7 +84,12 @@ dispatch.
 - [x] A hardened agent channel: every door guarded, keys stored with mode 0600, and untrusted text unable to escape its data boundary ([docs/mcp-security.md](docs/mcp-security.md))
 - [x] Agent instruction files: linting against the real disk, a self-managed block, attribution, inherited files, and model review ([docs/agents-md.md](docs/agents-md.md))
 - [x] Curated project memory: agents propose durable facts, you approve them, and approved memory reaches every agent's first turn under a budget that refuses silent compaction ([docs/memory.md](docs/memory.md))
-- [ ] Execution in an ephemeral container or CI; today it uses a local git worktree
+- [x] Optional official apps, with a screen of their own: a validated manifest, versions that activate and roll back, and each job in a separate process ([docs/apps.md](docs/apps.md))
+- [x] panoma video, the first app: it adds a production screen to every project and a "Create video" button to the project header; its package is not on npm yet, so there is nothing that screen can install today
+- [x] A spend screen: every model call is recorded, with a daily cap for each of the eight budget families that you can raise, lower, set to zero to switch that family off, or leave at the factory value ([docs/budgets.md](docs/budgets.md))
+- [x] A bridge screen: the four setup steps between your projects and your agents—catalog, model, agent, and automatic logging—one at a time, kept apart from what the agents have already recorded
+- [x] Execution inside an ephemeral container through docker, podman, nerdctl, or finch, falling back to the hardened level and saying why when no runtime is installed ([docs/run-and-isolation.md](docs/run-and-isolation.md))
+- [ ] Execution in CI
 - [ ] Notifications
 - [ ] Maven/Gradle and NuGet through Syft
 
@@ -106,8 +111,8 @@ npx panoma scan ~/Desktop
 ## Build from source
 
 You need **Node.js 22 or newer** and **pnpm**. Version 22 is the floor because CI actually
-tests it; the matrix runs version 22 and the newest supported release on all three operating
-systems.
+tests it: every push runs Node 22 and 26 on Linux, Windows runs once a week and on demand,
+and macOS only when the dispatch asks for it.
 
 ```bash
 pnpm install
@@ -193,8 +198,9 @@ pnpm exec tsx apps/cli/src/index.ts agent-key "Claude Code"
 ```
 
 The command prints the key and an MCP block ready to paste. With `--install`, it writes the
-configuration to the file that agent actually reads—project `.mcp.json` for Claude Code and
-`.cursor/mcp.json` for Cursor. For Codex it merges the `[mcp_servers.panoma]` table into
+configuration to the file that agent actually reads—project `.mcp.json` for Claude Code,
+`.cursor/mcp.json` for Cursor, and `~/.gemini/settings.json` for Gemini CLI. For Codex it
+merges the `[mcp_servers.panoma]` table into
 `~/.codex/config.toml` in place. When it cannot promise to leave the rest of that file
 untouched it says so and writes nothing. In the application, the same action is available
 under **Agents → Connect**.
@@ -207,10 +213,10 @@ Restart the agent afterwards. It then receives nine tools:
 
 | Tool | Purpose |
 |---|---|
-| `panoma_context` | The brief: stack, outdated dependencies, vulnerabilities, tasks, and what other agents did |
+| `panoma_context` | The brief: stack, outdated dependencies, vulnerabilities, tasks, and what other agents did. With `files`, the rules pinned to those paths; with `task`, the rules and decisions whose words overlap what you are about to do |
 | `panoma_log` | Record a change, decision, or blocker |
 | `panoma_remember` | **Propose** a durable fact for project memory. Nobody receives it until you approve it |
-| `panoma_recall` | Search the complete journal rather than only the recent window |
+| `panoma_recall` | Search the complete journal page by page, and read any entry whole |
 | `panoma_ask` | Leave a judgment question for your twin instead of interrupting you |
 | `panoma_tasks` | See the project's open and closed task queue |
 | `panoma_create_task` | Record technical debt without leaving the current task |
@@ -298,6 +304,15 @@ packages/mcp/      MCP server—the bridge to agents
   format.ts        responses written for model consumption
   index.ts         definitions for the nine tools
 
+packages/apps/     manager for the optional official apps
+  manifest.ts      the app manifest as data, validated before activation
+  official.ts      the apps this release is allowed to install
+  registry.ts      the version published on npm, cached for a day
+  manager.ts       install, activate, roll back, uninstall, probe requirements
+  process.ts       finds npm and runs it without a shell, descendants included
+  layout.ts        where each app and its work live under ~/.panoma
+  environment.ts   the variables an app child inherits, and no others
+
 apps/cli/          CLI: scan, enrich, disk, search, secrets, run, ai
 apps/web/          local-only web catalog through Next.js 15; never deployed
 apps/site/         public landing page and /docs through Next.js 15
@@ -367,10 +382,13 @@ three levels, and every execution records which one it used:
 | Level | Protects | Cost |
 |---|---|---|
 | `local` | Nothing beyond the changes | None |
-| `hardened` *(default)* | Credentials and sensitive areas of the disk | Slower installations |
-| `container` | The rest of the disk, network, processes, and resources | Requires Docker or Podman |
+| `hardened` | Credentials and, on macOS, your home folder | Slower installations |
+| `container` *(default when a runtime is installed)* | The rest of the disk, network, processes, and resources | Requires docker, podman, nerdctl, or finch |
 
-Measured with a script that behaves like a hostile `postinstall`, rather than assumed:
+Measured on macOS with a script that behaves like a hostile `postinstall`, rather than assumed.
+`hardened` closes your home folder with `sandbox-exec`, which exists only there: on Linux and
+Windows it stops at cleaning the environment, and it says so rather than promising the same
+everywhere:
 
 | | Secrets in environment | Reads `~/.ssh` | Sees the rest of the disk | Network during tests |
 |---|---|---|---|---|

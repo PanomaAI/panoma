@@ -3,14 +3,36 @@
   The three `@media` here step with the same weight on `catalog-screen`, `catalog-views`, and
   `detail-panel`, so this file goes after the three. At the end are the width cuts of this screen.
  */
+/*
+  The dashed frame rounds at `--corner`. It was 11px, which is the exact midpoint between the 8
+  and the 14 steps, so the tie is broken towards the value the other two catalog panels land on:
+  one corner for the three, instead of 8, 10 and 11. See `docs/theme.md`, D8.
+
+  `EmptyState` in `primitives.tsx` was written FROM this rule so that the screens outside this
+  sheet could have it, and the two agree on everything that makes the frame a frame: the same
+  dashed hairline —`--line-strong` is `--color-edge-bright`, which is what the component's
+  `border-edge-bright` resolves to— the same 8px corner, centred, a title at `--type-sm`/600 over a
+  line at `--type-xs`.
+
+  Two things are this one's alone, and both are because this block is a whole screen rather than a
+  gap inside one: it pads `--space-20` against the component's 32, and it holds a 280px floor so
+  the catalog does not collapse to a sentence. It also has a BUTTON inside it — the «scan a folder»
+  offer — whose 34px is one of the four control heights `primitives.tsx` declares, read from here
+  by name.
+
+  So: two implementations of one frame, on purpose and written down, with one writer left in the
+  markup — `project-store.tsx`. If they ever disagree about the border, the corner or the voice,
+  this one is the original and the component is the copy; moving either without the other is how a
+  ninth treatment gets born.
+ */
 .catalog-empty {
   display: grid;
   place-items: center;
-  gap: 3px;
+  gap: var(--space-2);
   min-height: 280px;
-  padding: 40px;
+  padding: var(--space-20);
   border: 1px dashed var(--line-strong);
-  border-radius: 11px;
+  border-radius: var(--corner);
   background: var(--paper);
   text-align: center;
 }
@@ -22,26 +44,26 @@
 }
 
 .catalog-empty h2 {
-  margin-top: 10px;
+  margin-top: var(--space-5);
   color: var(--ink);
-  font-size: 0.92rem;
-  font-weight: 620;
+  font-size: var(--type-sm);
+  font-weight: var(--weight-semibold);
 }
 
 .catalog-empty p {
   color: var(--ink-2);
-  font-size: 0.76rem;
+  font-size: var(--type-xs);
 }
 
 .catalog-empty button {
   min-height: 34px;
-  margin-top: 12px;
-  padding: 0 14px;
+  margin-top: var(--space-6);
+  padding: 0 var(--space-7);
   border: 1px solid var(--line-strong);
-  border-radius: 8px;
+  border-radius: var(--corner);
   background: var(--paper);
   color: var(--ink);
-  font-size: 0.74rem;
+  font-size: var(--type-xs);
   cursor: pointer;
   transition: border-color var(--duration-fast) ease;
 }
@@ -58,17 +80,17 @@
   .catalog-columns,
   .catalog-row {
     grid-template-columns: minmax(0, 1fr) 66px 126px 118px 28px;
-    gap: 14px;
+    gap: var(--space-7);
   }
 
   .catalog-columns {
-    padding-left: 15px;
-    padding-right: 15px;
+    padding-left: var(--space-8);
+    padding-right: var(--space-8);
   }
 
   .catalog-row {
-    padding-left: 15px;
-    padding-right: 15px;
+    padding-left: var(--space-8);
+    padding-right: var(--space-8);
   }
 }
 
@@ -85,10 +107,6 @@
   .detail-panel {
     position: static;
   }
-
-  .catalog-hint {
-    display: none;
-  }
 }
 
 @media (max-width: 760px) {
@@ -99,8 +117,8 @@
   /* No room for five columns: the stack and the date move to a second line. */
   .catalog-row {
     grid-template-columns: minmax(0, 1fr) auto auto;
-    row-gap: 8px;
-    padding: 13px 13px;
+    row-gap: var(--space-4);
+    padding: var(--space-7);
   }
 
   .catalog-row__identity { grid-area: 1 / 1; }
@@ -118,41 +136,34 @@
     opacity: 1;
   }
 
-  .resume-strip {
-    flex-wrap: wrap;
-  }
 
-  .resume-strip p {
-    flex: 1 1 100%;
-    order: 1;
-  }
-
-  .resume-strip .open-menu {
-    margin-left: auto;
-  }
 }
 
 .empty-catalog-page h1 {
-  margin-top: 12px;
-  font-size: clamp(2rem, 4vw, 3.5rem);
-  font-weight: 750;
-  letter-spacing: -0.045em;
+  margin-top: var(--space-6);
+  font-size: var(--type-display);
+  font-weight: var(--weight-heavy);
+  letter-spacing: var(--track-hero);
 }
 
 .empty-catalog-page > p:nth-of-type(2) {
   max-width: 620px;
-  margin-top: 18px;
+  margin-top: var(--space-9);
   color: var(--color-smoke);
-  line-height: 1.7;
+  line-height: var(--lead-loose);
 }
 
 .empty-catalog-page pre {
-  margin-top: 24px;
-  padding: 18px;
+  margin-top: var(--space-12);
+  padding: var(--space-9);
   overflow-x: auto;
   border: 1px solid var(--color-edge);
-  border-radius: 10px;
+  border-radius: var(--corner);
   background: var(--color-surface);
   font-family: var(--font-mono);
-  font-size: 0.78rem;
+  font-size: var(--type-xs);
+}
+
+.empty-catalog-page .catalog-overview {
+  margin: var(--space-12) 0 var(--space-10);
 }

@@ -3,7 +3,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { RiskCode } from "@panoma/core";
-import { riskText, say } from "./messages";
+import { APP_FAULTS } from "@panoma/apps/faults";
+import { appFaultText, riskText, say } from "./messages";
 
 /**
  * Let no loose Spanish remain due to the code CLI.
@@ -276,5 +277,38 @@ describe("los ocho riesgos se redactan, y en inglés", () => {
     /* `no-commits` does not change in plural: it changes in sentence. */
     expect(riskText({ code: "no-commits", count: 0 })).toBe("repository with no commits at all");
     expect(riskText({ code: "no-commits", count: 7 })).toBe("7 files and not a single commit");
+  });
+});
+
+/*
+  The same loop the eight risks get above, and for the same reason: `appFaultText` composes its
+  key from a table, and a composed key escapes the compiler's reach at the call site. The
+  `satisfies Record<AppFaultCode, MessageKey>` in `messages.ts` closes the set of keys; this
+  closes the set of sentences, in the language the terminal speaks and with no gap left showing.
+ */
+describe("cada fallo de una app se redacta, y en inglés", () => {
+  it.each(APP_FAULTS)("%s", (code) => {
+    const detail = code === "node-too-old" || code === "npm-too-old" ? ">=22.18 | v22.17.0" : "npm error code E404";
+    for (const value of [code, `${code}: ${detail}`]) {
+      const texto = appFaultText(value, "apps.jobFailed");
+      expect(texto, `${code}: no dice nada`).not.toBe("");
+      expect(texto, `${code}: falta la clave y sale el hueco`).not.toMatch(/[{}]/);
+      expect(texto, `${code}: eso no es inglés`).not.toMatch(CASTELLANO);
+    }
+  });
+
+  it("dice las dos cifras cuando un motor se queda corto", () => {
+    expect(appFaultText("node-too-old: >=22.18 | v22.17.0", "apps.jobFailed"))
+      .toBe("The app needs a newer Node.js than this machine has. Required: >=22.18. Installed: v22.17.0.");
+    // A payload that does not split in two loses the figures rather than showing half of them.
+    expect(appFaultText("npm-too-old: nonsense", "apps.jobFailed"))
+      .toBe("npm rejected this machine's version of Node.js or npm, so the app cannot be installed here.");
+  });
+
+  /* Rows written by the previous version are quoted as they were, under the sentence they had. */
+  it("cita lo que no reconoce", () => {
+    expect(appFaultText("HTTP 500", "apps.jobFailed")).toBe("Job failed: HTTP 500");
+    expect(appFaultText("Provider refused [redacted]", "apps.rejected"))
+      .toBe("App operation failed: Provider refused [redacted]");
   });
 });

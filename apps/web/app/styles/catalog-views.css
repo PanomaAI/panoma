@@ -13,8 +13,8 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   align-items: start;
-  gap: 18px;
-  margin-top: 18px;
+  gap: var(--space-12);
+  margin-top: var(--space-10);
 }
 
 .catalog-split[data-open="true"] {
@@ -23,27 +23,27 @@
 
 .catalog-body {
   min-width: 0;
+  container-type: inline-size;
 }
 
 .catalog-columns {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 76px 150px 140px 30px;
   align-items: center;
-  gap: 18px;
-  padding: 0 18px 9px;
+  gap: var(--space-9);
+  padding: 0 var(--space-9) var(--space-5);
   color: var(--ink-3);
-  font-size: 0.68rem;
-  font-weight: 560;
-  letter-spacing: 0.07em;
+  font-size: var(--type-2xs);
+  font-weight: var(--weight-strong);
+  letter-spacing: var(--track-label);
   text-transform: uppercase;
 }
 
 .catalog-rows--list {
-  overflow: hidden;
+  overflow: clip;
   border: 1px solid var(--line);
-  border-radius: 11px;
+  border-radius: var(--corner);
   background: var(--paper);
-  box-shadow: var(--shadow-lift);
 }
 
 /*
@@ -57,8 +57,8 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) 76px 150px 140px 30px;
   align-items: center;
-  gap: 18px;
-  padding: 13px 18px;
+  gap: var(--space-9);
+  padding: var(--space-8) var(--space-9);
   border-top: 1px solid transparent;
   outline-offset: -2px;
   cursor: default;
@@ -81,25 +81,25 @@
 .catalog-row__identity {
   display: flex;
   align-items: center;
-  gap: 13px;
+  gap: var(--space-7);
   min-width: 0;
 }
 
 .catalog-row__names {
   display: grid;
-  gap: 2px;
+  gap: var(--space-1);
   min-width: 0;
 }
 
 .catalog-row__name {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-4);
   min-width: 0;
   color: var(--ink);
-  font-size: 0.89rem;
-  font-weight: 580;
-  letter-spacing: -0.016em;
+  font-size: var(--type-sm);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--track-tight);
 }
 
 .catalog-row__name > span:first-child {
@@ -109,8 +109,8 @@
 }
 
 .catalog-row__star {
-  width: 13px;
-  height: 13px;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
   flex: none;
   color: var(--ink-2);
 }
@@ -123,17 +123,17 @@
 .waiting-badge {
   display: grid;
   place-items: center;
-  min-width: 19px;
-  height: 19px;
-  padding: 0 6px;
+  min-width: var(--icon-lg);
+  height: var(--icon-lg);
+  padding: 0 var(--space-3);
   flex: none;
-  border-radius: 999px;
+  border-radius: var(--corner-pill);
   background: var(--ink);
   color: var(--color-on-ink);
-  font-size: 0.67rem;
-  font-weight: 600;
+  font-size: var(--type-2xs);
+  font-weight: var(--weight-semibold);
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0;
+  letter-spacing: var(--track-flat);
 }
 
 /* The icon's backup when the project does not have one of its own. See `ProjectIcon`. */
@@ -155,10 +155,10 @@
 .open-handle {
   display: grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
+  width: 30px;
+  height: 30px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--corner);
   background: transparent;
   color: var(--ink-3);
   opacity: 0;
@@ -185,32 +185,32 @@
 }
 
 .open-handle svg {
-  width: 14px;
-  height: 14px;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
 }
 
 .catalog-row__handle,
 .catalog-tile__handle {
   display: grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
+  width: 30px;
+  height: 30px;
 }
 
 .catalog-tile__handle {
   position: absolute;
-  top: 7px;
-  left: 7px;
+  top: var(--space-3);
+  left: var(--space-3);
 }
 
 /* While the tab loads. A double click that doesn't respond repeats itself, and repeating it navigates. */
 .opening-spinner {
   display: block;
-  width: 14px;
-  height: 14px;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
   border: 2px solid var(--line-strong);
   border-top-color: var(--ink);
-  border-radius: 50%;
+  border-radius: var(--corner-disc);
   animation: opening-spin var(--duration-spin) linear infinite;
 }
 
@@ -245,22 +245,22 @@
   people to ignore the color entirely.
  */
 .risk-mark {
-  width: 15px;
-  height: 15px;
+  width: var(--icon);
+  height: var(--icon);
   flex: none;
   color: var(--warn);
 }
 
 /* In the tile fits less, and it goes at the end of a line that already has a period and date. */
 .catalog-tile__meta .risk-mark {
-  width: 13px;
-  height: 13px;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
 }
 
 .catalog-row__path {
   overflow: hidden;
   color: var(--ink-3);
-  font-size: 0.74rem;
+  font-size: var(--type-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -268,10 +268,29 @@
 .catalog-row__activity {
   display: inline-flex;
   align-items: center;
-  gap: 9px;
+  gap: var(--space-5);
   color: var(--ink-2);
-  font-size: 0.79rem;
+  font-size: var(--type-xs);
   font-variant-numeric: tabular-nums;
+}
+
+/* The inspector can narrow the list even on desktop. Adapt to its actual available width. */
+@container (max-width: 680px) {
+  .catalog-columns {
+    display: none;
+  }
+
+  .catalog-rows--list .catalog-row {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    row-gap: var(--space-5);
+    padding: var(--space-7);
+  }
+
+  .catalog-row__identity { grid-area: 1 / 1; }
+  .catalog-row > .health-dial { grid-area: 1 / 2; }
+  .catalog-row__handle { grid-area: 1 / 3; }
+  .catalog-row .stack-mark { grid-area: 2 / 1; }
+  .catalog-row__activity { grid-area: 2 / 2 / 3 / 4; justify-self: end; }
 }
 
 /*
@@ -288,10 +307,10 @@
   height: 26px;
   flex: none;
   color: var(--ink);
-  font-size: 0.68rem;
-  font-weight: 590;
+  font-size: var(--type-2xs);
+  font-weight: var(--weight-semibold);
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
+  letter-spacing: var(--track-tight);
 }
 
 /* At 100% and not at fixed 26 px: the ring follows the size given by each view. */
@@ -307,7 +326,7 @@
 .catalog-row .health-dial {
   width: 34px;
   height: 34px;
-  font-size: 0.79rem;
+  font-size: var(--type-xs);
 }
 
 .health-dial circle {
@@ -328,18 +347,23 @@
 .health-dial--warn .health-dial__arc { stroke: var(--warn); }
 .health-dial--bad .health-dial__arc { stroke: var(--bad); }
 
+/* Text uses the readable ink variants; the ring keeps the original status colors. */
+.health-dial--good { color: var(--color-success-ink); }
+.health-dial--warn { color: var(--color-warn-ink); }
+.health-dial--bad { color: var(--color-danger-ink-deep); }
+
 .stack-mark {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--space-4);
   min-width: 0;
   color: var(--ink-2);
-  font-size: 0.74rem;
+  font-size: var(--type-xs);
 }
 
 .stack-mark svg {
-  width: 15px;
-  height: 15px;
+  width: var(--icon);
+  height: var(--icon);
   flex: none;
 }
 
@@ -354,31 +378,52 @@
 }
 
 .catalog-row .stack-mark {
-  gap: 8px;
-  font-size: 0.8rem;
+  gap: var(--space-4);
+  font-size: var(--type-xs);
 }
 
+/*
+  18px, and it stays a literal: it is two pixels from `--icon` and two from `--icon-lg`, so no
+  step of the ladder owns it and taking either would move the mark by twice what this sweep
+  allows itself. What it must keep is the relationship — in the list the stack mark is bigger
+  than the 16px it takes in the grid, because the list is the view that is read.
+ */
 .catalog-row .stack-mark svg {
   width: 18px;
   height: 18px;
 }
 
+/*
+  6px, a literal for the same reason: `--icon-2xs` is 8 and there is no step under it. The dot is
+  6 in the tile and in the panel and 8 only in the list, the same two-pixel step the stack mark
+  above makes in the other direction, and `forced-colors.css` takes both sizes to 10 because a 2px
+  ring inside a dot this small is not a ring. `StateDot` in `project-store.tsx` calls it «six green
+  pixels», which is this rule and not the one under it.
+ */
 .state-dot {
   width: 6px;
   height: 6px;
   flex: none;
-  border-radius: 50%;
-  background: var(--color-state-unknown);
+  border-radius: var(--corner-disc);
+  background: var(--color-nogit);
 }
 
 .catalog-row .state-dot {
-  width: 7px;
-  height: 7px;
+  width: var(--icon-2xs);
+  height: var(--icon-2xs);
 }
 
+/*
+  Four states, four rules. There were three, and `no-git` fell through to the base rule's fill —
+  correct on screen and undeclared in the sheet, which is the kind of agreement that survives
+  until somebody edits the base rule for another reason. The gray it lands on is `--color-nogit`,
+  which is the token named for exactly this and which the markup already writes as `bg-nogit`;
+  `--color-state-unknown` was a second gray for the same idea, two points away, chosen by eye.
+ */
 .state-dot--active { background: var(--good); }
-.state-dot--paused { background: var(--warn); }
-.state-dot--dormant { background: var(--color-state-asleep); }
+.state-dot--paused { background: transparent; border: 1.5px solid var(--warn); }
+.state-dot--dormant { background: var(--line-strong); }
+.state-dot--no-git { background: var(--color-nogit); }
 
 /*
   The icon view: the one that serves to recognize, not to read.
@@ -386,23 +431,20 @@
   two open the tab—, so there is nothing new to learn when changing views. The health ring stays
   in the corner so you can browse the entire grid without reading a name.
  */
-/*
-  Tiles do not stretch.
-  With `1fr` each one grew until it filled the row, so on a widescreen a 64 px icon floated in a
-  196 box — the same content in double the space, which is exactly what makes a grid look empty.
-  The width is fixed and the leftover is distributed among the gaps, like any icon folder: the
-  spaces grow, not the tiles.
- */
+/* Compact launcher tiles keep their icons prominent and their spacing predictable. */
 .catalog-rows--grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, 142px);
+  grid-template-columns: repeat(auto-fill, 152px);
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--space-6);
 }
 
 .catalog-tile {
   position: relative;
   display: grid;
+  container-type: inline-size;
+  aspect-ratio: 1;
+  min-height: 0;
   /*
     `minmax(0, 1fr)` and not the automatic column that appears by default: without it, the track
     is measured by the widest content —the full name, without cutting—, so the `max-width: 100%`
@@ -411,19 +453,19 @@
    */
   grid-template-columns: minmax(0, 1fr);
   justify-items: center;
-  align-content: start;
-  gap: 8px;
-  padding: 18px 12px 15px;
+  align-content: center;
+  gap: var(--space-3);
+  padding: var(--space-7) var(--space-5) var(--space-5);
   border: 1px solid var(--line);
-  border-radius: 11px;
+  border-radius: var(--corner);
   background: var(--paper);
-  box-shadow: var(--shadow-lift);
   cursor: default;
   transition: background-color var(--duration-fast) ease, border-color var(--duration-fast) ease;
 }
 
 .catalog-tile:hover {
   border-color: var(--line-strong);
+  background: var(--wash);
 }
 
 .catalog-tile[aria-selected="true"] {
@@ -433,32 +475,35 @@
 
 .catalog-tile > .health-dial {
   position: absolute;
-  top: 7px;
-  right: 7px;
+  top: var(--space-3);
+  right: var(--space-3);
 }
 
 .catalog-tile__name {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: var(--space-3);
   max-width: 100%;
   min-width: 0;
   color: var(--ink);
-  font-size: 0.77rem;
-  font-weight: 560;
-  letter-spacing: -0.012em;
+  width: 100%;
+  font-size: var(--type-sm);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--track-tight);
+  text-align: center;
 }
 
 .catalog-tile__name > span {
   overflow: hidden;
+  line-height: var(--lead-snug);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .catalog-tile__name svg {
-  width: 11px;
-  height: 11px;
+  width: var(--icon-xs);
+  height: var(--icon-xs);
   flex: none;
   color: var(--ink-2);
 }
@@ -466,9 +511,19 @@
 .catalog-tile__meta {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-3);
   color: var(--ink-3);
-  font-size: 0.69rem;
+  min-height: var(--space-8);
+  font-size: var(--type-2xs);
   font-variant-numeric: tabular-nums;
 }
 
+/* Small square tiles keep room for the name, status and corner controls. */
+@container (max-width: 126px) {
+  .catalog-tile > img,
+  .catalog-tile > .project-icon--neutral,
+  .catalog-tile > .catalog-private-mark {
+    max-width: 60px;
+    max-height: 60px;
+  }
+}

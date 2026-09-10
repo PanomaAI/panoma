@@ -19,6 +19,8 @@ import {
   excerpt,
   isBrief,
   MAX_LINE_CHARS,
+  NarrativeCapture,
+  type Narrative,
   REACTION_CHARS,
   underPrefix,
 } from "./shared";
@@ -330,15 +332,16 @@ export async function mineCodex(options: MineOptions = {}): Promise<MineResult> 
   const stats = emptyStats();
   const sessions = new Set<string>();
   const reactions: Reaction[] = [];
+  const narratives: Narrative[] | undefined = options.captureNarratives ? [] : undefined;
 
   for (const rollout of await listRollouts(root)) {
     stats.files += 1;
     stats.bytes += rollout.bytes;
-    await mineRollout(rollout.path, options, limit, stats, sessions, reactions);
+    await mineRollout(rollout.path, options, limit, stats, sessions, reactions, narratives);
   }
 
   stats.sessions = sessions.size;
-  return { stats, reactions };
+  return { stats, reactions, ...(narratives === undefined ? {} : { narratives }) };
 }
 
 interface Rollout {
@@ -395,6 +398,7 @@ async function mineRollout(
   stats: MineStats,
   sessions: Set<string>,
   out: Reaction[],
+  narratives?: Narrative[],
 ): Promise<void> {
   const stream = createReadStream(path, { encoding: "utf8" });
   const lines = createInterface({ input: stream, crlfDelay: Number.POSITIVE_INFINITY });
@@ -425,6 +429,10 @@ async function mineRollout(
   const window = new Set<string>();
   const perSession = new Map<string, Map<string, number>>();
   const orphans: Reaction[] = [];
+  const capture = narratives === undefined
+    ? undefined
+    : new NarrativeCapture(Math.max(0, limit - narratives.length), options.cwdPrefix);
+  capture?.begin(sessionId);
 
   try {
     for await (const line of lines) {
@@ -457,7 +465,9 @@ async function mineRollout(
         }
         const inside = isRecord(item) ? item["payload"] : undefined;
         if (!isRecord(inside)) continue;
-        for (const path of codexTouched(inside)) {
+        const paths = codexTouched(inside);
+        if (!subagent) capture?.paths(paths);
+        for (const path of paths) {
           if (window.size < MAX_TOUCHED) window.add(path);
           const counts = perSession.get(sessionId) ?? new Map<string, number>();
           // The limit is on the different ones: one that is already there keeps adding votes.
@@ -500,6 +510,7 @@ async function mineRollout(
         // Rule 4, also for the routes: what was covered in the previous session is not from this
         // one.
         window.clear();
+        capture?.begin(sessionId);
         sessions.add(sessionId);
         continue;
       }
@@ -522,6 +533,7 @@ async function mineRollout(
       if (kind === "agent_message") {
         const shown = message?.trim() ?? "";
         if (shown.length > 0) delivery = shown;
+        if (!subagent) capture?.assistant(shown);
         continue;
       }
 
@@ -546,6 +558,14 @@ async function mineRollout(
       // In case the file arrived without header: that shift still has a session, the one with the
       // name.
       sessions.add(sessionId);
+
+      capture?.owner({
+        source: "codex",
+        sessionId,
+        at: readString(parsed["timestamp"]) ?? "",
+        cwd: turnCwd ?? sessionCwd,
+        gitBranch,
+      }, text);
 
       if (delivery === undefined) {
         stats.spontaneous += 1;
@@ -615,6 +635,9 @@ async function mineRollout(
       .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
       .slice(0, MAX_TOUCHED)
       .map(([path]) => path);
+  }
+  if (capture !== undefined && narratives !== undefined) {
+    for (const narrative of capture.finish()) narratives.push(narrative);
   }
 }
 

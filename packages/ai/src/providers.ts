@@ -422,7 +422,15 @@ export const PROVIDERS: Provider[] = [
     description: "Usa tu sesión de Claude Code ya iniciada. Sin claves.",
     descriptionEn: "Uses your signed-in Claude Code session. No keys.",
     command: "claude",
-    args: ["-p"],
+    /*
+      `-p` alone booted the person's whole Claude Code: every MCP server in their config, the
+      instruction files of the server's cwd, and a session persisted under `~/.claude/projects`.
+      Measured elsewhere, a `-p` without `--strict-mcp-config` cost about 70 times more than one
+      with it, for a one-line answer. `--strict-mcp-config` with no `--mcp-config` means no MCP
+      servers at all; `--no-session-persistence` leaves nothing on disk. Not `--bare`: it disables
+      OAuth and would break the very subscription route this row exists for.
+     */
+    args: ["-p", "--strict-mcp-config", "--no-session-persistence"],
     bundles: [
       join(homedir(), ".claude", "local", "claude"),
       "/Applications/Claude.app/Contents/Resources/claude",
@@ -447,7 +455,9 @@ export const PROVIDERS: Provider[] = [
     description: "Ejecuta el binario `codex` de esta máquina. Usa su sesión ya iniciada, sin claves.",
     descriptionEn: "Runs the `codex` binary on this machine, using its signed-in session. No keys.",
     command: "codex",
-    args: ["exec"],
+    // `--ephemeral` leaves no session on disk; `--skip-git-repo-check` because the agent is
+    // launched from a neutral temporary directory, which is not a repository. See `complete.ts`.
+    args: ["exec", "--ephemeral", "--skip-git-repo-check"],
     bundles: ["/Applications/ChatGPT.app/Contents/Resources/codex"],
   },
   {

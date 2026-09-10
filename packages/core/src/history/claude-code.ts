@@ -8,6 +8,7 @@ import { isRecord } from "../fs-utils";
 import { redactQuote } from "../quotes";
 import type { HistorySourceId } from "./inventory";
 import { fold } from "../fold";
+import { NarrativeCapture, type Narrative } from "./shared";
 
 /*
   Claude Code's history, read on your disk, to know what you like.
@@ -147,6 +148,8 @@ export interface MineStats {
 export interface MineResult {
   stats: MineStats;
   reactions: Reaction[];
+  /** Present only when explicitly requested; separate from legacy preference reactions. */
+  narratives?: Narrative[];
 }
 
 export interface MineOptions {
@@ -166,6 +169,11 @@ export interface MineOptions {
   cwdPrefix?: string;
   /** Return only the reactions with some signal. */
   onlySignals?: boolean;
+  /**
+   * Retain verified opening goals, reactions and structured briefs. `limit` bounds this sample
+   * independently from reactions; `onlySignals` does not filter it. Source text stays verbatim.
+   */
+  captureNarratives?: boolean;
 }
 
 /** Enough context to understand the reaction; filing the delivery is not our business. */
@@ -223,15 +231,16 @@ export async function mineClaudeCode(options: MineOptions = {}): Promise<MineRes
   const stats = emptyStats();
   const sessions = new Set<string>();
   const reactions: Reaction[] = [];
+  const narratives: Narrative[] | undefined = options.captureNarratives ? [] : undefined;
 
   for (const transcript of await listTranscripts(root)) {
     stats.files += 1;
     stats.bytes += transcript.bytes;
-    await mineTranscript(transcript.path, options, limit, stats, sessions, reactions);
+    await mineTranscript(transcript.path, options, limit, stats, sessions, reactions, narratives);
   }
 
   stats.sessions = sessions.size;
-  return { stats, reactions };
+  return { stats, reactions, ...(narratives === undefined ? {} : { narratives }) };
 }
 
 interface Transcript {
@@ -285,6 +294,7 @@ async function mineTranscript(
   stats: MineStats,
   sessions: Set<string>,
   out: Reaction[],
+  narratives?: Narrative[],
 ): Promise<void> {
   const stream = createReadStream(path, { encoding: "utf8" });
   const lines = createInterface({ input: stream, crlfDelay: Number.POSITIVE_INFINITY });
@@ -319,6 +329,9 @@ async function mineTranscript(
   /** Reactions that came out without their own routes, waiting for those of their session. */
   const orphans: Reaction[] = [];
   const fallbackSession = basename(path, ".jsonl");
+  const capture = narratives === undefined
+    ? undefined
+    : new NarrativeCapture(Math.max(0, limit - narratives.length), options.cwdPrefix);
 
   try {
     for await (const line of lines) {
@@ -357,6 +370,11 @@ async function mineTranscript(
       if (type === "assistant") {
         // A subagent turn teaches you nothing, so its text is not a submission.
         if (parsed["isSidechain"] === true) continue;
+        if (parsed["isMeta"] !== true &&
+          (parsed["userType"] === undefined || parsed["userType"] === "external")) {
+          capture?.session(sessionId);
+          capture?.assistant(content.text, content.paths);
+        }
         /*
           The routes accumulate even if the shift does not bring text, and they accumulate over
           the entire window between two of your shifts. The work is not in the message that closes
@@ -391,6 +409,18 @@ async function mineTranscript(
       if (parsed["isMeta"] === true) continue;
       const userType = parsed["userType"];
       if (userType !== undefined && userType !== "external") continue;
+      /*
+        The compaction summary. When a conversation runs out of context, Claude Code writes a
+        summary of it as a `user` line —`userType: "external"`, no `isMeta`, no `isSidechain`—
+        whose text is the machine's ("This session is being continued from a previous
+        conversation... The user asked to..."). It passes every guard above and, being longer than
+        a brief, it used to enter both funnels as the owner's own words: 228 such lines on the
+        author's disk. Counted with the commands, which is what it is: a line of the tool.
+       */
+      if (parsed["isCompactSummary"] === true) {
+        stats.commands += 1;
+        continue;
+      }
 
       const raw = content.text.trim();
       if (raw.length === 0) continue;
@@ -402,6 +432,14 @@ async function mineTranscript(
       }
 
       stats.userTurns += 1;
+
+      capture?.owner({
+        source: "claude-code",
+        sessionId,
+        at: typeof parsed["timestamp"] === "string" ? parsed["timestamp"] : "",
+        cwd: typeof parsed["cwd"] === "string" ? parsed["cwd"] : undefined,
+        gitBranch: typeof parsed["gitBranch"] === "string" ? parsed["gitBranch"] : undefined,
+      }, text);
 
       // Regla 5.
       if (delivery === undefined) {
@@ -468,6 +506,9 @@ async function mineTranscript(
       .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
       .slice(0, MAX_TOUCHED)
       .map(([path]) => path);
+  }
+  if (capture !== undefined && narratives !== undefined) {
+    for (const narrative of capture.finish()) narratives.push(narrative);
   }
 }
 

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useT } from "./i18n-provider";
 import { MdRepair } from "./md-repair";
-import { ActionError } from "./primitives";
+import { ActionButton, ActionError } from "./primitives";
 
 /*
   The review of an inherited .md, within the file.
@@ -78,14 +78,21 @@ export function MdInspect({ slug, path }: { slug: string; path: string }) {
   if (state !== "done") {
     return (
       <span className="project-md-inspect">
-        <button
+        {/*
+           `surface` and not `raised`: this button is rendered on the project sheet's own paper,
+           which is `--color-surface`, so the tone that fills with it is the one that keeps the
+           button flat where it was flat before. `sm` keeps its 11px.
+          */}
+        <ActionButton
+          tone="surface"
+          size="sm"
           type="button"
           onClick={inspect}
-          disabled={state === "working"}
-          className="inline-flex items-center rounded border border-edge px-2 py-0.5 font-mono text-[11px] text-smoke transition-colors hover:border-accent hover:text-accent disabled:opacity-50"
+          busy={state === "working"}
+          busyLabel={translate("project.mdInspectWorking")}
         >
-          {translate(state === "working" ? "project.mdInspectWorking" : "project.mdInspectButton")}
-        </button>
+          {translate("project.mdInspectButton")}
+        </ActionButton>
         {error && <ActionError as="span" text={error} className="ml-2" />}
       </span>
     );

@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useT } from "./i18n-provider";
-import { ActionButton, ActionError } from "./primitives";
+import { ActionButton, ActionError, Card } from "./primitives";
 
 /**
  * The shadow double: what your agents would have asked you, and what your Twin would have answered
@@ -65,7 +65,7 @@ export function ProjectDouble({
   }
 
   return (
-    <section className="rounded-lg border border-edge bg-surface p-4">
+    <Card as="section">
       <div className="mb-2.5 flex items-baseline justify-between gap-3">
         <h3 className="eyebrow">{t("double.title")}</h3>
         <span className="font-mono text-[10px] text-faint">{t("double.shadowTag")}</span>
@@ -137,6 +137,6 @@ export function ProjectDouble({
           </li>
         ))}
       </ul>
-    </section>
+    </Card>
   );
 }

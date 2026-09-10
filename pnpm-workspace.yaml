@@ -13,3 +13,26 @@ allowBuilds:
   # its postinstall downloads a binary per platform on each installation, also on the three systems
   # of CI. Verified that the linter does not complain.
   unrs-resolver: false
+
+# Three transitive dependencies held above the version their parent asks for, because that
+# version has a published advisory and the parent has not moved yet. Every line here is a debt:
+# when the parent catches up, the line goes.
+#
+#   postcss   next pins 8.4.31 exactly, and 8.4.31 follows any `sourceMappingURL` a stylesheet
+#             names, which reads files off the disk (CVE-2026-45623 and CVE-2026-73646, both
+#             high). Nothing else in this repository was on it: tailwind and tsup already build
+#             with 8.5.x, so this only lifts the copy that travels inside the npm package.
+#   fast-uri  3.1.5 canonicalizes hostnames so that a URL can point somewhere other than it
+#             reads. Four high advisories, all fixed in 3.1.6. It arrives through ajv, which
+#             asks for ^3.0.6 and takes this without complaint.
+#   qs        express 5 brings 6.15.3, which lets an attacker past `arrayLimit` and hang the
+#             parser (CVE-2026-82562, CVE-2026-82417).
+#
+# They are written by name and not by version —`postcss@8.4.31: 8.5.28` is also valid pnpm— on
+# purpose. A pin keyed to the bad version stops applying, in silence, the day next moves its own
+# pin to 8.4.32: the override would still be there, still read, and no longer covering anything.
+# By name it cannot happen.
+overrides:
+  postcss: ^8.5.28
+  fast-uri: ^3.1.7
+  qs: ^6.16.0

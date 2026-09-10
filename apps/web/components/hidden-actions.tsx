@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useT } from "./i18n-provider";
-import { ActionError } from "./primitives";
+import { ActionButton, ActionError } from "./primitives";
 
 /** Undo, in its smallest form: a request and refresh. */
 function useUndo() {
@@ -36,23 +36,23 @@ function useUndo() {
   return { busy, error, send };
 }
 
-const BUTTON =
-  "shrink-0 rounded border border-edge px-2.5 py-1 font-mono text-[11px] text-smoke transition-colors hover:border-accent hover:text-accent disabled:opacity-50";
-
 export function Unhide({ projectId }: { projectId: string }) {
   const t = useT();
   const { busy, error, send } = useUndo();
   return (
     <span className="inline-flex items-center gap-2">
       {error && <ActionError as="span" text={error} />}
-      <button
+      <ActionButton
+        tone="raised"
+        size="sm"
         type="button"
-        disabled={busy}
+        busy={busy}
+        busyLabel="…"
         onClick={() => send({ action: "mostrar", id: projectId })}
-        className={BUTTON}
+        className="shrink-0"
       >
-        {busy ? "…" : t("undo.unhide")}
-      </button>
+        {t("undo.unhide")}
+      </ActionButton>
     </span>
   );
 }
@@ -63,14 +63,17 @@ export function Readmit({ root }: { root: string }) {
   return (
     <span className="inline-flex items-center gap-2">
       {error && <ActionError as="span" text={error} />}
-      <button
+      <ActionButton
+        tone="raised"
+        size="sm"
         type="button"
-        disabled={busy}
+        busy={busy}
+        busyLabel="…"
         onClick={() => send({ action: "readmitir", root })}
-        className={BUTTON}
+        className="shrink-0"
       >
-        {busy ? "…" : t("undo.readmit")}
-      </button>
+        {t("undo.readmit")}
+      </ActionButton>
     </span>
   );
 }

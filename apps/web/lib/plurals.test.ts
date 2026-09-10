@@ -140,7 +140,6 @@ const EXEMPT: Record<string, string> = {
     and accounted for, not a mistake.
    */
   "patch.output": "«{n} caracteres» with one would be «1 carácter», which moves its accent. It needs its own pair of keys.",
-  "twin.fileRoom": "The same case as the one above: «carácter» / «caracteres» is not settled by a suffix.",
   "project.mdFindings":
     "«{n} afirmaciones que ya no son verdad»: «afirmación» loses its accent in the plural and the verb agrees as well. It needs its own pair of keys.",
 

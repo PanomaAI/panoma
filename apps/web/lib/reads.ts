@@ -30,17 +30,19 @@
   ── The number, measured and not chosen ────────────────────────────────────────────────
   Remaking the author's portrait from scratch —2,278 quotes, fourteen passes of distillation of
   eight rounds each, the breakdown by subjects of what came out, and a synthesis by subject— takes
-  about one hundred and forty calls. {@link READS_PER_DAY} leaves room for two of those on the
-  same day, which is more than anyone can do by hand: reconstructing the entire portrait is
-  something done when the way of distilling changes, not a routine. And it is still an order of
-  magnitude below what a broken loop spends in a minute, which is where a brake has to be: without
-  disturbing anyone and without letting through what it should not.
+  about one hundred and forty calls. The factory cap —`FACTORY_CAPS.read` in `spend-settings.ts`,
+  300— leaves room for two of those on the same day, which is more than anyone can do by hand:
+  reconstructing the entire portrait is something done when the way of distilling changes, not a
+  routine. And it is still an order of magnitude below what a broken loop spends in a minute,
+  which is where a brake has to be: without disturbing anyone and without letting through what it
+  should not.
+  ── Where the number lives now ──────────────────────────────────────────────────────────
+  Until 6-Sep-2026 this file read `PANOMA_READ_BUDGET` itself, with the same four-line parser the
+  other five brakes copied. The three routes now ask `capFor("read")` in `spend-settings.ts`,
+  which is where the Spend screen writes and where the pause and the variable are resolved in one
+  place. What stays here is what is specific to the reads: the kinds that count against the cap,
+  and the arithmetic of what is left.
  */
-
-/**
- * How many read calls per day, at most. See header for the reason behind the number.
- */
-export const READS_PER_DAY = 300;
 
 /**
  * The expense book classes that go against this cap.
@@ -50,20 +52,6 @@ export const READS_PER_DAY = 300;
  * that compares them against the constants of the routes instead of taking them as given.
  */
 export const READING_KINDS = ["distill", "classify", "synthesize"] as const;
-
-/**
- * The budget of the day, read from the environment.
- *
- * Same rule as `budgetFrom` in `look.ts`, and for the same reason: a value that is not understood
- * defaults to the default one and not to "unlimited," because a brake failure has to fall on the
- * side of braking. Zero also works, and completely turns off the reading.
- */
-export function readBudgetFrom(value: string | undefined): number {
-  if (value === undefined || value.trim() === "") return READS_PER_DAY;
-  const limit = Number(value.trim());
-  if (!Number.isInteger(limit) || limit < 0) return READS_PER_DAY;
-  return limit;
-}
 
 /** What a route needs to know about the brake: how much is worn and how much fits. */
 export interface ReadBudget {

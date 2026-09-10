@@ -10,11 +10,18 @@ import {
 } from "@panoma/core";
 import {
   ALIVE,
+  activeEpisodeRevisions,
   beliefChurn,
   briefScore,
   corpusProgress,
   listBeliefs,
   listObservations,
+  listProjectRoots,
+  listConflictingEpisodeFamilies,
+  listDecisionEpisodes,
+  narrativeCount,
+  decisionEpisodeById,
+  decisionEpisodeCount,
   modelSpendByKind,
   observationTopics,
   portfolioDesign,
@@ -25,25 +32,36 @@ import {
   tasteScore,
   type BeliefRow,
   type ChurnMonth,
+  type DecisionEpisode,
   type KindSpend,
   type PortfolioDesign,
   type TasteReach,
 } from "@panoma/db";
 import Link from "next/link";
 import { db } from "@/lib/db";
+import { PageSection, PageShell } from "@/components/page-shell";
+import { Card, EmptyState } from "@/components/primitives";
 import { BeliefEditor } from "@/components/belief-editor";
 import { TwinConsent } from "@/components/twin-consent";
 import { TwinDistill } from "@/components/twin-distill";
 import { TwinSources } from "@/components/twin-sources";
 import { TwinSynthesize } from "@/components/twin-synthesize";
+import { TwinTeach } from "@/components/twin-teach";
+import { TwinLab } from "@/components/twin-lab";
+import { TwinMemory } from "@/components/twin-memory";
+import { TwinPath } from "@/components/twin-path";
+import { pathStages } from "@/lib/twin-path-view";
 import { asBelief } from "@/lib/taste-view";
-import { budgetOf } from "@/lib/taste-budget";
+import { budgetOf, heaviest } from "@/lib/taste-budget";
+import { EPISODE_PAGE, episodeCursor } from "@/lib/twin-memory-view";
 import { publishable } from "@/lib/publishable";
+import { scopable } from "@/lib/teach";
+import { labelProjects } from "@/lib/project-label";
 import { cliName } from "@/lib/cli-name";
 import { getLocale, t, type Locale } from "@/lib/i18n";
-import { budgetFrom } from "@/lib/look";
 import { churnReading } from "@/lib/churn";
-import { READING_KINDS, readBudgetFrom } from "@/lib/reads";
+import { READING_KINDS } from "@/lib/reads";
+import { capsFor, type BudgetFamily, type DailyCap } from "@/lib/spend-settings";
 
 /**
  * The portrait: the screen where what the machine believes about you is read, and where it is
@@ -74,9 +92,11 @@ const RECENT_DAYS = 7;
 /** How many months of movement are taught. Half a year fits at a glance; a year does not. */
 const CHURN_MONTHS = 6;
 
-export default async function TwinPage() {
+export default async function TwinPage({ searchParams }: { searchParams: Promise<{ episode?: string }> }) {
   const { db: database } = await db();
-  const [alive, buried, proposals, profile, score, spend, consent, locale] = await Promise.all([
+  const requested = (await searchParams).episode;
+  const focusedEpisode = typeof requested === "string" && requested.length <= 100 ? await decisionEpisodeById(database, requested) : undefined;
+  const [alive, buried, proposals, profile, score, spend, consent, locale, caps] = await Promise.all([
     listBeliefs(database, { states: ALIVE }),
     listBeliefs(database, { states: ["vetoed"] }),
     listBeliefs(database, { states: ["proposed"] }),
@@ -85,6 +105,9 @@ export default async function TwinPage() {
     modelSpendByKind(database),
     readConsent(),
     getLocale(),
+    // The seven caps, read once: the pause, the environment and `spend.json` decide them, and
+    // the `/spend` screen is where they are moved.
+    capsFor(),
   ]);
   /* The only question in all of Twin. Until answered, the portrait remains what the person signed. */
   const inferred = publishesInferred(consent);
@@ -105,7 +128,7 @@ export default async function TwinPage() {
     state: consentState(source, isAllowed(consent, source.id), readable.includes(source.id)),
   }));
 
-  const [corpus, names, topics, unclassified, gone, churn, briefs, design, reach] =
+  const [corpus, names, topics, unclassified, gone, churn, briefs, design, reach, projects, episodeRows, narrativeCoverage, episodeCount, conflicts] =
     await Promise.all([
     corpusProgress(database),
     projectNamesByIdentity(database),
@@ -143,7 +166,51 @@ export default async function TwinPage() {
       reaching anyone.
      */
     tasteReach(database),
+    listProjectRoots(database),
+    /*
+      One row more than the page carries, so the screen knows whether an older page exists without
+      counting the archive; the position of the last row on screen is the cursor the memory section
+      sends back to `GET /api/twin/episodes` for the next one.
+     */
+    listDecisionEpisodes(database, { limit: EPISODE_PAGE + 1 }),
+    narrativeCount(database),
+    decisionEpisodeCount(database),
+    /*
+      The families with two live versions, which the briefing and the Lab withhold whole. They
+      predate the rule that a revision dismisses what it replaces, and nothing else on this screen
+      offered a way to end them: a card whose "Revise" is disabled says what it cannot do, not what
+      the person can.
+     */
+    listConflictingEpisodeFamilies(database),
   ]);
+  const episodes = episodeRows.slice(0, EPISODE_PAGE);
+  const oldest = episodes.at(-1);
+  const olderCursor = episodeRows.length > EPISODE_PAGE && oldest
+    ? episodeCursor({ createdAt: oldest.createdAt.toISOString(), id: oldest.id })
+    : null;
+  if (focusedEpisode && !episodes.some((episode) => episode.id === focusedEpisode.id)) episodes.push(focusedEpisode);
+  const activeRevisions = await activeEpisodeRevisions(database, episodes.map((episode) => episode.id));
+  const episodeView = (episode: DecisionEpisode) => ({
+    ...episode,
+    activeRevisionId: activeRevisions[episode.id] ?? null,
+    projectName: episode.identity ? names[episode.identity] ?? null : null,
+    createdAt: episode.createdAt.toISOString(),
+    updatedAt: episode.updatedAt.toISOString(),
+    /*
+      The last day the decision applies, travelling as a string like the two dates above it. A
+      record saved without one carries null, and the card reads that as an expiry nobody wrote.
+     */
+    validUntil: episode.validUntil ? new Date(episode.validUntil).toISOString() : null,
+  });
+
+  /*
+    The list every selector on this screen draws from, with a label that appears exactly once.
+    Three controls here offered the bare name, and on this catalog that is twenty options reading
+    `kiosk_new`, fourteen reading `leaselab` and four reading `pocket_bot` — real folders, mostly
+    copies, and indistinguishable in a menu. The rule is in `lib/project-label.ts` and `/twin/look`
+    reads the same one, so the two screens cannot disagree about what a project is called.
+   */
+  const pickable = labelProjects(projects);
 
   /*
     From name to identity, so that the quote button knows what to send back. A repeated name is
@@ -178,6 +245,8 @@ export default async function TwinPage() {
    */
   const escribibles = publishable(alive, names, inferred);
   const budget = budgetOf(escribibles, profile);
+  /* The same lines, split into what everybody reads and what the most loaded project adds. */
+  const worst = heaviest(escribibles);
 
   const byId = new Map(alive.map((row) => [row.id, row] as const));
   const vivas = proposals.filter((row) => row.supersedes.some((id) => byId.has(id)));
@@ -187,43 +256,132 @@ export default async function TwinPage() {
     ? []
     : alive.filter((row) => row.state !== "signed" && standsUp(row.support));
 
-  return (
-    <main id="app-main" tabIndex={-1} className="app-main legacy-page">
-      <section className="pt-12">
-        <p className="eyebrow">{t(locale, "nav.twin")}</p>
-        <h1 className="mt-2 max-w-3xl font-display text-4xl font-semibold tracking-tight">
-          {t(locale, empty ? "twin.titleEmpty" : "twin.title")}
-        </h1>
-        {/*
-           And the introduction changes if the permission is not granted. It said 'if you don't
-           touch anything, this is what your agents read' while the file was empty, and four
-           paragraphs further down the permission card said the opposite: two opposing sentences
-           on the same screen, and the one you read first is the false one.
-          */}
-        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-smoke">
-          {t(locale, empty ? "twin.introEmpty" : inferred ? "twin.intro" : "twin.introWaiting")}
+  /*
+    And the introduction changes if the permission is not granted. It said 'if you don't touch
+    anything, this is what your agents read' while the file was empty, and four paragraphs further
+    down the permission card said the opposite: two opposing sentences on the same screen, and the
+    one you read first is the false one. It went fixed for a day on 5-Sep-2026 and said the same
+    thing in every state, which is the same bug with the sign turned around.
+   */
+  const intro = t(
+    locale,
+    empty
+      ? episodeCount > 0
+        ? "twin.memoryOnlyIntro"
+        : "twin.introEmpty"
+      : inferred
+        ? "twin.intro"
+        : "twin.introWaiting",
+  );
+
+  /*
+    The second paragraph of the header only exists on an empty portrait, and `false` is one of the
+    three ways the shell reads «not this page»: passed straight in, the slot would otherwise leave
+    an empty paragraph carrying its own top margin on every screen that has beliefs.
+   */
+  const hint = (
+    <>
+      {/*
+         What comes out the other end, said to everyone and not only to whoever already got there.
+         The destination was named by `twin.intro` — which renders only once beliefs exist — and by
+         the hint on the file card at the foot of the page, so the reader who needed it was exactly
+         the reader who never met it.
+        */}
+      <p className="mt-3 max-w-2xl text-sm leading-relaxed text-smoke">{t(locale, "twin.payoff")}</p>
+      {empty && episodeCount === 0 && (
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-smoke">
+          {t(locale, "twin.introEmptyHint")}
         </p>
-        {empty && (
-          <p className="mt-2 max-w-2xl font-mono text-xs text-smoke">
-            {t(locale, "twin.introEmptyHint")}
-          </p>
-        )}
+      )}
+    </>
+  );
 
+  /*
+    The chain, with the figure that says where each link of it stands. It replaces four bare
+    counters that opened the screen with «0 0 0 0» and three-word labels; those four are not lost,
+    they moved down into the readouts, where the rest of the figures about this portrait live.
+    Only the histories that can be granted are counted: a source with no reader and a source that
+    was never written to this disk are not permissions somebody forgot to give. The arithmetic is
+    in `lib/twin-path-view.ts` because `vitest` does not transform `.tsx`, and the state that
+    matters most here — a catalog with nothing in it — is exactly the one no server run shows.
+   */
+  const grantable = sources.filter((source) => source.state === "allowed" || source.state === "denied");
+  /* The projects a taught rule may be narrowed to; the rest are counted, not hidden in silence. */
+  const teachable = pickable.filter((project) => scopable(project.identity, names));
+
+  const path = pathStages({
+    histories: {
+      grantable: grantable.length,
+      allowed: grantable.filter((source) => source.state === "allowed").length,
+    },
+    thoughts: alive.length + episodeCount,
+    file: { chars: budget.chars, cap: TASTE_CAP },
+    reach: { reached: reach.reached, projects: reach.projects },
+  });
+
+  return (
+    <PageShell
+      eyebrow={t(locale, "nav.twin")}
+      title={t(locale, empty ? episodeCount > 0 ? "twin.memoryOnlyTitle" : "twin.titleEmpty" : "twin.title")}
+      lead={intro}
+      headExtra={hint}
+    >
+      <TwinPath locale={locale} stages={path} />
+
+      <PageSection>
         {/*
-           And the door to the place where the portrait serves for something. This screen is the
-           one that writes the measuring stick; the critic is the only one who uses it against a
-           delivery, and until now it could only be reached by typing `panoma twin look` in a
-           terminal. An organ that cannot be reached from where its material is built is an organ
-           that no one is going to find.
+           The chips are jumps and no longer the page's only statement of order — the strip above
+           says the order now, and this row follows the same one the sections are written in. They
+           lost their numbering to it: two numbered rows on one screen would be two sequences.
           */}
-        <Link
-          href="/twin/look"
-          className="mt-4 inline-block self-start rounded border border-edge px-2.5 py-1 font-mono text-xs text-smoke transition-colors hover:border-chalk"
-        >
-          {t(locale, "twin.toCritic")}
-        </Link>
+        <nav aria-label={t(locale, "twinTeach.nav")} className="flex flex-wrap gap-2">
+          {([
+            ["#history", "twinTeach.navHistory"],
+            ["#teach", "twinTeach.navTeach"],
+            ["#decision-memory", "twinTeach.navMemory"],
+            ["#portrait", "twinTeach.navPortrait"],
+            ["#decision-lab", "twinTeach.navLab"],
+          ] as const).map(([href, key]) => (
+            <a key={href} href={href} className="rounded-full border border-edge bg-surface px-3 py-2 text-xs text-smoke transition-colors hover:border-chalk">{t(locale, key)}</a>
+          ))}
+          {/*
+             And the door to the place where the portrait serves for something. This screen is the
+             one that writes the measuring stick; the critic is the only one who uses it against a
+             delivery, and until now it could only be reached by typing `panoma twin look` in a
+             terminal. An organ that cannot be reached from where its material is built is an organ
+             that no one is going to find. It rides with the jumps because it is one — the only one
+             that leaves the page.
+            */}
+          <Link
+            href="/twin/look"
+            className="rounded-full border border-edge bg-surface px-3 py-2 text-xs text-smoke transition-colors hover:border-chalk"
+          >
+            {t(locale, "twin.toCritic")}
+          </Link>
+        </nav>
 
-        <div className="mt-6 flex flex-col gap-2">
+        <details className="mt-6">
+          <summary className="cursor-pointer text-sm text-smoke">{t(locale, "twinTeach.details")}</summary>
+        <div className="mt-4 flex flex-col gap-2">
+          {/*
+             The four that used to open the screen. They are worth reading — they are just not an
+             opening: «signed 0 · standing 0 · published 0 · episodes 0» taught a newcomer four
+             nouns and no chain. Here they sit with the rest of the figures about this portrait,
+             which is the question they answer.
+            */}
+          <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {([
+              ["twinTeach.signed", score.signed],
+              ["twinTeach.standing", Math.max(0, score.standing - score.signed)],
+              ["twinTeach.published", profile.lines.length],
+              ["twinTeach.episodes", episodeCount],
+            ] as const).map(([key, value]) => (
+              <Card key={key} pad="sm">
+                <dt className="text-xs leading-relaxed text-smoke">{t(locale, key)}</dt>
+                <dd className="mt-2 font-display text-lg font-semibold tabular-nums">{value}</dd>
+              </Card>
+            ))}
+          </dl>
           <p className="font-mono text-sm text-smoke">
             {t(locale, "twin.counts", {
               beliefs: score.beliefs,
@@ -253,17 +411,8 @@ export default async function TwinPage() {
             */}
           <Corpus corpus={corpus} locale={locale} />
         </div>
-      </section>
-
-      {/*
-         The other portrait, the one that doesn't have a single word. It comes after the marker
-         and before the stories because it answers the same question from the other side: above is
-         what the machine thinks you say, and here is what it sees you do — and the latter didn't
-         need a model, a call, or your permission, because it comes from reading your own folders.
-        */}
-      <Reach reach={reach} locale={locale} />
-
-      <Look design={design} locale={locale} />
+        </details>
+      </PageSection>
 
       {/*
          Stories and their permission, which is the first gesture of all and until now was a
@@ -274,8 +423,58 @@ export default async function TwinPage() {
          half matters just as much: a permission that is not seen is not revoked — this is the
          rule that `consentState` documents for the case of the uninstalled tool, and it applies
          to everyone.
+         And it is FIRST, which it was not: it used to render at 83% of the scroll, under three
+         forms that cannot do anything until it is pressed — so the orientation sentence that says
+         «start just below, in your histories» pointed three thousand pixels down the page. The
+         order is the dependency now: permission, then reading, then what you tell it by hand, then
+         what it comes to believe, then the file, then who reads it.
         */}
-      <TwinSources sources={sources} />
+      <section
+        id="history"
+        tabIndex={-1}
+        className="page-shell__section scroll-mt-24"
+        /* Named by the sources card's own heading: the chip used to land on an anonymous div, so
+           heading navigation skipped the first gesture of the whole product. Both branches of
+           `TwinSources` carry that id. */
+        aria-labelledby="twin-sources-title"
+      >
+        <TwinSources sources={sources} />
+        <TwinDistill
+          left={Math.max(0, corpus.total - corpus.read)}
+          granted={sources.some((source) => source.state === "allowed")}
+        />
+        {/*
+           And the number the button moves, beside the button. It is also inside the readouts up
+           top, which is where it answers «is this all it knows about me?»; here it answers the
+           other question, «did that press do anything?», and that one cannot be answered three
+           thousand pixels away from the press.
+          */}
+        <Corpus corpus={corpus} locale={locale} />
+      </section>
+
+      {/*
+         Only the projects a rule may actually name, and it says how many it could not offer.
+         `TASTE.md` writes a scope as the project's NAME, so `teachBelief` refuses one that is
+         missing, unrepresentable or shared — and this list did not ask, so on this catalog twenty
+         options read `kiosk_new` and every one of them failed after the press with a rule the
+         picker had never shown. `scopable` is that same sentence, exported so the menu and the
+         server cannot drift apart; 49 of the 75 projects here fall to it, which is why the count
+         is passed down rather than the menu just quietly getting shorter.
+        */}
+      <TwinTeach
+        projects={teachable.map(({ slug, label }) => ({ slug, label }))}
+        omitted={pickable.length - teachable.length}
+      />
+
+      <TwinMemory
+        focusId={focusedEpisode?.id}
+        projects={pickable.filter((project) => project.identity !== null).map(({ slug, name, label, identity }) => ({ slug, name, label, identity: identity! }))}
+        coverage={narrativeCoverage}
+        dailyCalls={caps.episodes.cap}
+        episodes={episodes.map(episodeView)}
+        olderCursor={olderCursor}
+        conflicts={conflicts.map((family) => family.map(episodeView))}
+      />
 
       {waiting.length > 0 && (
         <TwinConsent
@@ -287,9 +486,24 @@ export default async function TwinPage() {
         />
       )}
 
+      {/*
+         The gap is the shell's own and no longer this section's 48, and it is now spelled the way
+         the shell spells it rather than as a `mt-8` that happens to equal it. What it still cannot
+         delegate is the tag: `PageSection` learned `id` and `labelledBy`, but this section is
+         labelled by a heading it draws itself, next to an empty state, so it keeps its `<section>`.
+        */}
+      <section id="portrait" tabIndex={-1} className="page-shell__section scroll-mt-24" aria-labelledby="portrait-title">
+      <h2 id="portrait-title" className="text-base font-semibold">{t(locale, "twinTeach.portraitTitle")}</h2>
+      {empty && <EmptyState variant="note" className="mt-2" title={t(locale, "twinTeach.portraitEmpty")} />}
       <BeliefEditor
         beliefs={statements}
         graveyard={buried.map((row) => view(row))}
+        /*
+          Which of these the agents actually read. `budgetOf` has computed it since the file was
+          written and no screen drew it, so a belief stranded in the database and one handed to
+          every agent were the same row on this list.
+         */
+        unpublished={budget.unpublished}
         /*
           And only the questions that still had something to ask. If the person vetoed in between
           all the signed ones that a proposal would replace, the card was rendered with the new
@@ -313,47 +527,95 @@ export default async function TwinPage() {
         )}
         locale={locale}
       />
-
-      <section className="mt-12 grid gap-4 sm:grid-cols-2">
-        <div
-          className={`rounded-lg border px-4 py-4 ${
-            budget.chars > budget.cap ? "border-idle" : "border-edge"
-          }`}
-        >
-          <p className="eyebrow">{t(locale, "twin.fileTitle")}</p>
-          <p className="mt-1 font-mono text-sm">
-            {t(locale, "twin.fileSize", { chars: budget.chars, cap: TASTE_CAP })}
-          </p>
-          <div className="mt-2 h-1 w-full overflow-hidden rounded bg-raised">
-            <div
-              className={`h-full ${budget.chars > budget.cap ? "bg-idle" : "bg-accent"}`}
-              style={{ width: `${Math.min((budget.chars / budget.cap) * 100, 100)}%` }}
-            />
-          </div>
-          {budget.chars > budget.cap ? (
-            <>
-              <p className="mt-2 text-sm leading-relaxed text-idle">{t(locale, "twin.fileFull")}</p>
-              <p className="mt-1 font-mono text-xs text-smoke">
-                {t(locale, "twin.fileWritten", { n: budget.written })}
-              </p>
-            </>
-          ) : (
-            <p className="mt-2 font-mono text-xs text-smoke">
-              {t(locale, "twin.fileRoom", { n: budget.cap - budget.chars })}
-            </p>
-          )}
-          <p className="mt-2 text-sm leading-relaxed text-smoke">{t(locale, "twin.fileHint")}</p>
-          {/*
-             The button that writes the portrait, on the card that says how much space it takes.
-             Without evidence it is not rendered: a synthesis with nothing to read can do nothing,
-             and a button that cannot work is worse than its absence.
-            */}
-          {topics.length > 0 && <TwinSynthesize pending={unclassified.length} />}
-        </div>
-
-        <Spend spend={spend} locale={locale} />
       </section>
-    </main>
+
+      <PageSection id="file" labelledBy="twin-file-title">
+        <div className="grid gap-4 sm:grid-cols-2">
+          {/*
+             The one panel on this screen that is NOT `<Card>`: its border is a verdict — `border-idle`
+             when the portrait no longer fits in the file — and the primitive answers «hairline or
+             ink», which is a surface and not a state. Two border-colour utilities on one element are
+             decided by the order of the generated sheet and not by the order they are written in, so
+             passing one through `className` would be a coin toss.
+            */}
+          <div
+            className={`rounded-lg border px-4 py-4 ${
+              budget.chars > budget.cap ? "border-idle" : "border-edge"
+            }`}
+          >
+            <h2 id="twin-file-title" className="text-base font-semibold">{t(locale, "twin.fileTitle")}</h2>
+            <p className="mt-1 font-mono text-sm">
+              {t(locale, "twin.fileSize", { chars: budget.chars, cap: TASTE_CAP })}
+            </p>
+            <div className="mt-2 h-1 w-full overflow-hidden rounded bg-raised">
+              <div
+                className={`h-full ${budget.chars > budget.cap ? "bg-idle" : "bg-accent"}`}
+                style={{ width: `${Math.min((budget.chars / budget.cap) * 100, 100)}%` }}
+              />
+            </div>
+            {budget.chars > budget.cap ? (
+              <>
+                <p className="mt-2 text-sm leading-relaxed text-idle">{t(locale, "twin.fileFull")}</p>
+                <p className="mt-1 font-mono text-xs text-smoke">
+                  {t(locale, "twin.fileWritten", { n: budget.written })}
+                </p>
+                {/*
+                   And where the weight is, which is the only thing that turns «take something out»
+                   into a decision. `heaviest()` has split this since the module was written and no
+                   screen drew it: if the global half rules you have to cut a sentence everybody
+                   reads, and if the project half rules it is enough to scope less over there.
+                  */}
+                <p className="mt-1 font-mono text-xs text-smoke">
+                  {t(locale, "twin.fileSplit", { global: worst.global })}
+                  {worst.project !== undefined
+                    ? ` · ${t(locale, "twin.fileHeaviest", { project: worst.project, own: worst.own })}`
+                    : ""}
+                </p>
+              </>
+            ) : (
+              <p className="mt-2 font-mono text-xs text-smoke">
+                {t(locale, "twin.fileRoom", { n: budget.cap - budget.chars })}
+              </p>
+            )}
+            <p className="mt-2 text-sm leading-relaxed text-smoke">{t(locale, "twin.fileHint")}</p>
+            {/*
+               The button that writes the portrait, on the card that says how much space it takes.
+               It is always drawn now. It used to be hidden whenever there was no evidence to read,
+               which is precisely the state of a Twin nobody has trained: the person met an empty
+               portrait over a «0 of 3000» meter with no control anywhere that would move either.
+               `ready` carries the same condition and the button says it instead of vanishing.
+              */}
+            <TwinSynthesize pending={unclassified.length} ready={topics.length > 0} />
+          </div>
+
+          <Spend spend={spend} caps={caps} locale={locale} />
+        </div>
+      </PageSection>
+
+      {/*
+         And the question the whole chain is for, asked right after the file it is asked about:
+         does anybody read it? It used to sit eight hundred pixels above the meter, so the two
+         halves of one answer — «does it fit» and «who reads it» — were never on screen together.
+        */}
+      <Reach reach={reach} locale={locale} />
+
+      {/*
+         Now that there is something to ask it with, the place to ask. The Lab only READS what the
+         two forms above wrote — it signs nothing, spends its own ledger and answers no agent — so
+         it comes after them and not between them, which is where it used to sit while both were
+         still empty.
+        */}
+      <TwinLab projects={pickable.map(({ slug, label }) => ({ slug, label }))}
+        hasBeliefs={episodeCount > 0 || alive.some((belief) => belief.state === "signed" || standsUp(belief.support))} />
+
+      {/*
+         The other portrait, the one that doesn't have a single word: above is what the machine
+         thinks you say, and here is what it sees you do — and the latter didn't need a model, a
+         call, or your permission, because it comes from reading your own folders. It closes the
+         screen because it is the only part of it nobody has to do anything to.
+        */}
+      <Look design={design} locale={locale} />
+    </PageShell>
   );
 }
 
@@ -433,14 +695,6 @@ function Briefs({
 }
 
 /**
- * What has changed this week, told from one's own beliefs.
- *
- * Seven consecutive days and not 'since your last visit.' The cover window is handled by
- * `visitWindow`, which **advances it** when reading it: using it here would move the cover report
- * to whoever entered through Twin first, and two screens fighting over the same mark is worse than
- * a fixed window that always means the same thing.
- */
-/**
  * How many projects does this reach, which is the only question the rest of the screen does not
  * ask.
  *
@@ -449,17 +703,18 @@ function Briefs({
  * agent reads the portrait — and in this catalog no one read it, because the `AGENTS.md` block
  * only exists where the person opened it on purpose.
  *
- * It is always rendered, also —and above all— when the number is zero. A zero here is not a gap
- * that needs to be hidden until it is filled: it is the news.
+ * A zero REACHED is always rendered, and above all then: it is not a gap waiting to be filled, it
+ * is the news, and it is the one figure on this screen that can be bad while every other one looks
+ * good. What does hide the section is a zero DENOMINATOR — a catalog with nothing scanned yet,
+ * where «reaches 0 of 0» would report a failure that has not had its chance to happen.
  */
 function Reach({ reach, locale }: { reach: TasteReach; locale: Locale }) {
   if (reach.projects === 0) return null;
   const nadie = reach.reached === 0;
 
   return (
-    <section className="mt-12">
-      <p className="eyebrow">{t(locale, "twin.reachTitle")}</p>
-      <p className="mt-2 max-w-2xl text-sm leading-relaxed">
+    <PageSection id="reach" title={t(locale, "twin.reachTitle")}>
+      <p className="max-w-2xl text-sm leading-relaxed">
         {t(locale, "twin.reach", { reached: reach.reached, projects: reach.projects })}
       </p>
       {/*
@@ -477,8 +732,15 @@ function Reach({ reach, locale }: { reach: TasteReach; locale: Locale }) {
          repository, and that is not done by a screen on its own. It is the same rule by which
          `syncManagedDoc` refuses to create the block it cannot find.
         */}
-      <p className="mt-2 font-mono text-xs text-faint">{t(locale, "twin.reachHow", { cli: cliName() })}</p>
-    </section>
+      {/*
+         The command, marked up as one. It is not a button on purpose — opening the channel writes
+         a file inside the person's repository, which is the rule `syncManagedDoc` keeps — but that
+         rule forbids doing it for them, not handing them the words in a shape they can select.
+        */}
+      <p className="mt-2 text-xs text-smoke">
+        <code className="font-mono">{t(locale, "twin.reachHow", { cli: cliName() })}</code>
+      </p>
+    </PageSection>
   );
 }
 
@@ -509,9 +771,8 @@ function Look({ design, locale }: { design: PortfolioDesign; locale: Locale }) {
   if (design.read === 0) return null;
 
   return (
-    <section className="mt-12">
-      <p className="eyebrow">{t(locale, "twin.designTitle")}</p>
-      <p className="mt-2 max-w-2xl text-sm leading-relaxed text-smoke">
+    <PageSection title={t(locale, "twin.designTitle")}>
+      <p className="max-w-2xl text-sm leading-relaxed text-smoke">
         {t(locale, "twin.designFrom", { read: design.read, withUi: design.withUi })}
       </p>
 
@@ -544,29 +805,37 @@ function Look({ design, locale }: { design: PortfolioDesign; locale: Locale }) {
       )}
 
       {design.fonts.length > 0 && (
-        <p className="mt-3 max-w-2xl font-mono text-xs text-faint">
+        <p className="mt-3 max-w-2xl font-mono text-xs text-smoke">
           {t(locale, "twin.designFonts", {
             fonts: design.fonts.map((font) => font.value).join(" · "),
           })}
         </p>
       )}
       {design.radii.length > 0 && (
-        <p className="mt-1 max-w-2xl font-mono text-xs text-faint">
+        <p className="mt-1 max-w-2xl font-mono text-xs text-smoke">
           {t(locale, "twin.designRadii", {
             radii: design.radii.map((radius) => radius.value).join(" · "),
           })}
         </p>
       )}
-      <p className="mt-1 max-w-2xl font-mono text-xs text-faint">
+      <p className="mt-1 max-w-2xl font-mono text-xs text-smoke">
         {t(locale, "twin.designTraits", {
           dark: design.darkMode,
           animation: design.animation,
         })}
       </p>
-    </section>
+    </PageSection>
   );
 }
 
+/**
+ * What has changed this week, told from one's own beliefs.
+ *
+ * Seven consecutive days and not 'since your last visit.' The cover window is handled by
+ * `visitWindow`, which **advances it** when reading it: using it here would move the cover report
+ * to whoever entered through Twin first, and two screens fighting over the same mark is worse than
+ * a fixed window that always means the same thing.
+ */
 function Digest({ beliefs, locale }: { beliefs: BeliefRow[]; locale: Locale }) {
   const since = Date.now() - RECENT_DAYS * 24 * 60 * 60 * 1000;
   const reciente = (at: Date | null) => at !== null && at.getTime() > since;
@@ -659,7 +928,16 @@ function monthName(month: string, locale: Locale): string {
   }).format(date);
 }
 
-function Spend({ spend, locale }: { spend: KindSpend[]; locale: Locale }) {
+function Spend({
+  spend,
+  caps,
+  locale,
+}: {
+  spend: KindSpend[];
+  /** The seven daily caps as `capsFor()` resolved them: pause, environment, file, or factory. */
+  caps: Record<BudgetFamily, DailyCap>;
+  locale: Locale;
+}) {
   const calls = spend.reduce((total, one) => total + one.calls, 0);
   const input = spend.reduce((total, one) => total + one.input, 0);
   const output = spend.reduce((total, one) => total + one.output, 0);
@@ -673,17 +951,18 @@ function Spend({ spend, locale }: { spend: KindSpend[]; locale: Locale }) {
   const reads = READING_KINDS.reduce((total, kind) => total + of(kind), 0);
 
   return (
-    <div className="rounded-lg border border-edge px-4 py-4">
-      <p className="eyebrow">{t(locale, "twin.spendTitle")}</p>
+    /* `px-4 py-4` was `p-4` written twice: the primitive's own default padding. */
+    <Card tone="plain">
+      <h2 id="twin-spend-title" className="text-base font-semibold">{t(locale, "twin.spendTitle")}</h2>
       {calls === 0 ? (
-        <p className="mt-1 text-sm text-smoke">{t(locale, "twin.spendNone")}</p>
+        <EmptyState variant="note" className="mt-1" title={t(locale, "twin.spendNone")} />
       ) : (
         <>
           {looks > 0 && (
             <p className="mt-1 font-mono text-sm">
               {t(locale, "twin.spendLooks", {
                 used: looks,
-                cap: budgetFrom(process.env["PANOMA_LOOK_BUDGET"]),
+                cap: caps.look.cap,
               })}
             </p>
           )}
@@ -702,6 +981,27 @@ function Spend({ spend, locale }: { spend: KindSpend[]; locale: Locale }) {
               {t(locale, "twin.spendSynth", { n: syntheses })}
             </p>
           )}
+          {of("episodes") > 0 && (
+            <p className="mt-1 font-mono text-sm">
+              {t(locale, "twin.spendEpisodes", {
+                used: of("episodes"),
+                cap: caps.episodes.cap,
+              })}
+            </p>
+          )}
+          {/*
+             The rehearsal's own ledger. It used to pay from the agents' `ask` slots, and a morning
+             of rehearsals stranded the day's `panoma_ask` questions in `drafting`; now it has its
+             cap and the card says how much of it went.
+            */}
+          {of("rehearse") > 0 && (
+            <p className="mt-1 font-mono text-sm">
+              {t(locale, "twin.spendRehearse", {
+                used: of("rehearse"),
+                cap: caps.rehearse.cap,
+              })}
+            </p>
+          )}
           {/*
              And the three against their cap, which is only one. The lines above indicate where
              the expenditure came from — they are three different works and cost different things
@@ -713,7 +1013,7 @@ function Spend({ spend, locale }: { spend: KindSpend[]; locale: Locale }) {
             <p className="mt-1 font-mono text-sm">
               {t(locale, "twin.spendReads", {
                 used: reads,
-                cap: readBudgetFrom(process.env["PANOMA_READ_BUDGET"]),
+                cap: caps.read.cap,
               })}
             </p>
           )}
@@ -734,7 +1034,18 @@ function Spend({ spend, locale }: { spend: KindSpend[]; locale: Locale }) {
           )}
         </>
       )}
-    </div>
+      {/*
+         This box paints four of the seven caps and only the kinds that run inside Twin. The whole
+         receipt —every organ, the thirty days, the models, the caps and the price— is the spend
+         screen, which is also the only place where a cap is moved without restarting the server.
+        */}
+      <Link
+        href="/spend"
+        className="mt-3 inline-block rounded border border-edge px-2.5 py-1 font-mono text-xs text-smoke transition-colors hover:border-chalk"
+      >
+        {t(locale, "twin.spendMore")}
+      </Link>
+    </Card>
   );
 }
 
@@ -746,12 +1057,16 @@ function Corpus({
   locale: Locale;
 }) {
   const left = Math.max(corpus.total - corpus.read, 0);
+  /*
+    Nothing stored, nothing to say. It used to return its wrapper anyway, so an empty `<div>` with
+    its own top margin was emitted on exactly the catalog where this section has least to show —
+    and it is rendered twice now, beside the button and inside the readouts, so it was two.
+   */
+  if (corpus.total === 0) return null;
 
   return (
     <div className="mt-1">
-      {/*
-         The line only when there is a corpus to talk about. The button, always — see below.
-        */}
+      {/* The action remains visible beside the history sources, outside these optional details. */}
       {corpus.total > 0 && (
         <p className="max-w-2xl text-sm leading-relaxed text-smoke">
           {left === 0
@@ -761,14 +1076,6 @@ function Corpus({
             : t(locale, "twin.corpusLeft", { read: corpus.read, total: corpus.total, left })}
         </p>
       )}
-      {/*
-         And the front door, which is **always** rendered. It hid in two places and both were the
-         same mistake: with `left > 0` it disappeared right at the end of the corpus —which is
-         when mining becomes the only thing that brings something new— and with `total === 0` it
-         disappeared on everyone's first screen, which is where it is most needed. A finished
-         corpus is not a finished history, and an empty corpus is not an empty disk.
-        */}
-      <TwinDistill left={left} />
     </div>
   );
 }

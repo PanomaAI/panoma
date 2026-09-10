@@ -1,7 +1,7 @@
 # panoma's memory
 
-panoma's memory doesn't live in the conversation: it lives on disk. An agent that opens a
-project gets facts another agent discovered, that a person approved, and that the filesystem
+panoma's memory doesn't live in the conversation: it lives on disk. An agent that requests
+the project's context gets facts another agent discovered, that a person approved, and that the filesystem
 itself can contradict. This page covers the pieces — the gate, the budget, the note that
 sleeps, the sentinels — with their why and with what they refuse to do, because the refusals
 are half the design.
@@ -17,35 +17,35 @@ The map, to keep in front of you while you read the rest:
 | Piece | What it does | Who decides |
 |---|---|---|
 | The three floors | What was already memory: catalog, agent-to-agent cycle, Twin | — |
-| The curated memory | Durable facts, few of them, always in the first turn | The person, note by note |
+| The curated memory | Durable facts returned when an agent requests context | The person, note by note |
 | The archive (`panoma_recall`) | The whole journal, by search, on demand | — |
-| The distiller | Proposes facts as each agent session closes | The person, through the gate |
+| The distiller | Queues closed sessions for background extraction and proposes facts | The person, through the gate |
 | The sentinels | Challenge the note whose grounds changed on disk | The disk challenges; the person resolves |
-| The note that sleeps | Facts with a *where*, served when their path is stepped on | The person approves; the hook delivers |
+| The note that sleeps | Facts with a *where*, served for requested files or supported edits | The person approves; the context tool or hook delivers |
 | The double in shadow | The Twin drafts answers only the person sees and scores | The person, label by label |
-| The scale | Measures whether any of the above changes anything — [memory-scale.md](memory-scale.md) | The numbers |
+| The scale | Records delivery and reports an optional experiment — [memory-scale.md](memory-scale.md) | The owner enables the experiment; the report exposes its limits |
 
 ## A day with the memory, step by step
 
 For anyone arriving new, this is the whole system working — no vocabulary required:
 
-1. **An agent opens your project** and panoma hands it the briefing: what changed since
+1. **An agent requests your project's context** and panoma hands it the briefing: what changed since
    yesterday, what other agents did, and the project's approved rules — the memory.
-2. **It works and writes down** what matters in the journal, the diary that is never erased.
+2. **It works and writes down** what matters in the project journal.
 3. **It discovers something durable** and proposes it; and if it forgets, the distiller
-   rereads the session as it closes and proposes it on its behalf.
-4. **You decide on the project page**: yes or no to every proposal. Only what's approved
-   travels, and it travels to all your agents at once.
-5. **If the note has a "where"**, it sleeps for free and pops up like a road sign exactly
-   when an agent is about to touch that path.
+   can propose it later through the closed session's persistent extraction job.
+4. **You decide in the project's Memory tab**: yes or no to every proposal. Approved rules
+   become available to connected agents on their next memory read.
+5. **If the note has a "where"**, it uses a path slot and travels when an agent requests
+   matching files, or when a supported edit hook checks that path.
 6. **If the disk changes** and a note's grounds vanish, the sentinel challenges it on its
    own and hands it back to you with the evidence.
 7. **If the agent has a question of judgment**, it leaves it to your double — which today
    trains in shadow and will only speak once it gets nine out of ten right.
 8. **If old history is needed**, the archive is there to search; it never gets in the way
    day to day.
-9. **And the scale weighs all of it**: it says in numbers whether the memory cuts
-   corrections or is expensive decoration. It's told in full in
+9. **The scale records what was delivered**. Its optional experiment reports comparisons,
+   without treating delivery as proof that a rule was used. The limits are explained in
    [memory-scale.md](memory-scale.md).
 
 In one sentence: the diary grows on its own, the memory is curated with you, the signals
@@ -69,25 +69,36 @@ what Cursor's agent gets tomorrow.
 **The owner's memory.** The Twin distills verdicts into observations, observations into
 beliefs, and the beliefs that hold up drop into `TASTE.md`, whose digest travels in the
 managed block of `AGENTS.md`: what you took an agent to task for in March reaches, as a
-one-line rule, whoever opens the project today. It's told in full in [twin.md](twin.md).
+one-line rule, whoever opens the project today. Since 5-Sep-2026 it has an episodic layer
+too, kept before the preferences: the narratives mined from the same histories become
+decision episodes —goal, alternatives, reasons, outcome, conditions and exceptions—, and the
+ones the owner wrote with a decision travel to every agent in `panoma_context`, under "Owner
+decisions", with no model call. It's told in full in [twin.md](twin.md) and
+[decision-memory.md](decision-memory.md).
 
 ## The fourth floor: the curated memory
 
 The journal is a log, and a log is not memory: it grows, it sorts by date, and the important
 fact from a month ago ends up buried under this week's noise. What an agent discovers and
 **is still true** — "the tests demand a build first on a cold tree", "the server on 4173 is
-a production build and doesn't pick up code" — deserves another life: that of a note every
-agent receives in its first turn, forever, until it stops being true.
+a production build and doesn't pick up code" — deserves another life: that of an approved
+rule returned when an agent asks for the project's context.
 
 Here's how it works, and every piece is there for a reason:
 
 **It's proposed, not written.** `panoma_remember` leaves the fact in `proposed`, and there it
 stays until the person approves it on the project page. The gate isn't bureaucracy: what's
-approved is injected into *every* agent on the project, so a note poisoned by the README of
+approved is available to every connected agent on the project, so a note poisoned by the README of
 someone else's clone would be an injection with persistence and distribution. Thanks to the
 gate, every note served carries a human yes on top of it. The person can also write their
 own straight into the project page — it's born approved, because the yes is already given,
 and it pays the same budget: the cap belongs to the set, not to the road you took into it.
+
+The project has a dedicated **Memory** tab. It separates general rules from rules scoped to
+a path, and the owner's form supports both. Budget counters, pending proposals and challenged
+notes stay beside the controls that resolve them. Each rule shows whether it has disk checks;
+the watcher information explains their coverage. The automatic extraction details show queued,
+deferred and failed jobs, plus the latest job's source coverage when its receipt is available.
 
 **It has a budget, and the budget refuses to compact.** Four numbers, and all four live
 together in `packages/db/src/notes.ts`:
@@ -106,10 +117,10 @@ its own and not a borrowed one matters: the audit found that reusing `overBudget
 slot cap made the project page explain the character cap to someone who had hit the slot cap,
 and a refusal with the wrong reason teaches nobody how to decide.
 
-Curating is the price of approving, and the prize is enormous: **a memory that always fits
-whole in the context needs no search, no embeddings, and no model deciding what to
-retrieve.** It's served complete, with its usage percentage in plain sight, and there is no
-retrieval that can fail. Each note also pays in its own currency — the awake one in
+Curating keeps the always-on rules small enough to deliver whole, without embeddings or a
+model deciding which rule matters. They travel with their usage percentage in plain sight.
+Delivery still depends on the client asking for context, and path-specific rules require
+the relevant files or an edit hook. Each note pays in its own currency — the awake one in
 characters of the briefing, the sleeping one in one of the thirty slots — and `noteUsage`
 counts it that way: `used` filters `status = 'approved' and trigger is null`, because
 charging a note that doesn't travel in the briefing for the briefing's budget would be
@@ -134,8 +145,8 @@ out it arrived late.
 
 ## The cold half: the archive can be asked
 
-The curated memory always travels, and travels whole; the historical journal never travels —
-it gets consulted. That's the hot/cold split, and the cold half is two pieces:
+Approved always-on memory travels whole in the briefing; the historical journal is consulted
+when needed. That's the hot/cold split, and the cold half is two pieces:
 
 **`panoma_recall` is the reading room.** The project's complete journal — everything any
 agent wrote down since day one, not the ten entries the briefing prints — is searched by full
@@ -147,10 +158,19 @@ it's a diary, and in a diary "the last thing that happened with X" is nearly alw
 question. An empty result distinguishes "it wasn't written down" from "it didn't happen",
 which are not the same thing.
 
-**The distiller is the memory that writes itself — with the gate intact.**
+The search returns up to 12 matches per page, with stable entry IDs and excerpts around
+matching text. A fix near the end of an 8,000-character entry is no longer hidden behind a
+preview of its first 600 characters. `nextCursor` continues the same query in the same
+project; its exact timestamp and ID preserve entries written within the same millisecond.
+`panoma_recall` with `entryId` opens the original summary and details, in segments of at most
+4,000 characters. Follow `nextOffset` until the end. A search excerpt is a navigation aid,
+and the complete original remains available without widening the briefing.
+
+**The distiller proposes memory, with a durable work record and the gate intact.**
 `panoma_remember` depends on the agent's initiative, and an agent that has just discovered
 something is thinking about finishing, not about documenting. When a session closes
-(`closeSession` in `panoma_log`), a model rereads what that visit left in the journal and
+(`closeSession` in `panoma_log`), the close and an idempotent `memory_jobs` enqueue commit
+together. A local worker later rereads what that visit left in the journal and
 extracts the facts that will still be true next month — zero is the most common answer and
 it's the correct one. Whatever comes out enters through the same door as everything else:
 `proposed`, waiting for the person's yes, signed `distiller`. The distiller has no privileges
@@ -161,16 +181,60 @@ Its brakes, in order — the free ones before the expensive one:
 1. A session with fewer than two activities doesn't pay for a call: there's no history to
    reread.
 2. Neither does one with a full review queue: the proposals would be rejected anyway.
-3. The spend ledger (`model_calls`, class `memory` — `distill` already belongs to the Twin)
-   caps the day: 12 distillations unless `PANOMA_DISTILL_BUDGET` says otherwise, and `0`
-   turns it off entirely.
+3. The spend ledger (`model_calls`, kind `memory` — `distill` already belongs to the Twin)
+   caps the day: the `memory` family of `apps/web/lib/spend-settings.ts`, read through
+   `capFor("memory")` —the pause, then `PANOMA_DISTILL_BUDGET`, then the cap chosen on the
+   Spend screen (`/spend`), then the factory 12— and `0` turns it off entirely.
 4. The spend is recorded **before** the answer is understood — the critic's rule: a brake
    that only counts the legible calls stops counting on the day the model starts answering
    anything at all.
 
-And it runs in the background, without `await` and with the error swallowed, because of the
-hardest rule this house has: the memory never delays the turn. If the distiller falls over,
-the memory loses a source; the session loses nothing.
+The existing memory that travels with the journal is ordered by what it would cost to lose:
+approved and challenged first (the owner decided, or is deciding), then proposed, then
+discarded, newest first within each rank. The 4,000-character cut (`wrapUntrusted` keeps the
+head) therefore removes discarded before proposed and proposed before approved. Until
+6-Sep-2026 the block was newest-first with the statuses mixed, and an overflowing memory lost
+its oldest approved notes while last week's discarded ones travelled whole.
+
+No model is awaited by the HTTP turn. Database startup, a session close and a one-minute
+background heartbeat wake one serialized worker per database, with at most eight jobs per
+wake. A claim leases the session for five minutes; an expired claim can be recovered after
+a crash. A lease token prevents the old worker from saving proposals after another worker
+has taken over. The job follows the session's project when a cataloged folder moves.
+
+Failures are told apart by what was paid for. A provider failure before any answer
+(`extraction_failed`) retries up to three attempts, with delays of one and two minutes. An
+answer cut by the output ceiling (`stopReason: "length"`) that does not parse is asked for
+again **once**, immediately, with `maxTokens` doubled (500 → 1,000): a second ledger row that
+counts against the cap, and skipped when the day has no call left. An answer that is still
+unreadable is **final** —the job fails with every attempt consumed (`finishMemoryJob` with
+`retriesLeft: 0`) and is never claimed again, because a third identical call would buy the
+same answer. A paid call whose publication failed (`DistillPublishError`, reason
+`publish_failed`, receipt `did: "unpublished"` with `candidates` as a count only) gets exactly
+one more claim (`retriesLeft: 1`), never a third payment. Exhausting the daily budget defers
+work to the next local calendar day; a full proposal queue defers it for five minutes. Those
+deferrals do not consume attempts. Receipts record status, bounded error codes, coverage
+counts and `calls` —the paid calls for that session—, without copying source text or model
+output; the screen text `notes.jobsHint` states this contract.
+
+The worker considers the latest 100 session activities in chronological order and fits the
+newest whole records into a 36,000-character source envelope. Both figures were half of that
+until 6-Sep-2026, and half was not enough: a long session lost its early part, which is where
+the goal of the session tends to be stated. What was on the table was the other shape — a
+coverage cursor walking a long session in several smaller calls — and the arithmetic is what
+refused it. Every extra call repeats the whole system prompt and the 4,000-character block of
+existing memory, so six calls over a session of 300 records pay that fixed overhead six times
+and take six of the twelve distillations the day allows: half the budget on one session. One
+call of 36,000 characters sends about half again as much input as before and still costs a
+single slot. **What that does not fix**: a session whose records do not fit in the envelope
+still loses the oldest of them, and the receipt's `omitted` count is how the owner sees it.
+
+Ordinary details retain their full text, up to the journal's 8,000-character entry limit. The
+receipt reports total, selected, omitted and clipped records, and how many calls were paid, so
+a partial reading is visible.
+The prompt gives later resolutions precedence over earlier hypotheses; generated notes retain
+the source language and are deduplicated against challenged as well as approved and proposed
+notes.
 
 ## The sentinels: the memory that watches its own grounds
 
@@ -190,8 +254,10 @@ credible. There are three kinds:
 | `file_hash` | The sha256 of the contents, the first 16 hex | the digest |
 | `file_contains` | That the file contains a literal | the literal |
 
-The `target` is always a path relative to the project root, and the one who looks at them is
-the watcher, riding along in the same pass that re-analyzes the project.
+The `target` is always a path relative to the project root. The watcher checks these
+conditions during reanalysis; memory delivery also checks them before reading notes, whenever
+the root is on the serving machine's disk. That second check covers nested file changes that
+the catalog's narrow watcher does not see.
 
 - **Nobody writes conditions by hand.** When a note is approved, customs (`extractAnchors`)
   extracts its anchors from the body itself: whatever looks like a path — two segments or
@@ -200,10 +266,9 @@ the watcher, riding along in the same pass that re-analyzes the project.
   tripped the day it's born isn't an anchor, it's a mention, and it's left out in silence.
   Resolution is locked inside the root: a note that mentions `../fuera` can't set panoma
   watching somebody else's disk.
-- **The patrol is free.** `patrolSentinels` runs inside the re-analysis the watcher already
-  fires when the disk changes: read a few files, zero paid calls. A watchman with a loop of
-  its own would be more state than watching, and the signal is the same ("this tree
-  changed"). Sentinels that read contents pay two more customs checks: the `realpath` on top
+- **The patrol makes no model calls.** `patrolSentinels` runs during the watcher's reanalysis
+  and before agent memory reads. The latter reads only the note conditions, not the entire
+  project. Sentinels that read contents pay two more customs checks: the `realpath` on top
   of the lexical comparison — a committed symlink pointing outside turned the prefix into
   paper — and the size **before** opening, capped at 1,000,000 bytes and with its own verdict
   (`unreadable: too large`, which is not the same thing as `missing`).
@@ -221,37 +286,52 @@ the watcher, riding along in the same pass that re-analyzes the project.
   against the budget again when it's re-approved, because while it was under suspicion its
   room could have been taken.
 
-The shape is that of a truth-maintenance system (Doyle, 1979) with the filesystem as the
-justification base: it invalidates when **the world** changes, not when new conversation
-arrives. What it gives the agent is concrete: it can act on a served note without
-re-verifying it, because the substrate is what guarantees freshness.
+The filesystem supplies observable reasons to challenge a note. This verifies the attached
+conditions, not the truth of every sentence: automatic anchors check that paths exist,
+not that their contents still mean the same thing. A note without anchors has no automatic
+freshness test. Approval and verified conditions are useful evidence, not a guarantee that
+the agent can skip checking its current task.
 
 ## The note at the scene of the accident: the memory that sleeps
 
 A note can carry a **where**, not just a what: an exact path (`docs/memory.md`) or a zone
-(`apps/web/**`), relative to the root. With a where, the note **sleeps**: it doesn't travel
-in the briefing and doesn't pay the 2,000 characters — its currency is one of the thirty
-slots — and it's served at the exact instant an agent is about to touch that path. It's the
+(`apps/web/**`), relative to the root. With a where, the note **sleeps**: it stays out of the
+default briefing and doesn't pay the 2,000 characters — its currency is one of the thirty
+slots. It is retrieved for matching files before editing, explicitly or by an installed hook. It's the
 road sign as against the employee handbook, and the answer to the budget's central tension:
 the memory can be large if nearly all of it is asleep.
 
 - **The trigger has a bounded shape.** A relative path with an optional `/**` at the end, 120
-  characters at most, no wildcards in the middle, nothing absolute and no `..`. The segments
-  speak unicode (`\p{L}\p{N}`) and not ASCII: the first version, with `\w` and no `u` flag,
-  denied `docs/diseño.md` its trigger while the rejection promised "any relative path".
+  characters at most, no wildcards in the middle, nothing absolute and no `.` or `..` segments.
+  Literal spaces, parentheses, brackets and Unicode are supported, including the grouped and
+  parameterized routes used by this application. Backslashes and control characters are rejected.
   Thanks to that closed shape, `triggerMatches` is two comparisons and not a glob engine.
-- **The where is written by the machine.** The distiller, when it proposes a note out of an
+- **The where can be written with the note.** The person can add a path while writing a rule.
+  The distiller, when it proposes a note out of an
   incident, proposes its place too — validated against the files the session really touched,
   like a citation: a path that isn't in the journal can't be invented. And `panoma_remember`
   accepts `where` for the agent that already knows where its fact lives.
-- **Delivery is a hook.** `panoma hooks --install` installs, alongside the hooks it already
-  placed, a `PreToolUse` one for Claude Code: before every edit, `panoma signal` asks the
-  catalog for that path's signals and delivers them as additional context. Two fixed rules: a
-  hook never breaks an edit (every failure is silence and exit code 0), and in a harness that
-  doesn't understand additional context the delivery is ignored without harm — the briefing,
-  which announces how many notes are asleep, is the backup that depends on nobody.
-- **The briefing counts them, it doesn't carry them.** "3 more sleep on path triggers" — as a
-  number, never as a body: they're served at their path, not in the morning.
+- **Every connected client has a read path.** Call `panoma_context` with `files`, a list of
+  up to 30 literal paths relative to the project root. Applicable approved rules travel once
+  each, with the matching trigger and files. Their bodies are complete even when later
+  background sections must be omitted. Without `files`, the briefing announces the sleeping
+  count and tells the agent how to retrieve them.
+- **Or the agent can describe what it is about to do.** `panoma_context` also takes `task`:
+  one sentence, 1,000 characters at most, saying what is being attempted or which error is on
+  screen. Panoma folds diacritics, drops stop words and matches the remaining words against
+  the sleeping notes — body and trigger — and against the owner's active decisions the
+  recency brief did not already carry, ranking by how rare each shared word is. It answers
+  with at most eight notes and four decisions, 4,000 characters between them, the words that
+  matched each one, and the count of what matched and did not fit. This is the road for the
+  agent that knows its problem but not yet which file holds it: a path query needs the path.
+  **A match is a reason to read the rule, not proof that it applies**, and the briefing says
+  so beside every one. Nothing is woken that the owner did not approve, and no model is
+  called: the ranking is the same lexical one the Lab uses, in `apps/web/lib/lexical.ts`.
+- **A hook can deliver them automatically.** `panoma hooks --install` also installs
+  `PreToolUse` delivery for the supported harness: `panoma signal` checks the path before
+  supported editing tools run. Hook failure is silent and exits zero. Other clients, edits
+  made through a terminal, and unsupported tools require the explicit `files` query; a
+  counter alone does not deliver a rule.
 - **Once per session.** The hook remembers in `signal-seen.json` (under `~/.panoma`, 20
   sessions at most) which signals it delivered to each session, and doesn't re-inject the
   same one on every edit under its zone: the agent's context is not a corkboard for stapling
@@ -298,25 +378,42 @@ in shadow, the veto is only a measurement.
 Its brakes are the house's: the question fits in 300 characters (more than that is an
 assignment and goes to the tasks), the review queue takes 20 per project — counting only what
 the person can empty: unlabeled drafts and freshly asked questions, never abstentions, which
-are data and not queue — the spend goes to the ledger as class `ask` with a daily cap
-(`PANOMA_ASK_BUDGET`, 20 out of the box), and the drafter runs in the background — the double
-never delays anybody's turn. A draft left stranded — a crash, or an exhausted budget —
-doesn't wait forever: the project's next `panoma_ask` picks it up with that day's budget.
+are data and not queue — the spend goes to the ledger as kind `ask`, capped by the `ask`
+family of `apps/web/lib/spend-settings.ts` (the Spend screen at `/spend`, `PANOMA_ASK_BUDGET`,
+or the factory value, which is 20), and the drafter runs in the background — the double never
+delays anybody's turn. An answer the provider cut at `maxTokens` is not filed as an abstention
+on the first try: `runRehearsal` asks once more with twice the room (400 → 800 tokens), inside
+the same `queueAsk` turn, writing a second ledger row and only if a second call still fits
+today; the receipt's `remainingCalls` subtracts both, and if the retry is still unusable it is
+filed as before. A draft left stranded — a crash, or an exhausted budget — doesn't wait
+forever, and since 6-Sep-2026 it doesn't get picked up forever either: the project's next
+`panoma_ask` sweeps it with that day's budget, but `staleDrafting` reaches back only
+`STALE_MAX_DAYS` (30 days, `packages/db/src/consultations.ts`, the same window `doubleReport`
+reads by default, so the sweeper never pays for a draft the exam would not count), and
+`redraftStale` does not sweep while the project's review list is full
+(`pendingConsultations` at `CONSULT_PENDING_MAX`), re-counting after every draft, because a
+draft that cannot be labelled is a paid call nobody needed. A stranded row beyond the window
+stays in `drafting`, visible in the record, and stopped counting against the queue after 24 h
+anyway.
 
 ## The scale has its own page
 
-The scale used to be here: the instrument that measures whether an agent served a note
-**takes any notice of it**. It went off whole to [memory-scale.md](memory-scale.md) — the
+The scale lives in [memory-scale.md](memory-scale.md). It records delivery, which alone
+cannot show whether an agent used a note, and describes the optional experiment — the
 ledger of servings (`servings`), the two arms of the ablation experiment and their split by
 hash, what the `GET /api/scale` report counts, and the ethical rule that governs all of it:
 off out of the box, only on the agent channel, and never against the person.
 
 ## Turning it on
 
-The way in is **the command bridge** — the app's `/bridge` screen: every piece with its
-status and a single "next step" marked with an arrow, with the exact command beside it and
-its copy button. No guesswork: the bridge keeps telling you what's due, and once everything
-is green it stays on as a health screen, watching the memory breathe in numbers.
+The way in is **the command bridge** — the app's `/bridge` screen: the four things the setup
+is made of, each carrying its state as a word, and exactly one of them marked as what to do
+next. The command is not beside every one of them, which is the part that changed on
+9-Sep-2026: the catalog's is in the open, the agent's and the hooks' fold into a disclosure
+under the button that does the same thing without a terminal, and the model has no command
+at all. No guesswork either way: the bridge keeps telling you what's due, and once the four
+are done it stays on as a health screen, with the journal beside it — a consequence and never
+a fifth task — watching the memory breathe in numbers.
 
 What the bridge will be pointing you to, in case you'd rather go straight to the terminal:
 
@@ -330,7 +427,8 @@ panoma hooks --install
 The first registers the agent and writes the MCP configuration that agent reads — with it
 come the nine tools, the briefing with the memory inside, and the proposal channel. The
 second installs the hooks: the one that records the activity without the model having to
-remember to, and the `PreToolUse` one that delivers the sleeping notes at their path. After
+remember to, and the `PreToolUse` one that delivers sleeping notes for supported editing
+tools. Other clients retrieve them by supplying `files` to `panoma_context`. After
 installing, restart the agent's session: a session already open picks up nothing.
 
 The hooks also have a **button**: on the bridge it puts them on every project in the catalog
@@ -341,12 +439,14 @@ writes the same two files the command does, with the same shared logic from `@pa
 it demands `sameOrigin`, works only with the local catalog, and in the face of somebody
 else's hook it gives up without touching it.
 
-This page's controls, all of them with a sensible factory value:
+This page's controls, all of them with a sensible factory value — and both movable without a
+restart from the Spend screen (`/spend`), which is also where the day's spend is shown
+([budgets.md](budgets.md)):
 
 | Variable | What it governs | Factory |
 |---|---|---|
-| `PANOMA_DISTILL_BUDGET` | Distillations per day (`0` turns the distiller off) | 12 |
-| `PANOMA_ASK_BUDGET` | The double's drafts per day (`0` turns it off) | 20 |
+| `PANOMA_DISTILL_BUDGET` | Distillations per day (`0` turns the distiller off); set, it overrides the value chosen on the Spend screen for the `memory` family | 12 |
+| `PANOMA_ASK_BUDGET` | The double's drafts per day (`0` turns it off); set, it overrides the Spend screen's value for the `ask` family | 20 |
 
 The scale's control (`PANOMA_MEMORY_ABLATION`) lives in
 [memory-scale.md](memory-scale.md), where its ethical contract is.
@@ -357,22 +457,25 @@ The scale's control (`PANOMA_MEMORY_ABLATION`) lives in
 |---|---|
 | The table and its four caps | `packages/db/src/schema.ts` (`notes`), `packages/db/src/notes.ts` |
 | Proposing and rereading, with an agent key | `POST /api/agent/notes` |
-| Approving, discarding and writing by hand | `POST /api/notes` + the "Memory" card on the project page |
+| Approving, discarding and writing general or path rules by hand | `POST /api/notes` + the project's "Memory" tab, `apps/web/components/project-memory.tsx` |
 | The agent's tool | `panoma_remember` in `packages/mcp/src/index.ts` |
 | How it reaches the model | the "Project memory" section of `formatContext`, `packages/mcp/src/format.ts` |
-| The archive's reading room | `searchJournal` + GIN index (migration 0042), `POST /api/agent/journal`, `panoma_recall` |
-| The distiller and its brakes | `apps/web/lib/memory-distill.ts`, fired on session close in `/api/agent/log` |
+| The archive's search pages and complete originals | `searchJournalPage`, `readJournalEntry` + GIN index (migration 0042), `POST /api/agent/journal`, `panoma_recall` |
+| The distiller and its brakes | `apps/web/lib/memory-distill.ts`, invoked by `apps/web/lib/memory-worker.ts` |
+| The two caps, their precedence and the screen that moves them | `apps/web/lib/spend-settings.ts`, `~/.panoma/spend.json`, `/spend` and `GET/POST /api/spend` — [budgets.md](budgets.md) |
+| Persistent extraction jobs, leases, retries and receipts | `packages/db/src/memory-jobs.ts`, `memory_jobs`; enqueued atomically on session close in `/api/agent/log` |
 | Budget, gate and races, tested | `packages/db/src/notes.test.ts` |
 | The search and the reread session, tested | `packages/db/src/journal.test.ts` |
 | The distiller's brakes, tested with a stunt-double model | `apps/web/lib/memory-distill.test.ts` |
 | The sentinels: customs, evaluator and patrol | `sentinels`/`challenge` in `notes` (migration 0045), `apps/web/lib/sentinels.ts`, the watcher in `watch.ts` |
 | Anchors, challenge and dispute, tested | `apps/web/lib/sentinels.test.ts` |
 | The double in shadow: record, draft and exam | `consultations` (migration 0046), `panoma_ask`, `apps/web/lib/consult.ts`, the "The double" card |
-| The note that sleeps: trigger, delivery and hook | `trigger` in `notes` (migration 0047), `notesAt` + `GET /api/agent/notes`, `panoma signal`, `PreToolUse` hook |
+| The note that sleeps: trigger, context delivery and hook | `trigger` in `notes` (migration 0047), `POST /api/agent/context` with `files`, `notesAt` + `GET /api/agent/notes`, `panoma signal`, `PreToolUse` hook |
 | The trigger, the distiller with a where, and the hook, tested | `packages/db/src/notes.test.ts`, `apps/web/lib/memory-distill.test.ts`, `apps/cli/src/signal.test.ts`, `apps/cli/src/hooks.test.ts` |
 | The citation contract and the drafter's brakes, tested | `packages/db/src/consultations.test.ts`, `apps/web/lib/consult.test.ts` |
 | Key redaction and its shapes | `packages/core/src/redact.ts`, tested in `packages/core/src/redact.test.ts` |
 | The move that doesn't kill the memory | `rehomeMemory` in `packages/db/src/ingest.ts`, tested in `packages/db/src/ingest.test.ts` |
+| The portable export: one versioned JSON document per project, never the lease token | `exportProjectMemory` in `packages/db/src/memory-export.ts`, `GET /api/memory/export` (operator only), `panoma memory export <project>`; tested in `packages/db/src/memory-export.test.ts`, `apps/web/app/api/memory/export/route.test.ts`, `apps/cli/src/memory-command.test.ts` |
 | The hook's record of what it has seen | `signal-seen.json` under `~/.panoma`, written by `apps/cli/src/signal.ts` |
 | The scale, whole | [memory-scale.md](memory-scale.md) |
 
@@ -396,8 +499,41 @@ The scale's control (`PANOMA_MEMORY_ABLATION`) lives in
 - **Agents don't decide.** Approving and discarding live in `/api/notes`, which demands
   `sameOrigin`: it's an action of the interface, not of the protocol. The agent key only
   proposes and rereads.
+- **With `DATABASE_URL` the worker does not run, and that is a bill, not a barrier.** Nothing
+  technical stops the worker that drains `memory_jobs` from working against a remote catalog:
+  the distiller reads the journal from the database and asks the model, and touches no file, so
+  the watcher's reason —that server does not see the disk— never applied to it; and the queue
+  was built for several processes, with a job claimed under `LOCK TABLE memory_jobs` and
+  finished or published under its lease token, both of which hold across processes
+  ([single-writer.md](single-writer.md)). What stops it is the spending. The model key that
+  would pay is the **server's**, for every project it serves, and the daily cap is the one
+  check the locks do not cover: each process reads it on its own before paying, so a catalog
+  served by N processes can exceed twelve calls a day by N−1. Panoma is local today, so on
+  6-Sep-2026 the owner deferred it rather than pay for that. Three guards hold it off, and
+  lifting it is one line in each: the `if` around the start call in `apps/web/lib/db.ts` and
+  the early returns of `runMemoryJobs` and `startMemoryWorker` in
+  `apps/web/lib/memory-worker.ts`. The record is in
+  [open-questions.md](open-questions.md).
+- **The delivery-time patrol looks when it can, and says when it cannot.** Before serving a
+  project's notes, the sentinels are re-checked if the project root is a directory on the
+  serving machine's disk, remote catalog or not. When it is not —an unmounted volume, a folder
+  moved without a rescan, a catalog served from another machine— the patrol challenges
+  nothing: a root nobody can look at is "cannot verify", never "the anchor fell", and the first
+  version challenged every anchored note of a project in one pass on exactly that evidence.
+  Instead it returns the count of notes it left unverified and the reason (`root-missing`
+  locally, `remote` under `DATABASE_URL`), and the briefing says so. The notes are served as
+  they were; the evidence is unknown, not against them.
 - **The note hangs off the project, not off the stable identity.** That's deliberate — the
   note talks about the folder being worked on — and it has its price, bounded below.
+- **The export exists; the import and the deletion contract do not.** `panoma memory export
+  <project>` writes one versioned document (`version: 1`) with the notes in every state, the
+  decisions with their revision links and an `evidenceValid` flag, the owner's general
+  decisions and the distiller's receipts — and that is the whole of what the audit's seventh
+  proposal has today. Nothing reads such a file back into a catalog, and forgetting is still
+  what it was: revoking a source stops its ingestion and `DELETE /api/twin/verdicts` deletes
+  what it names, with no contract yet that names every derivative a deletion has to reach.
+  The document says so in its shape rather than promising more: it carries no narratives and
+  no journal, only what the person curated and decided on top of them.
 - **The family plane (promotion by quorum) isn't built**, and with the threshold written
   before looking. A note that turned up independently approved in two copies of the same
   project could be promoted to a family note and served in all of them, with a valuable

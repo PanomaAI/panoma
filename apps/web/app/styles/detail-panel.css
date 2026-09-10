@@ -9,21 +9,39 @@
  */
 .detail-panel {
   position: sticky;
+  /* Above the last step of the space scale, and not one of the five named pieces of furniture:
+     it is the sticky offset that clears the top bar, so it stays a measurement. */
   top: 92px;
   display: grid;
   align-content: start;
   overflow: visible;
   border: 1px solid var(--line);
-  border-radius: 11px;
+  border-radius: var(--corner);
   background: var(--paper);
-  box-shadow: var(--shadow-lift);
 }
 
 /* A single selector above replaces the list of destinations that previously occupied the bottom. */
 .detail-panel__open {
-  padding: 10px 12px;
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-7) var(--space-8);
   border-bottom: 1px solid var(--line);
-  background: var(--color-paper-catalog);
+  background: var(--paper);
+}
+
+/*
+  The two controls fill the column: the split button, and "open everything" under it. The pair
+  takes the width and the label takes what the small configure button leaves, so the panel never
+  spills sideways.
+ */
+.detail-panel__open .open-all,
+.detail-panel__open .open-all__pair {
+  width: 100%;
+}
+
+.detail-panel__open .open-all__button {
+  flex: 1;
+  min-width: 0;
 }
 
 .detail-panel__open:empty {
@@ -40,7 +58,27 @@
   flex: 1;
 }
 
+.detail-panel__open .open-menu__primary,
+.detail-panel__open .open-menu__toggle {
+  min-height: var(--space-20);
+}
+
+/* The secondary action keeps a lighter border and the same usable target as the primary. */
+.detail-panel__open .open-all--compact .open-all__button,
+.detail-panel__open .open-all--compact .open-all__configure {
+  min-height: var(--space-18);
+  border-color: var(--line-strong);
+  font-size: var(--type-xs);
+}
+
+.detail-panel__open .open-all--compact .open-all__configure {
+  width: var(--space-18);
+}
+
 .detail-panel__open .open-menu__list {
+  /* Measured against the height of the trigger above it, not a step of the scale: the nearest
+     one is 48px, which would drop the list two pixels clear of the button. */
+  top: 46px;
   width: 100%;
   max-height: 44vh;
   overflow-y: auto;
@@ -52,26 +90,30 @@
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 11px;
-  padding: 13px 12px 13px 14px;
+  gap: var(--space-5);
+  padding: var(--space-8);
   border-bottom: 1px solid var(--line);
+}
+
+.detail-panel__head > div {
+  min-width: 0;
 }
 
 .detail-panel__head h2 {
   overflow: hidden;
   color: var(--ink);
-  font-size: 0.88rem;
-  font-weight: 640;
-  letter-spacing: -0.022em;
+  font-size: var(--type-sm);
+  font-weight: var(--weight-title);
+  letter-spacing: var(--track-tight);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .detail-panel__head p {
   overflow: hidden;
-  margin-top: 2px;
-  color: var(--ink-3);
-  font-size: 0.68rem;
+  margin-top: var(--space-2);
+  color: var(--ink-2);
+  font-size: var(--type-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -79,12 +121,12 @@
 .detail-panel__head button {
   display: grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
+  width: var(--space-16);
+  height: var(--space-16);
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--corner);
   background: transparent;
-  color: var(--ink-3);
+  color: var(--ink-2);
   cursor: pointer;
   transition: background-color var(--duration-fast) ease, color var(--duration-fast) ease;
 }
@@ -95,88 +137,105 @@
 }
 
 .detail-panel__head button svg {
-  width: 16px;
-  height: 16px;
+  width: var(--icon);
+  height: var(--icon);
 }
 
 .detail-health {
-  padding: 14px;
+  padding: var(--space-8);
   border-bottom: 1px solid var(--line);
 }
 
 .detail-health > p:first-child {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--space-4);
   color: var(--ink-2);
-  font-size: 0.7rem;
-  font-weight: 540;
+  font-size: var(--type-xs);
+  font-weight: var(--weight-strong);
 }
 
 .detail-health__score {
   display: flex;
   align-items: baseline;
-  gap: 4px;
-  margin-top: 7px;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
   font-variant-numeric: tabular-nums;
 }
 
 .detail-health__score strong {
   color: var(--ink);
-  font-size: 1.85rem;
-  font-weight: 660;
-  letter-spacing: -0.045em;
-  line-height: 1;
+  /* 32px sits in the gap between the 30px and the 36px step: either one moves it by more than a
+     pixel, so the score keeps the size it was drawn at. */
+  font-size: 2rem;
+  font-weight: var(--weight-title);
+  letter-spacing: var(--track-hero);
+  line-height: var(--lead-flat);
 }
 
 .detail-health__score span {
-  color: var(--ink-3);
-  font-size: 0.74rem;
+  color: var(--ink-2);
+  font-size: var(--type-xs);
 }
 
 .detail-health__meter {
   display: block;
   overflow: hidden;
-  height: 3px;
-  margin-top: 11px;
-  border-radius: 2px;
+  height: var(--space-2);
+  margin-top: var(--space-6);
+  /*
+    A pill, and it says so. Before the sweep this was `border-radius: 2px` on a 4px bar — exactly
+    half the height, which is a pill drawn by arithmetic rather than by name. The sweep wrote it as
+    `--corner-xs`, 4px, which the browser clamps straight back to 2 and so drew the same thing
+    while saying something that is not true of any other 4px corner in the app.
+    `--corner-pill` is what the shape is. It also survives the bar changing height, which the two
+    numbers that agreed by accident did not: at 6px tall, `--corner-xs` would have quietly stopped
+    being a pill and started being a rounded rectangle.
+   */
+  border-radius: var(--corner-pill);
   background: var(--line);
 }
 
+/* The filled part is the same shape, so that a score of four percent is a lozenge and not a chip. */
 .detail-health__meter > span {
   display: block;
   height: 100%;
-  border-radius: 2px;
-  background: var(--ink-3);
+  border-radius: var(--corner-pill);
+  background: var(--ink);
 }
 
 .detail-health--good .detail-health__meter > span { background: var(--good); }
 .detail-health--warn .detail-health__meter > span { background: var(--warn); }
 .detail-health--bad .detail-health__meter > span { background: var(--bad); }
 
+.detail-health--good .detail-health__score strong { color: var(--color-success-ink); }
+.detail-health--warn .detail-health__score strong { color: var(--color-warn-ink); }
+.detail-health--bad .detail-health__score strong { color: var(--color-danger-ink-deep); }
+
 .detail-facts {
-  padding: 5px 14px 11px;
+  padding: var(--space-4) var(--space-8) var(--space-6);
 }
 
 .detail-facts > div {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
-  min-height: 30px;
+  gap: var(--space-7);
+  min-height: var(--space-16);
 }
 
 .detail-facts dt {
   flex: none;
-  color: var(--ink-3);
-  font-size: 0.72rem;
+  color: var(--ink-2);
+  font-size: var(--type-xs);
 }
 
 .detail-facts dd {
   overflow: hidden;
   min-width: 0;
   color: var(--ink);
-  font-size: 0.74rem;
+  font-size: var(--type-xs);
+  font-weight: var(--weight-medium);
   font-variant-numeric: tabular-nums;
   text-align: right;
   text-overflow: ellipsis;
@@ -184,29 +243,30 @@
 }
 
 .detail-review {
-  padding: 12px 14px;
+  padding: var(--space-7) var(--space-8) var(--space-8);
   border-top: 1px solid var(--line);
 }
 
 .detail-review h3 {
-  color: var(--ink-3);
-  font-size: 0.63rem;
-  font-weight: 620;
-  letter-spacing: 0.08em;
+  color: var(--ink-2);
+  font-size: var(--type-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--track-label);
   text-transform: uppercase;
 }
 
 .detail-review__waiting {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 9px;
-  padding: 8px 10px;
+  gap: var(--space-4);
+  min-height: var(--space-18);
+  margin-top: var(--space-5);
+  padding: var(--space-4) var(--space-5);
   border: 1px solid var(--line-strong);
-  border-radius: 8px;
+  border-radius: var(--corner);
   color: var(--ink);
-  font-size: 0.73rem;
-  font-weight: 550;
+  font-size: var(--type-xs);
+  font-weight: var(--weight-strong);
   transition: background-color var(--duration-fast) ease, border-color var(--duration-fast) ease;
 }
 
@@ -216,15 +276,15 @@
 }
 
 .detail-review__waiting svg {
-  width: 15px;
-  height: 15px;
+  width: var(--icon);
+  height: var(--icon);
   flex: none;
 }
 
 .detail-review ul {
   display: grid;
-  gap: 5px;
-  margin-top: 9px;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
 }
 
 .detail-review ul:empty {
@@ -232,20 +292,22 @@
 }
 
 .detail-review li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
   color: var(--ink-2);
-  font-size: 0.71rem;
-  line-height: 1.45;
+  font-size: var(--type-xs);
+  line-height: var(--lead-snug);
 }
 
 /*
-  Each finding is a link, and it only shows when the pointer hovers over it.
-  The permanent underlining in three consecutive lines turns the block into a list of links
-  —noisy— when what it is, is a list of facts in which one can also enter. The dash that already
-  acted as a bullet stretches when passing: the movement is what says 'this leads somewhere,' and
-  nothing else is needed.
+  Findings stay aligned when they wrap. Hover and keyboard focus identify the destination
+  without moving the text, and severity remains visible through weight in the monochrome panel.
  */
 .detail-review li a {
   display: block;
+  min-width: 0;
+  min-height: var(--space-12);
   color: inherit;
   transition: color var(--duration-fast) ease;
 }
@@ -253,29 +315,20 @@
 .detail-review li::before {
   content: "—";
   display: inline-block;
-  width: 12px;
-  margin-right: 6px;
-  color: var(--ink-3);
-  transition: width var(--duration-nudge) ease, color var(--duration-nudge) ease;
+  flex: none;
+  color: var(--ink-2);
 }
 
-.detail-review li:has(a:hover)::before {
-  width: 18px;
+.detail-review li a:hover,
+.detail-review li a:focus-visible {
   color: var(--ink);
-}
-
-.detail-review li a:hover {
-  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: var(--space-2);
 }
 
 .detail-review li.is-danger {
-  color: var(--bad);
-}
-
-.detail-review li.is-danger a:hover {
-  color: var(--bad);
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  color: var(--ink);
+  font-weight: var(--weight-strong);
 }
 
 /*
@@ -284,21 +337,24 @@
   gets split right on the day it needs to be read.
  */
 .detail-panel__error {
-  padding: 7px 14px;
+  padding: var(--space-5) var(--space-8);
   border-top: 1px solid var(--line);
-  color: var(--bad);
-  font-size: 0.68rem;
-  line-height: 1.4;
+  background: var(--wash);
+  color: var(--ink);
+  font-size: var(--type-xs);
+  font-weight: var(--weight-strong);
+  line-height: var(--lead-snug);
 }
 
 .detail-panel__foot {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 9px 10px 9px 14px;
+  gap: var(--space-5);
+  padding: var(--space-5) var(--space-6) var(--space-5) var(--space-8);
   border-top: 1px solid var(--line);
-  background: var(--color-paper-catalog);
+  border-radius: 0 0 var(--corner) var(--corner);
+  background: var(--wash);
 }
 
 /*
@@ -310,35 +366,38 @@
 .detail-panel__foot > a {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-3);
+  min-height: var(--space-16);
   color: var(--ink);
-  font-size: 0.73rem;
-  font-weight: 560;
+  font-size: var(--type-xs);
+  font-weight: var(--weight-strong);
 }
 
-.detail-panel__foot > a:hover {
+.detail-panel__foot > a:hover,
+.detail-panel__foot > a:focus-visible {
   text-decoration: underline;
+  text-underline-offset: var(--space-2);
 }
 
 .detail-panel__foot > a svg {
-  width: 13px;
-  height: 13px;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
 }
 
 .detail-panel__foot > div {
   display: flex;
-  gap: 2px;
+  gap: var(--space-1);
 }
 
 .detail-panel__foot > div button {
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  width: var(--space-16);
+  height: var(--space-16);
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--corner);
   background: transparent;
-  color: var(--ink-3);
+  color: var(--ink-2);
   cursor: pointer;
   transition: background-color var(--duration-fast) ease, color var(--duration-fast) ease;
 }
@@ -353,7 +412,6 @@
 }
 
 .detail-panel__foot > div button svg {
-  width: 16px;
-  height: 16px;
+  width: var(--icon);
+  height: var(--icon);
 }
-

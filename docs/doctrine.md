@@ -182,7 +182,7 @@ hooks, the MCP configuration— is the CLI or the web app, and always on an expl
 
 ## There is no telemetry, and that is why the notice asks npm
 
-The CLI checks whether there is a new version against
+Panoma checks whether there is a new version against
 `https://registry.npmjs.org/panoma/latest`, with a 2 s cap and at most once a day, remembering
 the visit in `~/.panoma/version.json`. It is switched off with `PANOMA_NO_UPDATE_CHECK=1`.
 
@@ -192,9 +192,21 @@ The difference is not one of degree, and it is not changed without reading this 
 again. Asking npm about the name "panoma" is exactly the truth the page already tells about
 dependencies: the only thing that goes out is the names of public packages.
 
+**Since 7-Sep-2026 there are two callers, and that changed nothing here.** The catalog asks it
+too while it is running, because `panoma up` lives for weeks and the person who never opens a
+terminal again would otherwise be told about the release of the day they started, for ever. The
+line this paragraph draws is *whose server is asked*, not *which process asks*: same host, same
+cap, same daily memory, same off switch, and one clock shared through the same file, so it stays
+one question a day between the two. It is also the same thing that process already does every
+twelve hours when it refreshes versions and advisories from seven registries. What would cross
+the line is a panoma endpoint, and neither half has one. The whole design is in
+[update-notice.md](update-notice.md).
+
 A small detail in the same spirit: the visit is recorded **even if the query fails**. If it
 were not, a machine with no network would pay two seconds of waiting on every run, for
-nothing.
+nothing. And the terminal's half now stays quiet when nothing is attached to its output — a
+notice nobody can read is not worth a question, and printing it into a log at every login spent
+the day's question before the Wi-Fi was up.
 
 ## The tests read the code as text
 

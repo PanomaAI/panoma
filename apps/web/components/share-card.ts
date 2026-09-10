@@ -4,7 +4,27 @@
  * It is canvas on purpose: it doesn't need a network, it doesn't upload data, and the preview is
  * exactly the PNG that ends up on the disk. The mark, however, is not redrawn: it receives and
  * paints the official SVG so that the card that circulates has the same identity as the product.
+ *
+ * The colors come from `lib/theme-values.ts` and not from the stylesheet: `ctx.fillStyle` takes a
+ * resolved string, so a canvas cannot read `var(--color-ink)`. That module explains the copy and
+ * `lib/theme-values.test.ts` fails when one of these stops matching its token.
  */
+
+import {
+  CARD,
+  EDGE,
+  HEALTH_ATTENTION,
+  HEALTH_GOOD,
+  HEALTH_REVIEW,
+  INK,
+  INK_FAINT,
+  INK_MUTED,
+  SEAL_BAND,
+  SEAL_FACE,
+  SEAL_HATCH,
+  SEAL_SHEEN,
+  SEAL_STRIPE,
+} from "@/lib/theme-values";
 
 export const WIDTH = 1600;
 export const HEIGHT = 900;
@@ -48,11 +68,14 @@ export interface CardData {
   };
 }
 
-const INK = "#0e0f11";
-const INK_2 = "#5c6169";
-const INK_3 = "#8b9098";
-const RULE_COLOR = "#e7e8ea";
-const PAPER = "#ffffff";
+/*
+  The typeface, and the one value on this card that is NOT mirrored from the stylesheet.
+
+  `ctx.font` needs a family NAME, and the name `next/font` generates for Inter is a build hash
+  reachable only through `var(--font-inter)` — which a canvas cannot resolve. So the head of this
+  stack is written out by hand, and it resolves because the card is drawn inside the application,
+  where that face is already loaded. Everything below it is the tail of `--font-sans`.
+ */
 const FONT = '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
 
 export function drawCard(canvas: HTMLCanvasElement, data: CardData): void {
@@ -61,9 +84,9 @@ export function drawCard(canvas: HTMLCanvasElement, data: CardData): void {
 
   canvas.width = WIDTH;
   canvas.height = HEIGHT;
-  ctx.fillStyle = PAPER;
+  ctx.fillStyle = CARD;
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
-  ctx.strokeStyle = RULE_COLOR;
+  ctx.strokeStyle = EDGE;
   ctx.lineWidth = 2;
   ctx.strokeRect(1, 1, WIDTH - 2, HEIGHT - 2);
 
@@ -71,7 +94,7 @@ export function drawCard(canvas: HTMLCanvasElement, data: CardData): void {
   brand(ctx, data.logo, margin, 66);
 
   ctx.font = `500 25px ${FONT}`;
-  ctx.fillStyle = INK_3;
+  ctx.fillStyle = INK_FAINT;
   ctx.textAlign = "right";
   ctx.fillText(data.domain, WIDTH - margin, 105);
   ctx.textAlign = "left";
@@ -94,12 +117,12 @@ export function drawCard(canvas: HTMLCanvasElement, data: CardData): void {
   figures(ctx, data, margin, ruleY + 51);
 
   if (data.user) {
-    ctx.fillStyle = INK_2;
+    ctx.fillStyle = INK_MUTED;
     ctx.font = `550 27px ${FONT}`;
     ctx.fillText(data.user, margin, HEIGHT - 61);
   }
 
-  ctx.fillStyle = INK_3;
+  ctx.fillStyle = INK_FAINT;
   ctx.font = `500 23px ${FONT}`;
   ctx.textAlign = "right";
   ctx.fillText(data.texts.localFirst, WIDTH - margin, HEIGHT - 61);
@@ -154,7 +177,7 @@ function projectPanorama(
   const meterWidth = Math.min(122, slot - 28);
   const meterHeight = 10;
 
-  ctx.fillStyle = INK_3;
+  ctx.fillStyle = INK_FAINT;
   ctx.font = `600 18px ${FONT}`;
   ctx.fillText(texts.health.toUpperCase(), x, y);
   healthLegend(ctx, WIDTH - x, y, texts);
@@ -166,7 +189,7 @@ function projectPanorama(
     ctx.save();
     rounded(ctx, iconLeft, iconTop, iconSide, iconSide, 18);
     ctx.clip();
-    ctx.fillStyle = PAPER;
+    ctx.fillStyle = CARD;
     ctx.fill();
     if (project.concealed) {
       drawConcealedIdentity(ctx, iconLeft, iconTop, iconSide, index);
@@ -190,7 +213,7 @@ function projectPanorama(
       }
     }
     ctx.restore();
-    ctx.strokeStyle = RULE_COLOR;
+    ctx.strokeStyle = EDGE;
     ctx.lineWidth = 1.5;
     rounded(ctx, iconLeft, iconTop, iconSide, iconSide, 18);
     ctx.stroke();
@@ -212,7 +235,7 @@ function projectPanorama(
 
     const meterX = center - meterWidth / 2;
     const meterY = iconTop + 128;
-    ctx.fillStyle = RULE_COLOR;
+    ctx.fillStyle = EDGE;
     rounded(ctx, meterX, meterY, meterWidth, meterHeight, meterHeight / 2);
     ctx.fill();
 
@@ -245,11 +268,11 @@ function drawConcealedIdentity(
   side: number,
   index: number,
 ): void {
-  ctx.fillStyle = "#111316";
+  ctx.fillStyle = SEAL_FACE;
   ctx.fillRect(x, y, side, side);
 
   ctx.save();
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.085)";
+  ctx.strokeStyle = SEAL_HATCH;
   ctx.lineWidth = 1.5;
   const shift = [0, 7, -5, 12][index % 4] ?? 0;
   for (let line = -side; line < side * 2; line += 17) {
@@ -263,14 +286,14 @@ function drawConcealedIdentity(
   const maskWidth = 44;
   const maskHeight = 10;
   ctx.save();
-  ctx.shadowColor = "rgba(255, 255, 255, 0.12)";
+  ctx.shadowColor = SEAL_SHEEN;
   ctx.shadowBlur = 6;
-  ctx.fillStyle = "#f4f4f2";
+  ctx.fillStyle = SEAL_BAND;
   rounded(ctx, x + (side - maskWidth) / 2, y + (side - maskHeight) / 2, maskWidth, maskHeight, 6);
   ctx.fill();
   ctx.restore();
 
-  ctx.fillStyle = "rgba(77, 81, 88, 0.7)";
+  ctx.fillStyle = SEAL_STRIPE;
   for (let slit = 0; slit < 4; slit += 1) {
     rounded(ctx, x + side / 2 - 11 + slit * 7, y + side / 2 - 2, 2, 4, 1);
     ctx.fill();
@@ -321,9 +344,9 @@ function healthLegend(
   texts: Pick<CardData["texts"], "healthGood" | "healthReview" | "healthAttention">,
 ): void {
   const items: [string, string][] = [
-    [texts.healthGood, "#2eaa63"],
-    [texts.healthReview, "#e4a30b"],
-    [texts.healthAttention, "#ea5a58"],
+    [texts.healthGood, HEALTH_GOOD],
+    [texts.healthReview, HEALTH_REVIEW],
+    [texts.healthAttention, HEALTH_ATTENTION],
   ];
   ctx.font = `550 17px ${FONT}`;
   const gap = 28;
@@ -336,7 +359,7 @@ function healthLegend(
     ctx.beginPath();
     ctx.arc(cursor + 5, y - 6, 5, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = INK_2;
+    ctx.fillStyle = INK_MUTED;
     ctx.fillText(label, cursor + 16, y);
     cursor += 14 + ctx.measureText(label).width + gap;
   }
@@ -355,7 +378,7 @@ function figures(ctx: CanvasRenderingContext2D, data: CardData, x: number, y: nu
   items.forEach(([value, label], index) => {
     const left = x + slot * index;
     if (index > 0) {
-      ctx.strokeStyle = RULE_COLOR;
+      ctx.strokeStyle = EDGE;
       ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.moveTo(left - 34, y - 10);
@@ -366,7 +389,7 @@ function figures(ctx: CanvasRenderingContext2D, data: CardData, x: number, y: nu
     ctx.fillStyle = INK;
     ctx.font = `650 54px ${FONT}`;
     ctx.fillText(value, left, y + 45);
-    ctx.fillStyle = INK_3;
+    ctx.fillStyle = INK_FAINT;
     ctx.font = `500 22px ${FONT}`;
     ctx.fillText(label, left, y + 78);
   });
@@ -422,10 +445,19 @@ function fittedFont(
   }
 }
 
+/*
+  The three bands, in the three tones the rest of the application already uses for the same
+  verdict. The card used to answer with a green, an amber and a red of its own —#2eaa63, #e4a30b,
+  #ea5a58, none of them written anywhere else in the repository— so the PNG somebody posts
+  disagreed with the screen it is a picture of.
+  The CUTS are still this card's own: 75 and 50, against the ring's 70 and 55 in
+  `project-charts.tsx`. That disagreement is about the health scale and not about the theme, so it
+  is left standing rather than settled while passing through.
+ */
 function healthColor(score: number): string {
-  if (score >= 75) return "#2eaa63";
-  if (score >= 50) return "#e4a30b";
-  return "#ea5a58";
+  if (score >= 75) return HEALTH_GOOD;
+  if (score >= 50) return HEALTH_REVIEW;
+  return HEALTH_ATTENTION;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -433,7 +465,7 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function rule(ctx: CanvasRenderingContext2D, x: number, y: number, width: number): void {
-  ctx.strokeStyle = RULE_COLOR;
+  ctx.strokeStyle = EDGE;
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.moveTo(x, y);

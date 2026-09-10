@@ -66,6 +66,8 @@ export interface BeliefView {
   topic: string;
   statement: string;
   badge: BeliefBadge;
+  /** Direct owner authorship needs no inferred evidence count. */
+  authored?: boolean;
   citations: Citation[];
   /** How much evidence supports it: it is always taught, with a badge or without it. */
   support: { observations: number; projects: number; days: number };
@@ -104,6 +106,7 @@ export interface BeliefRowish {
   topic: string;
   statement: string;
   state: string;
+  model?: string;
   identity?: string | null;
   citations: unknown;
   support: unknown;
@@ -134,6 +137,7 @@ export function asBelief(
     topic: row.topic,
     statement: row.statement,
     badge,
+    ...(row.model === "owner" ? { authored: true } : {}),
     support: asSupport(row.support),
     ...(scope ? { scope } : {}),
     ...(scope ? {} : learnedIn(citations, options.identities ?? {})),

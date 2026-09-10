@@ -170,9 +170,19 @@ export async function bridgeReport(database: Database): Promise<BridgeReport> {
 
 export type StepState = "done" | "next" | "waiting";
 
+/**
+ * The four the setup is made of.
+ *
+ * `alive` is the fifth id and deliberately not one of these. Telling the two groups apart in the
+ * type — and not only in the `kind` field — is what lets the screen's copy table stop declaring an
+ * entry for a step it can never draw: the exhaustive `Record` over the whole union demanded three
+ * messages for the journal that nothing has rendered since it stopped being a step.
+ */
+export type SetupStepId = "catalog" | "model" | "agent" | "hooks";
+
 export interface BridgeStep {
   /** The step's short i18n key: `bridge.step.<id>`. */
-  id: "catalog" | "model" | "agent" | "hooks" | "alive";
+  id: SetupStepId | "alive";
   state: StepState;
   /** The fact that makes the state true, to render it next to the title. */
   detail: { count: number; total?: number };
@@ -186,6 +196,12 @@ export interface BridgeStep {
    * finished everything that was theirs, and pointed them at a screen with no way forward.
    */
   kind: "step" | "consequence";
+}
+
+/** A step of the setup, which is what `bridgeProgress` hands to whoever draws the list. */
+export interface SetupStep extends BridgeStep {
+  id: SetupStepId;
+  kind: "step";
 }
 
 /**
@@ -244,6 +260,36 @@ export function bridgeSteps(report: BridgeReport): BridgeStep[] {
   });
 }
 
+/** Shared setup progress: an empty journal never keeps a configured catalog unfinished. */
+export function bridgeProgress(steps: BridgeStep[]): {
+  setupSteps: SetupStep[];
+  completed: number;
+  total: number;
+  pending: number;
+  next: SetupStep | undefined;
+  ready: boolean;
+} {
+  /*
+    The predicate is the seam between the two groups, and what keeps it true is the list above:
+    `alive` is the only condition that asks for `kind: "consequence"`, and every other id in the
+    union is a setup one. Narrowing here, once, is what lets the screen index its copy table
+    without carrying an entry for a step it never draws.
+   */
+  const setupSteps = steps.filter((step): step is SetupStep => step.kind === "step");
+  const completed = setupSteps.filter((step) => step.state === "done").length;
+  const total = setupSteps.length;
+  const pending = total - completed;
+
+  return {
+    setupSteps,
+    completed,
+    total,
+    pending,
+    next: setupSteps.find((step) => step.state === "next"),
+    ready: pending === 0,
+  };
+}
+
 /**
  * What is still off and is somebody's to switch on — the number the frame carries.
  *
@@ -251,5 +297,5 @@ export function bridgeSteps(report: BridgeReport): BridgeStep[] {
  * catalog whose owner has done all four of their parts should not be told it is one short.
  */
 export function bridgePending(steps: BridgeStep[]): number {
-  return steps.filter((step) => step.kind === "step" && step.state !== "done").length;
+  return bridgeProgress(steps).pending;
 }

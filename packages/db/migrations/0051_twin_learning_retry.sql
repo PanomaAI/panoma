@@ -1,0 +1,1 @@
+ALTER TABLE "narratives" ADD COLUMN "failed_at" timestamp with time zone;

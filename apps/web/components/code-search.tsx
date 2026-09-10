@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { HiOutlineFolderOpen, HiOutlineMagnifyingGlass } from "react-icons/hi2";
 import { useT } from "./i18n-provider";
+import { ActionButton, Card, EmptyState } from "./primitives";
 import { fileLink, useOpenTarget } from "./use-open-target";
 
 type Match = { file: string; line: number; text: string };
@@ -76,8 +77,15 @@ export function CodeSearch({ initialQuery }: { initialQuery: string }) {
 
   return (
     <div>
+      {/*
+         The same form as the capture of `capture-task.tsx`: a field, and the button that turns
+         off while it works. It is written with the chrome that already exists and not with a
+         rule of its own, because this page is a `.legacy-page` — it declares no screen palette,
+         so a `var(--line)` here would resolve to nothing. It used to carry a `code-search` class
+         that no stylesheet ever painted, and the two controls came out with the reset alone.
+        */}
       <form
-        className="code-search"
+        className="flex flex-wrap items-center gap-2"
         onSubmit={(event) => {
           event.preventDefault();
           void search(query);
@@ -89,16 +97,31 @@ export function CodeSearch({ initialQuery }: { initialQuery: string }) {
       >
         <HiOutlineMagnifyingGlass aria-hidden />
         {/* The marker is not translated: they are examples of what is typed, not text that is read. */}
+        {/*
+           NOT `<Field>`, and it is the only reason this chain is still written out. `Field` takes
+           no `ref` — its props are `InputHTMLAttributes`, which does not carry one, and it is not
+           a `forwardRef` — and this input is focused from the keyboard shortcut that opens the
+           page (see `useEffect` above). Losing that focus to gain a class name is a bad trade.
+           The chain below is `Field`'s `sm` step letter for letter, minus the `min-h-[30px]` that
+           only the primitive is allowed to declare; see the report.
+          */}
         <input
           ref={inputRef}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="stripe.webhook, TODO, API_KEY…"
           aria-label={t("search.fieldLabel")}
+          className="min-w-0 flex-1 rounded border border-edge bg-raised px-2.5 py-1.5 text-xs text-chalk placeholder:text-faint focus:border-accent focus:outline-none"
         />
-        <button type="submit" disabled={state === "searching" || query.trim().length < 2}>
-          {t(state === "searching" ? "search.searching" : "search.submit")}
-        </button>
+        <ActionButton
+          tone="raised"
+          type="submit"
+          busy={state === "searching"}
+          busyLabel={t("search.searching")}
+          disabled={state === "searching" || query.trim().length < 2}
+        >
+          {t("search.submit")}
+        </ActionButton>
       </form>
 
       {/*
@@ -139,13 +162,11 @@ export function CodeSearch({ initialQuery }: { initialQuery: string }) {
           </p>
 
           {payload.results.length === 0 ? (
-            <p className="mt-4 rounded border border-edge bg-surface p-5 text-sm text-smoke">
-              {t("search.noMatch", { query: payload.query })}
-            </p>
+            <EmptyState className="mt-4" title={t("search.noMatch", { query: payload.query })} />
           ) : (
             <ul className="mt-4 space-y-3">
               {payload.results.map((result) => (
-                <li key={result.id} className="rounded-lg border border-edge bg-surface">
+                <Card as="li" key={result.id} pad="none">
                   <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-edge px-4 py-2.5">
                     <a
                       href={`/p/${result.slug}`}
@@ -205,7 +226,7 @@ export function CodeSearch({ initialQuery }: { initialQuery: string }) {
                       {t("search.truncated", { n: result.matches.length })}
                     </p>
                   )}
-                </li>
+                </Card>
               ))}
             </ul>
           )}

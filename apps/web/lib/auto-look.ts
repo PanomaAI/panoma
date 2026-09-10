@@ -6,9 +6,10 @@ import {
   modelSpendToday,
   type Database,
 } from "@panoma/db";
-import { autoLookCap, budgetFrom, type LookSubject } from "@/lib/look";
+import { autoLookCap, fitForLook, readCeiling, type LookSubject } from "@/lib/look";
 import { LOOK_KIND, runLook } from "@/lib/look-run";
 import { shotDigest } from "@/lib/shots";
+import { capFor, shotPolicy } from "@/lib/spend-settings";
 import type { Locale } from "@/lib/i18n";
 
 /*
@@ -46,7 +47,21 @@ import type { Locale } from "@/lib/i18n";
 
 /** What happened in a past one, for the watcher's log. */
 export type AutoLook =
-  | { did: "looked"; shot: string; findings: number; dropped: number }
+  | {
+      did: "looked";
+      shot: string;
+      findings: number;
+      dropped: number;
+      /**
+       * The size at which it was shown, when it travelled reduced.
+       *
+       * Nobody is in front of this call, so nobody could be asked and nobody was told before
+       * spending. The saying-so is the log line, and that is why this comes out of here as a
+       * value: the watcher has to be able to write that the critic was shown a smaller screen
+       * than the one the agent left.
+       */
+      fitted?: { width: number; height: number };
+    }
   | { did: "nothing" }
   | { did: "budget" }
   | { did: "noYardstick" }
@@ -81,7 +96,7 @@ export async function autoLook(database: Database, project: LookedProject): Prom
     the main stop is worn out, it doesn't matter that there is automatic reserve, and saying it
     the other way around would leave the automatic system using what is no longer there.
    */
-  const cap = budgetFrom(process.env["PANOMA_LOOK_BUDGET"]);
+  const { cap } = await capFor("look");
   const spent = await modelSpendToday(database, LOOK_KIND);
   if (spent.calls >= cap) return { did: "budget" };
   if ((await autoLooksToday(database)) >= autoLookCap(cap)) return { did: "budget" };
@@ -96,9 +111,16 @@ export async function autoLook(database: Database, project: LookedProject): Prom
   const north = await getNorth(database, project.identity);
   if (profile.lines.length === 0 && north === undefined) return { did: "noYardstick" };
 
+  /*
+    And what the owner chose, read before the file is opened because it says how much of it may be
+    opened: with `fit` the capture is reduced before it travels, so the provider's cap is not what
+    bounds this reading. See `readCeiling`.
+   */
+  const policy = await shotPolicy();
+
   let shot;
   try {
-    shot = await readScreenshot(newest.path);
+    shot = await readScreenshot(newest.path, { maxBytes: readCeiling(policy) });
   } catch (error) {
     if (!(error instanceof ScreenshotError)) throw error;
     return { did: "failed", detail: `${newest.name}: ${error.problem}` };
@@ -110,14 +132,34 @@ export async function autoLook(database: Database, project: LookedProject): Prom
     project: project.name,
   };
 
+  /*
+    And the same choice as the two doors where somebody is asking, through the same function.
+    The watcher cannot ask —there is nobody in front of it— so it obeys what was saved on the
+    Spend screen. Doing anything else here is what would break the promise: a person who asked for
+    reduced captures and gets whole ones every time an agent leaves a delivery has a setting that
+    only works when they are watching.
+   */
+  const fit = fitForLook(shot.data, shot.mediaType, policy);
+
+  /*
+    And what could not be reduced under the cap does not travel, here least of all. Nobody is in
+    front of this call: sending an image over what a provider accepts would spend a call to be
+    told about encoding, and nobody would read the error until the bill. It comes out as a line in
+    the log with the reason in it, which is the only place this can be said.
+   */
+  if (fit.sent.tooBig === true) {
+    return { did: "failed", detail: `${newest.name}: ${fit.sent.why ?? "too-big"}` };
+  }
+
   try {
     const receipt = await runLook(database, {
       subject,
       image: {
-        data: shot.data,
+        data: fit.data,
         mediaType: shot.mediaType,
         bytes: shot.bytes,
         shot: newest.name,
+        ...(fit.sent.fitted === true ? { whole: shot.data } : {}),
       },
       identity: project.identity,
       fired: "watch",
@@ -128,6 +170,9 @@ export async function autoLook(database: Database, project: LookedProject): Prom
       shot: newest.name,
       findings: receipt.findings.length,
       dropped: receipt.dropped,
+      ...(fit.sent.fitted === true && fit.sent.width !== undefined && fit.sent.height !== undefined
+        ? { fitted: { width: fit.sent.width, height: fit.sent.height } }
+        : {}),
     };
   } catch (error) {
     return { did: "failed", detail: (error as Error).message };

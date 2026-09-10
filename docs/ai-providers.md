@@ -71,10 +71,22 @@ Code is rejected — "This credential is only authorized for use with Claude Cod
 account can end up restricted. So on top of being forbidden, today it would not work.
 
 What does exist is the legitimate route, and it is better: **if you already have `claude`
-installed and signed in, panoma asks it.** The `claude-cli` provider runs `claude -p` with the
-prompt on standard input. The subscription is used by its own official tool, on your machine;
-panoma neither sees nor stores any token, does not depend on somebody else's OAuth client id,
-and works today with what is already installed.
+installed and signed in, panoma asks it.** The `claude-cli` provider runs
+`claude -p --strict-mcp-config --no-session-persistence` with the prompt on standard input.
+The subscription is used by its own official tool, on your machine; panoma neither sees nor
+stores any token, does not depend on somebody else's OAuth client id, and works today with
+what is already installed.
+
+The two extra flags, and the working directory, are thrift. A bare `claude -p` boots the
+person's whole Claude Code —every MCP server in their config, the instruction files of the
+folder it starts in, a session persisted under `~/.claude/projects`— and measured elsewhere
+that cost about 70 times more for a one-line answer. `--strict-mcp-config` without an
+`--mcp-config` means no MCP servers; `--no-session-persistence` leaves nothing on disk; and
+every `cli` agent is launched from a neutral temporary directory (`os.tmpdir()`), so no
+`CLAUDE.md` or `AGENTS.md` is discovered. `codex-cli` gets the same treatment with
+`codex exec --ephemeral --skip-git-repo-check`, the second because a temporary directory is
+not a repository. Not `--bare`: it disables OAuth and would break the route. The guard is
+`packages/ai/src/cli-args.test.ts`.
 
 The price is measured and real: starting a process takes seconds and not milliseconds, and
 what comes back is loose text **with no token usage and no stop reason**. It is good for
@@ -345,7 +357,16 @@ paint, it is in what you read.
 - **`openai-codex` can stop working without warning.** Private endpoint, somebody else's
   `client_id`, fixed callback port. It is marked as personal use in its own description.
 - **`cli` providers do not publish usage.** The token column comes out null and the spend
-  ledger counts them apart, under `unmetered`; a zero there does not mean it was free.
+  ledger counts them apart, under `unmetered`; a zero there does not mean it was free. Since
+  6-Sep-2026 the `codex` and `openai` families follow the same rule for a half-stated usage:
+  `usage` is set only when the response states both input and output as finite numbers, and
+  omitted otherwise, so a missing field lands as null and not as the free call the old `?? 0`
+  wrote (`packages/ai/src/complete.test.ts`).
+- **The `anthropic` family retries on its own terms.** It does not go through `callProvider`
+  (`transport.ts`) and keeps the SDK's policy: two retries on 408, 409, 429 and 5xx, honouring
+  `retry-after`, never after a completed generation, so it never pays twice. The other
+  families retry only what never got answered, through `callProvider`. It is the one
+  documented difference between the two paths, and [budgets.md](budgets.md) leans on it.
 - **A `cli` provider cannot look at images**, so the critic with eyes refuses. It is a limit of
   how they are called and not of the models behind them: the day one of them accepts a file
   path on its command line, it stops being true for that one.

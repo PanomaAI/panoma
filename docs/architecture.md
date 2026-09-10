@@ -1,7 +1,8 @@
 # The pieces of panoma, and who talks to whom
 
-panoma is a pnpm monorepo with six packages and two applications, and once it is running it
-is three separate processes that share no memory. This page says what each piece is, who may
+panoma is a pnpm monorepo with seven packages, a CLI, a local web app and an independent
+public site. The CLI, local server and MCP channel use separate processes; optional app
+jobs add their own child process. This page says what each piece is, who may
 call whom and through which door, and walks the whole round trip of the two operations that
 explain everything else: a `panoma scan --save` and a `panoma_context` call.
 
@@ -10,7 +11,7 @@ documentation never teaches dead commands, but its list is fixed —`README.md`,
 `CONTRIBUTING.md`, `apps/cli/README.md` and five from `docs/`: `README.md`, `agents-md.md`,
 `build-check.md`, `mcp-security.md` and `network-access.md`— and this file is not on it.
 
-## Six packages and two applications
+## Seven packages and the local applications
 
 | package | what it is | depends on |
 | --- | --- | --- |
@@ -20,8 +21,9 @@ documentation never teaches dead commands, but its list is fixed —`README.md`,
 | `@panoma/runner` | `run` and `check`: worktree, isolation, proposals. | core, db, enrich |
 | `@panoma/ai` | The 27 model providers and `~/.panoma/ai.json`. | core |
 | `@panoma/mcp` | The MCP server: 9 tools over stdio. | core |
+| `@panoma/apps` | Official app packages, versioned installation and restricted child environments. | core |
 | `apps/cli` (`panoma`) | The binary: 21 verbs and the no-command case. | core, ai |
-| `apps/web` (`@panoma/web`) | The catalog, served, with the watcher inside. | all six |
+| `apps/web` (`@panoma/web`) | The catalog, watcher and durable app supervisor. | all seven |
 
 The numbers in the table, with their sources: `packages/db/migrations` holds 50 files
 (`0000`–`0049`) and `packages/db/src/schema.ts` declares 32 tables;

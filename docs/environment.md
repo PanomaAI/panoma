@@ -7,12 +7,19 @@ writes outside your projects, which until now had nowhere to be written down.
 
 **A test watches this document**: `apps/site/docs/docs-copy.test.ts` walks the copy of the
 public `/docs` page, pulls out every `PANOMA_*` variable it names and fails if any one of
-them does not turn up here between backticks. Today there are nine. The lesson is the usual
+them does not turn up here between backticks. Today there are fifteen. The lesson is the usual
 one: a lever named in one place and absent from the other is a lever the reader cannot find
 again — and memory shipped three variables without a single one of them ever getting written
 down.
 
 ## The ones that change where everything lives
+
+Official apps inherit `PANOMA_HOME` through explicit managed paths. Their installed versions,
+browser cache and logs live under `apps/`; Video productions live under `video/`. Provider
+keys are supplied only after enabling them in the app's settings. `PANOMA_APP_BUDGET`
+overrides the default daily app allowance of twenty provider attempts; zero disables paid
+app work. `PANOMA_NO_UPDATE_CHECK=1` suppresses background app registry checks as well as
+the existing Panoma version notice. See [apps.md](apps.md) for the child environment contract.
 
 | variable | who reads it | factory value | what happens if it is wrong |
 | --- | --- | --- | --- |
@@ -33,11 +40,28 @@ need to bring up a second server without trampling the first**: PGlite admits a 
 and two processes over the same data directory corrupt it. For a second test server you need
 this one and `PANOMA_DIST`, because two `next dev` cannot share an output directory either.
 
-What `DATABASE_URL` switches off is the watcher and the fifteen API routes that need the
-user's disk —`/api/check`, `/api/rescan`, `/api/md/apply`, `/api/open`, `/api/disk`,
+What `DATABASE_URL` switches off is the watcher and the
+fifteen API routes that need the user's disk —`/api/check`, `/api/rescan`, `/api/md/apply`, `/api/open`, `/api/disk`,
 `/api/roots`, `/api/hooks`, the enrollment at `panoma_context` time and the rest—, each one
 with its reason said out loud in its own file. The list comes out of
 `grep -rl DATABASE_URL apps/web/app/api`, which is the only way it does not go stale here.
+
+One thing it does **not** switch off, since 6-Sep-2026, and it lives in `apps/web/lib` and not
+in a route: the sentinel patrol that runs before a memory delivery is decided by the disk, not
+by the driver. If the project root is a directory on the serving machine it patrols as a local
+server would; if it is not, it challenges nothing and reports the anchored notes as unverified,
+with `remote` as the reason.
+
+And one thing it does switch off for a reason that is **not** the disk. The memory worker that
+drains `memory_jobs` could run against a remote catalog perfectly well — the distiller reads
+the journal from the database and asks the model, never a file, and the queue is claimed under
+a table lock and published under a lease, both of which hold across processes — and it stays
+off there anyway, because the key that would pay is the server's, for every project it serves,
+and the daily cap is read per process, so N servers over one catalog can exceed twelve calls a
+day by N−1. It is deferred, not blocked: three guards hold it, and they are the `if` around the
+start call in `apps/web/lib/db.ts` and the early returns of `runMemoryJobs` and
+`startMemoryWorker` in `apps/web/lib/memory-worker.ts`. [memory.md](memory.md) has the rest,
+and [open-questions.md](open-questions.md) has the decision.
 
 ## The ones for the server and its door
 
@@ -66,9 +90,9 @@ around: the port can be opened with a network key and no operator key, and there
 key" does not mean "I am at home", it means the phone that came in with the network one is
 indistinguishable from the owner. Returning `undefined` left open to that phone every route
 that runs something on this machine. **Exactly how many there are is not written down
-anywhere trustworthy**: the comment in `middleware.ts` says eleven and today
-`grep -rl localOperatorOnly apps/web/app/api` returns thirteen route files. The living list is
-that grep, not a figure typed by hand.
+anywhere trustworthy**: today `grep -rl 'localOperatorOnly(' --include=route.ts apps/web/app/api`
+returns eighteen route files, and [guards.md](guards.md) lists the twenty-two handlers inside
+them. The living list is that grep, not a figure typed by hand.
 
 ## The ones for the agent channel
 
@@ -95,26 +119,40 @@ and the per-project ones that `--install` writes, `<project>/.mcp.json` and
 
 ## The brakes
 
-The four budgets count **calls and not tokens**: with a `cli` provider —a session agent— no
+The seven budgets count **calls and not tokens**: with a `cli` provider —a session agent— no
 tokens come back to count, and a token brake would let through untouched precisely the case
 that runs away most easily, which is a loop of a thousand calls that do not publish what they
-spend. The four share the same contract when they are read: empty or unreadable falls back to
+spend. The seven share the same contract when they are read: empty or unreadable falls back to
 the factory value and **never** to "no limit", because when a brake fails it has to fail on the
 braking side. Zero is valid and switches that organ off entirely, which is a legitimate answer
 and a different one from having written nothing.
 
+Since 6-Sep-2026 none of them is read by a parser of its own. All seven go through
+`resolveCap()` in `apps/web/lib/spend-settings.ts` —`capFor(family)` at request time, with the
+variable named in `BUDGET_ENV`— and **the variable is no longer the only control**: the
+`/spend` screen writes a cap per family into `~/.panoma/spend.json`, and the precedence is the
+pause in that file → the variable, when set and not blank → the cap chosen in the file → the
+factory value. A set variable wins over the file, and the screen shows that family's box
+disabled with the variable named; an unreadable variable (`PANOMA_LOOK_BUDGET=cien`) still
+falls to the factory value, with the environment still named as the source, and the screen and
+`panoma spend` say so. The 429 of every braked route names both ways to raise the cap. The
+rest —the file, the pause, the rates— is in [budgets.md](budgets.md).
+
 | variable | who reads it | factory value | what happens if it is wrong |
 | --- | --- | --- | --- |
-| `PANOMA_READ_BUDGET` | `readBudgetFrom()` in `apps/web/lib/reads.ts:67` | 300 calls a day | A single cap for the three kinds that re-read your saved history: `distill`, `classify` and `synthesize`. On overflow, `429` and they come back tomorrow. Redoing the author's portrait from scratch came to some 140 calls. |
-| `PANOMA_LOOK_BUDGET` | `budgetFrom()` in `apps/web/lib/look.ts:144` | 20 looks a day | A budget apart from the reads' because they are two jobs with two different ways of running away. Of that cap, half (`autoLookCap`) is what the watcher may spend on its own; with a cap of 1, the automatic side gets 0. |
-| `PANOMA_DISTILL_BUDGET` | `distillBudgetFrom()` in `apps/web/lib/memory-distill.ts:63` | 12 session distillations a day | The organ that re-reads a closed visit and proposes what is durable. It runs in the background, so on overflow there is no error to show: it returns `{ did: "budget" }` and calls nobody. With `0`, memory only grows with what somebody writes on purpose. |
-| `PANOMA_ASK_BUDGET` | `askBudgetFrom()` in `apps/web/lib/consult.ts:44` | 20 drafts a day | What the double in the shadows drafts per day. On overflow the row stays in `drafting` and the next `panoma_ask` for that project picks it up. With `0`, questions still get recorded and nobody answers them. |
+| `PANOMA_READ_BUDGET` | `capFor("read")` in `apps/web/lib/spend-settings.ts`, asked by the three read routes | 300 calls a day | A single cap for the three kinds that re-read your saved history: `distill`, `classify` and `synthesize`. On overflow, `429` naming the Spend screen and this variable, and they come back tomorrow. Redoing the author's portrait from scratch came to some 140 calls. An answer cut by the output limit is asked for once more with double the room, and that second call counts against this cap too. |
+| `PANOMA_LOOK_BUDGET` | `capFor("look")` in `apps/web/lib/spend-settings.ts`, asked by `app/api/twin/look/route.ts`, `lib/auto-look.ts` and the `/twin/look` page | 20 looks a day | A budget apart from the reads' because they are two jobs with two different ways of running away. Of that cap, half (`autoLookCap`, still in `apps/web/lib/look.ts`, applied to the cap `capFor` returns) is what the watcher may spend on its own; with a cap of 1, the automatic side gets 0. |
+| `PANOMA_DISTILL_BUDGET` | `capFor("memory")` in `apps/web/lib/spend-settings.ts`, asked by `apps/web/lib/memory-distill.ts`; the family is called `memory` and the variable keeps its historical name | 12 session distillations a day | The organ that re-reads a closed visit and proposes what is durable. It runs in the background, so on overflow there is no error to show: it returns `{ did: "budget" }` and calls nobody. A first answer cut by the output ceiling that cannot be read is asked for once more, so one session may cost two of the day's calls. With `0`, memory only grows with what somebody writes on purpose. |
+| `PANOMA_ASK_BUDGET` | `capFor("ask")` in `apps/web/lib/spend-settings.ts`, asked by `runRehearsal` in `apps/web/lib/consult.ts` | 20 drafts a day | What the double in the shadows drafts per day. On overflow the row stays in `drafting` and the next `panoma_ask` for that project picks it up — only rows younger than 30 days (`STALE_MAX_DAYS`), and only while the project's unlabelled review list is below `CONSULT_PENDING_MAX`. With `0`, questions still get recorded and nobody answers them. |
+| `PANOMA_REHEARSE_BUDGET` | `capFor("rehearse")` in `apps/web/lib/spend-settings.ts`, asked by the same `runRehearsal` | 20 rehearsals a day | What the owner's Decision Lab may draft per day, apart from the double's `ask` because one morning of rehearsals stranded the day's `panoma_ask` questions in `drafting`. On overflow, `429` from `POST /api/twin/rehearse`; the evidence preview is free. With `0`, the Lab still shows what it would have cited and drafts nothing. |
+| `PANOMA_EPISODE_BUDGET` | `capFor("episodes")` in `apps/web/lib/spend-settings.ts`, asked by `apps/web/lib/episode-learning.ts` | 20 calls a day | What decision-memory extraction may spend turning captured narratives into episodes: at most two calls per request and twelve records per call, so at the factory value the day reads at most 240 records. On overflow, `429` from `POST /api/twin/episodes/learn`; the dry run is free and says how many calls are left. With `0`, extraction is off and the owner form still records decisions, because it calls nobody. |
+| `PANOMA_CARD_BUDGET` | `capFor("card")` in `apps/web/lib/spend-settings.ts`, asked by `app/api/describe/route.ts` and `app/api/md/review/route.ts` | 100 calls a day | The two buttons of the project card, `describe` and `review`, under one cap: they are one gesture repeated, and a catalog of 76 projects described once is the legitimate ceiling of a day, an order of magnitude under a loop. On overflow both routes answer `429` with `{ error, hint }` naming the Spend screen and this variable, and the saved answer of an unchanged project is still returned for free (`cached: true`). There is no dry run. |
 | `PANOMA_CUARENTENA_DIAS` | `quarantineDays()` in `packages/enrich/src/published.ts:70` | 3 days | How long a version has to have been published before it is proposed: that is where supply-chain compromises show up, and they are almost always pulled within the first day or two. With `0` quarantine is off and the date is not even consulted. `panoma run --security` never blocks on quarantine: it warns and carries on. |
 
-Quarantine is the only one of the five that does not share the read contract of the other
-four, and it is worth knowing: it is read with `Number.parseInt`, so a negative value or one
+Quarantine is the only one of the eight that does not share the read contract of the other
+seven, and it is worth knowing: it is read with `Number.parseInt`, so a negative value or one
 that does not start with a digit falls back to the factory 3, but `4.9` does not fall back —
-it is truncated to 4. The other four demand an integer with `Number.isInteger` and reject
+it is truncated to 4. The other seven demand an integer with `Number.isInteger` and reject
 anything else.
 
 **`PANOMA_CUARENTENA_DIAS` is the only variable in the whole repository with a Spanish name**,
@@ -132,7 +170,7 @@ live alongside the old one for a while.
 | `PANOMA_LANG` | `machineLocale()` in `apps/web/lib/auto-look.ts:167`, and only there | unset: `LANG` is looked at, and if it does not start with `en`, Spanish | The language the web writes in when **there is nobody asking**: the twin's automatic look is fired by a file, not by a visit, so there is no `Accept-Language` to consult. Only `es` and `en`. The CLI no longer looks at it: it has spoken English since 25-Aug-2026. |
 | `PANOMA_EDITOR` | `editorsFor()` in `apps/web/app/api/open/route.ts:99` | unset: the order written in `EDITORS` | Reorders the list of editors tried when opening a project. **The word is not executed**: whatever is not on the list is ignored, so a made-up value does not turn into a command. The cookie from the settings screen overrides this one. |
 | `PANOMA_DEBUG` | the error handler in `apps/cli/src/index.ts:1183` | off | Any non-empty value shows the full trace when the CLI fails. Without it only the message is printed: the errors that reach there are almost always for the user, and twenty lines of stack bury the sentence that says what to do. |
-| `PANOMA_NO_UPDATE_CHECK` | `avisoDeVersion()` in `apps/cli/src/version-check.ts:105` | unset: npm is asked once a day | Only the exact value `1` switches off the new-version notice. |
+| `PANOMA_NO_UPDATE_CHECK` | `avisoDeVersion()` in `apps/cli/src/version-check.ts` and `refreshLatestIfDue()` in `apps/web/lib/version-refresh.ts` | unset: npm is asked once a day | Only the exact value `1` switches it off, and it silences **both** halves: neither the terminal nor the catalog asks, and the catalog stops saying «there is a newer panoma» even from an answer cached before the switch was set — whoever sets this is asking not to be told, not for a cheaper query. What survives is «you already updated, restart the catalog», which asks nobody anything and is about something they did themselves. The server inherits the variable from the `panoma up` that started it. |
 
 ## The ones for packaging
 
@@ -214,14 +252,15 @@ what regenerates on its own can be deleted without thinking, and what does not, 
 | `TASTE.md` | The portrait: the sentences of your taste that come down to all your agents, capped at 3,000 characters. Plain text, editable with any editor. | It is rewritten on every `POST /api/twin/taste`. The file **is the input**: deleting a line vetoes that belief and rewriting it signs it in the new words. |
 | `roots.json` | The folders you declared for the watcher to look at. | No. The `raices.json` from before the switch to English is read once and rewritten here, so that nobody finds panoma has "forgotten" where to look. |
 | `visit.json` | Since when "what has happened" counts in the day's briefing: window, last visit and when the window was first opened. | Yes. |
-| `version.json` | When npm was last asked whether there is a new version, and which one it was. The visit is written down even if the query fails, so that a machine with no network does not ask on every run. | Yes. |
-| `web.json` | The stamp: which `panoma up` started the server that is alive, with what pid, what version, against which `--api` and with which node interpreter. That is where the node written into the MCP configuration comes from. | Yes, `up` writes it and `down` takes it away. |
+| `spend.json` | The owner's decisions over model spend: a cap per family, the rate per provider/model, the currency, the pause, and `shots` —`"full"` or `"fit"`—, which is how much of a screenshot the critic is shown. `0600`, written whole and atomically by `POST /api/spend`; read tolerantly on every paid request, `shots` included, which the look asks for with `shotPolicy()`. Only what the `/spend` screen wrote is in it, so a family that was never touched is absent and falls to the variable or the factory value. | No: it is what the person chose. Deleting it puts every cap back under the variable or the factory value, forgets the rates, and puts the critic back to seeing the whole capture, which is the factory value. |
+| `version.json` | When npm was last asked whether there is a new version, and which one it was. The visit is written down even if the query fails, so that a machine with no network does not ask on every run. Since 7-Sep-2026 the catalog reads it too, to say it on the open screen, and refreshes it itself once a day — one clock between the two halves, written atomically because there are now two writers: [update-notice.md](update-notice.md). | Yes. |
+| `web.json` | The stamp: which `panoma up` started the server that is alive, with what pid, what version, against which `--api` and with which node interpreter. That is where the node written into the MCP configuration comes from — and, since 7-Sep-2026, the version the catalog compares against, believed only when the recorded pid is the reader's own. | Yes, `up` writes it and `down` takes it away. |
 | `web.pid` | The server's pid. It goes apart from the stamp so as not to change the format of a file an earlier version may have written. | Yes. |
 | `logs/web.log` | The output of the server started by `panoma up`, in append mode. When something does not start, the reason is in there. | Yes, and it is not rotated: it grows. |
 | `watcher.jsonl` | The watcher's journal, one line per event. In memory 20 are kept; here, all of them. A half-written line from a power cut is ignored on reading without losing the rest. | Yes, and it is not rotated either. |
 | `signal-seen.json` | Which sleeping notes were handed to each session, so as not to re-inject the same signal on every edit under its zone. At most 20 sessions. | Yes. It is the only file that builds its path by hand instead of with `panomaPath`, though it honors `PANOMA_HOME` all the same. |
 | `assignments/` | The assignment given to an agent and its launcher. Directory `0700`, the assignment `0600` and the script `0700`. Outside the project because it is not the project's code. | Yes. |
-| `open/` | The script that opens an agent in a terminal, one per provider and with the extension each system knows how to run: `.command` on macOS, `.ps1` on Windows, `.sh` on Linux. `0700`. | Yes. |
+| `open/` | The scripts that open a terminal: `agent-<provider>-<hash>` for an agent and `terminal-<hash>` for the terminal step of «Open everything» when it carries a command. Both are named by the folder they open —two projects launching within a second used to overwrite each other's script— with the extension each system knows how to run: `.command` on macOS, `.ps1` on Windows (with a byte-order mark, or PowerShell 5.1 reads a path with an accent as ANSI), `.sh` on Linux. `0700` on macOS and Linux; on Windows Node ignores the mode and the file inherits the profile's permissions. | Yes. |
 | `work/` | The worktrees of the runs, **only** when the run is going to happen in a container; in every other case they go to `tmpdir()`. Opposite requirements: the container needs the worktree under the home because the VMs do not mount `/var/folders`, and the macOS sandbox needs it outside because it denies the whole home. | Yes, and the worktree is always destroyed in the `finally`. |
 | `on-boot.cmd` | Windows only: the wrapper that runs the logon task, written with `\r\n` and with the PATH of the day of installation inside it. It exists so that `schtasks` only has to know one path. See [platforms.md](platforms.md). | No: `panoma up --on-boot` writes it and `schtasks /Delete` takes it away. |
 
@@ -232,9 +271,11 @@ the project in front of it and knows nothing about panoma's home.
 ## What it doesn't do / Known limits
 
 - **None of these variables is validated at startup.** A `PANOMA_LOOK_BUDGET=cien` gives no
-  warning at all: it falls back to the factory value in silence, which is the right thing for
-  a brake but leaves whoever wrote it believing they changed it. Same with `PANOMA_EDITOR=vim`,
-  which is ignored for not being on the list, and with a `PANOMA_LANG=fr`.
+  warning at all when the server comes up: it falls back to the factory value, which is the
+  right thing for a brake. Since 6-Sep-2026 the silence ends one screen later —`/spend` and
+  `panoma spend` show that family as decided by a variable that cannot be read— but nothing
+  says so at the moment it is exported. `PANOMA_EDITOR=vim`, which is ignored for not being on
+  the list, and a `PANOMA_LANG=fr` still fail with no notice anywhere.
 - **`PANOMA_LANG` only affects the twin's automatic look.** The name promises far more than it
   does. Everything else that a person reads comes out of `Accept-Language` or the cookie, and
   everything a machine reads goes in English and is not negotiable.

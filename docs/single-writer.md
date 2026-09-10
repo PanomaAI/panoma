@@ -70,6 +70,34 @@ Two details that look minor and are not:
   front page would take as long as the scan takes. The queue serializes writers, not
   visitors.
 
+## The locks PostgreSQL holds, for the writers the queue does not see
+
+The queue serializes the rewriters. The small writers never join it: a route proposing a
+note, the patrol opening a challenge, the worker publishing what the distiller proposed, the
+owner revising a decision. Two of those overlapping used to slip past every cap — the audit
+of 6-Sep-2026 reproduced two notes accepted at once over a full budget — because each one
+read the count in one statement and wrote in the next. Since then the check and the write
+are one transaction that holds a lock in the database itself: `SELECT … FOR UPDATE` on the
+project's row for every note cap (`lockNoteProject`, `packages/db/src/notes.ts`), and
+`LOCK TABLE … IN SHARE ROW EXCLUSIVE MODE` on `decision_episodes` for revisions and on
+`memory_jobs` for claiming work. They are short, they nest inside a caller's transaction,
+and — unlike the queue — they also hold across processes, which is exactly the case
+`DATABASE_URL` opens: with a real server two web processes can share one catalog, and a lock
+that lives in one process is no lock at all. `packages/db/src/notes.test.ts`,
+`episodes.test.ts` and `memory-jobs.test.ts` race them on purpose. The one check the locks do
+not cover is the distiller's daily cap (`runDistillation`, `apps/web/lib/memory-distill.ts`):
+it is read per process before the model call, not held through it, so N processes over one
+catalog would exceed the cap by at most N−1 calls a day —a bound chosen over a lock that would
+sit open for the length of a model call.
+
+Nobody pays that bound today, and it is worth saying why so the lock above does not read as
+dead weight. Since 6-Sep-2026 the worker that drains `memory_jobs` starts only against a local
+catalog: not because the queue could not take a second process —it was built to, and that is
+what the table lock is for— but because the model key that would pay is the server's, for
+every project it serves ([memory.md](memory.md)). The lock stays exactly as it is. It costs
+nothing to hold, `memory-jobs.test.ts` races it, and it is what the whole thing rests on the
+day the owner decides that spending is worth it.
+
 ## The three nets of `panoma up`, in order of reach
 
 Before starting a new server, `upCommand` (`apps/cli/src/server.ts`) asks three times whether

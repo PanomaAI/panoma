@@ -1,32 +1,92 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import {
+  HiOutlineArrowPath,
+  HiOutlineArrowRight,
+  HiOutlineCheck,
+  HiOutlineClipboardDocument,
+  HiOutlineCommandLine,
+  HiOutlineCpuChip,
+  HiOutlineFolder,
+} from "react-icons/hi2";
 import { useCliName, useT } from "./i18n-provider";
 import type { MessageKey } from "@/lib/i18n";
-import type { BridgeReport, BridgeStep } from "@/lib/bridge";
+import type { bridgeProgress, BridgeReport, SetupStepId } from "@/lib/bridge";
+import { ActionButton, Card, Tag } from "./primitives";
 
-/**
- * The steps of the bridge, rendered: a single 'next' marked and the rest in their place.
- *
- * The product decision lives in `lib/bridge.ts` (`bridgeSteps`); here it is only rendered and
- * copied — with one exception requested by the owner: the hook step has a real button, because
- * 'copy this and run it in every project' was exactly guessing that the bridge exists to kill. The
- * button does not execute commands: it calls `/api/hooks`
- * (sameOrigin, local catalog only), which writes the same two files as `Panoma
- * hooks --install` with the shared logic of @panoma/core — and the command sits next to it, as a
- * terminal alternative.
+/*
+  Explicit keys keep titles and explanations checked by the bilingual dictionary. Over `SetupStepId`
+  and not over every id there is: the journal is a consequence, this list never draws it, and an
+  exhaustive table over the whole union was asking for three messages nobody could ever read.
  */
+const STEP_COPY = {
+  catalog: { title: "bridge.step.catalog.title", detail: "bridge.step.catalog.detail", purpose: "bridge.step.catalog.purpose", icon: HiOutlineFolder },
+  model: { title: "bridge.step.model.title", detail: "bridge.step.model.detail", purpose: "bridge.step.model.purpose", icon: HiOutlineCpuChip },
+  agent: { title: "bridge.step.agent.title", detail: "bridge.step.agent.detail", purpose: "bridge.step.agent.purpose", icon: HiOutlineCommandLine },
+  hooks: { title: "bridge.step.hooks.title", detail: "bridge.step.hooks.detail", purpose: "bridge.step.hooks.purpose", icon: HiOutlineArrowPath },
+} as const satisfies Record<SetupStepId, { title: MessageKey; detail: MessageKey; purpose: MessageKey; icon: typeof HiOutlineFolder }>;
 
-export function BridgeSteps({ report, steps }: { report: BridgeReport; steps: BridgeStep[] }) {
+/** Copy feedback belongs to its command and survives unrelated setup updates. */
+function CopyCommand({ command, label }: { command: string; label: string }) {
+  const t = useT();
+  const [feedback, setFeedback] = useState<"copied" | "failed" | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+
+  async function copy() {
+    if (timer.current) clearTimeout(timer.current);
+    try {
+      await navigator.clipboard.writeText(command);
+      setFeedback("copied");
+      timer.current = setTimeout(() => setFeedback(null), 1600);
+    } catch {
+      setFeedback("failed");
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-smoke">{label}</p>
+      <Card tone="raised" pad="sm" className="flex flex-wrap items-center justify-between gap-3">
+        <code className="min-w-0 max-w-full break-words font-mono text-xs text-chalk">{command}</code>
+        <ActionButton tone="plain" type="button" onClick={() => void copy()} aria-label={t("bridge.copyCommand", { command })}>
+          <HiOutlineClipboardDocument className="size-4" aria-hidden />
+          {t(feedback === "copied" ? "bridge.copied" : "bridge.copy")}
+        </ActionButton>
+      </Card>
+      <p role="status" className="text-xs text-smoke">
+        {feedback === "failed" ? t("bridge.copyFailed") : feedback === "copied" ? t("bridge.copied") : null}
+      </p>
+    </div>
+  );
+}
+
+/** Setup is separate from activity: a journal entry is a result, never a fifth task. */
+export function BridgeSteps({ report, progress }: { report: BridgeReport; progress: ReturnType<typeof bridgeProgress> }) {
   const t = useT();
   const cli = useCliName();
   const router = useRouter();
-  const [copied, setCopied] = useState<string | null>(null);
   const [installing, setInstalling] = useState(false);
-  const [outcome, setOutcome] = useState<string | null>(null);
-  const [, startTransition] = useTransition();
+  const [outcome, setOutcome] = useState<{ text: string; error: boolean } | null>(null);
+  const [refreshing, startTransition] = useTransition();
+  const [refreshed, setRefreshed] = useState(false);
+  const hooksHeading = useRef<HTMLHeadingElement>(null);
+  const restoreHookFocus = useRef(false);
+
+  useEffect(() => {
+    if (restoreHookFocus.current && report.hooks.installed >= report.hooks.installable) {
+      restoreHookFocus.current = false;
+      hooksHeading.current?.focus();
+    }
+  }, [report.hooks.installed, report.hooks.installable]);
+
+  function refresh() {
+    setRefreshed(true);
+    startTransition(() => router.refresh());
+  }
 
   async function installHooks() {
     if (installing) return;
@@ -39,157 +99,156 @@ export function BridgeSteps({ report, steps }: { report: BridgeReport; steps: Br
         body: JSON.stringify({}),
       });
       const result = (await response.json().catch(() => ({}))) as {
-        error?: string;
-        installed?: number;
-        noRepo?: number;
-        foreign?: number;
-        failed?: number;
+        error?: string; installed?: number; noRepo?: number; foreign?: number; failed?: number;
       };
       if (response.ok) {
-        setOutcome(
-          t("bridge.hooksDone", {
-            installed: String(result.installed ?? 0),
-            noRepo: String(result.noRepo ?? 0),
-            foreign: String(result.foreign ?? 0),
-            failed: String(result.failed ?? 0),
+        restoreHookFocus.current = true;
+        setOutcome({
+          text: t("bridge.hooksDone", {
+            installed: String(result.installed ?? 0), noRepo: String(result.noRepo ?? 0),
+            foreign: String(result.foreign ?? 0), failed: String(result.failed ?? 0),
           }),
-        );
+          error: (result.failed ?? 0) > 0,
+        });
         startTransition(() => router.refresh());
       } else {
-        setOutcome(result.error ?? t("bridge.hooksNoCli"));
+        setOutcome({ text: result.error ?? t("bridge.hooksFailed"), error: true });
       }
     } catch {
-      setOutcome(t("bridge.hooksNoCli"));
+      setOutcome({ text: t("bridge.hooksFailed"), error: true });
     } finally {
       setInstalling(false);
     }
   }
 
-  async function copy(command: string) {
-    try {
-      await navigator.clipboard.writeText(command);
-      setCopied(command);
-      setTimeout(() => setCopied(null), 1600);
-    } catch {
-      // Without clipboard permission the text is still there to be selected: it is not an error.
-    }
-  }
-
-  function mark(state: BridgeStep["state"]): string {
-    if (state === "done") return "✓";
-    if (state === "next") return "→";
-    return "·";
-  }
-
-  function tone(state: BridgeStep["state"]): string {
-    if (state === "done") return "text-accent";
-    if (state === "next") return "text-chalk";
-    return "text-faint";
-  }
-
-  /*
-     These three are made to be copied into a terminal with the button beside them, so the name in
-     front of them has to be the one the reader has. This map held both wrong answers at once: an
-     `npx panoma` written into the first line and a bare `panoma` in the other two, so whichever of
-     the two kinds of install was reading it got one working command and two that fail. The name
-     comes down from the layout now — see `lib/cli-name.ts`.
-    */
-  const commands: Partial<Record<BridgeStep["id"], string>> = {
-    catalog: `${cli} up ~/Desktop`,
-    agent: `${cli} agent-key "Claude Code" --install`,
-    hooks: `${cli} hooks --install`,
-  };
-
-  const links: Partial<Record<BridgeStep["id"], string>> = {
-    model: "/ai",
-    agent: "/agents",
-  };
-
   return (
-    <ol className="mt-6 space-y-4">
-      {steps.map((step) => (
-        <li key={step.id} className="flex gap-3 rounded-lg border border-edge bg-surface p-4">
-          <span className={`font-mono text-sm ${tone(step.state)}`} aria-hidden>
-            {mark(step.state)}
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h3 className={`text-sm font-semibold ${tone(step.state)}`}>
-                {t(`bridge.step.${step.id}.title` as MessageKey)}
-              </h3>
-              <span className="font-mono text-[10px] text-faint">
-                {t(`bridge.step.${step.id}.detail` as MessageKey, {
-                  count: String(step.detail.count),
-                  total: String(step.detail.total ?? ""),
-                })}
-              </span>
-            </div>
-
-            {/*
-               Against `installable` and not `checked`. With 44 of 76 projects carrying git and the
-               hook in all 44, this button stayed on offer for ever and pressing it did nothing:
-               the 32 that were missing have nowhere to keep one.
-              */}
-            {step.id === "hooks" && report.hooks.installed < report.hooks.installable && (
-              <div className="mt-1.5 space-y-2">
-                <button
-                  type="button"
-                  onClick={() => void installHooks()}
-                  disabled={installing}
-                  className="rounded border border-accent px-3 py-1.5 text-xs font-semibold text-accent hover:bg-raised disabled:opacity-60"
-                >
-                  {installing ? t("bridge.step.hooks.installing") : t("bridge.step.hooks.install")}
-                </button>
-                {outcome && <p className="text-[11px] leading-relaxed text-smoke">{outcome}</p>}
-              </div>
-            )}
-
-            {step.state !== "done" && (
-              <div className="mt-1.5 space-y-2">
-                <p className="text-xs leading-relaxed text-smoke">
-                  {t(
-                    step.id === "agent" && report.agents.keys > 0
-                      ? "bridge.step.agent.keyUnused"
-                      : (`bridge.step.${step.id}.pending` as MessageKey),
-                    /*
-                       The journal names the tool that fills it. It is one MCP tool among nine and
-                       the only one that matters to whoever is reading this line, so it travels
-                       written rather than described: it is what they will type when they ask their
-                       agent for it.
-                      */
-                    { tool: "panoma_log" },
-                  )}
-                </p>
-                {step.state === "next" && commands[step.id] && (
-                  <div className="flex flex-wrap items-center gap-2">
-                    {step.id === "hooks" && (
-                      <span className="text-[11px] text-faint">{t("bridge.hooksAlt")}</span>
-                    )}
-                    <code className="rounded border border-edge bg-raised px-2 py-1 font-mono text-[11px] text-chalk">
-                      {commands[step.id]}
-                    </code>
-                    <button
-                      type="button"
-                      onClick={() => void copy(commands[step.id] ?? "")}
-                      className="rounded border border-edge px-2 py-1 text-[11px] text-smoke hover:text-chalk"
-                    >
-                      {copied === commands[step.id] ? t("bridge.copied") : t("bridge.copy")}
-                    </button>
-                  </div>
-                )}
-                {step.state === "next" && links[step.id] && (
-                  <Link href={links[step.id] ?? "/"} className="inline-block text-xs text-accent underline-offset-2 hover:underline">
-                    {t(`bridge.step.${step.id}.go` as MessageKey)}
-                  </Link>
-                )}
-                {step.state === "next" && (step.id === "agent" || step.id === "hooks") && (
-                  <p className="text-[11px] leading-relaxed text-faint">{t("bridge.restartHint")}</p>
-                )}
-              </div>
-            )}
+    <section className="min-w-0 space-y-4 xl:col-span-2" aria-labelledby="bridge-setup-title">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 id="bridge-setup-title" className="text-base font-semibold">{t("bridge.setup.title")}</h2>
+          <p className="mt-1 text-xs text-smoke">
+            {t("bridge.setup.progress", { completed: progress.completed, total: progress.total })}
+          </p>
+        </div>
+        <ActionButton tone="surface" type="button" onClick={refresh} busy={refreshing} busyLabel={t("bridge.refreshing")}>
+          <HiOutlineArrowPath className="size-4" aria-hidden />
+          {t("bridge.refresh")}
+        </ActionButton>
+      </div>
+      <div className="flex gap-1.5" aria-hidden>
+        {progress.setupSteps.map((step, index) => (
+          <span key={step.id} className={`h-1 flex-1 rounded-full ${index < progress.completed ? "bg-accent" : "bg-edge"}`} />
+        ))}
+      </div>
+      <p role="status" className="sr-only">
+        {refreshed && !refreshing ? t("bridge.refreshed") : null}
+      </p>
+      {progress.ready && (
+        <Card tone="raised" className="flex items-start gap-3">
+          <HiOutlineCheck className="size-5 shrink-0" aria-hidden />
+          <div>
+            <h3 className="text-sm font-semibold">{t("bridge.titleReady")}</h3>
+            <p className="mt-1 text-xs leading-relaxed text-smoke">{t("bridge.leadReady")}</p>
           </div>
-        </li>
-      ))}
-    </ol>
+        </Card>
+      )}
+      <ol className="space-y-3">
+        {progress.setupSteps.map((step, index) => {
+          const copy = STEP_COPY[step.id];
+          const Icon = copy.icon;
+          const next = step.state === "next";
+          const done = step.state === "done";
+          return (
+            <Card as="li" key={step.id} emphatic={next} aria-current={next ? "step" : undefined}>
+              <div className="flex items-start gap-3">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-raised text-chalk" aria-hidden>
+                  <Icon className="size-5" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 ref={step.id === "hooks" ? hooksHeading : undefined} tabIndex={step.id === "hooks" ? -1 : undefined} className="text-sm font-semibold">{t(copy.title)}</h3>
+                    <Tag tone={next ? "accent" : "neutral"} size="md">
+                      {done && <HiOutlineCheck className="size-3" aria-hidden />}
+                      {t(done ? "bridge.state.done" : next ? "bridge.state.next" : "bridge.state.waiting")}
+                    </Tag>
+                  </div>
+                  <p className="mt-1 text-xs leading-relaxed text-smoke">{t(copy.purpose, { tool: "panoma_log" })}</p>
+                  <p className="mt-2 font-mono text-xs text-smoke">
+                    {t(copy.detail, { count: step.detail.count, total: step.detail.total ?? 0 })}
+                  </p>
+                  <span className="sr-only">{t("bridge.setup.step", { n: index + 1, total: progress.total })}</span>
+
+                  {step.id === "catalog" && (done ? (
+                    <Link href="/" className="mt-3 inline-flex items-center gap-1 text-xs underline underline-offset-4">
+                      {t("bridge.step.catalog.go")} <HiOutlineArrowRight className="size-3" aria-hidden />
+                    </Link>
+                  ) : (
+                    <div className="mt-3 space-y-2">
+                      <p className="text-xs leading-relaxed text-smoke">{t("bridge.step.catalog.pending")}</p>
+                      <CopyCommand label={t("bridge.terminal")} command={`${cli} up ~/Desktop`} />
+                    </div>
+                  ))}
+
+                  {step.id === "model" && (
+                    <div className="mt-3 space-y-2">
+                      {done && <p className="text-xs text-smoke">{t("bridge.step.model.detected")}</p>}
+                      <Link href="/ai" className={`apps-button gap-2${next ? " apps-button-primary" : ""}`}>
+                        {t(done ? "bridge.step.model.manage" : "bridge.step.model.go")}
+                        <HiOutlineArrowRight className="size-4" aria-hidden />
+                      </Link>
+                    </div>
+                  )}
+
+                  {step.id === "agent" && (
+                    <div className="mt-3 space-y-3">
+                      {!done && report.agents.keys > 0 && <p className="text-xs leading-relaxed text-smoke">{t("bridge.step.agent.keyUnused")}</p>}
+                      {done && <p className="text-xs text-smoke">{t("bridge.step.agent.seen")}</p>}
+                      <Link href="/agents" className={`apps-button gap-2${next ? " apps-button-primary" : ""}`}>
+                        {t(done ? "bridge.step.agent.manage" : "bridge.step.agent.go")}
+                        <HiOutlineArrowRight className="size-4" aria-hidden />
+                      </Link>
+                      {!done && (
+                        <details className="text-xs text-smoke">
+                          <summary className="cursor-pointer py-1.5 underline underline-offset-4">{t("bridge.step.agent.terminal")}</summary>
+                          <div className="mt-2 space-y-2">
+                            <CopyCommand label={t("bridge.terminal")} command={`${cli} agent-key "Claude Code" --install`} />
+                            <p className="leading-relaxed">{t("bridge.restartHint")}</p>
+                          </div>
+                        </details>
+                      )}
+                    </div>
+                  )}
+
+                  {step.id === "hooks" && (
+                    <div className={done && !outcome ? "" : "mt-3 space-y-3"}>
+                      {report.hooks.installed < report.hooks.installable ? (
+                        <>
+                          <p className="text-xs leading-relaxed text-smoke">{t("bridge.step.hooks.scope")}</p>
+                          <ActionButton tone={next ? "accent" : "surface"} size="lg" type="button" onClick={() => void installHooks()} busy={installing} busyLabel={t("bridge.step.hooks.installing")}>
+                            {t("bridge.step.hooks.install")}
+                          </ActionButton>
+                          <details className="text-xs text-smoke">
+                            <summary className="cursor-pointer py-1.5 underline underline-offset-4">{t("bridge.hooksAlt")}</summary>
+                            <div className="mt-2"><CopyCommand label={t("bridge.step.hooks.terminal")} command={`${cli} hooks --install`} /></div>
+                          </details>
+                          <p className="text-xs leading-relaxed text-smoke">{t("bridge.restartHint")}</p>
+                        </>
+                      ) : report.hooks.installable === 0 ? (
+                        <p className="text-xs leading-relaxed text-smoke">{t("bridge.step.hooks.noGit")}</p>
+                      ) : null}
+                      {/* Keep the outcome mounted after refresh marks the step complete. */}
+                      <div className="text-xs leading-relaxed">
+                        <p role="status" className="text-smoke">{outcome && !outcome.error ? outcome.text : null}</p>
+                        <p role="alert" className="text-fail">{outcome?.error ? outcome.text : null}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </Card>
+          );
+        })}
+      </ol>
+    </section>
   );
 }

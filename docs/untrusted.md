@@ -139,8 +139,9 @@ the only crack through which a cloned repository injected text with an authority
 
 ## The tag is named without `<` or `>` in the briefing's warning
 
-The briefing the MCP gives the agent carries several blocks —manifest, notes, advisories,
-tasks, journal and commits: six when the project has them all—, so the warning goes **ahead
+The briefing the MCP gives the agent carries several blocks —manifest, notes, owner
+decisions, advisories, tasks, journal and commits: seven when the project has them all—, so
+the warning goes **ahead
 of everything and only once** (repeating it after each block turns it into filler that gets
 skipped) and the blocks are marked all the same: the warning explains what the mark means.
 
@@ -178,6 +179,17 @@ When a document carries several blocks, the note is turned off in all of them
 **last** block, covering both: in the first version it went with the question and the
 fattest block —the beliefs— was left behind it with no note.
 
+Two more organs send owner history out the same way, and they keep the same vocabulary. The
+**episode extractor** (`apps/web/lib/episode-learning.ts`) sends the narratives of one
+project and one source —the owner's text plus the assistant context that explains it, each
+record JSON-escaped so a delimiter or a chat token inside it survives as data— wrapped as
+origin `journal`. The **rehearsal** (`apps/web/lib/consult.ts`) wraps the owner's question as
+`journal` and the evidence it may cite —beliefs and episodes— as `notes`, the same two blocks
+the double uses. And the briefing's "Owner decisions" block, the one wire from decision
+memory to an agent, goes through `wrapUntrusted` as `notes` like the memory notes right above
+it: the owner wrote every word, and the wrapper bounds where the part that is not the
+instruction starts and ends; it does not classify who wrote it.
+
 ## Where the wrapper does not reach
 
 - **A delimiter does not fit in an image.** A screenshot can carry text: an open terminal, a
@@ -204,7 +216,8 @@ fattest block —the beliefs— was left behind it with no note.
   that does not exist** — the list is trimmed before labelling.
 - **The vocabulary of origins falls short sometimes.** The distiller's quotes travel as
   `journal`, which is the closest of the eight and does not quite fit: they are not an
-  agent's journal. Calling them `readme` would lie more, and adding an origin means touching
+  agent's journal; the extractor's narratives and the Lab's question wear the same label for
+  the same reason. Calling them `readme` would lie more, and adding an origin means touching
   the engine from a task that is not the engine's. It is noted in `apps/web/lib/distill.ts`.
 - **The chat token list is incomplete on purpose.** It covers the most widespread templates.
   A model with markers of its own that are not there is not covered, and widening it by

@@ -2,17 +2,24 @@
   The frame: the top bar and the side bar.
   What is seen on all screens and does not change when navigating — brand, global search,
   navigation, the account tab, and the side rail with its folding.
+  The bar is 74px and the lane 228px: furniture, so they read `--bar-height` and `--sidebar-width`
+  and not a step of the spacing scale. Seven numbers here stay literals on purpose, because no
+  step of any scale is nearer to them than what they already say: the topbar grid (212px, 565px)
+  and the account panel's 280px cap are layout measurements; the mark is 38px, exactly between the
+  36 and the 40 of the scale; the search box is 42px and a sidebar link 44px, which are a control
+  height and a touch target rather than rhythm; and the 3px of the active-tab underline is a rule
+  thickness, like the 1px borders around it.
  */
 .app-topbar {
   position: fixed;
   inset: 0 0 auto 0;
   z-index: var(--z-topbar);
   display: grid;
-  grid-template-columns: 388px minmax(0, 565px) 1fr;
-  column-gap: 24px;
+  grid-template-columns: 212px minmax(0, 565px) 1fr;
+  column-gap: var(--space-12);
   align-items: center;
-  min-height: 74px;
-  padding: 0 24px 0 16px;
+  min-height: var(--bar-height);
+  padding: 0 var(--space-12) 0 var(--space-8);
   border-bottom: 1px solid var(--color-edge);
   background: var(--color-topbar-veil);
   backdrop-filter: blur(18px);
@@ -21,7 +28,7 @@
 .brand-cluster {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-5);
   width: fit-content;
   min-width: 0;
   flex-shrink: 0;
@@ -30,10 +37,10 @@
 .sidebar-toggle {
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: var(--space-18);
+  height: var(--space-18);
   border: 1px solid var(--color-edge);
-  border-radius: 8px;
+  border-radius: var(--corner);
   background: var(--color-surface);
   color: var(--color-chalk);
   cursor: pointer;
@@ -46,25 +53,25 @@
 }
 
 .sidebar-toggle svg {
-  width: 18px;
-  height: 18px;
+  width: var(--space-9);
+  height: var(--space-9);
 }
 
 .brand-lockup {
   display: inline-flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-6);
   width: fit-content;
   color: var(--color-chalk);
-  font-size: 1.18rem;
-  font-weight: 760;
-  letter-spacing: -0.03em;
+  font-size: var(--type-lg);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--track-title);
 }
 
 .brand-lockup img {
   width: 38px;
   height: 38px;
-  border-radius: 11px;
+  border-radius: var(--corner);
   object-fit: cover;
 }
 
@@ -72,15 +79,14 @@
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-5);
   min-width: 0;
   height: 42px;
-  padding: 0 12px;
+  padding: 0 var(--space-6);
   border: 1px solid var(--color-edge-bright);
-  border-radius: 10px;
-  background: var(--color-surface);
-  box-shadow: var(--shadow-field);
-  color: var(--color-faint);
+  border-radius: var(--corner);
+  background: var(--color-ground);
+  color: var(--color-smoke);
 }
 
 /*
@@ -97,8 +103,8 @@
 }
 
 .global-search svg {
-  width: 20px;
-  height: 20px;
+  width: var(--space-10);
+  height: var(--space-10);
   stroke-width: 1.7;
 }
 
@@ -112,11 +118,11 @@
   outline: 0;
   background: transparent;
   color: var(--color-chalk);
-  font-size: 0.86rem;
+  font-size: var(--type-sm);
 }
 
 .global-search input::placeholder {
-  color: var(--color-faint);
+  color: var(--color-smoke);
 }
 
 .global-search button {
@@ -131,31 +137,31 @@
 }
 
 .global-search kbd {
-  padding: 3px 6px;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--color-edge);
-  border-radius: 6px;
+  border-radius: var(--corner-xs);
   background: var(--color-raised);
-  color: var(--color-faint);
+  color: var(--color-smoke);
   font-family: var(--font-sans);
-  font-size: 0.69rem;
+  font-size: var(--type-2xs);
 }
 
 .top-navigation {
   display: flex;
   justify-content: flex-end;
   align-items: stretch;
-  gap: 8px;
-  height: 74px;
+  gap: var(--space-4);
+  height: var(--bar-height);
 }
 
 .top-navigation > a {
   position: relative;
   display: inline-flex;
   align-items: center;
-  padding: 0 12px;
+  padding: 0 var(--space-6);
   color: var(--color-smoke);
-  font-size: 0.84rem;
-  font-weight: 520;
+  font-size: var(--type-sm);
+  font-weight: var(--weight-medium);
 }
 
 .top-navigation > a:hover,
@@ -166,36 +172,79 @@
 .top-navigation > a.is-active::after {
   content: "";
   position: absolute;
-  inset: auto 8px -1px;
+  inset: auto var(--space-4) -1px;
   height: 3px;
-  border-radius: 4px 4px 0 0;
+  border-radius: var(--corner-xs) var(--corner-xs) 0 0;
   background: var(--color-accent);
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  justify-self: end;
+  gap: var(--space-5);
+}
+
+/* Language remains available next to the installation control at every screen width. */
+.lang-toggle {
+  display: flex;
+  flex: none;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border: 1px solid var(--color-edge);
+  border-radius: var(--corner);
+  background: var(--color-ground);
+}
+
+.lang-toggle button {
+  min-width: var(--space-16);
+  min-height: var(--space-16);
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--corner-xs);
+  background: transparent;
+  color: var(--color-smoke);
+  font-size: var(--type-3xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--track-label);
+  cursor: pointer;
+}
+
+.lang-toggle button:hover {
+  color: var(--color-chalk);
+}
+
+.lang-toggle button.is-active {
+  background: var(--color-surface);
+  color: var(--color-chalk);
+  box-shadow: var(--shadow-lift);
+}
+
 /*
-  The corner panel anchor: `position: relative` lives here and not on the button, because the
-  button is round and the panel has to hang from the corner of the bar.
+  The corner panel anchor: `position: relative` lives here so the panel hangs from the button's
+  container and stays aligned with the right edge of the bar.
  */
 .account-holder {
   position: relative;
   align-self: center;
-  justify-self: start;
-  margin-left: 8px;
+  justify-self: end;
 }
 
 .account-button {
+  position: relative;
   display: grid;
   place-items: center;
-  width: 38px;
-  height: 38px;
-  border: 0;
-  border-radius: 50%;
-  background: var(--color-raised);
+  width: var(--space-20);
+  height: var(--space-20);
+  border: 1px solid var(--color-edge);
+  border-radius: var(--corner);
+  background: var(--color-surface);
   color: var(--color-chalk);
-  font-weight: 650;
+  font-weight: var(--weight-title);
   cursor: pointer;
 }
-.account-button svg { width: 18px; height: 18px; }
+.account-button svg { width: var(--space-9); height: var(--space-9); }
+.account-button:hover { background: var(--color-raised); }
 .account-button[aria-expanded="true"] { background: var(--color-edge-bright); }
 
 /*
@@ -204,24 +253,24 @@
  */
 .account-card {
   position: absolute;
-  top: calc(100% + 10px);
+  top: calc(100% + var(--space-5));
   right: 0;
   z-index: var(--z-account);
   display: grid;
-  gap: 6px;
+  gap: var(--space-3);
   width: max-content;
-  max-width: min(280px, calc(100vw - 32px));
-  padding: 12px 14px;
+  max-width: min(280px, calc(100vw - var(--space-16)));
+  padding: var(--space-6) var(--space-7);
   border: 1px solid var(--color-edge-bright);
-  border-radius: 12px;
+  border-radius: var(--corner);
   background: var(--color-surface);
   box-shadow: var(--shadow-card);
 }
-.account-card strong { font-size: 0.8rem; color: var(--color-chalk); }
+.account-card strong { font-size: var(--type-xs); color: var(--color-chalk); }
 .account-card p {
   margin: 0;
-  font-size: 0.74rem;
-  line-height: 1.45;
+  font-size: var(--type-xs);
+  line-height: var(--lead-snug);
   color: var(--color-smoke);
 }
 /*
@@ -230,35 +279,69 @@
   healthy has no business inventing a warning colour.
  */
 .account-ephemeral {
-  padding-top: 8px;
+  padding-top: var(--space-4);
   border-top: 1px solid var(--color-edge-bright);
 }
-.account-ephemeral strong { font-size: 0.74rem; }
+.account-ephemeral strong { font-size: var(--type-xs); }
+
+/*
+  The version news, with the same anatomy and for the same reason: a rule to set it apart and the
+  colour of the card that holds it. It sits above «no account here» because it is the only line in
+  this panel anyone has to act on.
+ */
+.account-update {
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--color-edge-bright);
+}
+.account-update strong { font-size: var(--type-xs); }
+
+/*
+  The mark that there is something in the panel, on the only button that never hides at any width.
+  It is `--color-accent`, which in this house is near-black ink and not a colour with a meaning:
+  measured 17.75:1 on the button's own `--color-raised`, 14.23:1 while it is pressed
+  (`--color-edge-bright`) and 19.66:1 on `--color-surface` — a non-text graphic needs 3:1. The ring
+  is the bar's own background, so the dot separates from the icon underneath instead of merging
+  with its stroke. The meaning does not live here: the button's name changes too, because a dot
+  says «something» to whoever sees it and nothing at all to whoever does not.
+ */
+.account-dot {
+  position: absolute;
+  top: var(--space-1);
+  right: var(--space-1);
+  width: var(--space-4);
+  height: var(--space-4);
+  border: 2px solid var(--color-surface);
+  border-radius: var(--corner-disc);
+  background: var(--color-accent);
+}
 .account-card a {
-  font-size: 0.72rem;
+  font-size: var(--type-xs);
   color: var(--color-faint);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 .account-card a:hover { color: var(--color-accent); }
 
+.mobile-more,
+.mobile-sections {
+  display: none;
+}
+
 .app-sidebar {
   position: fixed;
-  inset: 74px auto 0 0;
+  inset: var(--bar-height) auto 0 0;
   z-index: var(--z-sidebar);
   display: flex;
   flex-direction: column;
-  width: 228px;
-  padding: 26px 16px 20px;
+  width: var(--sidebar-width);
+  padding: var(--space-10) var(--space-8);
   border-right: 1px solid var(--color-edge);
   background: var(--color-surface);
 }
 
 /*
-  Only the body can move; the foot is a guarantee, not potential content.
-  With eleven destinations and the open summary, the sum exceeds the height of many laptops.
-  Previously the overflow would come out below the window and take language, privacy, and font
-  with it. `min-height: 0` is what allows this flex child to really give way in height.
+  Navigation scrolls independently in short windows so every destination stays reachable and
+  the local promise and source remain visible. `min-height: 0` lets this flex child shrink.
  */
 .sidebar-scroll {
   display: flex;
@@ -273,7 +356,7 @@
 
 .app-sidebar nav {
   display: grid;
-  gap: 7px;
+  gap: var(--space-2);
 }
 
 .app-sidebar nav a {
@@ -286,19 +369,22 @@
     in a low window, which is a worse problem.
    */
   overflow: hidden;
-  gap: 13px;
-  min-height: 46px;
-  padding: 0 14px;
-  border-radius: 10px;
+  gap: var(--space-6);
+  min-height: 44px;
+  padding: 0 var(--space-6);
+  border: 1px solid transparent;
+  border-radius: var(--corner);
   color: var(--color-smoke);
-  font-size: 0.88rem;
-  font-weight: 520;
+  font-size: var(--type-xs);
+  font-weight: var(--weight-medium);
+  line-height: var(--lead-tight);
   transition: background-color var(--duration-medium) ease, color var(--duration-medium) ease;
 }
 
 .app-sidebar nav a svg {
-  width: 21px;
-  height: 21px;
+  flex: none;
+  width: var(--space-10);
+  height: var(--space-10);
   stroke-width: 1.65;
 }
 
@@ -308,8 +394,23 @@
 }
 
 .app-sidebar nav a.is-active {
-  background: var(--color-selected);
-  color: var(--color-accent);
-  font-weight: 620;
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-surface);
+  font-weight: var(--weight-semibold);
 }
 
+/* Keep focus inside the scrollable rail so its edges cannot clip the outline. */
+.app-sidebar nav a:focus-visible {
+  outline-offset: -3px;
+}
+
+.app-sidebar nav a.is-active:focus-visible {
+  outline-color: var(--color-surface);
+}
+
+@media (min-width: 761px) {
+  .app-sidebar nav a[data-group-start] {
+    margin-top: var(--space-6);
+  }
+}

@@ -57,8 +57,6 @@ export async function catalogMdContext(
    */
   if (row.enrichedAt !== null) {
     context.outdated = row.outdatedDeps;
-    context.vulns = row.vulnCount;
-    if (row.vulnCritical > 0) context.critical = row.vulnCritical;
   }
 
   const [detail, tasks] = await Promise.all([
@@ -70,6 +68,35 @@ export async function catalogMdContext(
       package: a.packageName ?? "",
       id: a.advisoryId,
     }));
+    /*
+      The count comes from the same rows as the list, and that is the whole point of it being
+      here instead of two lines up.
+
+      `projects.vuln_count` answers a **narrower** question than `getProject`'s advisories: it is
+      written by `summarize()` in `packages/enrich/src/refresh.ts`, whose first statement is
+      `if (row.isDev) continue`, so no dev dependency ever reaches the counter — while the
+      advisory list joins `project_dependencies` with no `is_dev` predicate at all. On 8-Sep-2026
+      that made this repository's own block say «0 with security advisories» two lines above
+      «Advisories: `vitest` (GHSA-82fw-gwwq-j7x9)»: vitest is a dev dependency with a medium
+      advisory at 4.1.10, so both numbers were right and the block was a liar. Counting the list
+      it prints is the only shape in which the two cannot disagree.
+
+      The gate stays, because the reason for it stays: a zero is only a fact after asking. But a
+      **named** advisory is its own proof that somebody asked, so a non-empty list states its
+      count even on a project the summary pass never reached — and that project exists, because
+      the same `isDev` filter keeps a dependencies-are-all-dev project out of `byProject`, which
+      is what leaves its `enriched_at` null forever.
+
+      'critical' keeps the definition it has everywhere else in the catalog —critical or high, the
+      wording `health.ts` uses out loud— so that the block does not invent a third meaning.
+     */
+    if (row.enrichedAt !== null || detail.advisories.length > 0) {
+      context.vulns = detail.advisories.length;
+      const critical = detail.advisories.filter(
+        (a) => a.severity === "critical" || a.severity === "high",
+      ).length;
+      if (critical > 0) context.critical = critical;
+    }
     context.agents = detail.agents.map((a) => ({ name: a.agentName, commits: a.commits ?? 0 }));
   }
   const open = tasks.filter((task) => OPEN_STATUSES.includes(task.status)).length;

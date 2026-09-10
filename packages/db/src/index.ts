@@ -7,6 +7,7 @@
  * types normally and load the driver only at runtime.
  */
 export type { Database } from "./client";
+export * from "./apps";
 export { ingestPortfolio, idFor, pruneSnapshots, SNAPSHOTS_PER_PROJECT } from "./ingest";
 export type { IngestResult, IngestPayload, SerializedFamily } from "./ingest";
 export { queueWrite } from "./queue";
@@ -26,6 +27,8 @@ export {
   saveAiSummary,
   saveMdReview,
   saveProjectAccounts,
+  getOpenContext,
+  saveOpenPlan,
   saveBuildCheck,
   setHidden,
   excludeProject,
@@ -52,13 +55,17 @@ export {
   lookedAt,
   autoLooksToday,
   modelSpendByKind,
+  modelSpendByModel,
+  listModelCalls,
   beliefChurn,
   saveSynthesisPass,
+  latestSynthesisByTopic,
   startOfMonthsAgo,
   monthOf,
   startOfDay,
   citedVerdictIds,
   corpusProgress,
+  MIN_DISTILL_CITATIONS,
   tasteReach,
   markVerdictsDistilled,
   readVerdictIds,
@@ -129,6 +136,8 @@ export type {
   NewModelCall,
   ModelSpend,
   KindSpend,
+  ModelSpendRow,
+  ModelCallRow,
   ChurnMonth,
   SynthesisPass,
   VerdictsSaved,
@@ -165,14 +174,15 @@ export {
   claimTask,
   completeTask,
   listProjectActivity,
-  listSessionActivities,
   searchJournal,
+  searchJournalPage,
+  readJournalEntry,
   listProjectTasks,
   listAllActivity,
   listAgents,
   newId,
 } from "./agents";
-export type { AgentContext, CreatedAgent, JournalHit, NewLaunch } from "./agents";
+export type { AgentContext, CreatedAgent, JournalHit, JournalPage, JournalEntryPage, NewLaunch } from "./agents";
 export {
   NOTE_BUDGET,
   NOTE_MAX,
@@ -191,20 +201,68 @@ export {
   setSentinels,
   bridgeCounts,
   triggerMatches,
+  validMemoryPath,
   validTrigger,
 } from "./notes";
 export type { Challenge, NoteRefusal, ProjectNote, ScaleReport, Sentinel } from "./notes";
 export {
   CONSULT_MAX,
   CONSULT_PENDING_MAX,
+  STALE_MAX_DAYS,
   doubleReport,
   draftConsultation,
   labelConsultation,
   listProjectConsultations,
+  pendingConsultations,
   recordConsultation,
   staleDrafting,
+  draftingConsultation,
 } from "./consultations";
 export type { Consultation, DoubleReport } from "./consultations";
+export {
+  EPISODE_FIELDS,
+  DecisionEpisodeConflict,
+  saveNarratives,
+  listNarratives,
+  narrativesByIds,
+  narrativeCount,
+  deleteNarratives,
+  markNarrativesRead,
+  markNarrativesFailed,
+  saveDecisionEpisodes,
+  listDecisionEpisodes,
+  listConflictingEpisodeFamilies,
+  decisionEpisodeById,
+  decisionEpisodeCount,
+  activeEpisodeRevisions,
+  activeSuccessor,
+  setDecisionEpisodeStatus,
+  setDecisionEpisodeValidUntil,
+} from "./episodes";
+export type {
+  EpisodeFieldName,
+  EpisodeFields,
+  NewNarrative,
+  Narrative,
+  NewDecisionEpisode,
+  DecisionEpisode,
+  EpisodePosition,
+} from "./episodes";
+export {
+  MEMORY_JOB_MAX_ATTEMPTS,
+  MEMORY_JOB_LEASE_MS,
+  MEMORY_SESSION_WINDOW,
+  enqueueMemoryJob,
+  claimMemoryJob,
+  withMemoryJobLease,
+  finishMemoryJob,
+  memoryJobCounts,
+  latestProjectMemoryJob,
+  sessionMemoryWindow,
+} from "./memory-jobs";
+export type { MemoryJobClaim, MemoryJobCounts, SessionMemoryActivity } from "./memory-jobs";
+export { MEMORY_EXPORT_VERSION, exportProjectMemory } from "./memory-export";
+export type { ExportedDecision, ExportedMemoryJob, ExportedNote, MemoryExport } from "./memory-export";
 export {
   createRun,
   finishRun,

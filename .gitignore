@@ -11,7 +11,8 @@ dist/
 coverage/
 .next/
 # El desarrollo tiene su propio directorio para no pisarse con `next build`.
-.next-dev/
+# Y las pruebas de laboratorio construyen el suyo (`.next-apps-lab`), que tampoco se guarda.
+.next-*/
 next-env.d.ts
 
 # Las capturas de las revisiones de diseño.

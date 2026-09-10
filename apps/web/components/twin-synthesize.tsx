@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useT } from "./i18n-provider";
+import { ActionButton } from "./primitives";
 
 /*
   The button that writes the portrait.
@@ -20,7 +21,25 @@ import { useT } from "./i18n-provider";
   distribution would write the portrait of the drawer.
  */
 
-export function TwinSynthesize({ pending, compact }: { pending: number; compact?: boolean }) {
+export function TwinSynthesize({
+  pending,
+  ready,
+  compact,
+}: {
+  pending: number;
+  /**
+   * Whether there is any evidence for a pass to read.
+   *
+   * The button used to be rendered only when there was — «a button that cannot work is worse than
+   * its absence» — and the case that rule was written for is the one it got wrong. On a Twin
+   * nobody has trained, the ONLY control that builds the portrait was absent, beside a meter
+   * reading «0 of 3000» and an empty portrait, with nothing on the screen that would move either
+   * number. Absence explains nothing; a button that says why it cannot work, and where to go
+   * first, explains the whole stage. The sentence is the route's own answer for this case.
+   */
+  ready: boolean;
+  compact?: boolean;
+}) {
   const translate = useT();
   const router = useRouter();
   const [running, setRunning] = useState(false);
@@ -31,17 +50,20 @@ export function TwinSynthesize({ pending, compact }: { pending: number; compact?
     setNote(null);
 
     try {
+      /* Answers cut by the output limit and asked again, over the two calls: each was a call. */
+      let truncated = 0;
       if (pending > 0) {
         const sorted = await fetch("/api/twin/classify", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({}),
         });
-        const outcome = (await sorted.json()) as { error?: string };
+        const outcome = (await sorted.json()) as { error?: string; truncated?: number };
         if (!sorted.ok) {
           setNote(outcome.error ?? translate("twin.synthFailed"));
           return;
         }
+        truncated += outcome.truncated ?? 0;
       }
 
       const response = await fetch("/api/twin/synthesize", {
@@ -58,12 +80,14 @@ export function TwinSynthesize({ pending, compact }: { pending: number; compact?
         refined?: number;
         retired?: number;
         proposed?: number;
+        truncated?: number;
       };
 
       if (!response.ok) {
         setNote(payload.error ?? translate("twin.synthFailed"));
         return;
       }
+      truncated += payload.truncated ?? 0;
 
       /*
         The receipt says what was moved, and when nothing was moved it says so as well. A button
@@ -98,13 +122,13 @@ export function TwinSynthesize({ pending, compact }: { pending: number; compact?
           : translate("twin.synthSame");
 
       const hecho = translate("twin.synthDone", { created, refined, retired });
-      setNote(
+      const dicho =
         moved === 0
           ? quieto
           : proposed === 0
             ? hecho
-            : `${hecho} ${translate("twin.synthAsks", { n: proposed })}`,
-      );
+            : `${hecho} ${translate("twin.synthAsks", { n: proposed })}`;
+      setNote(truncated > 0 ? `${dicho} ${translate("twin.synthTruncated", { n: truncated })}` : dicho);
       router.refresh();
     } catch {
       setNote(translate("project.unreachable"));
@@ -115,18 +139,35 @@ export function TwinSynthesize({ pending, compact }: { pending: number; compact?
 
   return (
     <div className={compact ? "flex items-center gap-2" : "mt-3 flex flex-col gap-1"}>
-      <button
+      <ActionButton
+        tone="plain"
         type="button"
         onClick={run}
-        disabled={running}
-        className="self-start rounded border border-edge px-2.5 py-1 font-mono text-xs text-smoke transition-colors hover:border-chalk disabled:opacity-50"
+        busy={running}
+        busyLabel={translate("twin.synthesizing")}
+        disabled={!ready}
+        aria-describedby={ready ? undefined : "twin-synth-why"}
+        className="self-start"
       >
-        {running ? translate("twin.synthesizing") : translate("twin.synthesize")}
-      </button>
-      {note ? (
-        <p className="font-mono text-xs text-smoke">{note}</p>
-      ) : compact ? null : (
-        <p className="font-mono text-xs text-faint">{translate("twin.synthHint")}</p>
+        {translate("twin.synthesize")}
+      </ActionButton>
+      {/*
+         The reason travels with the button and not instead of it: a disabled control whose cause
+         is printed somewhere else reads as broken, and this one's cause is also its instruction.
+        */}
+      {!ready ? (
+        <p id="twin-synth-why" className="text-xs leading-relaxed text-smoke">
+          {translate("twin.synthNothing")}
+        </p>
+      ) : (
+        /* Mounted before there is anything to say, for the same reason as in `twin-distill`. */
+        <div role="status" aria-live="polite">
+          {note ? (
+            <p className="font-mono text-xs text-smoke">{note}</p>
+          ) : compact ? null : (
+            <p className="text-xs leading-relaxed text-smoke">{translate("twin.synthHint")}</p>
+          )}
+        </div>
       )}
     </div>
   );

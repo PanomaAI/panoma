@@ -1,10 +1,13 @@
 /*
-  What is rendered on top of everything: the command palette and the destructive confirmation.
+  What is rendered on top of everything: the command palette, the destructive confirmation, the
+  plan of "Open everything" and the invitation to an app that is not installed yet.
   They go together and not out of convenience: `.confirm-dialog` is rendered INSIDE
   `.palette-backdrop`
-  (see `components/project-actions.tsx` ), so the curtain is the same object.
+  (see `components/project-actions.tsx` ), so the curtain is the same object. The same is true of
+  `.open-all-dialog` (`components/open-all.tsx`) and `.app-invite`
+  (`components/create-video.tsx`).
  */
-/* ── Paleta de comandos ─────────────────────────────────────────────────────── */
+/* ── The command palette ────────────────────────────────────────────────────── */
 
 .palette-backdrop {
   position: fixed;
@@ -12,7 +15,7 @@
   z-index: var(--z-overlay);
   display: flex;
   justify-content: center;
-  padding: 12vh 20px 20px;
+  padding: 12vh var(--space-10) var(--space-10);
   background: var(--color-scrim);
   backdrop-filter: blur(2px);
 }
@@ -25,7 +28,7 @@
   max-height: 66vh;
   overflow: hidden;
   border: 1px solid var(--color-edge-bright);
-  border-radius: 14px;
+  border-radius: var(--corner-lg);
   background: var(--color-surface);
   box-shadow: var(--shadow-dialog);
 }
@@ -34,8 +37,8 @@
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
-  gap: 11px;
-  padding: 15px 17px;
+  gap: var(--space-6);
+  padding: var(--space-8) var(--space-9);
   border-bottom: 1px solid var(--color-edge);
   color: var(--color-faint);
 }
@@ -56,41 +59,41 @@
   border: 0;
   background: transparent;
   color: var(--color-chalk);
-  font-size: 0.95rem;
+  font-size: var(--type-base);
 }
 
 .palette__search kbd {
-  padding: 2px 6px;
+  padding: var(--space-1) var(--space-3);
   border: 1px solid var(--color-edge);
-  border-radius: 5px;
+  border-radius: var(--corner-xs);
   background: var(--color-raised);
   font-family: var(--font-mono);
-  font-size: 0.66rem;
+  font-size: var(--type-2xs);
 }
 
 .palette__list {
   overflow-y: auto;
-  padding: 7px;
+  padding: var(--space-4);
 }
 
 .palette__group {
-  padding: 9px 10px 4px;
+  padding: var(--space-5) var(--space-5) var(--space-2);
   color: var(--color-faint);
   font-family: var(--font-mono);
-  font-size: 0.65rem;
-  letter-spacing: 0.07em;
+  font-size: var(--type-3xs);
+  letter-spacing: var(--track-label);
   text-transform: uppercase;
 }
 
 .palette__list button {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: var(--space-6);
   width: 100%;
-  padding: 9px 10px;
-  border-radius: 8px;
+  padding: var(--space-5) var(--space-5);
+  border-radius: var(--corner);
   color: var(--color-chalk);
-  font-size: 0.86rem;
+  font-size: var(--type-sm);
   text-align: left;
 }
 
@@ -120,11 +123,11 @@
 .palette__hint {
   margin-left: auto;
   min-width: 0;
-  padding-left: 12px;
+  padding-left: var(--space-6);
   overflow: hidden;
   color: var(--color-faint);
   font-family: var(--font-mono);
-  font-size: 0.68rem;
+  font-size: var(--type-2xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -136,73 +139,98 @@
  */
 .palette__enter {
   flex-shrink: 0;
-  padding: 2px 7px;
-  border: 1px solid var(--color-line-strong-catalog);
-  border-radius: 5px;
+  padding: var(--space-1) var(--space-4);
+  border: 1px solid var(--color-edge-bright);
+  border-radius: var(--corner-xs);
   background: var(--color-inset);
   color: var(--color-accent);
   font-family: var(--font-mono);
-  font-size: 0.64rem;
+  font-size: var(--type-3xs);
   white-space: nowrap;
 }
 
+/*
+  «Nothing matched», said once for the two dialogs that ask it.
+
+  These were two rules under two names, and they were the same rule: the command palette's empty
+  line and the «open everything» dialog's were both `--color-smoke` at `--type-sm`, each grouped
+  with a neighbour that is NOT an empty state — `.palette__notice` is an accent line and
+  `.open-all-dialog__intro`/`__warning` are a lead and a caution. The two were kept apart by their
+  company rather than by any decision, and the difference it bought was a bug: only one of them had
+  a leading, so the same sentence wrapped differently in the two dialogs.
+
+  What stays per-dialog is the padding, and only the padding: the palette's line sits in a
+  scrolling result list and has to hold that list's row rhythm; the dialog's sits in a padded body
+  that already spaced it. The React answer to the same sentence is `EmptyState variant="note"` in
+  `primitives.tsx`, and these two are the same sentence for markup a component cannot reach.
+ */
 .palette__empty,
-.palette__notice {
-  padding: 22px 18px;
+.open-all-dialog__empty {
   color: var(--color-smoke);
-  font-size: 0.84rem;
+  font-size: var(--type-sm);
+  line-height: var(--lead-body);
+}
+
+.palette__empty {
+  padding: var(--space-12) var(--space-9);
 }
 
 .palette__notice {
-  padding: 10px 18px;
+  padding: var(--space-12) var(--space-9);
+  color: var(--color-smoke);
+  font-size: var(--type-sm);
+}
+
+.palette__notice {
+  padding: var(--space-5) var(--space-9);
   border-top: 1px solid var(--color-edge);
   color: var(--color-accent);
   font-family: var(--font-mono);
-  font-size: 0.73rem;
+  font-size: var(--type-xs);
 }
 
 .palette__footer {
   display: flex;
-  gap: 16px;
-  padding: 9px 17px;
+  gap: var(--space-8);
+  padding: var(--space-5) var(--space-9);
   border-top: 1px solid var(--color-edge);
   background: var(--color-raised);
   color: var(--color-faint);
   font-family: var(--font-mono);
-  font-size: 0.67rem;
+  font-size: var(--type-2xs);
 }
 
 /* ── Destructive Confirmation ───────────────────────────────────────────────── */
 
 .confirm-dialog {
   display: grid;
-  gap: 14px;
+  gap: var(--space-7);
   width: 100%;
   max-width: 470px;
   align-self: flex-start;
-  padding: 24px;
+  padding: var(--space-12);
   border: 1px solid var(--color-edge-bright);
-  border-radius: 14px;
+  border-radius: var(--corner-lg);
   background: var(--color-surface);
   box-shadow: var(--shadow-dialog);
 }
 
 .confirm-dialog h2 {
-  font-size: 1.1rem;
-  font-weight: 680;
-  letter-spacing: -0.02em;
+  font-size: var(--type-lg);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--track-tight);
 }
 
 .confirm-dialog p {
   color: var(--color-smoke);
-  font-size: 0.83rem;
-  line-height: 1.55;
+  font-size: var(--type-sm);
+  line-height: var(--lead-body);
 }
 
 .confirm-dialog__safe {
-  padding: 11px 13px;
+  padding: var(--space-6) var(--space-7);
   border: 1px solid color-mix(in srgb, var(--color-live) 30%, var(--color-edge));
-  border-radius: 9px;
+  border-radius: var(--corner);
   background: color-mix(in srgb, var(--color-live) 7%, var(--color-surface));
 }
 
@@ -212,30 +240,30 @@
 
 .confirm-dialog label {
   display: grid;
-  gap: 7px;
+  gap: var(--space-4);
   color: var(--color-smoke);
-  font-size: 0.8rem;
+  font-size: var(--type-xs);
 }
 
 .confirm-dialog label code {
-  padding: 1px 5px;
-  border-radius: 4px;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--corner-xs);
   background: var(--color-raised);
   color: var(--color-chalk);
   font-family: var(--font-mono);
-  font-size: 0.78rem;
+  font-size: var(--type-xs);
   user-select: all;
 }
 
 .confirm-dialog input {
   height: 38px;
-  padding: 0 11px;
+  padding: 0 var(--space-6);
   border: 1px solid var(--color-edge-bright);
-  border-radius: 8px;
+  border-radius: var(--corner);
   background: var(--color-surface);
   color: var(--color-chalk);
   font-family: var(--font-mono);
-  font-size: 0.84rem;
+  font-size: var(--type-sm);
 }
 
 /*
@@ -252,19 +280,19 @@
 .confirm-dialog__actions {
   display: flex;
   justify-content: flex-end;
-  gap: 9px;
-  margin-top: 2px;
+  gap: var(--space-5);
+  margin-top: var(--space-1);
 }
 
 .confirm-dialog__actions button {
   height: 36px;
-  padding: 0 15px;
+  padding: 0 var(--space-8);
   border: 1px solid var(--color-edge-bright);
-  border-radius: 8px;
+  border-radius: var(--corner);
   background: var(--color-surface);
   color: var(--color-smoke);
-  font-size: 0.83rem;
-  font-weight: 560;
+  font-size: var(--type-sm);
+  font-weight: var(--weight-strong);
   cursor: pointer;
 }
 
@@ -288,3 +316,405 @@
   cursor: not-allowed;
 }
 
+
+/* ── "Open everything", the plan ────────────────────────────────────────────── */
+
+/*
+  The third thing painted inside `.palette-backdrop`. Wider than the confirmation and scrollable:
+  a plan has a dozen rows on a real project, and the actions have to stay in sight while the list
+  scrolls, which is why the list scrolls and the form does not.
+ */
+.open-all-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-7);
+  width: 100%;
+  max-width: 600px;
+  /*
+    `100%` and not `calc(100vh - 96px)`: the curtain is a fixed-height flex box with 12vh of padding
+    on top, so on any window taller than 800px the dialog's own ceiling put its foot below the
+    viewport — and what fell off the bottom was the row of buttons, which does not scroll.
+   */
+  max-height: 100%;
+  align-self: flex-start;
+  padding: var(--space-12);
+  border: 1px solid var(--color-edge-bright);
+  border-radius: var(--corner-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-dialog);
+}
+
+/*
+  The body scrolls and the actions do not. The number of blocks above the lists changes —a
+  warning for a project with no repository, another for one with nothing to open— so a grid
+  with fixed rows drew the buttons over the second list; a column that gives the middle the
+  remaining height does not care how many blocks there are.
+ */
+.open-all-dialog__body {
+  display: grid;
+  gap: var(--space-8);
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.open-all-dialog h2 {
+  font-size: var(--type-lg);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--track-tight);
+}
+
+/*
+  The lead and the caution. `.open-all-dialog__empty` used to be the third name in this group; it
+  is now beside `.palette__empty`, further up, because what it says is the other dialog's sentence
+  and not this dialog's prose.
+ */
+.open-all-dialog__intro,
+.open-all-dialog__warning {
+  color: var(--color-smoke);
+  font-size: var(--type-sm);
+  line-height: var(--lead-body);
+}
+
+.open-all-dialog__warning {
+  padding: var(--space-5) var(--space-7);
+  border: 1px solid color-mix(in srgb, var(--color-warn) 40%, var(--color-edge));
+  border-radius: var(--corner);
+  background: color-mix(in srgb, var(--color-warn) 8%, var(--color-surface));
+  color: var(--color-chalk);
+}
+
+.open-all-dialog__list {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.open-all-dialog__list h3 {
+  color: var(--color-faint);
+  font-size: var(--type-2xs);
+  font-weight: var(--weight-title);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+}
+
+.open-all-dialog__list ul {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.open-all-dialog__adders {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-1);
+}
+
+.open-all-row {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--color-edge);
+  border-radius: var(--corner);
+  background: var(--color-surface);
+}
+
+.open-all-row.is-off {
+  border-color: transparent;
+  color: var(--color-smoke);
+}
+
+.open-all-row.is-bad {
+  border-color: var(--color-danger);
+}
+
+.open-all-row > input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  margin-top: var(--space-2);
+  accent-color: var(--color-accent);
+  cursor: pointer;
+}
+
+/* A row the owner added has no checkbox: it holds the column so the icons stay in line. */
+.open-all-row__spacer {
+  width: 15px;
+  margin-top: var(--space-2);
+}
+
+.open-all-row__icon {
+  width: 18px;
+  height: 18px;
+  margin-top: var(--space-1);
+  flex: none;
+}
+
+.open-all-row__body {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  font-size: var(--type-xs);
+}
+
+.open-all-row__body strong {
+  color: var(--color-chalk);
+  font-weight: var(--weight-semibold);
+}
+
+.open-all-row__body small {
+  overflow: hidden;
+  color: var(--color-faint);
+  font-size: var(--type-2xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.open-all-row__fields {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: var(--space-3);
+}
+
+.open-all-row__command {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.open-all-row__command label {
+  display: grid;
+  gap: var(--space-2);
+  color: var(--color-smoke);
+  font-size: var(--type-xs);
+}
+
+.open-all-row__command small {
+  white-space: normal;
+}
+
+.open-all-row input[type="text"],
+.open-all-row input:not([type]) {
+  height: 32px;
+  padding: 0 var(--space-5);
+  border: 1px solid var(--color-edge-bright);
+  border-radius: var(--corner);
+  background: var(--color-surface);
+  color: var(--color-chalk);
+  font-family: var(--font-mono);
+  font-size: var(--type-xs);
+}
+
+.open-all-row input:not([type]):focus {
+  border-color: color-mix(in srgb, var(--color-accent) 50%, white);
+  box-shadow: var(--shadow-focus-ring);
+}
+
+.open-all-row input:disabled {
+  opacity: 0.55;
+}
+
+.open-all-row__suggest,
+.open-all-dialog__add,
+.open-all-dialog__reset {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  justify-self: start;
+  padding: var(--space-2) var(--space-5);
+  border: 1px solid var(--color-edge);
+  border-radius: var(--corner);
+  background: transparent;
+  color: var(--color-smoke);
+  font-family: var(--font-mono);
+  font-size: var(--type-2xs);
+  cursor: pointer;
+}
+
+.open-all-row__suggest:hover,
+.open-all-dialog__add:hover:not(:disabled),
+.open-all-dialog__reset:hover:not(:disabled) {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.open-all-dialog__add svg {
+  width: 13px;
+  height: 13px;
+}
+
+.open-all-dialog__add:disabled,
+.open-all-dialog__reset:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.open-all-row__order {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.open-all-row__order button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid transparent;
+  border-radius: var(--corner);
+  background: transparent;
+  color: var(--color-smoke);
+  cursor: pointer;
+}
+
+.open-all-row__order button:hover:not(:disabled) {
+  border-color: var(--color-edge-bright);
+  color: var(--color-chalk);
+}
+
+.open-all-row__order button[aria-disabled="true"] {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.open-all-row__order button[aria-disabled="true"]:hover {
+  border-color: transparent;
+  color: var(--color-smoke);
+}
+
+.open-all-row__order svg {
+  width: 14px;
+  height: 14px;
+}
+
+.open-all-dialog__error {
+  color: var(--color-fail);
+  font-family: var(--font-mono);
+  font-size: var(--type-xs);
+}
+
+.open-all-dialog__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  margin-top: var(--space-1);
+}
+
+.open-all-dialog__spacer {
+  flex: 1;
+}
+
+.open-all-dialog__actions > button:not(.open-all-dialog__reset) {
+  height: 36px;
+  padding: 0 var(--space-8);
+  border: 1px solid var(--color-edge-bright);
+  border-radius: var(--corner);
+  background: var(--color-surface);
+  color: var(--color-smoke);
+  font-size: var(--type-sm);
+  font-weight: var(--weight-strong);
+  cursor: pointer;
+}
+
+.open-all-dialog__actions > button:hover:not(:disabled) {
+  color: var(--color-chalk);
+}
+
+.open-all-dialog__actions .is-primary {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-on-ink);
+}
+
+.open-all-dialog__actions .is-primary:hover:not(:disabled) {
+  opacity: 0.88;
+  color: var(--color-on-ink);
+}
+
+.open-all-dialog__actions > button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/*
+  The fourth thing painted inside `.palette-backdrop`: what a button says when what it promises
+  belongs to a program that is not installed here.
+  It borrows the box of `.confirm-dialog` —same measure, same paper, same edge— and not its name,
+  because that one is written for a destruction and reads its own colour from it. What this one
+  needs instead is an accent action, which the confirmation has never had: leaving is the safe
+  answer there and going on is the safe answer here.
+ */
+.app-invite {
+  display: grid;
+  gap: var(--space-7);
+  width: 100%;
+  max-width: 470px;
+  align-self: flex-start;
+  padding: var(--space-12);
+  border: 1px solid var(--color-edge-bright);
+  border-radius: var(--corner-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-dialog);
+}
+
+.app-invite h2 {
+  font-size: var(--type-lg);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--track-tight);
+}
+
+/* The eyebrow and the title are one block: the dialog's own gap between them reads as a gap. */
+.app-invite__head {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.app-invite p {
+  color: var(--color-smoke);
+  font-size: var(--type-sm);
+  line-height: var(--lead-body);
+}
+
+.app-invite__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-5);
+  margin-top: var(--space-1);
+}
+
+/*
+  The way out and the way on. The link is styled by class and not by element: `<Link>` renders an
+  `<a>`, and every other action row in this sheet reaches its buttons through `> button`, which
+  would have left this one as loose blue text.
+ */
+.app-invite__actions > button,
+.app-invite__actions > .is-primary {
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 var(--space-8);
+  border: 1px solid var(--color-edge-bright);
+  border-radius: var(--corner);
+  background: var(--color-surface);
+  color: var(--color-smoke);
+  font-size: var(--type-sm);
+  font-weight: var(--weight-strong);
+  cursor: pointer;
+}
+
+.app-invite__actions > button:hover {
+  color: var(--color-chalk);
+}
+
+.app-invite__actions > .is-primary {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-on-ink);
+}
+
+.app-invite__actions > .is-primary:hover {
+  opacity: 0.88;
+  color: var(--color-on-ink);
+}

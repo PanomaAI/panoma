@@ -1,5 +1,15 @@
-import { estimateTokens, wrapUntrusted, type TasteLine, type TasteTopic } from "@panoma/core";
-import type { Locale } from "@/lib/i18n";
+import {
+  MAX_FITTABLE_BYTES,
+  MAX_SCREENSHOT_BYTES,
+  estimateTokens,
+  fitScreenshot,
+  wrapUntrusted,
+  type FitRefusal,
+  type TasteLine,
+  type TasteTopic,
+} from "@panoma/core";
+import type { Locale, MessageKey } from "@/lib/i18n";
+import { SHOT_MAX_EDGE, type ShotPolicy } from "@/lib/spend-settings";
 
 /*
   The middle shift, done by someone else: look at the delivery and say what is wrong — with your
@@ -86,22 +96,13 @@ export const PROFILE_LIMIT = 5000;
 export const NORTH_LABEL = "n";
 
 /**
- * How many glances a day, at most.
- *
- * The brake exists because this organ is the first of Twin that can be called **without anyone
- * being in front of it**: today it is triggered by a person typing `twin look`, but the next phase
- * of the plan —the switch hooked to the watcher, and then the bots' routines— is triggered by a
- * file when it changes. A loop that makes a mistake while writing costs `git checkout`; one that
- * makes a mistake while watching costs money and is not seen until the bill.
- *
- * Twenty is a long day of work looking at deliveries and is an order of magnitude below what a
- * broken loop spends in a minute, which is exactly where a brake has to be: without bothering
- * anyone and without letting pass what should not.
- */
-export const LOOKS_PER_DAY = 20;
-
-/**
  * How much the watcher may spend on its own within the day's budget.
+ *
+ * The day's cap itself is no longer read here: since 6-Sep-2026 every organ asks
+ * `capFor("look")` in `spend-settings.ts`, which is where the owner's screen, the environment and
+ * the factory value (twenty) are reconciled. The reason the brake exists has not moved: this is
+ * the first Twin organ that can be called **without anyone being in front of it**, and a loop
+ * that makes a mistake while watching costs money and is not seen until the bill.
  *
  * Half, and the other half belongs to the one sitting in front. The distribution exists because
  * the failure one needs to protect against has a specific form: an agent in a loop leaving
@@ -117,22 +118,6 @@ export const LOOKS_PER_DAY = 20;
  */
 export function autoLookCap(cap: number): number {
   return Math.floor(cap / 2);
-}
-
-/**
- * The budget of the day, read from the environment.
- *
- * A value that is not understood **falls to the default**, and not to the one requested or to any
- * other. The direction matters: `PANOMA_LOOK_BUDGET=cien` written in a hurry cannot end up as
- * 'unlimited,' because the failure of a brake has to fall on the side of stopping. And zero does
- * count: turning off the critical completely is a legitimate response, and different from having
- * written nothing.
- */
-export function budgetFrom(value: string | undefined): number {
-  if (value === undefined || value.trim() === "") return LOOKS_PER_DAY;
-  const limit = Number(value.trim());
-  if (!Number.isInteger(limit) || limit < 0) return LOOKS_PER_DAY;
-  return limit;
 }
 
 /** A sentence from the portrait, labeled so that the model can quote it without seeing it entirely. */
@@ -448,13 +433,195 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /**
  * What the text of a look weighs, before sending it.
  *
- * **The image is not included**, and that is the only figure that is actually paid: a 1,440 × 900
- * capture amounts to about fifteen hundred tokens with the providers who publish the formula, and
- * each one uses its own. Putting one here would be to validate that count in the other four. What
- * can be said without making anything up is how much the portrait weighs, which grows with you,
- * and the file size, which `readScreenshot` returns. The two numbers travel separately in the
- * simulation so that no one adds them thinking they are the same.
+ * **The image is not included**, and that is the only figure that is actually paid. The one
+ * provider that publishes its arithmetic bills a 28-pixel patch per visual token —ceil(w / 28) ×
+ * ceil(h / 28)— and caps it by tier: 1,568 tokens on its standard models and 4,784 on the
+ * high-resolution ones (Claude 4.7 and later, images up to 2,576 px on the long edge). A
+ * 1,440 × 900 capture is 52 × 33 = 1,716 patches, downscaled to the 1,568 cap on the standard
+ * tier and paid whole on the other; a 1,920 × 1,080 one goes from 1,560 to 2,691 tokens between
+ * the two. The other providers each use their own formula, so no figure travels here: putting one
+ * would be to validate that count in the other four. What can be said without making anything up
+ * is how much the portrait weighs, which grows with you, and the file size and pixels, which
+ * `readScreenshot` returns. The numbers travel separately in the dry run so that no one adds them
+ * thinking they are the same.
  */
 export function estimateLookTokens(built: BuiltLook): number {
   return estimateTokens(built.system) + estimateTokens(built.prompt);
+}
+
+/*
+  ── What the critic is shown, decided once and said out loud ───────────────────────────────
+  A capture reaches the model through three doors —the browser upload, `panoma twin look`, and the
+  watcher's automatic look over the mailbox— and until 6-Sep-2026 all three sent the file exactly
+  as it was, because `screenshot.ts` refused to shrink anything: there is no image library here,
+  and reducing what a model is going to judge, without saying so, changes the judgment behind the
+  back of whoever asked for it.
+  What the owner asked for is the other half of that refusal: the choice. It lives next to the
+  caps in `spend-settings.ts`, because an image is charged by its pixels, and it is applied here —
+  in one place, on the bytes that are about to travel, after they are read and before the
+  assignment is built. One place and not three because the failure to protect against has a
+  precise shape: two doors that shrink and one that does not is a critic that judges two different
+  screens depending on who called it, and nothing on the receipt would say which one.
+  With `full` nothing is touched, not even decoded. That is the behaviour panoma has always had
+  and it stays the factory value.
+  ── And the size is enforced here, on the bytes that leave, not when the file is opened ─────
+  The 3.5 MB of `screenshot.ts` is what a provider accepts, and until 6-Sep-2026 it was being
+  applied when the capture was **read off the disk**, which is another act entirely: opening a
+  local file costs milliseconds and no provider is involved. So a 6 MB capture was refused before
+  anybody could do anything with it — and with `fit` there is now something to do with it, since a
+  reduction to a long edge of 1,568 px lands it far under that cap.
+  So the rule moved to where the decision belongs. The doors read generously —`MAX_FITTABLE_BYTES`
+  under `fit`, the provider's number under `full`— and this file has the last word on the bytes
+  that travel: after fitting, whatever is about to leave is measured, and over the cap it does not
+  leave. That is the one thing that must not slip. An image over the cap is a paid call that comes
+  back as a provider error about encoding, and a look dropped in silence is worse still: the person
+  asked for a verdict and got nothing, with no sentence saying why.
+ */
+
+/**
+ * What is going to be shown to the critic, in numbers, so that a screen and a terminal can say it.
+ *
+ * It travels twice: in the rehearsal —before anything is paid— and on the receipt. Both times it
+ * says the same three things, which are the promise that replaces the old refusal: what the owner
+ * asked for, the pixels that travel, and the pixels the file has.
+ */
+export interface ShotSent {
+  /** What the owner chose on the Spend screen. */
+  policy: ShotPolicy;
+  /** The long edge a reduced capture is fitted to. See `SHOT_MAX_EDGE`. */
+  maxEdge: number;
+  /**
+   * Whether what travels is a reduction of the file.
+   *
+   * Absent —and only there— in a rehearsal that did not carry the image: the browser and the
+   * terminal ask the price without uploading four megabytes, so at that moment nobody has looked
+   * at those bytes and the honest answer is that it is not known yet.
+   */
+  fitted?: boolean;
+  /** The pixels that travel. */
+  width?: number;
+  height?: number;
+  /** The pixels the file has. */
+  from?: { width: number; height: number };
+  /** Why it travels whole although a reduction was asked for. See `FitRefusal`. */
+  why?: FitRefusal;
+  /**
+   * What the bytes that travel weigh, once somebody has looked at them.
+   *
+   * Absent in the same place as `fitted`, and for the same reason: a rehearsal without the image
+   * has nothing to measure. It is the file's size when the capture travels whole and the
+   * reduction's when it does not, which is the number the receipt has to show — the size of a
+   * file that was reduced is not what was paid for.
+   */
+  bytes?: number;
+  /**
+   * It could not be reduced under the cap, so it must not be sent at all.
+   *
+   * This is the one branch that is not «it travels whole and here is why»: a JPEG of six
+   * megabytes, a palette PNG of the same, a capture with more pixels than the decoder holds. In
+   * every one of them the choice was honoured as far as it went and the result is still above
+   * what a provider accepts, so the surface refuses and says the size — sending it would buy a
+   * paid error, and staying quiet would lose the look.
+   */
+  tooBig?: boolean;
+}
+
+/**
+ * The sentence that names each refusal, by dictionary key.
+ *
+ * It lives beside the refusals and not inside a surface because both of them say it now: the
+ * screen paints it under the receipt, and the routes put it inside the refusal when the capture
+ * could not be reduced and does not fit. Two copies of this map would drift the day a sixth
+ * refusal is added, and what would drift is the only sentence explaining why a look did not
+ * happen.
+ */
+export const REFUSAL_SENTENCE = {
+  format: "look.whyFormat",
+  variant: "look.whyVariant",
+  already: "look.whyAlready",
+  broken: "look.whyBroken",
+  huge: "look.whyHuge",
+} as const satisfies Record<FitRefusal, MessageKey>;
+
+/**
+ * How many bytes may be opened from this disk under each choice.
+ *
+ * The two numbers are in `screenshot.ts` with the reasoning; this is where the choice picks one.
+ * Under `fit` the generous one, because the capture is going to be reduced before it travels and
+ * reading a local file is not what the provider's cap measures. Under `full` the provider's,
+ * because what is read is exactly what leaves.
+ */
+export function readCeiling(policy: ShotPolicy): number {
+  return policy === "fit" ? MAX_FITTABLE_BYTES : MAX_SCREENSHOT_BYTES;
+}
+
+/** The capture ready to travel: the base64 that goes out, and what has to be said about it. */
+export interface LookShot {
+  /** In base64. With `full`, and with every refusal, it is the very same string that came in. */
+  data: string;
+  sent: ShotSent;
+}
+
+/**
+ * Apply the owner's choice to the bytes that are about to travel.
+ *
+ * The type is asked before decoding anything: `fitScreenshot` reads PNG and only PNG, and a JPEG
+ * upload —the usual non-PNG— would otherwise be turned into four megabytes of buffer to be told
+ * what its own header already said.
+ *
+ * A refusal is not a failure: in all five cases the original travels and the caller says why. See
+ * the header of `packages/core/src/image.ts`.
+ *
+ * And what comes out is measured, always, which is the half that decides whether the call happens
+ * at all. `tooBig` is not an opinion about the file on the disk —that one may be as heavy as the
+ * ceiling in `readCeiling` allows— but about the bytes this function is handing back.
+ */
+export function fitForLook(data: string, mediaType: string, policy: ShotPolicy): LookShot {
+  // `byteLength` and not a decode: it is the exact size of what that base64 carries, counted
+  // without turning six megabytes into a buffer to be told what its own length already says.
+  const sized = (sent: Omit<ShotSent, "tooBig">, bytes: number): LookShot["sent"] => ({
+    ...sent,
+    bytes,
+    ...(bytes > MAX_SCREENSHOT_BYTES ? { tooBig: true } : {}),
+  });
+
+  const whole = (why?: FitRefusal): LookShot => ({
+    data,
+    sent: sized(
+      { policy, maxEdge: SHOT_MAX_EDGE, fitted: false, ...(why === undefined ? {} : { why }) },
+      Buffer.byteLength(data, "base64"),
+    ),
+  });
+
+  if (policy !== "fit") return whole();
+  if (mediaType !== "image/png") return whole("format");
+
+  const result = fitScreenshot(Buffer.from(data, "base64"), SHOT_MAX_EDGE);
+  if (!result.ok) return whole(result.why);
+
+  return {
+    data: Buffer.from(result.shot.bytes).toString("base64"),
+    sent: sized(
+      {
+        policy,
+        maxEdge: SHOT_MAX_EDGE,
+        fitted: true,
+        width: result.shot.width,
+        height: result.shot.height,
+        from: result.shot.from,
+      },
+      result.shot.bytes.length,
+    ),
+  };
+}
+
+/**
+ * What can be said about a capture that has not travelled: only what was asked for.
+ *
+ * It is what the rehearsal answers when it was called without the image, which is how the browser
+ * and the terminal always call it. Without `fitted`, so that nobody reads "it travels whole" where
+ * what happens is that nobody has looked yet.
+ */
+export function shotAsked(policy: ShotPolicy): ShotSent {
+  return { policy, maxEdge: SHOT_MAX_EDGE };
 }

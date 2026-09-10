@@ -48,12 +48,12 @@ const SOSTENIDA: BeliefSupport = { observations: 4, projects: 2, days: 3 };
 describe("cuánta evidencia sostiene una creencia", () => {
   it("cuenta observaciones, proyectos y días distintos", () => {
     const support = supportOf([
-      observation({ id: "o1", identity: "git:uno" }),
-      observation({ id: "o2", identity: "git:dos" }),
+      observation({ id: "o1", identity: "git:uno", citations: [citation({ quote: "first preference" })] }),
+      observation({ id: "o2", identity: "git:dos", citations: [citation({ quote: "second preference" })] }),
       observation({
         id: "o3",
         identity: "git:uno",
-        citations: [citation({ at: "2026-03-01T10:00:00.000Z" })],
+        citations: [citation({ quote: "third preference", at: "2026-03-01T10:00:00.000Z" })],
       }),
     ]);
     expect(support).toEqual({ observations: 3, projects: 2, days: 2 });
@@ -69,7 +69,7 @@ describe("cuánta evidencia sostiene una creencia", () => {
     const misma = new Date("2026-08-21T10:00:00.000Z");
     const support = supportOf([
       observation({ id: "o1", at: misma, citations: [citation({ at: "2026-03-01T00:00:00Z" })] }),
-      observation({ id: "o2", at: misma, citations: [citation({ at: "2026-08-01T00:00:00Z" })] }),
+      observation({ id: "o2", at: misma, citations: [citation({ quote: "another preference", at: "2026-08-01T00:00:00Z" })] }),
     ]);
     expect(support.days).toBe(2);
   });
@@ -80,6 +80,60 @@ describe("cuánta evidencia sostiene una creencia", () => {
 
   it("sin observaciones, todo a cero", () => {
     expect(supportOf([])).toEqual({ observations: 0, projects: 0, days: 0 });
+  });
+
+  it("three model paraphrases of the same quotes cannot pass the trust floor", () => {
+    const first = citation({ quote: "Keep the interface quiet", at: "2026-03-01T12:00:00Z" });
+    const second = citation({ quote: "Remove decorative gradients", at: "2026-08-01T12:00:00Z" });
+    const support = supportOf([
+      observation({ id: "o1", citations: [first, second] }),
+      observation({ id: "o2", citations: [second, first, first] }),
+      observation({ id: "o3", citations: [
+        { ...first, verdictId: "compacted-first", quote: " KEEP  the interface quiet " },
+        { ...second, verdictId: "compacted-second" },
+      ] }),
+    ]);
+    expect(support).toEqual({ observations: 1, projects: 1, days: 2 });
+    expect(standsUp(support)).toBe(false);
+  });
+
+  it("additional human evidence can corroborate overlapping observations", () => {
+    const shared = citation({ quote: "Keep the interface quiet" });
+    const support = supportOf(Array.from({ length: 3 }, (_, index) => observation({
+      id: `o${index}`,
+      identity: `git:project-${index}`,
+      citations: [shared, citation({ quote: `Specific correction ${index}` })],
+    })));
+    expect(support.observations).toBe(3);
+    expect(standsUp(support)).toBe(true);
+  });
+
+  it("different subsets of two quotes cannot become three corroborations", () => {
+    const a = citation({ quote: "First correction" });
+    const b = citation({ quote: "Second correction", at: "2026-03-01T12:00:00Z" });
+    const support = supportOf([
+      observation({ citations: [a] }), observation({ citations: [b] }),
+      observation({ citations: [a, b] }),
+    ]);
+    expect(support.observations).toBe(2);
+    expect(standsUp(support)).toBe(false);
+  });
+
+  it("an empty observation cannot supply corroboration, a project, or a day", () => {
+    expect(supportOf([
+      observation({ citations: [] }),
+      observation({ identity: "git:second", citations: [citation({ quote: "  " })] }),
+    ])).toEqual({ observations: 0, projects: 0, days: 0 });
+  });
+
+  it("a replay with a later timestamp does not create another day of support", () => {
+    const first = citation({ at: "2026-03-01T12:00:00Z" });
+    const copies = [
+      observation({ citations: [first] }),
+      observation({ citations: [{ ...first, verdictId: "replay", at: "2026-08-01T12:00:00Z" }] }),
+    ];
+    expect(supportOf(copies)).toEqual({ observations: 1, projects: 1, days: 1 });
+    expect(supportOf([...copies].reverse())).toEqual(supportOf(copies));
   });
 
   /*
@@ -190,6 +244,7 @@ describe("qué cambia en una pasada de síntesis", () => {
     ]);
   });
 
+  // New evidence shows in the citations; a count alone is a recount, below.
   it("una inferida con otro texto y evidencia nueva se afina", () => {
     const cambios = planChanges(
       [
@@ -197,6 +252,7 @@ describe("qué cambia en una pasada de síntesis", () => {
           belief: { id: "b1", signed: false },
           statement: "Quieres la portada con mucho aire.",
           support: { observations: 9, projects: 2, days: 5 },
+          citations: ["v1", "v2", "v3", "v9"],
         }),
       ],
       [inferida],
@@ -246,13 +302,31 @@ describe("qué cambia en una pasada de síntesis", () => {
     expect(cambios[0]?.kind).toBe("refine");
   });
 
-  it("el mismo texto con evidencia nueva sí se reescribe", () => {
+  /*
+    The same quotes and a different count is not new evidence: it is the count that changed. It
+    happened when support stopped counting observations and started counting distinct bundles of
+    quotes: every stored number came from the old formula, and treating the difference as evidence
+    rewrote every belief whose evidence overlapped, in whatever language the model chose, over a
+    sentence the person had already read. The number is corrected and the sentence is left alone.
+   */
+  it("las mismas citas con otra cuenta corrigen la cuenta, no la frase", () => {
+    const recontada = draft({
+      belief: { id: "b1", signed: false },
+      statement: "Quieres la portada con mucho aire.",
+      support: { observations: 1, projects: 1, days: 2 },
+    });
+    expect(planChanges([recontada], [inferida])).toEqual([
+      { kind: "recount", id: "b1", observations: ["o1"] },
+    ]);
+  });
+
+  it("el mismo texto con más cuenta sobre las mismas citas también es solo recuento", () => {
     const masEvidencia = draft({
       belief: { id: "b1", signed: false },
       statement: inferida.statement,
       support: { observations: 9, projects: 2, days: 5 },
     });
-    expect(planChanges([masEvidencia], [inferida])[0]?.kind).toBe("refine");
+    expect(planChanges([masEvidencia], [inferida])[0]?.kind).toBe("recount");
   });
 
   /*

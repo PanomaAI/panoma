@@ -12,11 +12,19 @@ import { describe, expect, it } from "vitest";
  * is barely noticeable; with a keyboard, it lasts all day. It is WCAG criterion 2.4.1, and it is
  * level A: the lowest of the three.
  *
- * The link lives in only one place —the layout— and its destination in eighteen. That distribution
- * is what needs to be defended: a new page that does not put `id="app-main"` in its `<main>`
- * leaves the link pointing to nothing, and the failure is not seen because the link is still there
- * and still being rendered. You only notice it when tabbing, which is exactly what no one does
- * when adding a screen.
+ * The link lives in only one place —the layout— and its destination used to live in eighteen.
+ * That distribution is what needs to be defended: a page that does not put `id="app-main"` in its
+ * `<main>` leaves the link pointing to nothing, and the failure is not seen because the link is
+ * still there and still being rendered. You only notice it when tabbing, which is exactly what no
+ * one does when adding a screen.
+ *
+ * The eighteen are now becoming one. `components/page-shell.tsx` writes the landmark for every
+ * page that renders it, and a page that has moved onto the shell no longer contains the attribute
+ * at all — which is the right thing to do and would have turned this guard red for doing it. So
+ * what is checked is the INVARIANT and not the spelling: every screen still has exactly one
+ * focusable main landmark, whether it writes the two attributes itself or inherits them from the
+ * shell, and the shell carries them exactly once. Both spellings are accepted while the
+ * conversion is under way; neither is optional.
  *
  * It is a test about the code text, like the others in the house: what is being checked —that an
  * attribute is present in a file that is not even rendered here— cannot be executed.
@@ -45,6 +53,20 @@ const leer = (ruta: string) => readFileSync(ruta, "utf8");
  */
 const sinComentarios = (fuente: string) => fuente.replace(/\/\*[\s\S]*?\*\//g, "");
 const corto = (ruta: string) => ruta.slice(AQUI.length);
+
+/** The component that writes the landmark for every page that has moved onto it. */
+const SHELL = join(WEB, "components", "page-shell.tsx");
+
+/**
+ * The two spellings of one landmark, counted in a source with its comments already removed.
+ *
+ * A page either writes `<main id="app-main" tabIndex={-1}>` itself, as all eighteen used to, or
+ * renders `<PageShell`, which writes it for them. Anything else is a screen whose skip link points
+ * at nothing. The shell is matched by its tag and not by its import, because an import that is
+ * never rendered is not a landmark.
+ */
+const landmarks = (fuente: string) =>
+  fuente.split('id="app-main"').length - 1 + (fuente.split("<PageShell").length - 1);
 
 /*
   All `.tsx` of the application, screens, and components.
@@ -85,11 +107,42 @@ describe("el enlace de saltar al contenido", () => {
     expect(layout.indexOf('href="#app-main"')).toBeGreaterThan(cuerpo);
   });
 
-  it("y toda pantalla del grupo (app) tiene ese destino", () => {
+  it("y toda pantalla del grupo (app) tiene ese destino, lo escriba o lo herede", () => {
+    /*
+      Comments are stripped before counting, and that is the same stumble as the one explained
+      above: this file, the shell and `error.tsx` all name the attribute in prose to say where it
+      goes and where it does not, and a page whose only `id="app-main"` sits inside a comment has
+      no landmark at all.
+     */
     const sinDestino = rutas()
-      .filter((ruta) => !leer(ruta).includes('id="app-main"'))
+      .filter((ruta) => landmarks(sinComentarios(leer(ruta))) === 0)
       .map(corto);
-    expect(sinDestino, `pantallas sin <main id="app-main">: ${sinDestino.join(", ")}`).toEqual([]);
+    expect(
+      sinDestino,
+      `pantallas sin destino: ni <main id="app-main"> ni <PageShell>: ${sinDestino.join(", ")}`,
+    ).toEqual([]);
+  });
+
+  it("y el armazón que lo escribe por ellas lo lleva exactamente una vez", () => {
+    /*
+      The other half of the test above, and the reason it can accept `<PageShell` at all.
+      Once a page delegates the landmark, the whole invariant rests on this one file: if the shell
+      ever loses the id, eighteen screens lose the destination at once and nothing else in the
+      suite notices. And if it ever carried two `<main>`s, every one of those screens would render
+      two elements with the same id, so the link would jump to the first — which is not the
+      content. Exactly one, in both directions.
+      The count is `toBe(1)` on the source with comments removed: the prose at the top of the
+      shell explains what it owns and names it while doing so.
+     */
+    const armazon = sinComentarios(readFileSync(SHELL, "utf8"));
+    expect(
+      armazon.split('id="app-main"').length - 1,
+      "page-shell.tsx: el destino del enlace de salto no está una sola vez",
+    ).toBe(1);
+    expect(
+      armazon.split("tabIndex={-1}").length - 1,
+      "page-shell.tsx: el destino no es enfocable una sola vez",
+    ).toBe(1);
   });
 
   /*
@@ -133,7 +186,7 @@ describe("el enlace de saltar al contenido", () => {
   it("y no hay dos destinos que puedan salir en la misma página", () => {
     /*
       `CatalogDown` is displayed in two places: as a full page when a route fails, and within the
-      catalog from `WatchWarning` — that is, inside the `<main id="app-main">` of the front page.
+      catalog from `CatalogContext` — that is, inside the `<main id="app-main">` of the front page.
       With the id placed in there, there would be two elements with the same id and the link would
       go to the first one it found, which is not the content.
      */
@@ -143,13 +196,20 @@ describe("el enlace de saltar al contenido", () => {
 
     /*
       And within the same file there may be several `<main>` because they are branches that are
-      excluded (an early return and the body), but never two at the same time in the tree.
+      excluded (an early return and the body), but never two at the same time in the tree. So the
+      landmarks of a page may not outnumber the branches that could return one, and the two
+      spellings are counted together: a page that renders the shell AND writes the attribute by
+      hand puts two of them on one screen just as surely as two `<main>`s would.
+      The branch is `return (` or `return <`, because a shell rendered as a single element does
+      not need the parenthesis and a page that drops it is not thereby a page with no branches.
      */
     for (const ruta of rutas()) {
-      const fuente = leer(ruta);
-      const veces = fuente.split('id="app-main"').length - 1;
-      const returns = fuente.split(/\breturn \(/).length - 1;
-      expect(veces, `${corto(ruta)}: más destinos que retornos`).toBeLessThanOrEqual(returns);
+      const fuente = sinComentarios(leer(ruta));
+      const returns = fuente.split(/\breturn\s*[(<]/).length - 1;
+      expect(
+        landmarks(fuente),
+        `${corto(ruta)}: más destinos que retornos`,
+      ).toBeLessThanOrEqual(returns);
     }
   });
 

@@ -1,6 +1,7 @@
 {
   "name": "@panoma/mcp",
   "version": "0.1.0",
+  "private": true,
   "license": "AGPL-3.0-only",
   "type": "module",
   "description": "MCP server bridging AI agents and the panoma catalog.",
@@ -16,7 +17,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@panoma/core": "workspace:*",
+    "@panoma/core": "workspace:*"
+  },
+  "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.13.0",
     "zod": "^3.24.1"
   }

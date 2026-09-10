@@ -12,6 +12,26 @@ import {
 } from "recharts";
 import { useLocale, useT } from "./i18n-provider";
 import type { Locale } from "@/lib/i18n";
+import {
+  EDGE,
+  HEALTH_ATTENTION,
+  HEALTH_GOOD,
+  HEALTH_REVIEW,
+  INK,
+  INK_FAINT,
+} from "@/lib/theme-values";
+
+/*
+  Why these colors are imported values and not `var(--color-…)`.
+
+  Recharts takes a color as a PROP, not as CSS, and then does arithmetic with it: it parses the
+  string to interpolate the enter animation and the active state, and `RadialBar`'s `background`
+  goes through the same path. A `var(--color-edge)` arrives there as eight opaque characters —
+  nothing to parse, nothing to tween — and what you get is a chart that renders black, or does not
+  render at all, with no error in the console.
+  So these five are copies of tokens, they live in `lib/theme-values.ts` with the reason written
+  out, and `lib/theme-values.test.ts` fails when one of them stops matching the stylesheet.
+ */
 
 /*
   The initials of the days, in the order returned by `Date.getDay()` — Sunday first.
@@ -34,7 +54,7 @@ export function HealthScoreRing({ score }: { score: number }) {
     were four bands and one of them was purple, so the same 65 was rendered purple here and amber
     on the cover — two colors for the same fact.
    */
-  const color = value >= 70 ? "#189a5b" : value >= 55 ? "#b0800f" : "#cd3d3d";
+  const color = value >= 70 ? HEALTH_GOOD : value >= 55 ? HEALTH_REVIEW : HEALTH_ATTENTION;
 
   return (
     /*
@@ -55,7 +75,7 @@ export function HealthScoreRing({ score }: { score: number }) {
         startAngle={90}
         endAngle={-270}
       >
-        <RadialBar dataKey="value" background={{ fill: "#ececec" }} cornerRadius={8} />
+        <RadialBar dataKey="value" background={{ fill: EDGE }} cornerRadius={8} />
       </RadialBarChart>
       <span className="health-score-ring__value">{value}</span>
       <span className="health-score-ring__total">{translate("project.outOf100")}</span>
@@ -98,11 +118,11 @@ export function CommitActivityChart({
             dataKey="day"
             axisLine={false}
             tickLine={false}
-            tick={{ fill: "#5c5c5c", fontSize: 10 }}
+            tick={{ fill: INK_FAINT, fontSize: 10 }}
           />
           <Bar dataKey="value" radius={[2, 2, 0, 0]} minPointSize={4} maxBarSize={17}>
             {data.map((entry, index) => (
-              <Cell key={`${entry.day}-${index}`} fill={entry.current ? "#0a0a0a" : "#e6e6e6"} />
+              <Cell key={`${entry.day}-${index}`} fill={entry.current ? INK : EDGE} />
             ))}
           </Bar>
         </BarChart>

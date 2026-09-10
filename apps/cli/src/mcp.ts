@@ -36,9 +36,14 @@ import { cliEntry, monorepoRoot } from "./environment";
  * It is the same fault that `up` had when it looked for the monorepo and gave up outside of it, in
  * the other half of the product.
  *
- * If someday `@panoma/mcp` is released individually, `npx` becomes an option again — but it will
- * still be worse than this one, because this one does not touch the network nor depends on the
- * registry.
+ * And if neither road leads anywhere, **nothing is written**. This function used to fall back to
+ * `npx -y @panoma/mcp`, which contradicted the paragraph above in the same file: that package is
+ * private and is never published, so the fallback resolved to a 404 and left an entry in someone's
+ * `.mcp.json` that could not start, silently, which is the exact failure this comment was written
+ * to prevent. It stays private on purpose — the server already travels inside the `panoma` tarball
+ * with the core bundled into it, and published alone it would ask npm for `@panoma/core`, which is
+ * private too and would fail to install. So there is no third road, and saying so is the honest
+ * answer: a configuration that does not work costs more than no configuration at all.
  */
 
 /**
@@ -78,21 +83,26 @@ export function bundledMcpServer(): string | undefined {
   return existsSync(candidate) ? candidate : undefined;
 }
 
-export function mcpEntry(api: string, apiKey: string): { entry: McpEntry; aviso?: string } {
+/**
+ * The MCP server on this disk: the monorepo's build first, then the one inside the package.
+ *
+ * Named apart from `mcpEntry` because the answer is needed twice — once to compose the block, and
+ * once before the key is issued, since a copy with no server cannot produce a working
+ * configuration and a key nobody can use is a row the bridge counts as a connected agent.
+ * In the monorepo the path is returned even when `dist` is not built: what is missing there is a
+ * `build`, and saying which one is more useful than refusing.
+ */
+export function mcpServerPath(): string | undefined {
   const root = monorepoRoot();
   const enElRepo = root ? join(root, "packages", "mcp", "dist", "index.js") : undefined;
-  const server = enElRepo ?? bundledMcpServer();
+  return enElRepo ?? bundledMcpServer();
+}
 
-  if (!server) {
-    return {
-      entry: {
-        command: "npx",
-        args: ["-y", "@panoma/mcp"],
-        env: { PANOMA_API: api, PANOMA_KEY: apiKey },
-      },
-      aviso: say("mcp.noMonorepo"),
-    };
-  }
+export function mcpEntry(api: string, apiKey: string): { entry?: McpEntry; aviso?: string } {
+  const server = mcpServerPath();
+
+  /* No server on this disk, and no package to fetch one from: there is no block to give. */
+  if (!server) return { aviso: say("mcp.noServer") };
 
   return {
     entry: {

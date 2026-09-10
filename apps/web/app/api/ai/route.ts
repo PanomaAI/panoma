@@ -19,6 +19,8 @@ import {
   authorizeUrl,
   type AiConfig,
 } from "@panoma/ai";
+import { saveModelCall } from "@panoma/db";
+import { db } from "@/lib/db";
 import { sameOrigin } from "@/lib/guard";
 import { localeFrom, t, type Locale } from "@/lib/i18n";
 import { modelErrorParts } from "@/lib/model-errors";
@@ -446,6 +448,20 @@ async function attempt({ provider }: { provider?: string }, locale: Locale) {
       prompt: "Responde exactamente con la palabra: listo",
       maxTokens: 32,
       ...(provider ? { provider } : {}),
+    });
+    /*
+      Written down as kind `probe`, and held back by nothing: it asks for one word and cannot run
+      on its own (`UNBUDGETED_KINDS` in `lib/spend-settings.ts`). The catalog opens here and only
+      here, after the guard and after the answer — the GET of this route has to refuse a
+      cross-site tab before anything is opened (`gates.test.ts`), and a probe that failed was
+      answered by nobody.
+     */
+    const { db: database } = await db();
+    await saveModelCall(database, {
+      kind: "probe",
+      provider: result.provider,
+      model: result.model,
+      ...(result.usage ? { input: result.usage.input, output: result.usage.output } : {}),
     });
     return Response.json({
       ok: true,

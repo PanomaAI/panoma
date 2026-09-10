@@ -1,37 +1,17 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { READING_KINDS, READS_PER_DAY, readBudgetFrom, readsLeft } from "./reads";
+import { FAMILY_KINDS } from "./spend-settings";
+import { READING_KINDS, readsLeft } from "./reads";
 
+/*
+  The parser that read `PANOMA_READ_BUDGET` lived here until 6-Sep-2026, with its own tests. It
+  moved to `spend-settings.ts` —`capFrom`, one body for the seven caps— and `spend-settings.test.ts`
+  keeps its contract: the empty value, the unreadable one, the zero. What remains here is what is
+  still this file's: the arithmetic of what is left, and the kinds against the routes that write
+  them.
+ */
 describe("el presupuesto de lectura", () => {
-  it("sin nada escrito usa el de por defecto", () => {
-    expect(readBudgetFrom(undefined)).toBe(READS_PER_DAY);
-    expect(readBudgetFrom("")).toBe(READS_PER_DAY);
-    expect(readBudgetFrom("   ")).toBe(READS_PER_DAY);
-  });
-
-  it("lee el número que se le escriba", () => {
-    expect(readBudgetFrom("40")).toBe(40);
-    expect(readBudgetFrom(" 40 ")).toBe(40);
-    // `1e3` is one thousand and is accepted: what is discarded is what is not an integer, not the
-    // notation.
-    expect(readBudgetFrom("1e3")).toBe(1_000);
-  });
-
-  it("el cero vale y apaga la lectura", () => {
-    expect(readBudgetFrom("0")).toBe(0);
-  });
-
-  /*
-    What is not understood falls to the default and not to 'without limit.' It is the direction
-    that matters: a limit written in haste cannot end up removing the brake.
-   */
-  it("lo que no se entiende cae al de por defecto", () => {
-    for (const value of ["cien", "-1", "3.5", "NaN", "Infinity", "10 llamadas"]) {
-      expect(readBudgetFrom(value)).toBe(READS_PER_DAY);
-    }
-  });
-
   it("lo que queda nunca es negativo", () => {
     expect(readsLeft({ used: 0, cap: 300 })).toBe(300);
     expect(readsLeft({ used: 299, cap: 300 })).toBe(1);
@@ -58,6 +38,26 @@ describe("las clases que van contra el freno", () => {
     for (const kind of READING_KINDS) {
       const source = await readFile(routeOf(kind), "utf8");
       expect(source).toContain(`const KIND = "${kind}"`);
+    }
+  });
+
+  /*
+    And the same three the Spend screen adds up under `read`: two lists that drift apart leave the
+    brake counting one thing and the screen painting another.
+   */
+  it("y las mismas que la familia read del gasto", () => {
+    expect([...FAMILY_KINDS.read]).toEqual([...READING_KINDS]);
+  });
+
+  /*
+    And the routes ask the shared cap, not the variable on their own: a route that read
+    `process.env` again would ignore the pause and the file the Spend screen writes.
+   */
+  it("cada ruta pide el tope a spend-settings", async () => {
+    for (const kind of READING_KINDS) {
+      const source = await readFile(routeOf(kind), "utf8");
+      expect(source, kind).toContain('capFor("read")');
+      expect(source, kind).not.toContain('process.env["PANOMA_READ_BUDGET"]');
     }
   });
 

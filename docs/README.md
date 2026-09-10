@@ -1,6 +1,6 @@
 # Documentation
 
-Thirty-nine documents. Each one records **one decision, with its reasoning and its known
+Forty-five documents. Each one records **one decision, with its reasoning and its known
 limits**, not a how-to: the how-to is in `panoma --help`, in the interface itself and on the
 `/docs` page the catalog serves, which is the surface for whoever has just installed it.
 This here is for whoever is about to touch the code —person or agent— and for whoever needs
@@ -22,7 +22,7 @@ here is almost never "what was the file called?", but "what part am I touching?"
 
 | document | what it answers |
 | --- | --- |
-| [database.md](database.md) | The 32 tables, the 50 migrations, and the border that matters: what recomputes itself and what never comes back. |
+| [database.md](database.md) | The 35 tables, the 57 migrations, and the border that matters: what recomputes itself and what never comes back. |
 | [single-writer.md](single-writer.md) | Why the CLI never writes to the database, and the three nets against a second writer. |
 | [broken-catalog.md](broken-catalog.md) | The runbook: how a broken catalog is recognized, how it is told apart from one from another version, and what to do with each. |
 | [watcher.md](watcher.md) | The lookout: what keeps the catalog current without anyone typing anything, and what happens when it goes down. |
@@ -41,11 +41,15 @@ here is almost never "what was the file called?", but "what part am I touching?"
 
 | document | what it answers |
 | --- | --- |
-| [cli.md](cli.md) | The twenty-one verbs, their flags and their exit codes. The terminal contract, whole. |
-| [http-api.md](http-api.md) | The 55 routes and their 67 handlers: who calls them, which guards they carry and what they write. |
+| [cli.md](cli.md) | The twenty-three verbs, their flags and their exit codes. The terminal contract, whole. |
+| [http-api.md](http-api.md) | The 81 routes and their 97 handlers: who calls them, which guards they carry and what they write. |
 | [guards.md](guards.md) | Who can do what. The four guards, and the doctrine of documenting the exceptions and not the cases. |
 | [network-access.md](network-access.md) | How the catalog is opened to the local network, what protects it and what it is **not**. |
-| [web-app.md](web-app.md) | The sixteen screens, the shell, the ⌘K palette and why the testable logic lives outside the components. |
+| [web-app.md](web-app.md) | The seventeen screens, the shell, the ⌘K palette and why the testable logic lives outside the components. |
+| [apps.md](apps.md) | Official optional programs, installation, durable jobs, production workspaces and provider boundaries. |
+| [update-notice.md](update-notice.md) | How a person learns their panoma is out of date, on both surfaces — and why "you already updated, restart it" is a different sentence from "there is a newer one". |
+| [open-all.md](open-all.md) | "Open everything": the per-project plan one click runs —links, terminal with the dev server, editor, agent—, what may travel in it and what may not, and why the first click shows the list instead of running it. |
+| [theme.md](theme.md) | One vocabulary for the whole interface: what the three dialects were, the thirteen decisions that merged them, and the five surfaces CSS cannot reach. |
 | [accessibility.md](accessibility.md) | What the keyboard guarantees, what it does not, and the contrast inventory with its figures. |
 | [i18n.md](i18n.md) | How the language is decided: what a person reads and what a machine reads. |
 
@@ -66,7 +70,9 @@ here is almost never "what was the file called?", but "what part am I touching?"
 | [memory.md](memory.md) | The four floors, the gate that is a person, the budgets and the sentinels. |
 | [memory-scale.md](memory-scale.md) | How you measure whether the memory is any use — and why it ships turned off. |
 | [twin.md](twin.md) | The twin, organ by organ. `apps/web/lib/twin-wiring.test.ts` reads it, so renaming a heading breaks something on purpose. |
-| [budgets.md](budgets.md) | What holds back model spending, and why calls are counted and not tokens. |
+| [decision-memory.md](decision-memory.md) | Decision episodes, narrative provenance, revisions, extraction budgets and their use in owner rehearsals. |
+| [budgets.md](budgets.md) | What holds back model spending: the eight caps and where each number comes from, the Spend screen, the ledger, and why calls are counted and not tokens. |
+| [memory-audit-2026-09-06.md](memory-audit-2026-09-06.md) | The memory audit and implementation status, with future work connecting requirements, execution evidence and memory before extending delegated authority. |
 
 ## Running things
 
@@ -109,7 +115,7 @@ test that forbids Spanish. The argument is in [i18n.md](i18n.md).
 teaches a command the dispatcher does not recognize. It is not a hand-written list: a new
 document comes under the watch by existing.
 
-That is the only automatic thing there is. The counts —55 routes, 32 tables, 9 tools, 21
+That is the only automatic thing there is. The counts —61 routes, 35 tables, 9 tools, 23
 verbs— can be aged by any commit without anything going red, so **every document says in its
 header which test anchors it, or says that it has none**. When a page claims something a test
 could watch and does not, that is written on the page itself.

@@ -189,6 +189,12 @@ export const DOCS_COMMANDS: DocsCommandBlock[] = [
     body: "The only text panoma prints that does not come from a verifiable fact, so it goes out with the model's name in front of it. Needs a provider picked.",
   },
   {
+    verb: "spend",
+    command: "panoma spend",
+    title: "What the models cost",
+    body: "What was called today and over the last thirty days, organ by organ, with how much of each ceiling is left and who decided it. Money only appears once you write your own rate, model by model, on the screen this prints: panoma ships no price table, because a year-old price is worse than none. --json prints the whole receipt.",
+  },
+  {
     verb: "twin",
     command: "panoma twin sources",
     title: "What your agents already know about you",
@@ -254,8 +260,9 @@ export const DOCS_COPY = {
       { hash: "#resume", label: "Resume" },
       { hash: "#accounts", label: "Accounts" },
       { hash: "#assignments", label: "Assignments" },
+      { hash: "#memory", label: "Memory" },
       { hash: "#md", label: "The .md" },
-      { hash: "#dependencies", label: "Dependencies" },
+      { hash: "#dependencies", label: "Maintenance" },
       { hash: "#agents", label: "Agents" },
       { hash: "#details", label: "Details" },
     ],
@@ -462,7 +469,7 @@ export const DOCS_COPY = {
 
     turnOnTitle: "Turn it on",
     turnOnLead:
-      "Open Bridge in the app: every piece with its state and a single next step marked with an arrow. The hooks step has a button that installs them across the catalog, and each project page says whether its own are in place. From the terminal, per project:",
+      "Open Bridge in the app: four setup steps, each carrying its state as a word beside its title, and the commands you do not need yet folded away. The hooks step has a button that installs them across the catalog, and each project page says whether its own are in place. What agents have written through the channel is not a step to reach: it sits in its own card, beside the system status. From the terminal, per project:",
     turnOnSteps: [
       {
         command: 'panoma agent-key "Claude Code" --install',
@@ -474,7 +481,7 @@ export const DOCS_COPY = {
       },
     ],
     turnOnNote:
-      "Then restart the agent's session: one already open picks up nothing. PANOMA_DISTILL_BUDGET and PANOMA_ASK_BUDGET cap what the distiller and the double may spend in a day; 0 turns either of them off.",
+      "Then restart the agent's session: one already open picks up nothing. What the distiller and the double may spend in a day has a ceiling each, on the Spend screen or with PANOMA_DISTILL_BUDGET and PANOMA_ASK_BUDGET; 0 turns either of them off.",
   },
   twin: {
     kicker: "06",
@@ -531,7 +538,7 @@ export const DOCS_COPY = {
       { command: "panoma twin score", note: "How often you correct it — the only mark Twin gives itself." },
     ],
     commandsNote:
-      "Everything here also has a screen: the terminal is where it gets tested, the browser is where it gets used. Budgets are counted in calls, not tokens — with a CLI provider there are no tokens to count, and a token budget would let exactly the runaway loop through. PANOMA_READ_BUDGET and PANOMA_LOOK_BUDGET are the two dials.",
+      "Everything here also has a screen: the terminal is where it gets tested, the browser is where it gets used. Budgets are counted in calls, not tokens — with a CLI provider there are no tokens to count, and a token budget would let exactly the runaway loop through. Reading your history and looking at a screen have a ceiling each, and both are moved on the Spend screen or with PANOMA_READ_BUDGET and PANOMA_LOOK_BUDGET.",
   },
   maintain: {
     kicker: "07",
@@ -607,9 +614,10 @@ export const DOCS_COPY = {
     ],
     keyTitle: "The key is not encrypted",
     keyBody:
-      "A stored key goes to ~/.panoma/ai.json, written at mode 0600. That is the floor, not protection: the file is plain text, and any process running as you can read it whole. There is no keychain and no passphrase yet. If that is not good enough, export the key in your environment and store nothing — the environment is read first and wins over the file. What comes back on screen is always masked, three characters and the last four, which is enough to tell which of your keys is in there. Reach a model through a command-line agent instead and there is no key to keep at all.",
-    capsTitle: "Four daily caps",
-    capsLead: "Each organ that spends has its own ceiling for the day, and the day is this machine's own day, not a sliding window.",
+      "A stored key goes to ~/.panoma/ai.json, written at mode 0600. That is the floor, not protection: the file is plain text, and any process running as you can read it whole. There is no keychain and no passphrase yet. If that is not good enough, export the key in your environment and store nothing — the environment is read first and wins over the file. What comes back on screen is always masked, three characters and the last four, which is enough to tell which of your keys is in there. Reach a model through a command-line agent instead and there is no key to keep at all. One key in that file is not a model's: an app that narrates needs an ElevenLabs key, and it is typed on that app's own page in Apps rather than here. It lands in the same ~/.panoma/ai.json at the same 0600, under its own name, and only the operator of this machine may write it or ask whether it is there. It is deliberately not a provider you can pick under Models, so nothing you set here reaches it — and switching voice on is a separate change that asks you to confirm.",
+    capsTitle: "Eight daily caps",
+    capsLead:
+      "Each organ that spends has its own ceiling for the day, and the day is this machine's own day, not a sliding window. The Spend screen moves any of them without restarting anything, and says which ceiling an exported variable is deciding — the variable always wins over the screen, so an install behaves the same on a laptop and in CI.",
     caps: [
       {
         name: "PANOMA_READ_BUDGET",
@@ -631,9 +639,29 @@ export const DOCS_COPY = {
         value: "20",
         what: "The double, drafting what you would have answered an agent.",
       },
+      {
+        name: "PANOMA_REHEARSE_BUDGET",
+        value: "20",
+        what: "The Decision Lab, rehearsing a decision of yours against your beliefs. Apart from the double's cap because one morning of rehearsals once left every question of the day undrafted.",
+      },
+      {
+        name: "PANOMA_EPISODE_BUDGET",
+        value: "20",
+        what: "Turning captured history into decisions with their evidence, at most two calls per press.",
+      },
+      {
+        name: "PANOMA_CARD_BUDGET",
+        value: "100",
+        what: "The project card: the summary of what a project is, and the opinion on its instruction file. Neither pays again while the material has not changed.",
+      },
+      {
+        name: "PANOMA_APP_BUDGET",
+        value: "20",
+        what: "What an installed app may spend in a day: the model calls and the narration requests it makes on your behalf. Capacity is held before the work is queued and checked again before it runs, so a ceiling you lower mid-job is obeyed.",
+      },
     ],
     capsNote:
-      "Calls, not tokens. A command-line agent returns loose text and no usage at all, so a token cap would count a thousand runaway calls as zero and let through exactly the case that runs away easiest. Tokens are still recorded and shown, because they are the price; what gets stopped is how often. Spent means 429 for the two anyone asked for, reads and looks, with both numbers in the message. The distiller and the double run in the background with nobody to answer, so they go quiet and pick it up tomorrow. Set one to 0 to switch that organ off; anything unreadable falls back to the default and never to no limit.",
+      "Calls, not tokens. A command-line agent returns loose text and no usage at all, so a token cap would count a thousand runaway calls as zero and let through exactly the case that runs away easiest. Tokens are still recorded and shown, because they are the price; what gets stopped is how often. Spent means 429 for the five somebody asked for, with both numbers in the message, and 409 for an app job that is refused before it is queued. The distiller and the double run in the background with nobody to answer, so they go quiet and pick it up tomorrow. Set one to 0 to switch that organ off; anything unreadable falls back to the default and never to no limit. The Spend screen adds one switch the variables do not have: a pause that reads every ceiling as zero until you lift it.",
   },
   network: {
     kicker: "09",
@@ -665,7 +693,7 @@ export const DOCS_COPY = {
   commands: {
     kicker: "10",
     title: "All commands",
-    lead: "Twenty-one verbs, and this is all of them. Flags match panoma --help, and a flag it does not recognise is an error rather than a warning: a mistyped one is a different command that succeeds.",
+    lead: "Twenty-one verbs are written out here. Three more exist and are not: panoma apps, panoma video and panoma memory, which belong to the optional apps and are listed by panoma --help. Flags match panoma --help, and a flag it does not recognise is an error rather than a warning: a mistyped one is a different command that succeeds.",
     extrasTitle: "Before any verb",
     extras: [
       {
@@ -686,7 +714,7 @@ export const DOCS_COPY = {
       },
       {
         command: "PANOMA_DEBUG=1 panoma up",
-        note: "Errors print their message, not twenty lines of stack; this puts the stack back. PANOMA_NO_UPDATE_CHECK=1 turns off the once-a-day question to the npm registry, which is the only thing any of these commands sends off this machine.",
+        note: "Errors print their message, not twenty lines of stack; this puts the stack back. PANOMA_NO_UPDATE_CHECK=1 turns off the once-a-day question to the npm registry, which is asked by whichever half you are using: the terminal when you type a command, and the catalog while it is left running.",
       },
     ],
     exitTitle: "Exit codes",
@@ -724,6 +752,10 @@ export const DOCS_COPY = {
       {
         path: "ai.json",
         note: "Active provider, model, API keys and OAuth tokens. 0600, written atomically. Does not regenerate. If it cannot be parsed it says so and stops, instead of reporting no configuration and writing a fresh one over your keys.",
+      },
+      {
+        path: "spend.json",
+        note: "The caps, the rates, the currency and the pause: everything the Spend screen writes. Does not regenerate, and the factory ceilings come back with it.",
       },
       {
         path: "twin.json",
@@ -790,6 +822,10 @@ export const DOCS_COPY = {
         note: "Worktrees of runs, and only when the run happens in a container; everywhere else they go to the system temp directory. Regenerates, and each worktree is destroyed when its run ends, pass or fail.",
       },
       {
+        path: "apps/",
+        note: "One directory per installed app: its versions, its browser cache and its logs. What an app produced sits beside it, under video/. Reinstalling regenerates the app; it does not regenerate the work.",
+      },
+      {
         path: "on-boot.cmd",
         note: "Windows only: the wrapper the logon task runs, with the PATH of the day it was installed inside it. Written by panoma up --on-boot, removed when the task is deleted. Does not regenerate.",
       },
@@ -819,7 +855,7 @@ export const DOCS_COPY = {
       },
       {
         name: "PANOMA_READ_BUDGET",
-        note: "The daily brakes, with PANOMA_LOOK_BUDGET, PANOMA_DISTILL_BUDGET and PANOMA_ASK_BUDGET. They count calls, not tokens: with a session agent as the provider there are no tokens to count. Unreadable falls back to the default, never to unlimited; 0 is legitimate and turns that organ off.",
+        note: "The daily brakes, with PANOMA_LOOK_BUDGET, PANOMA_DISTILL_BUDGET, PANOMA_ASK_BUDGET, PANOMA_REHEARSE_BUDGET, PANOMA_EPISODE_BUDGET, PANOMA_CARD_BUDGET and PANOMA_APP_BUDGET. They count calls, not tokens: with a session agent as the provider there are no tokens to count. Unreadable falls back to the default, never to unlimited; 0 is legitimate and turns that organ off. Exporting one takes that ceiling away from the Spend screen, which then says so instead of showing a number nobody is applying.",
       },
       {
         name: "PANOMA_EDITOR",
@@ -860,9 +896,13 @@ export const DOCS_COPY = {
         title: "Nothing updates itself any more",
         body: "New projects and today's commits stop appearing. The watcher is not running, and the app prints that rather than looking healthy: it was turned off with PANOMA_WATCH=0, or the catalog underneath it did not open. Until it is back, scanning by hand is what keeps the catalog current, and the versions and advisories it refreshes on its own every 12 hours have to be asked for with panoma enrich.",
       },
+      {
+        title: "The Apps screen has nothing to install yet",
+        body: "Apps is where an optional app is installed, and one is listed: panoma video, which adds a production screen to every project and a Create video button to the project header — press that button before installing and a dialog sends you here. The install stops here too. That package is not published on npm yet, so the version check comes back with nothing and there is no release to fetch. Nothing is broken and there is nothing to repair; the screen is waiting on a release. The key that app needs is typed on its own page rather than under Models, and every recording tool it wants is probed and named on that page before anything runs.",
+      },
     ],
     privacyTitle: "What leaves this machine",
-    privacyBody: "No telemetry. Nothing is reported about how you use this, there is no account it could be reported to, and the analyzer does not touch the network at all — that one is tested, by running it with http, https, dns, net and fetch sabotaged. Three things do go out, and you can name all three. Model calls, to the provider you configured, and only when you ask for one: describe a project, panoma md review, distill, the critic with eyes. Then panoma enrich, which asks the public registries — npm, PyPI, crates.io, RubyGems, Packagist, the Go proxy — and OSV for advisories, sending package names and versions and nothing else. And once a day the CLI asks the npm registry whether there is a newer release, which PANOMA_NO_UPDATE_CHECK=1 stops. One warning about the first of the three: an image travels whole, so anything written in a screenshot goes with it.",
+    privacyBody: "No telemetry. Nothing is reported about how you use this, there is no account it could be reported to, and the analyzer does not touch the network at all — that one is tested, by running it with http, https, dns, net and fetch sabotaged. Three things go out on their own, and you can name all three. Model calls, to the provider you configured, and only when you ask for one: describe a project, panoma md review, distill, the critic with eyes. Then panoma enrich, which asks the public registries — npm, PyPI, crates.io, RubyGems, Packagist, the Go proxy — and OSV for advisories, sending package names and versions and nothing else. And once a day the npm registry is asked whether there is a newer release: by the terminal when you type a command, and by the catalog on its own while it is left running, because a server up for weeks would otherwise never find out. It is one question a day between the two, it carries the name of a public package and nothing else, and PANOMA_NO_UPDATE_CHECK=1 stops it. A fourth exists only if you put it there: an optional app is the one thing that can add a destination, and it names that destination before you switch it on. Panoma Video asks npm for its own releases, downloads its recording browser when you press the button that says so, and sends narration text to ElevenLabs once you turn voice on. Nothing on that list moves until you confirm it. One warning about the first of the three: an image travels whole, so anything written in a screenshot goes with it.",
   },
 } as const;
 

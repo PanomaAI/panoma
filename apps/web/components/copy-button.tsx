@@ -2,6 +2,7 @@
 
 import { t, type Locale } from "@/lib/i18n";
 import { useCopied } from "./use-copied";
+import { ActionButton } from "./primitives";
 
 /**
  * Copy a command to the clipboard.
@@ -26,15 +27,20 @@ export function CopyCommand({
 }) {
   const { copied, copy } = useCopied();
 
+  /*
+    It was `px-2 py-0.5` with no height — about nineteen pixels tall, which is the smallest of the
+    53 buttons that declared none. `sm` is the 26px step and the same colour it already had.
+   */
   return (
-    <button
+    <ActionButton
+      tone="raised"
+      size="sm"
       type="button"
       onClick={() => copy(command)}
       title={t(locale, "copy.command", { command })}
-      className="inline-flex items-center gap-1.5 rounded border border-edge bg-raised px-2 py-0.5 font-mono text-[11px] text-smoke transition-colors hover:border-accent hover:text-accent"
     >
       <span>{label ?? command}</span>
       <span className="text-faint">{copied ? t(locale, "copy.done") : "⧉"}</span>
-    </button>
+    </ActionButton>
   );
 }

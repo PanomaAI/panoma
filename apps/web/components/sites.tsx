@@ -192,11 +192,21 @@ export function Sites({ total }: { total: number }) {
                         void send("remove", root.path);
                       }}
                       disabled={busy}
-                      className="text-fail"
+                      /*
+                         The red is asked for by class from the sheet and not with `text-fail`:
+                         this button lives inside `.sites__detail`, which paints its color
+                         unlayered and beats any Tailwind utility. See `catalog-extras.css`.
+                        */
+                      className="sites__confirm"
                     >
                       {t("sites.removeConfirm", { n: root.projects })}
                     </button>
-                    <button type="button" onClick={() => setAsking(null)} disabled={busy}>
+                    <button
+                      type="button"
+                      onClick={() => setAsking(null)}
+                      disabled={busy}
+                      className="sites__cancel"
+                    >
                       {t("accounts.cancel")}
                     </button>
                   </>

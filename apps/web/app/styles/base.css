@@ -28,11 +28,22 @@ a {
   -webkit-tap-highlight-color: transparent;
 }
 
+/*
+  The one uppercase micro-label of the application, now on the scales: 12px, 700, 0.1em, faint.
+  Fifteen other rules across the sheet restate this same recipe with numbers of their own — a
+  sixteenth `text-transform: uppercase`, `.catalog-overview dt::first-letter`, is not a label at
+  all. Once those numbers snap to the same steps, `.open-all-dialog__list h3` (overlays.css) lands
+  one type step and one weight step from this rule and could read the class outright, and
+  `.brief__label` (catalog-screen.css), `.project-md-count` (project-md.css) and
+  `.project-dependency-groups h3` (project-sections.css) differ only in ink or tracking: this class
+  plus one line. The seven written in `--font-mono` are another species and would want a modifier
+  rather than this rule.
+ */
 .eyebrow {
   font-family: var(--font-sans);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
+  font-size: var(--type-xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--track-caps);
   text-transform: uppercase;
   color: var(--color-faint);
 }
@@ -52,23 +63,23 @@ a {
  */
 .skip-link {
   position: fixed;
-  top: 10px;
-  left: 10px;
+  top: var(--space-5);
+  left: var(--space-5);
   /*
     Above the curtain of dialogues: if something covered it, the link would be useless just when
     it is needed.
    */
   z-index: calc(var(--z-overlay) + 1);
-  padding: 10px 16px;
+  padding: var(--space-5) var(--space-8);
   border: 1px solid var(--color-accent);
   border-radius: var(--corner);
   background: var(--color-surface);
   color: var(--color-chalk);
-  font-size: 0.85rem;
-  font-weight: 650;
+  font-size: var(--type-sm);
+  font-weight: var(--weight-title);
   text-decoration: none;
   box-shadow: var(--shadow-dialog);
-  transform: translateY(calc(-100% - 16px));
+  transform: translateY(calc(-100% - var(--space-8)));
   transition: transform var(--duration-fast) ease;
 }
 

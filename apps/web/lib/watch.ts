@@ -445,11 +445,20 @@ async function lookAtInbox(watcher: Watcher, project: LookedProject): Promise<vo
 
   if (outcome.did === "looked") {
     const dropped = outcome.dropped > 0 ? ` · descartados: ${outcome.dropped}` : "";
+    /*
+      And when it travelled reduced, it is said here. Nobody was in front of this one to choose —it
+      was chosen on the Spend screen and this obeys it— so this line is the only place where it can
+      be read that the critic was shown a smaller screen than the one the agent left.
+     */
+    const fitted =
+      outcome.fitted === undefined
+        ? ""
+        : ` · reducida a ${outcome.fitted.width}×${outcome.fitted.height}`;
     record(
       watcher,
       "look",
       project.root,
-      `${project.name}: ${outcome.shot} mirada sola — hallazgos: ${outcome.findings}${dropped}`,
+      `${project.name}: ${outcome.shot} mirada sola${fitted} — hallazgos: ${outcome.findings}${dropped}`,
     );
     return;
   }

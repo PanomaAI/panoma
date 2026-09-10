@@ -8,10 +8,11 @@ import { defineConfig } from "tsup";
  * dozen more** as normal dependencies, because it brings all its transports in the same package.
  * We use only one —stdio— and the rest is HTTP server that never runs.
  *
- * Installing it entirely cost about 90 packages and 1,500 files inside `panoma`. It's not just
- * weight: it's supply chain surface for code that is never called, in a package whose job is to
- * talk to agents. Starting from `server/mcp.js` and `server/stdio.js`, the tree shake leaves out
- * the entire HTTP block.
+ * Installing it entirely costs 91 packages and 2,904 files inside `panoma` —measured on
+ * 6-Sep-2026 by putting them back and taking them out again: 117 packages became 26 and the
+ * tarball went from 19.9 MB to 17.3 MB—. It's not just weight: it's supply chain surface for
+ * code that is never called, in a package whose job is to talk to agents. Starting from
+ * `server/mcp.js` and `server/stdio.js`, the tree shake leaves out the entire HTTP block.
  *
  * That is why SDK and `zod` are in `devDependencies` and not in `dependencies`: they are not
  * needed at runtime because they are already included. If another transport is used someday, this

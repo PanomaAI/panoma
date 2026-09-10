@@ -4,11 +4,14 @@ import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import {
   HiOutlineArrowPath,
+  HiOutlineBolt,
   HiOutlineCheck,
   HiOutlineClipboardDocument,
   HiOutlineEllipsisHorizontal,
   HiOutlineExclamationCircle,
 } from "react-icons/hi2";
+import { CreateVideo } from "./create-video";
+import { OpenAll } from "./open-all";
 import { OpenMenu } from "./open-menu";
 import { ProjectActions } from "./project-actions";
 import { useLocale, useT } from "./i18n-provider";
@@ -17,13 +20,18 @@ import { useDismissable } from "./use-dismissable";
 export function ProjectActionBar({
   projectId,
   projectName,
+  slug,
   path,
   hidden,
+  videoReady,
 }: {
   projectId: string;
   projectName: string;
+  slug: string;
   path: string;
   hidden: boolean;
+  /** Resolved by the page from the catalog row: no request, and right on the first paint. */
+  videoReady: boolean;
 }) {
   const translate = useT();
   // `OpenFolder` takes the language as a prop, not from the context: see why in its file.
@@ -34,6 +42,8 @@ export function ProjectActionBar({
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeTone, setNoticeTone] = useState<"ok" | "error">("ok");
   const [rescanning, setRescanning] = useState(false);
+  /* Each press of the menu item bumps it; the button opens its configurator on every change. */
+  const [configureSignal, setConfigureSignal] = useState(0);
 
   useDismissable(menuRef, open, () => setOpen(false));
 
@@ -78,12 +88,19 @@ export function ProjectActionBar({
     <div className="project-action-bar" ref={menuRef}>
       <div className="project-action-bar__primary">
         {/*
+           One click for the whole desk, before the split button that opens one place.
+           The links the catalog knows, a terminal with the dev server, the editor, the agent:
+           `OpenAll` runs the project's plan, and shows it first the day there is none.
+          */}
+        <OpenAll projectId={projectId} projectName={projectName} configureSignal={configureSignal} />
+        {/*
            A split button instead of three generic verbs.
            The tab offered 'open in editor,' 'open terminal,' and 'open folder' while the catalog
            panel already listed the programs by their name — two screens of the same project
            responding differently to 'open it for me.' Here are the same nine destinations, in the
            same order, behind the arrow.
           */}
+        <CreateVideo slug={slug} ready={videoReady} />
         <OpenMenu
           projectId={projectId}
           path={path}
@@ -118,6 +135,18 @@ export function ProjectActionBar({
           >
             <HiOutlineArrowPath aria-hidden className={rescanning ? "is-spinning" : undefined} />
             {translate(rescanning ? "project.rescanning" : "project.rescan")}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="project-menu-item"
+            onClick={() => {
+              setOpen(false);
+              setConfigureSignal((value) => value + 1);
+            }}
+          >
+            <HiOutlineBolt aria-hidden />
+            {translate("openAll.configure")}
           </button>
 
           {notice && (

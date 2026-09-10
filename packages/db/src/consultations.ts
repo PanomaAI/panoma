@@ -26,6 +26,16 @@ export const CONSULT_MAX = 300;
  */
 export const CONSULT_PENDING_MAX = 20;
 
+/**
+ * How far back the sweeper reaches for a stranded draft, in days: the same window `doubleReport`
+ * reads by default, and on purpose the same constant. A draft is paid for so the person can
+ * label it and the exam can count it; a question older than the exam's window would be drafted
+ * (a full paid call) and never counted, and the project card shows only the newest few. Before
+ * this bound the sweeper had no upper age at all, so an install left alone for a season came back
+ * spending the day's budget on questions nobody would ever see.
+ */
+export const STALE_MAX_DAYS = 30;
+
 export interface Consultation {
   id: string;
   question: string;
@@ -48,23 +58,7 @@ export async function recordConsultation(
     return { refused: "tooLong", max: CONSULT_MAX };
   }
 
-  const [row] = await db
-    .select({ pending: sql<number>`count(*)::int` })
-    .from(t.consultations)
-    .where(
-      and(
-        eq(t.consultations.projectId, input.projectId),
-        isNull(t.consultations.verdict),
-        or(
-          eq(t.consultations.status, "drafted"),
-          and(
-            eq(t.consultations.status, "drafting"),
-            sql`${t.consultations.createdAt} > now() - interval '24 hours'`,
-          ),
-        ),
-      ),
-    );
-  const pending = row?.pending ?? 0;
+  const pending = await pendingConsultations(db, input.projectId);
   if (pending >= CONSULT_PENDING_MAX) return { refused: "queueFull", max: CONSULT_PENDING_MAX };
 
   const id = newId("ask");
@@ -75,6 +69,31 @@ export async function recordConsultation(
     question,
   });
   return { id, pending: pending + 1 };
+}
+
+/**
+ * What the person can actually empty from a project's review list: the definition behind
+ * `CONSULT_PENDING_MAX`, in one place because two doors measure it — recording a question and
+ * sweeping a stranded one. A draft nobody can label is a paid call nobody needed.
+ */
+export async function pendingConsultations(db: Database, projectId: string): Promise<number> {
+  const [row] = await db
+    .select({ pending: sql<number>`count(*)::int` })
+    .from(t.consultations)
+    .where(
+      and(
+        eq(t.consultations.projectId, projectId),
+        isNull(t.consultations.verdict),
+        or(
+          eq(t.consultations.status, "drafted"),
+          and(
+            eq(t.consultations.status, "drafting"),
+            sql`${t.consultations.createdAt} > now() - interval '24 hours'`,
+          ),
+        ),
+      ),
+    );
+  return row?.pending ?? 0;
 }
 
 /**
@@ -110,6 +129,7 @@ export async function labelConsultation(
   db: Database,
   id: string,
   verdict: "backed" | "vetoed",
+  projectId?: string,
 ): Promise<boolean> {
   const moved = await db
     .update(t.consultations)
@@ -119,25 +139,43 @@ export async function labelConsultation(
         eq(t.consultations.id, id),
         eq(t.consultations.status, "drafted"),
         isNull(t.consultations.verdict),
+        ...(projectId === undefined ? [] : [eq(t.consultations.projectId, projectId)]),
       ),
     )
     .returning({ id: t.consultations.id });
   return moved.length > 0;
 }
 
+/** Read the persisted, redacted question only while it still needs a draft. */
+export async function draftingConsultation(
+  db: Database,
+  id: string,
+): Promise<{ question: string } | undefined> {
+  const [row] = await db
+    .select({ question: t.consultations.question })
+    .from(t.consultations)
+    .where(and(eq(t.consultations.id, id), eq(t.consultations.status, "drafting")))
+    .limit(1);
+  return row;
+}
+
 /**
  * The stranded drafts of a project: questions whose writer fell through or ran out of budget. Only
  * those that have been around for a while — the newly asked still has their own writer on the way,
  * and paying for a call again would be spending the same thing twice. The oldest first: they have
- * been waiting for their turn longer.
+ * been waiting for their turn longer. And only within `STALE_MAX_DAYS`: a row beyond the window
+ * stays in `drafting`, seen in the record as what it is, and stopped counting against the review
+ * queue after a day anyway (`pendingConsultations`).
  */
 export async function staleDrafting(
   db: Database,
   projectId: string,
   olderThanMs = 10 * 60_000,
   limit = 5,
+  withinMs = STALE_MAX_DAYS * 86_400_000,
 ): Promise<{ id: string; question: string }[]> {
   const cutoff = new Date(Date.now() - olderThanMs);
+  const since = new Date(Date.now() - withinMs);
   return db
     .select({ id: t.consultations.id, question: t.consultations.question })
     .from(t.consultations)
@@ -146,6 +184,7 @@ export async function staleDrafting(
         eq(t.consultations.projectId, projectId),
         eq(t.consultations.status, "drafting"),
         sql`${t.consultations.createdAt} < ${cutoff}`,
+        sql`${t.consultations.createdAt} >= ${since}`,
       ),
     )
     .orderBy(asc(t.consultations.createdAt))
@@ -198,7 +237,7 @@ export interface DoubleReport {
  * does not speak. This report does not make the decision — it shows it, which is its role: the
  * decision belongs to the person and to a written threshold, not to an aggregate.
  */
-export async function doubleReport(db: Database, days = 30): Promise<DoubleReport> {
+export async function doubleReport(db: Database, days = STALE_MAX_DAYS): Promise<DoubleReport> {
   const since = new Date(Date.now() - days * 86_400_000);
   const [row] = await db
     .select({

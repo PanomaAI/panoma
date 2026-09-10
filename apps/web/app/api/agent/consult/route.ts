@@ -17,14 +17,15 @@ export async function POST(request: Request) {
   const auth = await requireAgent(request);
   if ("error" in auth) return auth.error;
 
-  const body = (await request.json().catch(() => ({}))) as {
+  const parsed: unknown = await request.json().catch(() => ({}));
+  const body = (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed : {}) as {
     cwd?: string;
     remote?: string;
     slug?: string;
-    question?: string;
+    question?: unknown;
   };
 
-  const question = (body.question ?? "").trim();
+  const question = typeof body.question === "string" ? body.question.trim() : "";
   if (question === "") {
     return Response.json(
       { error: "Missing 'question'. One criterion question, plainly stated." },

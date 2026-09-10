@@ -126,12 +126,15 @@ export type { CriticFinding, CriticKind, CriticReport } from "./critic";
 export { readDesign } from "./design";
 export type { DesignFingerprint, DesignSignal, DesignColor } from "./design";
 export {
+  MAX_FITTABLE_BYTES,
   MAX_SCREENSHOT_BYTES,
   SMALL_SCREENSHOT_WIDTH,
   ScreenshotError,
   imageTypeOf,
   readScreenshot,
 } from "./screenshot";
+export { MAX_FIT_PIXELS, fitScreenshot } from "./image";
+export type { FittedShot, FitRefusal } from "./image";
 export { SHOTS_DIR, openShots, readShots, shotsOpen, shotsPath } from "./deliveries";
 export type { Shot, ShotsInbox } from "./deliveries";
 export type { ImageType, Screenshot, ScreenshotProblem } from "./screenshot";
@@ -152,6 +155,7 @@ export type {
   MineOptions,
   MineResult,
   MineStats,
+  Narrative,
   Reaction,
   VerdictSignal,
   TwinConsent,
@@ -162,6 +166,7 @@ export type { DiskReport, ReclaimableDir } from "./disk";
 export { findIcon, fallbackColor } from "./icon";
 export { expandTilde, panomaHome, panomaPath, PANOMA_HOME_VAR } from "./home";
 export { findExecutable, resolveExecutable, type Launch } from "./exec";
+export { isNewerVersion } from "./versions";
 export { normalizePypiName } from "./ecosystems/pypi-lockfiles";
 export { restrictToOwner } from "./restrict";
 export { avisoDeFormato, versionEnDisco, POSTGRES_DEL_PAQUETE } from "./base-format";

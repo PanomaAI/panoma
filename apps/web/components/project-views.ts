@@ -35,6 +35,7 @@ export const PROJECT_VIEWS = [
   { id: "retomar", hashes: ["resume", "retomar"], label: "project.navResume" as MessageKey },
   { id: "cuentas", hashes: ["accounts", "cuentas"], label: "project.navAccounts" as MessageKey },
   { id: "encargos", hashes: ["assignments", "encargos"], label: "project.navAssignments" as MessageKey },
+  { id: "memoria", hashes: ["memory"], label: "notes.title" as MessageKey },
   { id: "md", hashes: ["md"], label: "project.navMd" as MessageKey },
   {
     id: "dependencias",

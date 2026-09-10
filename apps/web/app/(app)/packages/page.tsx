@@ -2,7 +2,8 @@ import { getStats, listPackages } from "@panoma/db";
 import { isOutdated } from "@panoma/enrich";
 import { db } from "@/lib/db";
 import { SeverityTag } from "@/components/deps";
-import { relativeDate } from "@/components/primitives";
+import { PageSection, PageShell } from "@/components/page-shell";
+import { Card, relativeDate } from "@/components/primitives";
 import { Rich } from "@/components/rich-text";
 import { cliName } from "@/lib/cli-name";
 import { getLocale, t } from "@/lib/i18n";
@@ -34,56 +35,76 @@ export default async function PackagesPage() {
     `npx`.
    */
   if (used.length === 0) {
+    /*
+      This branch and the catalog's own empty branch were the two users of
+      `.content-page.empty-catalog-page`, and the same pair of classes did not put them in the
+      same place: this one sat inside `.legacy-page`, whose 122px top and 32px sides come first,
+      so it started 122 + 48 = 170px down while the catalog's started 74 + 48 = 122. The gutter
+      differed too, and by an accident of source order: `.content-page`'s `min(100% - 48px, …)`
+      and `.legacy-page > *`'s `min(100%, …)` weigh exactly the same, the second is written twelve
+      lines later, so here the gutter was `.legacy-page`'s own 32 and on the catalog it was 24.
+      48px lower and 8px narrower a side, and nobody chose either figure.
+      On the shell it is a page like the fifteen beside it, and its title comes down from
+      `--type-display` to the `--type-title` every secondary screen now shares — `docs/theme.md`,
+      D2. The catalog's branch does not follow it here and should not: its `<main>` carries
+      `catalog-screen`, which D13 keeps as a door to a dark theme, `PageShell` takes no
+      `className`, and D2 gives that one screen `--type-display` by name. It moved onto
+      `.catalog-screen__inner` instead, so between the two of us `.content-page` is left with no
+      writer in the markup at all — the rule in `app-layout.css` and its narrowing in
+      `responsive.css` are now dead and can go.
+     */
     return (
-      <main id="app-main" tabIndex={-1} className="app-main legacy-page">
-        <section className="content-page empty-catalog-page">
-          <p className="eyebrow">{t(locale, "nav.packages")}</p>
-          <h1>{t(locale, "packages.emptyTitle")}</h1>
-          <p>{t(locale, "packages.emptyBody")}</p>
-          <pre>{cliName()} scan ~/Desktop --save</pre>
-        </section>
-      </main>
+      <PageShell
+        eyebrow={t(locale, "nav.packages")}
+        title={t(locale, "packages.emptyTitle")}
+        lead={t(locale, "packages.emptyBody")}
+      >
+        <PageSection>
+          {/*
+             `Card` and not the sheet's `<pre>` rule: the frame is the same hairline, paper and
+             corner the primitive already draws, and the scroll stays on the box so a long path
+             never widens the page under it.
+            */}
+          <Card className="overflow-x-auto">
+            <pre className="font-mono text-xs">{cliName()} scan ~/Desktop --save</pre>
+          </Card>
+        </PageSection>
+      </PageShell>
     );
   }
 
+  /*
+    A null `enriched_at` is the only honest thing this line knows.
+    `outdated_deps` and `vuln_count` default to zero and only enrichment writes them, so over a
+    full table of packages the header used to read «0 direct dependencies behind · 0 advisories ·
+    checked —» on a catalog nobody had ever asked about. That is the zero of «I looked and there is
+    nothing» printed for «I have not looked».
+    The empty state above does not catch it either: it asks `used.length === 0`, and the table is
+    full — the packages come from the scan, the verdict does not.
+   */
+  const checked =
+    stats.enrichedAt === null ? (
+      <Rich
+        text={t(locale, "packages.statsUnchecked")}
+        slots={{ cmd: <code className="text-smoke">{cliName()} enrich</code> }}
+      />
+    ) : (
+      t(locale, "packages.stats", {
+        n: stats.outdatedDeps,
+        m: stats.advisories,
+        when: relativeDate(stats.enrichedAt, locale),
+      })
+    );
+
   return (
-    <>
-
-      <main id="app-main" tabIndex={-1} className="app-main legacy-page">
-        <section className="pt-12">
-          <p className="eyebrow">{t(locale, "nav.packages")}</p>
-          <h1 className="mt-2 font-display text-4xl font-semibold tracking-tight">
-            {t(locale, "packages.title", { n: used.length })}
-          </h1>
-          <p className="mt-3 max-w-xl text-sm leading-relaxed text-smoke">
-            {t(locale, "packages.intro")}
-          </p>
-          <p className="mt-4 font-mono text-xs text-faint">
-            {/*
-               A null `enriched_at` is the only honest thing this line knows.
-               `outdated_deps` and `vuln_count` default to zero and only enrichment writes them,
-               so over a full table of packages the header used to read «0 direct dependencies
-               behind · 0 advisories · checked —» on a catalog nobody had ever asked about. That
-               is the zero of «I looked and there is nothing» printed for «I have not looked».
-               The empty state below does not catch it either: it asks `used.length === 0`, and
-               the table is full — the packages come from the scan, the verdict does not.
-              */}
-            {stats.enrichedAt === null ? (
-              <Rich
-                text={t(locale, "packages.statsUnchecked")}
-                slots={{ cmd: <code className="text-smoke">{cliName()} enrich</code> }}
-              />
-            ) : (
-              t(locale, "packages.stats", {
-                n: stats.outdatedDeps,
-                m: stats.advisories,
-                when: relativeDate(stats.enrichedAt, locale),
-              })
-            )}
-          </p>
-        </section>
-
-        <div className="mt-10 overflow-x-auto">
+    <PageShell
+      eyebrow={t(locale, "nav.packages")}
+      title={t(locale, "packages.title", { n: used.length })}
+      lead={t(locale, "packages.intro")}
+      note={checked}
+    >
+      <PageSection>
+        <div className="overflow-x-auto">
           <table className="w-full text-left font-mono text-xs">
             <thead>
               <tr className="border-b border-edge text-faint">
@@ -141,7 +162,7 @@ export default async function PackagesPage() {
             </tbody>
           </table>
         </div>
-      </main>
-    </>
+      </PageSection>
+    </PageShell>
   );
 }

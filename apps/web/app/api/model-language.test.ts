@@ -40,6 +40,27 @@ const ALL = routes(API);
 const ASK = ALL.filter((r) => /\bcomplete\(/.test(r.source));
 
 /**
+ * And the libraries that draft what the routes send.
+ *
+ * The check below reads the arguments of `complete(...)`, and that is right where the prompt is
+ * written in the route. It is blind where the prompt is written in `lib/` and the route only
+ * passes it on — which is how, on 5-Sep-2026, «Write newly derived observations in English» went
+ * into `lib/distill.ts` and `lib/synthesize.ts`, this file stayed green, and the next synthesis
+ * would have written English beliefs into a Spanish portrait: the exact failure the rule was
+ * written against. So the libraries are read whole, for the sentences that pin the model's prose.
+ */
+const LIB = new URL("../../lib/", import.meta.url);
+const LIBS = readdirSync(LIB)
+  .filter((name) => name.endsWith(".ts") && !name.endsWith(".test.ts"))
+  .map((name) => ({ name, source: readFileSync(new URL(name, LIB), "utf8") }));
+
+/**
+ * A sentence that tells the model which language to write its prose in. The verb is what makes
+ * it prose: «one lowercase word in English» names an identifier, which is right, and has no verb.
+ */
+const PROSE_PINS = /"[^"]*\b(Write|Answer|Respond|Reply|Escribe|Responde)\b[^"]*\b(in English|en español|en inglés|in Spanish)\b[^"]*"/;
+
+/**
  * Set the language without looking at who is asking. Look in the code, not in the comments: a
  * comment that **explains** why something is in Spanish is not an instruction to the model.
  */
@@ -103,6 +124,22 @@ describe("el idioma en que escribe el modelo", () => {
     expect(
       culpables,
       `fijan el idioma sin mirar a quien pregunta, y lo que escriben se guarda:\n${culpables.join("\n")}`,
+    ).toEqual([]);
+  });
+
+  it("ni las bibliotecas que redactan el encargo", () => {
+    // The three that write prose for a model have to be in the sweep, or the sweep proves nothing.
+    for (const name of ["distill.ts", "synthesize.ts", "consult.ts"]) {
+      expect(LIBS.some((lib) => lib.name === name), `${name} ya no está en lib/`).toBe(true);
+    }
+    const culpables: string[] = [];
+    for (const lib of LIBS) {
+      const code = lib.source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
+      if (PROSE_PINS.test(code) && !FOLLOWS.test(code)) culpables.push(lib.name);
+    }
+    expect(
+      culpables,
+      `fijan el idioma de la prosa del modelo por su cuenta, y lo que escriben se guarda:\n${culpables.join("\n")}`,
     ).toEqual([]);
   });
 

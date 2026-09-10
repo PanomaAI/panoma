@@ -8,7 +8,9 @@ import {
   proposeNote,
   recordServing,
   resolveProject,
+  validMemoryPath,
 } from "@panoma/db";
+import { refreshProjectMemory } from "@/lib/sentinels";
 import { requireAgent } from "@/lib/agent-auth";
 import { db } from "@/lib/db";
 import { sameOrigin } from "@/lib/guard";
@@ -42,6 +44,12 @@ export async function POST(request: Request) {
     where?: string;
   };
 
+  if (!body || typeof body !== "object" ||
+    (body.note !== undefined && typeof body.note !== "string") ||
+    (body.where !== undefined && typeof body.where !== "string") ||
+    [body.cwd, body.remote, body.slug].some((value) => value !== undefined && typeof value !== "string")) {
+    return Response.json({ error: "Invalid memory request." }, { status: 400 });
+  }
   const project = await resolveProject(auth.database, body);
   if (!project) return Response.json({ error: t(locale, "api.noProject") }, { status: 404 });
 
@@ -74,6 +82,7 @@ export async function POST(request: Request) {
     The audit found here the side door: without an arm or record, an agent of the retained arm
     recovered through this branch the entire memory that the experiment believed to be retained.
    */
+  await refreshProjectMemory(auth.database, project);
   const [all, usage] = await Promise.all([
     listProjectNotes(auth.database, project.id),
     noteUsage(auth.database, project.id),
@@ -91,6 +100,7 @@ export async function POST(request: Request) {
       projectId: project.id,
       agentId: auth.agent.id,
       arm,
+      experimentId: ablationEnabled() ? "memory-v1" : null,
       noteIds: awake.map((note) => note.id),
       noteChars: usage.used,
     });
@@ -134,6 +144,8 @@ export async function GET(request: Request) {
   const project = await resolveProject(database, { cwd });
   if (!project) return Response.json({ notes: [] });
 
+  if (!validMemoryPath(touching)) return Response.json({ error: "Invalid project-relative path." }, { status: 400 });
+  await refreshProjectMemory(database, project);
   const notes = await notesAt(database, project.id, touching);
   return Response.json({
     project: project.slug,

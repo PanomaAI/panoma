@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { postJson } from "@/lib/api";
 import { useT } from "./i18n-provider";
-import { ActionError } from "./primitives";
+import { ActionButton, ActionError } from "./primitives";
 
 /**
  * The button that does, and then counts what happened and what to expect.
@@ -72,14 +72,15 @@ export function MdApply({
 
   return (
     <div className="project-md-apply">
-      <button
+      <ActionButton
+        tone="accent"
         type="button"
         onClick={apply}
-        disabled={state === "working"}
-        className="inline-flex items-center gap-2 rounded border border-accent bg-accent px-3 py-1.5 font-mono text-xs text-white transition-opacity hover:opacity-85 disabled:opacity-50"
+        busy={state === "working"}
+        busyLabel={translate("project.mdApplyWorking")}
       >
-        {state === "working" ? translate("project.mdApplyWorking") : label}
-      </button>
+        {label}
+      </ActionButton>
       {message && <p className="mt-2 text-xs leading-relaxed text-live">{message}</p>}
       {error && <ActionError text={error} className="mt-2" />}
     </div>

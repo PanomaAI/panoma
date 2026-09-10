@@ -12,6 +12,7 @@ import {
   listBeliefs,
   markPublished,
   projectNamesByIdentity,
+  queueWrite,
   resolveProposal,
   setBeliefScope,
   signBelief,
@@ -24,6 +25,7 @@ import { localOperatorOnly, sameOrigin } from "@/lib/guard";
 import { localeFrom, t } from "@/lib/i18n";
 import { dropStatements, reconcileTaste } from "@/lib/taste-merge";
 import { publishable } from "@/lib/publishable";
+import { parseTeaching, teachBelief, TeachingError, type Teaching } from "@/lib/teach";
 
 /**
  * The portrait: what is read and what is signed.
@@ -116,13 +118,24 @@ export async function POST(request: Request) {
   if (blocked) return blocked;
 
   const locale = localeFrom(request);
-  const body = (await request.json().catch(() => ({}))) as {
+  const raw = await request.json().catch(() => ({}));
+  const body = (raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {}) as {
     sign?: unknown;
     veto?: unknown;
     scope?: unknown;
     resolve?: unknown;
     publishInferred?: unknown;
+    teach?: unknown;
   };
+
+  let teaching: Teaching | undefined;
+  if (body.teach !== undefined) {
+    try {
+      teaching = parseTeaching(body.teach);
+    } catch {
+      return Response.json({ error: t(locale, "twinTeach.invalid") }, { status: 400 });
+    }
+  }
 
   /*
     The answer to the only question, if it comes. It is saved **before** reconciling because it
@@ -140,6 +153,7 @@ export async function POST(request: Request) {
     veto: ids(body.veto),
     scope: scopes(body.scope),
     resolve: resolutions(body.resolve),
+    ...(teaching ? { teach: teaching } : {}),
   };
 
   /*
@@ -150,8 +164,11 @@ export async function POST(request: Request) {
   const { db: database } = await db();
 
   try {
-    return await inTransaction(database, async (tx) => apply(tx, gestures));
+    return await queueWrite(() => inTransaction(database, async (tx) => apply(tx, gestures)));
   } catch (error) {
+    if (error instanceof TeachingError) {
+      return Response.json({ error: t(locale, error.reason === "project" ? "api.noProject" : "twinTeach.scopeError") }, { status: error.reason === "project" ? 404 : 400 });
+    }
     if (error instanceof TasteFullError) {
       return Response.json(
         {
@@ -161,6 +178,7 @@ export async function POST(request: Request) {
           // Everything to zero and not what was applied: the transaction was reversed, so nothing
           // was applied. Showing 'signed: 3' on an intact basis would be lying.
           signed: 0,
+          taught: 0,
           vetoed: 0,
           scoped: 0,
           resolved: 0,
@@ -180,6 +198,7 @@ interface Gestures {
   veto: string[];
   scope: { id: string; identity: string | null }[];
   resolve: { id: string; accept: boolean }[];
+  teach?: Teaching;
 }
 
 async function apply(database: Database, gestures: Gestures): Promise<Response> {
@@ -189,6 +208,7 @@ async function apply(database: Database, gestures: Gestures): Promise<Response> 
     readConsent(),
   ]);
   const inferred = publishesInferred(consent);
+  const taught = gestures.teach ? await teachBelief(database, gestures.teach, names) : undefined;
 
   /*
     They are applied one by one and the ones that actually changed are counted. Each function
@@ -300,7 +320,8 @@ async function apply(database: Database, gestures: Gestures): Promise<Response> 
     ...merge.withdrawn.map((id) => ({ id, published: null })),
   ]);
 
-  return Response.json({ signed, vetoed, scoped, resolved, withdrawn, rewritten, profile });
+  return Response.json({ signed, vetoed, scoped, resolved, withdrawn, rewritten, profile,
+    taught: taught?.created ? 1 : 0, ...(taught ? { beliefId: taught.id } : {}) });
 }
 
 /**

@@ -29,6 +29,20 @@ name one you say which; otherwise nobody knows what is being talked about.
 
 ## The words
 
+**app** — An optional program that panoma installs, drives and shows. The first is panoma
+video. This release installs only official apps; a future verified recipe may install a
+third-party app. Desktop applications use `desktop:` keys in Open everything; an app is
+neither an individual MCP tool nor an agent plugin. → [apps.md](apps.md)
+
+**app job** — One operation panoma asks an app to perform, with its input, progress, result
+and state. It outlives the tab that asked for it. → [apps.md](apps.md)
+
+**app workspace** — What an app keeps for one project on disk under panoma's home, mapped
+to the project by identity rather than path. → [apps.md](apps.md)
+
+**official app** — An app published by panoma under `@panoma/*` and enumerated in the code.
+The only kind this version installs. → [apps.md](apps.md)
+
 **agent key** — `panoma_` plus 24 bytes in base64url, stored hashed only and shown exactly
 once. It opens all of `/api/agent/*` through `Authorization: Bearer`. It has no per-project
 scope, and that is said out loud. → [guards.md](guards.md)
@@ -51,6 +65,12 @@ Letting a tab dictate the text would be letting it write instructions for your a
 floors that reaches the agents. It can be signed, vetoed and narrowed to one project.
 → [twin.md](twin.md)
 
+**cap** — How many calls of one family fit today, and who decided the number. Four sources, in
+order: the pause in `~/.panoma/spend.json` (every cap reads as zero), the family's
+`PANOMA_…_BUDGET` variable when set, the cap chosen on the spend screen and kept in that file,
+and the factory value. Asked of `capFor(family)` at request time; an unreadable value falls to
+the factory value and never to "no limit". → [budgets.md](budgets.md)
+
 **the card** — A project's page on the web: `/p/<slug>`. → [web-app.md](web-app.md)
 
 **catalog** — The web server (`@panoma/web`) plus its PGlite database in `~/.panoma/db`. It is
@@ -65,6 +85,11 @@ twice beats deleting it unread. → [doctrine.md](doctrine.md)
 a neutral path, with a `prepack` that refuses in the face of a dirty tree or a stale artifact.
 → [release.md](release.md)
 
+**coverage** — How many of an episode's nine dimensions were recorded: context, goal,
+constraints, alternatives, decision, rationale, outcome, conditions and exceptions. It counts
+what is there and is not confidence; the screen names the recorded ones instead of scoring
+them. → [decision-memory.md](decision-memory.md)
+
 **the critic** — Two different things; see "Two words that need a surname" up above.
 → [review.md](review.md)
 
@@ -75,6 +100,19 @@ its agents under a budget of 2,000 characters. → [memory.md](memory.md)
 page paints (`GET /api/today`): what moved since the last time you looked. Its equivalent for
 an agent is the project report that `panoma_context` returns, with its "since yesterday"
 window. → [cli.md](cli.md) · [agent-channel.md](agent-channel.md)
+
+**decision episode** — The situation in which a choice made sense, kept before it is reduced
+to a preference: goal, alternatives, decision, reasons, outcome, conditions and exceptions,
+each either a literal owner excerpt with its citation or the owner's own words. Extracted
+from narratives by a paid call, or recorded by hand with no model; a revision creates a
+successor and dismisses the earlier version. It never becomes a belief on its own.
+→ [decision-memory.md](decision-memory.md)
+
+**Decision Lab** — The owner's rehearsal: a question against the signed beliefs and the active
+episodes, one model call, a cited draft or an abstention. A preview and not a channel of
+authority — its output never enters evidence, and the way to disagree with it is to teach a
+criterion. It pays from `PANOMA_REHEARSE_BUDGET`, never from the agents' `ask`.
+→ [twin.md](twin.md) · [decision-memory.md](decision-memory.md)
 
 **design fingerprint** — The LOOK of a project read out of the code: typefaces, palette,
 radii, shadows, dark mode and animation. Not the technology fingerprint in `fingerprint.ts`,
@@ -91,6 +129,19 @@ decision: it is a typo nobody sees. → [review.md](review.md)
 **the engine** — `@panoma/core`: what reads the disk and produces facts. It does no network,
 uses no model and writes in nobody's projects. → [analysis.md](analysis.md)
 
+**expiry** — The optional last day a decision applies, written by the owner on a decision
+episode and stored as that calendar day at 23:59:59.999 UTC. Past it the record stops reaching
+the agents' briefing, task matches and the Lab, and stays in the owner's archive marked expired.
+Nothing expires by itself, and no note has one: it is a property of a decision.
+→ [decision-memory.md](decision-memory.md)
+
+**export** — One project's memory carried out of the catalog as a single versioned JSON
+document: the notes in every state, the decisions with their revision links, the owner's
+general decisions and the distiller's receipts, never a lease token. It is the export half of
+the audit's portable-memory proposal only: nothing imports it back, and it asks for the
+operator key because it carries the owner's own testimony. `panoma memory export <project>`,
+`GET /api/memory/export`. → [memory.md](memory.md)
+
 **fail closed** — Refusing everybody when the credential is missing, instead of guessing who
 is calling. It is what the middleware and `localOperatorOnly` do with the port open.
 → [doctrine.md](doctrine.md)
@@ -103,6 +154,22 @@ worse than starting. → [doctrine.md](doctrine.md)
 canonical one is the living copy, picked by `rank` — recency rules, and having a remote and a
 real history counts. The rest are copies and do not show up in the grid.
 → [discovery.md](discovery.md)
+
+**family (of kinds)** — The unit a cap holds back: one or more kinds of the spend ledger that
+are one job to the person. Seven —`read`, `look`, `memory`, `ask`, `rehearse`, `episodes`,
+`card`— and `read` counts three kinds because distilling, sorting and synthesizing are one
+chained job, `card` two because the two buttons of a project's card are one gesture repeated.
+Not the family of copies above. → [budgets.md](budgets.md)
+
+**fitted capture** — A screenshot reduced so that its long edge measures 1,568 px before it is
+shown to the critic with eyes, because an image is charged by its pixels. It happens only when
+the owner asks for it on the spend screen (`shots: "fit"`; `full` is the factory value), only
+to a PNG, and never in silence: the size that travels and the size the file has are said in
+the dry run and again on the receipt, and a capture that cannot be reduced —another format, a
+palette or interlaced PNG, one already small enough, unreadable bytes, more pixels than the
+decoder holds— travels whole with the reason named, unless whole is still over what a provider
+accepts, and then it does not travel at all. What is remembered in `looks.digest` is still the
+file, never the reduction. → [budgets.md](budgets.md)
 
 **the funnel** — The breakdown `panoma twin mine` shows: out of all the history there is on
 the disk, how many reactions of yours really survive and why the rest falls away.
@@ -128,8 +195,10 @@ three isolation levels take care of that. → [run-and-isolation.md](run-and-iso
 
 **lease** — `~/.panoma/db.lease.d/<pid>.json`: the note every process leaves when it opens the
 database, and the only net against the double writer that works on all three systems. It
-always records and never refuses: the no lives only in `panoma up`.
-→ [single-writer.md](single-writer.md)
+always records and never refuses: the no lives only in `panoma up`. The memory worker borrows
+the word for a job: claiming a closed session stamps a fresh `lease_token` and a five-minute
+window, and only the holder of the current token may publish or close that job
+(`packages/db/src/memory-jobs.ts`). → [single-writer.md](single-writer.md) · [memory.md](memory.md)
 
 **logbook** — What HAPPENED: what each agent recorded with `panoma_log`. It grows and gets
 archived, and the whole of it is searched with `panoma_recall`. It is the cold half, against
@@ -150,6 +219,16 @@ file is the user's and is never touched. → [agents-md.md](agents-md.md)
 **the mark** — The literal string `# panoma-hooks` inside a hook's own command. It tells ours
 from other people's, and it goes there because a `.json` has no room for comments and hooks
 are run with a shell. → [hooks.md](hooks.md)
+
+**memory job** — One row of `memory_jobs` per closed agent session: the distiller's durable
+to-do, with its status (`pending`, `running`, `deferred`, `failed`, `complete`), its attempts,
+its lease and its receipt. Queued in the same transaction as the session close, drained by
+the worker inside the web server, never by the HTTP turn. → [memory.md](memory.md)
+
+**narrative** — A verified owner turn captured from the agent history with its conversation
+role —`opening`, `brief` or `reaction`— and the assistant's preceding context kept apart. The
+raw material of decision episodes; a brief is kept for context and never cited.
+→ [decision-memory.md](decision-memory.md)
 
 **network key** — The credential that grants passage to COME IN and look. It travels in the
 two links `panoma up --network` prints and is kept for thirty days in the `panoma-access`
@@ -173,6 +252,11 @@ directory, not excluded by hand, and looking like a project root.
 machine. It lives in `~/.panoma/access.json` with 0600 permissions, and it travels in the
 "this machine" link and not in the phone's. → [guards.md](guards.md)
 
+**owner decisions** — The section of the briefing that carries the owner's recorded decisions
+to an agent through `panoma_context`: owner-authored and active only, with their reasons,
+conditions and exceptions, six at most and no model call. Extracted episodes never travel
+there. → [decision-memory.md](decision-memory.md) · [agent-channel.md](agent-channel.md)
+
 **the portrait · `TASTE.md`** — The few sentences of your taste that go down to all of your
 agents. It lives in `~/.panoma/TASTE.md` as editable plain text, with a hard ceiling of 3,000
 characters: a twin you cannot read is an impostor. → [twin.md](twin.md)
@@ -180,6 +264,19 @@ characters: a twin you cannot read is an impostor. → [twin.md](twin.md)
 **proposal** — What `panoma run` produces: a `panoma/bump-…` branch with a commit and a patch.
 Never a change applied in your tree, never a push, never a PR.
 → [run-and-isolation.md](run-and-isolation.md)
+
+**rate** — What the owner pays per million tokens for one provider/model pair, typed on the
+spend screen from their own bill and kept in `~/.panoma/spend.json`. There is no rate table in
+the repository and there must not be one: a shipped price goes stale, and a stale price is
+worse than none. Without a rate the screen shows tokens and no money. → [budgets.md](budgets.md)
+
+**receipt** — What a memory job leaves behind: counts and coverage — records total, selected,
+omitted and clipped — and a bounded reason code. Never the source text, never the model's
+answer. The Memory tab paints the latest one. → [memory.md](memory.md)
+
+**revision family** — Every version of one decision, linked by `supersedes_id` in either
+direction, siblings included. One member may be active at a time, and the database enforces
+it under a lock. → [decision-memory.md](decision-memory.md)
 
 **scale** — The ablation experiment: it splits every memory delivery into arms and measures
 whether memory changes the agent's behavior (`servings`, `GET /api/scale`). It is off from the
@@ -195,14 +292,23 @@ it contains. If it falls, the note is disputed and stops being served.
 
 **the signal** — The delivery of a sleeping note at the scene of the accident: the
 `PreToolUse` hook (`panoma signal`) injects it as `additionalContext` right before the agent
-edits that path. → [hooks.md](hooks.md)
+edits that path. The other roads to the same note need no hook: `files` in `panoma_context`
+for the agent that knows the path, and `task` for the one that only knows what it is trying
+to do. → [hooks.md](hooks.md)
 
 **single writer** — The rule that explains the shape of the system: PGlite takes one process,
 so the web server owns the database and everybody else asks over HTTP.
 → [single-writer.md](single-writer.md)
 
 **sleeping note** — A memory note with a path trigger: it lives outside the budget and is
-delivered the instant somebody is about to touch that path. → [memory.md](memory.md)
+delivered when an agent names that path in `files` to `panoma_context`, when the words of its
+`task` overlap the note, or the instant the hook sees somebody about to touch it.
+→ [memory.md](memory.md)
+
+**spend screen** — `/spend`, and `panoma spend` in the terminal: the receipt of what the models
+cost today by family and over the last thirty days by day and by model, and the controls over
+it — the seven caps, the rates, the currency, the pause and how much of a capture the critic
+is shown — written to `spend.json` without restarting the server. → [budgets.md](budgets.md)
 
 **stable identity** — The repository's root commit with the `git:` prefix, plus its path
 inside the repository when the project is not the root. It survives moving and renaming the
@@ -212,6 +318,16 @@ hangs off it. → [database.md](database.md)
 **tasting** — A `panoma scan` without `--save`: it reads, it prints and there it ends. The
 catalog never finds out. → [cli.md](cli.md)
 
+**task match** — Memory selected by the words of the sentence an agent passes as `task` to
+`panoma_context`: sleeping notes and owner decisions ranked by the rarity of the words they
+share with it, each delivered with the words that matched. A reason to read the rule, never
+proof that it applies. → [agent-channel.md](agent-channel.md)
+
+**thin** — A verdict a distillation pass cannot send: a project's lone unread quote, when an
+observation needs two distinct citations from the same batch. It is not sent, not marked and
+not paid; the distill receipt counts it apart, and the corpus line leaves it out of what is
+left. → [budgets.md](budgets.md) · [twin.md](twin.md)
+
 **trigger** — A note's `where`: an exact path (`docs/memory.md`) or a zone (`apps/web/**`). It
 takes only `/` as a separator. A note with a trigger is a sleeping note.
 → [memory.md](memory.md)
@@ -220,6 +336,15 @@ takes only `/` as a separator. A note with a trigger is a sleeping note.
 work out what you accept and what you reject (`panoma twin`). "The stand-in" is that same twin
 answering `panoma_ask` for you: in shadow training today, so it drafts what it would have
 said, the answer does NOT travel to the agent and the person grades it. → [twin.md](twin.md)
+
+**the two ceilings** — The two byte limits on a screenshot, which since 6-Sep-2026 are two
+numbers because they measure two acts. What may **travel** to a provider is
+`MAX_SCREENSHOT_BYTES` (3,500,000), asked of the bytes about to leave and after any reduction.
+What may be **opened off this disk** is `readCeiling(policy)`: `MAX_FITTABLE_BYTES`
+(16,000,000) when the owner asked for a fitted capture, the provider's number when they did
+not, because there what is read is exactly what leaves. Before the split one number answered
+both, and a six-megabyte capture was refused before anybody could reduce it.
+→ [budgets.md](budgets.md)
 
 **untrusted material** — Everything panoma read off the disk and that whoever is asking did
 not write. It goes wrapped in `untrusted_data` with its origin, marked as data and never as
@@ -234,7 +359,7 @@ dated answer to "does this still build?" — so there it is worth saying "build 
 mean "correct": with no tests the state stays `proposed` with `verified: false`, and the
 commit says so. → [run-and-isolation.md](run-and-isolation.md)
 
-**view** — Each of the card's ten tabs (`PROJECT_VIEWS`), which crop the page instead of
+**view** — Each of the card's eleven tabs (`PROJECT_VIEWS`), which crop the page instead of
 jumping to an anchor. → [web-app.md](web-app.md)
 
 ## What it does not do / known limits
@@ -250,9 +375,10 @@ jumping to an anchor. → [web-app.md](web-app.md)
 - **No test checks that these definitions are still true.** `twin.md` is watched by
   `apps/web/lib/twin-wiring.test.ts`; this one is not, and that is why the entries steer clear
   of numbers that age and stay on the meaning.
-- **Three homonyms are known and all three are said out loud**: "the critic" (mechanical and
-  with eyes), "the guard" (which is not one piece) and "verdict" (the twin's and the build's).
-  If a fourth turns up, the place to note it is this page, not a comment.
+- **Four homonyms are known and all four are said out loud**: "the critic" (mechanical and
+  with eyes), "the guard" (which is not one piece), "verdict" (the twin's and the build's) and
+  "family" (the copies of one project, and the kinds one cap holds back). If a fifth turns up,
+  the place to note it is this page, not a comment.
 - **The links point at the agreed map of `docs/`.** The documents marked as new are written in
   the same batch as this one; if one of them is not there yet, the link is dead and that is
   the sign that it is missing.

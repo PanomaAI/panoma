@@ -1,10 +1,12 @@
 import { readFile } from "node:fs/promises";
-import { MAX_SCREENSHOT_BYTES, imageTypeOf } from "@panoma/core";
+import { imageTypeOf } from "@panoma/core";
 import { getProject } from "@panoma/db";
 import { db } from "@/lib/db";
 import { sameOrigin } from "@/lib/guard";
 import { localeFrom, t } from "@/lib/i18n";
+import { readCeiling } from "@/lib/look";
 import { pickShot } from "@/lib/shots";
+import { shotPolicy } from "@/lib/spend-settings";
 
 /**
  * The pixels of a snapshot of the mailbox, so you can see it before judging it.
@@ -59,12 +61,15 @@ export async function GET(request: Request) {
   }
 
   /*
-    The limit is the same as that of looking, and that equality is on purpose: what doesn't fit in
-    a call doesn't need to be rendered either, because the button next to it won't be able to
-    handle it. Two different limits would give a beautiful miniature of something that later
-    refuses to be looked at.
+    The limit is the same as that of looking, and that equality is what is on purpose — not the
+    number, which since 6-Sep-2026 depends on the owner's choice. What must not happen is a
+    beautiful miniature of something that later refuses to be looked at, and its mirror image,
+    which is the one that appeared when the look learned to reduce: a capture the button next to
+    it looks at perfectly well and this route refuses to render, leaving the person choosing
+    between file names. So the choice is read here too, and the ceiling is the one the look would
+    use. See `readCeiling`.
    */
-  if (shot.bytes > MAX_SCREENSHOT_BYTES) {
+  if (shot.bytes > readCeiling(await shotPolicy())) {
     return Response.json(
       { error: t(locale, "look.unreadableShot", { detail: `${name} · ${shot.bytes} B` }) },
       { status: 409 },

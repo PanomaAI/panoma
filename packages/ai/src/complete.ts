@@ -1,3 +1,4 @@
+import { tmpdir } from "node:os";
 import { completeWithCliAgent } from "./cli-agent";
 import { resolveCredential, type ResolvedCredential } from "./credentials";
 import { redact } from "./safety";
@@ -79,6 +80,13 @@ export interface CompleteResult {
   model: string;
   /** Absent in providers `cli`: they do not publish the consumption. */
   usage?: { input: number; output: number };
+  /**
+   * Why the model stopped. `length` means the answer hit `maxTokens` and is cut: a caller that
+   * parses JSON needs to know that, because a cut answer and a bad answer look the same and are
+   * different failures — one is fixed by asking for more room, the other by asking differently.
+   * Absent in providers `cli`, which do not say.
+   */
+  stopReason?: "stop" | "length";
 }
 
 export async function complete(request: CompleteRequest): Promise<CompleteResult> {
@@ -89,7 +97,12 @@ export async function complete(request: CompleteRequest): Promise<CompleteResult
     // look, there is nothing to send. See `VisionUnsupportedError`.
     if (request.images?.length) throw new VisionUnsupportedError(credential.provider.name);
     const prompt = request.system ? `${request.system}\n\n---\n\n${request.prompt}` : request.prompt;
-    const text = await completeWithCliAgent(credential.provider, prompt);
+    /*
+      A neutral working directory, on purpose. An agent launched from the server's cwd discovers
+      that folder's instruction files —CLAUDE.md, AGENTS.md— and loads them into every call, so a
+      one-line question paid for the whole repository's context. See `CliRunOptions.cwd`.
+     */
+    const text = await completeWithCliAgent(credential.provider, prompt, { cwd: tmpdir() });
     /*
       «session» and not «sesión»: this string is not prose, it is the model name shown back to
       whoever asked — a CLI agent has no model to name, it uses whatever its own sign-in has.
@@ -107,6 +120,8 @@ interface CodexResponse {
   output_text?: string | string[];
   usage?: { input_tokens?: number; output_tokens?: number };
   model?: string;
+  status?: string;
+  incomplete_details?: { reason?: string };
   error?: { message?: string };
   detail?: string;
 }
@@ -266,17 +281,36 @@ async function completeCodex(
     text: (text || outputText || shortcut || "").trim(),
     provider: credential.provider.id,
     model: final?.model ?? credential.model,
-    ...(final?.usage
-      ? {
-          usage: {
-            input: final.usage.input_tokens ?? 0,
-            output: final.usage.output_tokens ?? 0,
-          },
-        }
-      : {}),
+    ...(final?.status === "incomplete"
+      ? { stopReason: final.incomplete_details?.reason === "max_output_tokens" ? "length" as const : "stop" as const }
+      : final ? { stopReason: "stop" as const } : {}),
+    ...metered(final?.usage?.input_tokens, final?.usage?.output_tokens),
   };
 }
 
+/**
+ * The usage, only when the provider stated both halves.
+ *
+ * The ledger stores null for a call that did not say what it consumed, and forbids zero there:
+ * see `model_calls` in `@panoma/db`. This used to coerce a missing field with `?? 0`, so a
+ * response without usage was written as a free call and the day's total lied downward. Absent
+ * now means absent, and the receipt counts it as unmetered.
+ */
+function metered(input: unknown, output: unknown): { usage?: { input: number; output: number } } {
+  return typeof input === "number" && Number.isFinite(input) &&
+    typeof output === "number" && Number.isFinite(output)
+    ? { usage: { input, output } }
+    : {};
+}
+
+/**
+ * Anthropic through its SDK, which is the one family that does not go through `callProvider`.
+ *
+ * Retries are the SDK's own, not `transport.ts`'s, and the difference is documented rather than
+ * changed: `maxRetries` 2 on 408, 409, 429 and 5xx, honouring `retry-after`, and never after a
+ * generation has completed — so it never pays twice for one answer, which is the same promise
+ * `callProvider` makes by retrying only what never got answered.
+ */
 async function completeAnthropic(
   credential: ResolvedCredential,
   request: CompleteRequest,
@@ -325,11 +359,12 @@ async function completeAnthropic(
     provider: credential.provider.id,
     model: message.model,
     usage: { input: message.usage.input_tokens, output: message.usage.output_tokens },
+    stopReason: message.stop_reason === "max_tokens" ? "length" : "stop",
   };
 }
 
 interface ChatCompletion {
-  choices?: { message?: { content?: string } }[];
+  choices?: { message?: { content?: string }; finish_reason?: string }[];
   usage?: { prompt_tokens?: number; completion_tokens?: number };
   model?: string;
   error?: { message?: string };
@@ -405,9 +440,10 @@ async function completeOpenAi(
     text: (body.choices?.[0]?.message?.content ?? "").trim(),
     provider: credential.provider.id,
     model: body.model ?? credential.model,
-    usage: body.usage
-      ? { input: body.usage.prompt_tokens ?? 0, output: body.usage.completion_tokens ?? 0 }
-      : undefined,
+    ...(body.choices?.[0]?.finish_reason
+      ? { stopReason: body.choices[0].finish_reason === "length" ? "length" as const : "stop" as const }
+      : {}),
+    ...metered(body.usage?.prompt_tokens, body.usage?.completion_tokens),
   };
 }
 

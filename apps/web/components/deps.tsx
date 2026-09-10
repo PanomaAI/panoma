@@ -1,5 +1,6 @@
 import { bumpType, isOutdated, type Bump } from "@panoma/enrich";
 import { t, type Locale, type MessageKey } from "@/lib/i18n";
+import { Tag, type TagTone } from "./primitives";
 
 const BUMP_STYLE: Record<Bump, string> = {
   major: "text-idle",
@@ -38,12 +39,21 @@ export function VersionDiff({
   );
 }
 
-export const SEVERITY_STYLE: Record<string, string> = {
-  critical: "text-fail border-fail/30 bg-fail/10",
-  high: "text-idle border-idle/30 bg-idle/10",
-  medium: "text-accent border-accent/30 bg-accent/10",
-  low: "text-smoke border-edge bg-raised",
-  unknown: "text-faint border-edge bg-raised",
+/**
+ * Severity, as one of the pill's tones.
+ *
+ * It used to be five class chains, and they were the fifth of the five colour maps behind one
+ * word-pill — `activity.tsx`, `run-status.tsx`, `isolation.tsx` and `resume.tsx` wrote the other
+ * four. What each chain said is exactly what a tone says, letter for letter, so nothing here moves
+ * a pixel: `critical` was `text-fail border-fail/30 bg-fail/10`, which is `Tag`'s `fail`, and the
+ * other four map the same way.
+ */
+export const SEVERITY_TONE: Record<string, TagTone> = {
+  critical: "fail",
+  high: "idle",
+  medium: "accent",
+  low: "neutral",
+  unknown: "quiet",
 };
 
 /**
@@ -58,13 +68,8 @@ export function SeverityTag({ severity, locale }: { severity: string; locale: Lo
   const key = `severity.${severity}` as MessageKey;
   const label = t(locale, key);
   return (
-    <span
-      className={`rounded border px-1.5 py-0.5 font-mono text-[10px] ${
-        SEVERITY_STYLE[severity] ?? SEVERITY_STYLE["unknown"]
-      }`}
-      title={severity}
-    >
+    <Tag tone={SEVERITY_TONE[severity] ?? SEVERITY_TONE["unknown"]!} title={severity}>
       {label ?? severity}
-    </span>
+    </Tag>
   );
 }

@@ -17,6 +17,10 @@
   give them because their value is chosen by the user in their control panel.
   It goes to the end of the waterfall. Each selector has written on it the weight of the original
   it corrects, so it ties and wins by going after.
+  The theme's scales stop at this door, and that is not an oversight either. The few measurements
+  below are not rhythm: they are the amount a shape has to grow before it survives the flattening
+  —a ring that stops being a dot, a bar with room for its own frame— and each carries the reason
+  next to it. A token would say the size and lose the reason.
  */
 
 @media (forced-colors: active) {
@@ -24,64 +28,51 @@
     ── 1. The status dots ───────────────────────────────────────────────────────── Four statuses
     with four fills: alive, paused, asleep, and no git. Flattened, they are four identical 6 px
     dots. Here they become two shapes with two inks: filled or ring, normal or off. The text
-    already travels with them —`StateDot` carries its `sr-only` and the summary its label—, so
+    already travels with them —`StateDot` carries its `sr-only`—, so
     this is for those who LOOK at them.
     They go up to 10 px because a 2 px ring inside a 6-point dot is not a ring: it is a dot. It is
     the only place where this sheet moves a measurement, and only in this mode.
    */
   .state-dot,
-  .catalog-row .state-dot,
-  .summary-dot {
+  .catalog-row .state-dot {
     width: 10px;
     height: 10px;
     border: 2px solid GrayText;
     background: Canvas;
   }
 
-  .state-dot--active,
-  .summary-dot--live {
+  .state-dot--active {
     border-color: CanvasText;
     background: CanvasText;
   }
 
-  .state-dot--paused,
-  .summary-dot--paused {
+  .state-dot--paused {
     border-color: CanvasText;
     background: Canvas;
   }
 
-  .state-dot--dormant,
-  .summary-dot--dormant {
+  .state-dot--dormant {
     border-color: GrayText;
     background: GrayText;
-  }
-
-  .summary-dot--muted {
-    border-color: GrayText;
-    background: Canvas;
   }
 
   /*
     ── 2. The chosen row and tile ──────────────────────────────────────────────── The list is a
     `listbox` and choosing a row is what opens the panel on the right: if it’s not clear which one
     is chosen, half of the screen talks about a project that is unknown. On the screen it is
-    indicated with a background and a left lane of `box-shadow`, and there both are lost. The lane
-    returns as a border, which does survive; the filling is subtracted from the padding so that
-    the row does not move a single pixel from its place.
+    indicated with a background and a left lane of `box-shadow`, and there both are lost. An
+    inset outline survives without changing the responsive padding or column widths.
    */
   .catalog-row[aria-selected="true"] {
-    border-left: 3px solid Highlight;
-    padding-left: 15px;
+    outline: 2px solid Highlight;
+    outline-offset: -3px;
   }
 
-  /*
-    The tile already has a border at rest, so yours cannot be 'have a border' but 'have it
-    triple.' The 2 px gained per side are taken from the padding.
-   */
+  /* An inset frame preserves card geometry at every responsive padding size. */
   .catalog-tile[aria-selected="true"] {
-    border-width: 3px;
     border-color: Highlight;
-    padding: 16px 10px 13px;
+    outline: 2px solid Highlight;
+    outline-offset: -3px;
   }
 
   /*
@@ -97,7 +88,7 @@
     stroke: GrayText;
   }
 
-  .health-dial__arc {
+  .health-dial .health-dial__arc {
     stroke: CanvasText;
   }
 
@@ -112,7 +103,7 @@
     background: Canvas;
   }
 
-  .detail-health__meter > span {
+  .detail-health .detail-health__meter > span {
     background: CanvasText;
   }
 
@@ -122,6 +113,10 @@
     catalog filter, the list or grid view, the row with the keyboard in the command palette and in
     the model selector, the language, and the discreet mode. All seven flatten at the same time,
     and in the palette that means typing blindly: the down arrow stops having a visible effect.
+    Six of them say it with an `is-active` class; the discreet mode says it with `aria-pressed`,
+    which is the state itself and not a name given to it, so that is what is selected here. It is
+    also the one that was missing: its pressed look is a border and a background it SHARES with
+    `:hover`, and both are forced, so the toggle came out identical whether it was on or off.
     A `Highlight` frame does not touch the text inside —which is what breaks using `Highlight` as
     a background, because the text continues to be forced to `CanvasText` — and it is not confused
     with the focus ring, which appears in `CanvasText`. Being selected and having the focus are
@@ -133,22 +128,21 @@
   .palette__list button.is-active,
   .model-picker__item.is-highlighted,
   .lang-toggle button.is-active,
-  .catalog-tool.is-active {
+  .catalog-actions button[aria-pressed="true"] {
     outline: 2px solid Highlight;
     outline-offset: -2px;
   }
 
   /*
-    ── 5. The two tab underlines ──────────────────────────────────────────────── The top
-    navigation and the tab menu mark the current section with a bar drawn in `::after` using
-    `background`. Forced to `Canvas`, the bar remains there and is the color of the paper. With
-    `Highlight` it returns, and the menu one goes up to 2 px because a one-pixel high
-    high-contrast line is lost against the edge that the block below already has.
+    ── 5. The tab underline ─────────────────────────────────────────────────────── The tab menu
+    of a project marks the current section with a bar drawn in `::after` using `background`.
+    Forced to `Canvas`, the bar remains there and is the color of the paper. With `Highlight` it
+    returns, and it goes up to 2 px because a one-pixel high high-contrast line is lost against
+    the edge that the block below already has.
+    There were two: `.top-navigation` marked its section the same way, and no `.tsx` paints that
+    class any more. A rule that matches nothing corrects nothing, and it reads as if the top bar
+    were still covered.
    */
-  .top-navigation > a.is-active::after {
-    background: Highlight;
-  }
-
   .project-subnav a.is-active::after {
     height: 2px;
     background: Highlight;
@@ -162,5 +156,34 @@
   .project-timeline li > span.is-current {
     border-color: Highlight;
     border-width: 2px;
+  }
+}
+
+@media (forced-colors: active) {
+  /*
+    High contrast forces every border to the same system colour, so the red edge that marks a link
+    that cannot be understood disappears into the rest of the list. The mark has to be a shape: a
+    thicker dashed border, which survives the forcing.
+   */
+  .open-all-row.is-bad {
+    border-width: 2px;
+    border-style: dashed;
+  }
+
+  .open-all-row input[aria-invalid="true"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+}
+
+@media (forced-colors: active) {
+  /*
+    Forced colours flatten the ink of the dot into the button. It keeps its shape with a system
+    colour, which is what survives the forcing — and the reader who cannot see it at all still has
+    the button's name, which says what the panel holds.
+   */
+  .account-dot {
+    background: CanvasText;
+    border-color: Canvas;
   }
 }

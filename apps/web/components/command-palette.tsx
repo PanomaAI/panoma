@@ -2,9 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   HiOutlineArchiveBox,
   HiOutlineArrowTopRightOnSquare,
+  HiOutlineBanknotes,
   HiOutlineCircleStack,
   HiOutlineCodeBracketSquare,
   HiOutlineCommandLine,
@@ -12,6 +14,7 @@ import {
   HiOutlineCube,
   HiOutlineEye,
   HiOutlineFingerPrint,
+  HiOutlineFilm,
   HiOutlineFolderOpen,
   HiOutlineKey,
   HiOutlineMagnifyingGlass,
@@ -75,6 +78,7 @@ const MAX_PROJECTS = 8;
 const DESTINATIONS: { href: string; label: MessageKey; icon: IconType }[] = [
   { href: "/", label: "nav.projects", icon: HiOutlineSquares2X2 },
   { href: "/bridge", label: "dest.bridge", icon: HiOutlineSignal },
+  { href: "/spend", label: "nav.spend", icon: HiOutlineBanknotes },
   { href: "/unsaved", label: "dest.unsaved", icon: HiOutlinePencilSquare },
   { href: "/disk", label: "dest.disk", icon: HiOutlineCircleStack },
   { href: "/search", label: "dest.searchCode", icon: HiOutlineMagnifyingGlass },
@@ -84,6 +88,7 @@ const DESTINATIONS: { href: string; label: MessageKey; icon: IconType }[] = [
   { href: "/twin/look", label: "dest.look", icon: HiOutlineEye },
   { href: "/ai", label: "dest.ai", icon: HiOutlineCpuChip },
   { href: "/packages", label: "nav.packages", icon: HiOutlineCube },
+  { href: "/apps", label: "apps.title", icon: HiOutlineFilm },
   { href: "/runs", label: "nav.activity", icon: HiOutlinePlayCircle },
   { href: "/copies", label: "nav.copies", icon: HiOutlineSquare2Stack },
   { href: "/hidden", label: "dest.hidden", icon: HiOutlineArchiveBox },
@@ -333,7 +338,13 @@ export function CommandPalette() {
 
   let lastGroup = "";
 
-  return (
+  /*
+    On the `body`, like the other four. This one is mounted by the shell and has nothing over it
+    today, so the portal buys it no pixel — what it buys is that the sentence «a curtain hangs from
+    the body» is true of every dialog and not of three of them, which is the only version of that
+    sentence a person can hold. `modal-keyboard.test.ts` holds the whole account.
+   */
+  return createPortal(
     <div
       className="palette-backdrop"
       role="presentation"
@@ -471,7 +482,8 @@ export function CommandPalette() {
           <span>{t("palette.keysClose")}</span>
         </p>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useT } from "./i18n-provider";
-import { ActionError } from "./primitives";
+import { ActionButton, ActionError } from "./primitives";
 
 /**
  * To remove an agent, first saying what is being taken out.
@@ -55,13 +55,15 @@ export function DisconnectAgent({
 
   if (!asking) {
     return (
-      <button
-        type="button"
-        onClick={() => setAsking(true)}
-        className="font-mono text-[11px] text-faint transition-colors hover:text-fail"
-      >
+      /*
+        `quiet` is the borderless text button of the house, and this is one of the four sites it
+        was counted from. What it does not carry is the red hover this used to have: `quiet` goes
+        to `smoke`. The gesture is still a first step and not the deletion — that one is `danger`
+        below — so the cue moves from the hover to the word and to the sentence the click opens.
+       */
+      <ActionButton tone="quiet" size="sm" type="button" onClick={() => setAsking(true)}>
         {t("disconnect.do")}
-      </button>
+      </ActionButton>
     );
   }
 
@@ -70,21 +72,23 @@ export function DisconnectAgent({
       <span className="font-mono text-[11px] text-smoke">
         {t(entries > 0 ? "disconnect.losing" : "disconnect.nothingLost", { name, n: entries })}
       </span>
-      <button
+      {/*
+         The red eraser is the tone `danger` exists for: `primitives.tsx` names this button by file
+         when it explains why the sixth tone was added, and this is that chain retired.
+        */}
+      <ActionButton
+        tone="danger"
+        size="sm"
         type="button"
         onClick={() => void remove()}
-        disabled={state === "working"}
-        className="rounded border border-fail px-2 py-0.5 font-mono text-[11px] text-fail transition-colors hover:bg-fail hover:text-white disabled:opacity-50"
+        busy={state === "working"}
+        busyLabel={t("disconnect.working")}
       >
-        {t(state === "working" ? "disconnect.working" : "disconnect.confirm")}
-      </button>
-      <button
-        type="button"
-        onClick={() => setAsking(false)}
-        className="font-mono text-[11px] text-faint transition-colors hover:text-smoke"
-      >
+        {t("disconnect.confirm")}
+      </ActionButton>
+      <ActionButton tone="quiet" size="sm" type="button" onClick={() => setAsking(false)}>
         {t("accounts.cancel")}
-      </button>
+      </ActionButton>
       {error && <ActionError as="span" text={error} />}
     </span>
   );

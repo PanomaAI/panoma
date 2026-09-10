@@ -63,6 +63,24 @@ const SYSTEMD_UNIT = "panoma.service";
 const TASK_NAME = "Panoma";
 
 /**
+ * The mark that says «nobody is reading this one».
+ *
+ * The three services start `panoma up` with their output going to a log, the journal or an
+ * appended file, so the new-version notice was printed where nobody would ever see it — and,
+ * worse, it spent the machine's one question of the day to do it, usually before the Wi-Fi was up.
+ * That stamps the visit with no answer and silences every command typed afterwards until tomorrow.
+ *
+ * It is a mark and not a guess at the terminal. Asking `process.stdout.isTTY` would have covered
+ * this case and taken the notice away from a real person in Git Bash on Windows, where a Node
+ * process sees a pipe and not a console. This says exactly the thing that is true —this run is the
+ * one nobody asked for— and says nothing about anybody else.
+ *
+ * An installation from before this existed keeps printing into its log, which is what it did
+ * anyway; running `panoma up --on-boot` again rewrites the service with the mark.
+ */
+const ON_BOOT = "PANOMA_ON_BOOT";
+
+/**
  * What needs to be written and what needs to be executed, or `undefined` where it is not written.
  *
  * The `PATH` freezes in the text on all three systems, and it's not laziness: all three start the
@@ -96,6 +114,7 @@ function macos(input: BootInput): BootPlan {
     `  <key>EnvironmentVariables</key>`,
     `  <dict>`,
     `    <key>PATH</key><string>${xml(input.path)}</string>`,
+    `    <key>${xml(ON_BOOT)}</key><string>1</string>`,
     `  </dict>`,
     input.root ? `  <key>WorkingDirectory</key><string>${xml(input.root)}</string>` : "",
     `  <key>RunAtLoad</key><true/>`,
@@ -143,6 +162,7 @@ function linux(input: BootInput): BootPlan {
     `Type=simple`,
     `ExecStart=${unitValue(input.node)} ${unitValue(input.program)} up --api ${unitValue(input.api)}`,
     `Environment=${unitValue(`PATH=${input.path}`)}`,
+    `Environment=${unitValue(`${ON_BOOT}=1`)}`,
     input.root ? `WorkingDirectory=${unitPath(input.root)}` : "",
     `StandardOutput=journal`,
     `StandardError=journal`,
@@ -181,6 +201,7 @@ function windows(input: BootInput): BootPlan {
     `@echo off`,
     `rem Written by "panoma up --on-boot". Remove it with "schtasks /Delete /TN ${TASK_NAME} /F".`,
     `set "PATH=${cmdValue(input.path)}"`,
+    `set "${ON_BOOT}=1"`,
     input.root ? `cd /d "${cmdValue(input.root)}"` : "",
     `"${cmdValue(input.node)}" "${cmdValue(input.program)}" up --api "${cmdValue(input.api)}" >> "${cmdValue(input.log)}" 2>&1`,
     ``,

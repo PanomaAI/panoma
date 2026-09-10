@@ -46,11 +46,12 @@ export async function mdCommand(
   sub: string | undefined,
   target: string,
   api: string,
+  options: { force: boolean } = { force: false },
   ): Promise<number> {
   if (sub === undefined || sub === "check") return check(target);
   if (sub === "fix") return fix(target);
   if (sub === "init" || sub === "sync") return write(target, api, sub);
-  if (sub === "review") return review(target, api);
+  if (sub === "review") return review(target, api, options.force);
 
   process.stderr.write(
     pc.red(`${say("md.unknownSub", { sub })}\n`) +
@@ -313,15 +314,19 @@ async function fix(target: string): Promise<number> {
  * saved in the record, so CLI only requests and displays. By payment and manually, like
  * `panoma describe` — the expensive never runs alone.
  */
-async function review(target: string, api: string): Promise<number> {
+async function review(target: string, api: string, force: boolean): Promise<number> {
   process.stderr.write(pc.dim(`${say("md.reviewAsking")}\n`));
 
+  /*
+    Without `--force` an unchanged file is answered from the saved opinion and nothing is paid;
+    `--force` asks the model again even then. Same flag, same meaning as `panoma describe`.
+   */
   let response: Response;
   try {
     response = await catalogFetch(new URL("/api/md/review", api), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: target }),
+      body: JSON.stringify(force ? { path: target, force: true } : { path: target }),
     });
   } catch {
     return unreachable(api);
@@ -331,6 +336,8 @@ async function review(target: string, api: string): Promise<number> {
     text?: string;
     model?: string;
     project?: string;
+    cached?: boolean;
+    saved?: boolean;
     error?: string;
     hint?: string;
   };
@@ -341,11 +348,13 @@ async function review(target: string, api: string): Promise<number> {
   }
 
   process.stdout.write(`\n${payload.text}\n\n`);
+  /* "stored in its page" is a promise, and a project with no repository cannot keep it. */
   process.stdout.write(
     pc.dim(
-      `${say("md.reviewBy", { model: payload.model ?? "?", name: payload.project ?? "?" })}\n`,
+      `${say(payload.saved === false ? "md.reviewUnsaved" : "md.reviewBy", { model: payload.model ?? "?", name: payload.project ?? "?" })}\n`,
     ),
   );
+  if (payload.cached) process.stderr.write(pc.dim(`${say("md.reviewCached")}\n`));
   return 0;
 }
 

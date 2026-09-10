@@ -15,40 +15,59 @@
   (`text-faint`, `border-edge`) that components write in JSX. This file produces no utilities;
   its values are consumed with `var()` from CSS. When a value here is exactly the same as one
   there, the value from there is used instead of being duplicated.
-  ── The two screen palettes, which is the mess that remains ───────────────────────────
-  `.catalog-screen` and `.project-detail-page` each declare their `--ink`, `--paper`, `--line`,
-  `--line-strong`, and `--wash`, with the same names and DIFFERENT values. It is not an afternoon
-  oversight: they are two screens that were drawn separately. Below they are juxtaposed, suffixed
-  `-catalog` and `-sheet`, so that the difference can be seen at once.
-  paper #fcfcfd · #fafafa ink #0e0f11 · #0a0a0a edge #ebecee · #e6e6e6 edge+ #dbdde0 · #c8c8c8
-  wash #f6f6f7 · #f3f3f3
-  Unifying them is a VISUAL change, not a cleanup: you have to look at it on screen and decide.
-  That's why it hasn't been done here. When it's decided, it's five lines.
+  ── The two screen palettes, and how the merge ended ──────────────────────────────────
+  `.catalog-screen` and `.project-detail-page` each used to declare their own `--ink`, `--paper`,
+  `--line`, `--line-strong` and `--wash`: the same names with different values, because they were
+  two screens drawn separately, and a third of the app —eighteen pages on `.legacy-page`— declared
+  nothing at all and was painted with Tailwind utilities written by hand.
+  That is over. The roles are declared once, at the bottom of this file, on `:root`. The three
+  classes remain as OVERRIDE POINTS and today they override almost nothing.
+  Keeping them was deliberate and `styles/README.md` says why: they are the only door a dark theme
+  would come through, and dissolving them into `:root` would close it. What was dangerous was never
+  the classes; it was that 366 rules read those names and 339 of them did it with NO fallback, and
+  an undefined `var()` in CSS is not an error — the declaration is discarded and the property keeps
+  what it inherited. It had already cost three bugs, and one of them shipped: `.open-project-action`
+  rendered on `/unsaved` with no border and no fill for as long as that page has existed.
+  With the roles on `:root` there is no rule left that can be painted where its names do not exist.
+  ── What that merge cost, in values ───────────────────────────────────────────────────
+  Six grays became two hairlines; two inks became one; two muted grays became one; two faint grays
+  became one; and the papers went to `theme.css`, which is where the markup already reads them
+  from. The suffixes `-catalog` and `-sheet` are gone from every name in this file, because a
+  suffix that names a screen is a promise that the two will stay apart.
+  The conversion to neutral did not cost a point of legibility, and that is arithmetic and not
+  luck: see the note in `theme.css`.
   The same notice applies to the groups marked 'one step away' below.
  */
 :root {
   /*
-    ── Ink ────────────────────────────────────────────────────────────────────────── `-pressed`
-    is the pure black of the primary button when pressed; it is not `--color-accent`
-    (#0b0b0d), which is the brand's black. Three blacks for the same paper.
+    ── Ink ──────────────────────────────────────────────────────────────────────────
+    One ink, where there were two. `--color-ink` was #0e0f11 and the sheet's #0a0a0a:
+    four to seven points apart per channel, seventeen ten-thousandths of luminance, a difference
+    no eye separates and two values somebody had to keep in step. The same happened one step
+    down, with the muted and the faint gray.
+    `-pressed` is the pure black of the primary button held down. It is not `--color-accent`
+    (#0b0b0b), the brand's black, and that is still three blacks for one paper — but three
+    blacks that mean three things, which is the difference between a scale and a pile.
    */
-  --color-ink-catalog: #0e0f11;
-  --color-ink-sheet: #0a0a0a;
+  --color-ink: #0a0a0a;
   --color-ink-pressed: #000;
-  --color-ink-muted-catalog: #5c6169;
-  --color-ink-muted-sheet: #3d3d3d;
-  /* 2.94:1 on its paper: It does NOT even reach the threshold of large text. See README, "Limits". */
-  --color-ink-faint-catalog: #90959d;
-  --color-ink-faint-sheet: #5c5c5c;
+  --color-ink-muted: #3d3d3d;
+  --color-ink-faint: #5c5c5c;
 
-  /* ── Papers ── The pure white is `--color-surface`, of `theme.css`. */
-  --color-paper-catalog: #fcfcfd;
-  --color-paper-sheet: #fafafa;
-  --color-wash-catalog: #f6f6f7;
-  --color-wash-sheet: #f3f3f3;
+  /*
+    ── Papers ──
+    The page is `--color-ground` and the card is `--color-surface`, both from `theme.css`, and
+    neither is repeated here: the house rule is that a value which already exists there is used
+    from there. `--color-ground` was #fafafa, which is what `--color-ground` is now, so it
+    is gone rather than kept as a second name for one color.
+    `--color-wash-catalog` is the one paper that survives on its own, and by a single reader: it
+    is the fallback of `var(--wash, var(--color-wash-catalog))` in `share.css`, which is what the
+    shared catalog paints when neither screen palette is above it.
+   */
+  --color-wash-catalog: #f6f6f6;
   /* The selected item in a list, and the sunken slot of an icon or a key. */
-  --color-selected: #f0f0f2;
-  --color-inset: #f4f4f5;
+  --color-selected: #f0f0f0;
+  --color-inset: #f4f4f4;
   /* The top bar, which lets you see what is happening underneath. */
   --color-topbar-veil: rgb(255 255 255 / 0.92);
 
@@ -61,20 +80,31 @@
     app. Today there is none inside; the day there is, no one would relate it to this. That’s why
     they are called `corner` and not `radius`.
    */
+  --corner-xs: 4px;
   --corner: 8px;
-  --corner-sm: 5px;
+  --corner-lg: 14px;
+  --corner-pill: 999px;
+  --corner-disc: 50%;
 
-  /* ── Filos ── */
-  --color-line-catalog: #ebecee;
-  --color-line-sheet: #e6e6e6;
-  --color-line-strong-catalog: #dbdde0;
-  --color-line-strong-sheet: #c8c8c8;
-  --color-line-hover: #c6c9ce;
-  --color-line-current: #c9ccd1;
+  /*
+    ── Edges ──
+    Two hairlines, and both live in `theme.css` as `--color-edge` and `--color-edge-bright`,
+    because the markup writes them as `border-edge` three hundred times. There were SIX grays
+    behind four names: #e5e7ef, #ebecee and #e6e6e6 all meant «a hairline», and #d8dbe6, #dbdde0
+    and #c8c8c8 all meant «a stronger one».
+    The strong one is the light weight, #dddddd, and that was the owner's call: #c8c8c8 against
+    #dbdde0 was the only palette difference between the two screens that an eye actually
+    separated — nineteen to twenty-four points per channel, 0.144 of luminance, some eighty times
+    the gap between the two inks. Taking the light one lightens the sheet's twelve largest panels
+    and lands them one step from what the other screens already drew. See `docs/theme.md`, D4.
+    These two are what is left: the hover edge and the current-item edge, which are darker still
+    and belong to a state rather than to a surface.
+   */
+  --color-line-hover: #c9c9c9;
+  --color-line-current: #cccccc;
 
-  /* ── What goes on top of a dark filling ── */
+  /* ── What goes on top of a dark filling ── The only dark filling is the primary button. */
   --color-on-ink: #fff;
-  --color-on-ink-muted: rgb(255 255 255 / 0.6);
   --color-on-ink-edge: rgb(255 255 255 / 0.16);
 
   /*
@@ -133,24 +163,23 @@
   --color-danger-edge-soft: #f1d2d2;
 
   /*
-    ── Status points ── They graze `--color-nogit` (#c8cdd6) and `--color-dormant` (#9aa3b2)
-    without matching them. Another pair rendered by eye that is noticeable as soon as it is placed
-    next to it.
+    ── Status point ── It grazes `--color-nogit` (#c8cdd6) without matching it: two grays chosen by
+    eye for the same idea, and the difference is only noticeable once they are placed side by side.
+    There was a second one, `--color-state-asleep` (#b9bdc3), grazing `--color-dormant` in the same
+    way; nothing read it, so the pair is now one.
    */
-  --color-state-unknown: #d3d6da;
-  --color-state-asleep: #b9bdc3;
 
   /* ── The icon of a project that does not have its own ── */
-  --color-icon-empty: #a2a7ae;
+  --color-icon-empty: #a6a6a6;
 
   /*
     ── The 'private' stamp ── The only dark object on the whole page, and that's why it has its
     own palette: there is no dark theme from which to borrow it.
    */
-  --color-seal-face: #111316;
-  --color-seal-edge: #272a2f;
+  --color-seal-face: #131313;
+  --color-seal-edge: #2a2a2a;
   --color-seal-band: #f4f4f2;
-  --color-seal-stripe: #777b82;
+  --color-seal-stripe: #7b7b7b;
   --color-seal-sheen: rgb(255 255 255 / 0.07);
   --color-seal-sheen-soft: rgb(255 255 255 / 0.075);
   --color-seal-sheen-faint: rgb(255 255 255 / 0.035);
@@ -173,10 +202,20 @@
     being `fixed` with its own layer, opens its own stacking context: its 60 is a LOCAL number
     that can never go above the global 50. The same number meant 'above everything' in one place
     and 'above my siblings' in the other. Now they have different names, which is half of the fix.
+    **And the rung that had to go, 9-Sep-2026.** `--z-hero: 12` sat on `.project-hero`, and a
+    ladder cannot say what a number does once the number itself opens a context. Three dialogs were
+    written inside that header; each asked for `--z-overlay` and each got 12, so the curtain that
+    is meant to cover the screen covered one column and the sidebar stayed clickable behind it.
+    Two things came out of that. The dialogs no longer hang from where they are written —every
+    curtain in this application is rendered on the `body`, and `modal-keyboard.test.ts` is where
+    that is kept— so no ancestor is anyone's ceiling any more; and this rung is gone rather than
+    renamed, because the header never needed a layer: `position: relative` already holds it over
+    the flow and its two dropdowns carry their own `--z-dropdown`. The sentence to remember before
+    adding the next one: **a number on a positioned ancestor is a ceiling for everything under it**,
+    and so, with no number at all, is a `position: sticky`.
    */
   --z-behind: -1;
   --z-seal: 1;
-  --z-hero: 12;
   --z-dropdown: 20;
   --z-sidebar: 40;
   --z-topbar: 50;
@@ -208,9 +247,7 @@
     and a shadow is the recipe —displacement, blurring, and ink— or it is nothing. Three different
     inks coexist here (16 24 40, 14 15 17, 10 10 10) for the same reason as the reds.
    */
-  --shadow-field: 0 1px 2px rgb(16 24 40 / 0.04);
   --shadow-toggle: 0 1px 2px rgb(16 24 40 / 0.06);
-  --shadow-summary: 0 2px 10px rgb(16 24 40 / 0.03);
   --shadow-card: 0 12px 32px rgb(16 24 40 / 0.16);
   --shadow-dialog: 0 24px 60px rgb(16 24 40 / 0.22);
   --shadow-lift: 0 1px 2px rgb(14 15 17 / 0.05);
@@ -220,4 +257,153 @@
   --shadow-popover: 0 0 0 1px rgb(10 10 10 / 0.03), 0 10px 26px rgb(10 10 10 / 0.08);
   --shadow-focus-ring: 0 0 0 3px rgb(11 11 13 / 0.09);
   --shadow-seal-ring: 0 0 0 3px rgb(255 255 255 / 0.07);
+
+  /*
+    ── The roles every screen paints with ─────────────────────────────────────────────
+    These are the names the sheets actually write. Until 8-Sep-2026 they were declared inside
+    `.catalog-screen` and `.project-detail-page`, with different values, and a rule painted
+    anywhere else lost them without saying so. Here they resolve everywhere, and the three screen
+    classes stay above as the place to override them — which is what a dark theme would do.
+    `--muted` and `--faint` are the project sheet's older names for `--ink-2` and `--ink-3`. They
+    are kept as aliases and not swept in the same commit, because a rename and a value change in
+    one diff is how you lose the ability to tell which of the two moved something.
+   */
+  --page: var(--color-ground);
+  --card: var(--color-surface);
+  --paper: var(--color-ground);
+  --wash: var(--color-raised);
+  --select: var(--color-raised);
+  --inset: var(--color-inset);
+  --ink: var(--color-ink);
+  --ink-2: var(--color-ink-muted);
+  --ink-3: var(--color-ink-faint);
+  --muted: var(--ink-2);
+  --faint: var(--ink-3);
+  --line: var(--color-edge);
+  --line-strong: var(--color-edge-bright);
+  --good: var(--color-success);
+  --warn: var(--color-warn);
+  --bad: var(--color-fail);
+
+  /*
+    ── Type ───────────────────────────────────────────────────────────────────────────
+    Ten steps and three fluid roles, for 53 sizes in the sheets and 15 more in the markup.
+    The band from 9.44px to 16.32px used to be an unbroken chain with no gap wider than a third
+    of a pixel: 45 of the 50 fixed values sat within 0.32px of a neighbour. Nobody decided that;
+    it is what happens when each value is chosen next to the one above it and never against a
+    scale. Mapping all 68 onto these ten displaces the worst of them by 1.00px.
+    The eight middle steps are Tailwind's own — `text-xs` through `text-4xl` — deliberately, so
+    that no `text-…` already written in the markup moves. The two below them are new, and they
+    exist because `text-[11px]` is written 144 times and `text-[10px]` 41: the two most common
+    sizes in the product had no name and were being spelled out as escapes.
+    ⚠ These are `--type-…` and NOT `--text-…`. `--text-*` is one of Tailwind's own namespaces:
+    its utilities resolve `var(--text-sm)` at run time, so declaring one here — even in a plain
+    `:root` — would silently move every `text-sm` in the markup. Same story for `--tracking-*`,
+    `--leading-*`, `--radius-*` and `--shadow-*`, which is why nothing below carries those names
+    either.
+   */
+  --type-3xs: 0.625rem;
+  --type-2xs: 0.6875rem;
+  --type-xs: 0.75rem;
+  --type-sm: 0.875rem;
+  --type-base: 1rem;
+  --type-lg: 1.125rem;
+  --type-xl: 1.25rem;
+  --type-2xl: 1.5rem;
+  --type-3xl: 1.875rem;
+  --type-4xl: 2.25rem;
+  /* The three fluid roles: a page title, a project sheet, and the screen of a first run. */
+  --type-title: clamp(1.35rem, 2vw, 1.75rem);
+  --type-hero: clamp(2rem, 3vw, 2.55rem);
+  --type-display: clamp(2rem, 4vw, 3.5rem);
+
+  /*
+    ── Weight ─────────────────────────────────────────────────────────────────────────
+    Seven, for twenty-three. Inter is loaded as a variable font with no `weight` array, so 620,
+    650, 680, 710, 740, 750 and 760 all render as genuinely different strokes and none of them
+    was a typo. Four steps would move a weight by up to 60 units and land 53 of the 90
+    declarations on 600, which flattens the hierarchy the project panels are built on. Seven
+    holds the worst move to 20 and leaves every large object on screen exactly where it is.
+   */
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-strong: 560;
+  --weight-semibold: 600;
+  --weight-title: 650;
+  --weight-bold: 700;
+  --weight-heavy: 760;
+
+  /*
+    ── Tracking and leading ───────────────────────────────────────────────────────────
+    Six and five, for twenty-two and sixteen. `--lead-body` is 1.625 because that is what
+    `leading-relaxed` is, and the markup writes it 165 times while no stylesheet in the app
+    contains the number at all: two systems saying the same thing in two places.
+   */
+  --track-hero: -0.045em;
+  --track-title: -0.03em;
+  --track-tight: -0.02em;
+  --track-flat: 0;
+  --track-label: 0.06em;
+  --track-caps: 0.1em;
+  --lead-flat: 1;
+  --lead-tight: 1.25;
+  --lead-snug: 1.4;
+  --lead-body: 1.625;
+  --lead-loose: 1.7;
+
+  /*
+    ── Space ──────────────────────────────────────────────────────────────────────────
+    A 2px grid. Measured before choosing: a 4px grid moves 63.1% of the values in these sheets
+    and a 2px grid moves 26.7%, and the markup already writes the 2px rhythm out loud — 156 of
+    its spacing utilities are half-steps (`py-1.5`, `px-2.5`, `gap-1.5`). Every integer from 1px
+    to 20px was in use, all twenty of them, and `gap` alone used every one between 2 and 16.
+    Below the scale are five constants that are not steps of anything: they are measurements of
+    real furniture, and rounding them to a grid would break the thing they measure.
+   */
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 10px;
+  --space-6: 12px;
+  --space-7: 14px;
+  --space-8: 16px;
+  --space-9: 18px;
+  --space-10: 20px;
+  --space-12: 24px;
+  --space-14: 28px;
+  --space-16: 32px;
+  --space-18: 36px;
+  --space-20: 40px;
+  --space-24: 48px;
+  --space-32: 64px;
+  /* The furniture: the top bar, the sidebar and its folded rail, the mobile dock, the foot. */
+  --bar-height: 74px;
+  --sidebar-width: 228px;
+  --sidebar-rail: 68px;
+  --dock-height: 66px;
+  --page-foot: 88px;
+
+  /*
+    ── Icon ───────────────────────────────────────────────────────────────────────────
+    How big a mark is. Five values, and they are NOT the scale above even where they share a
+    number.
+    The sweep of 8-Sep-2026 put twenty-seven icon dimensions on `--space-…`, which reads as a
+    tidy-up and is a coupling. The ratchet in `styles.test.ts` says why in its own words: widths
+    and heights «are geometry, not the rhythm of the scale». Bound to the rhythm, widening a
+    gutter by one step would resize every glyph on the catalog, and nothing would report it —
+    an icon that grows two pixels is not a diff anybody reviews.
+    The five are what the app already draws after that sweep: 8 for the status dot in a row, 12
+    and 14 for a mark that sits beside a name, 16 for the glyph inside a control — the commonest
+    of the five by some distance, which is why it holds the bare name — and 20 for the pending
+    badge and the rows of the phone's «More» panel.
+    Three icon dimensions do not land here and stay literals where they are written, each of them
+    two pixels from every step and therefore a decision rather than a rename: the 6px status dot
+    in the grid, the 18px stack mark in the list, and the 22px of the phone's dock.
+   */
+  --icon-2xs: 8px;
+  --icon-xs: 12px;
+  --icon-sm: 14px;
+  --icon: 16px;
+  --icon-lg: 20px;
 }

@@ -32,8 +32,8 @@ export const CITATIONS_SHOWN = 12;
 /**
  * How much evidence supports a belief, counted over all its observations.
  *
- * Three numbers and each one answers a different question about the ground: how many times it was
- * said, in how many projects, and in how many days. The last two are what distinguishes a belief
+ * Three numbers and each one answers a different question about the ground: how many distinct
+ * bundles of human evidence support it, in how many projects, and in how many days. The last two distinguish a belief
  * from a bad afternoon — three observations from the same day and the same repository are someone
  * fighting with a file for twenty minutes.
  *
@@ -51,16 +51,40 @@ export const CITATIONS_SHOWN = 12;
  * for—to not let pass.
  */
 export function supportOf(observations: Pick<ObservationRow, "identity" | "citations">[]): BeliefSupport {
+  const bundles = new Set<string>();
   const projects = new Set<string>();
   const days = new Set<string>();
+  const quotes = new Map<string, number>();
+  const distinctQuotes = new Set<string>();
   for (const one of observations) {
-    if (one.identity) projects.add(one.identity);
+    const evidence = new Set<string>();
     for (const cite of one.citations) {
-      const day = localDay(cite.at);
-      if (day !== undefined) days.add(day);
+      const key = quoteKey(cite.quote);
+      if (!key) continue;
+      evidence.add(key);
+      distinctQuotes.add(key);
+      const at = Date.parse(cite.at);
+      // Compaction copies a human turn into another transcript with a different verdict ID.
+      // Keep its earliest known date, so replaying that turn cannot manufacture another day.
+      if (Number.isFinite(at)) quotes.set(key, Math.min(quotes.get(key) ?? at, at));
     }
+    if (evidence.size === 0) continue;
+    // The model can paraphrase one batch several ways. Distinct wording is not corroboration:
+    // identical quote bundles count once, regardless of labels, citation order, or project.
+    bundles.add(JSON.stringify([...evidence].sort()));
+    if (one.identity) projects.add(one.identity);
   }
-  return { observations: observations.length, projects: projects.size, days: days.size };
+  for (const at of quotes.values()) {
+    const day = localDay(new Date(at).toISOString());
+    if (day !== undefined) days.add(day);
+  }
+  // Different subsets of the same two quotes still cannot manufacture a third observation.
+  return { observations: Math.min(bundles.size, distinctQuotes.size), projects: projects.size, days: days.size };
+}
+
+/** Normalize transcript copies without conflating different punctuation or different words. */
+function quoteKey(quote: string): string {
+  return quote.normalize("NFC").replace(/\s+/g, " ").trim().toLowerCase();
 }
 
 /**
@@ -99,7 +123,8 @@ export function citationsFor(
   const seen = new Set<string>();
   const out: BeliefCitation[] = [];
   for (const cite of all) {
-    const key = cite.quote.trim();
+    const key = quoteKey(cite.quote);
+    if (!key) continue;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(cite);
@@ -136,6 +161,8 @@ export function scopeOf(observations: Pick<ObservationRow, "identity">[]): strin
 export type BeliefChange =
   | { kind: "new"; statement: string; observations: string[] }
   | { kind: "refine"; id: string; statement: string; observations: string[] }
+  /** The same evidence, counted differently: the number is corrected, the sentence is not touched. */
+  | { kind: "recount"; id: string; observations: string[] }
   | { kind: "propose"; supersedes: string[]; statement: string; observations: string[] }
   | { kind: "retire"; id: string };
 
@@ -277,11 +304,18 @@ export function planChanges(
       four days is a most normal combination — and the verdicts alone do not see an observation
       that entered without bringing new citations.
      */
-    if (
-      !options.redo &&
-      sameSupport(known.support, draft.support) &&
-      sameCitations(known.citations, draft.citations)
-    ) {
+    if (!options.redo && sameCitations(known.citations, draft.citations)) {
+      if (sameSupport(known.support, draft.support)) continue;
+      /*
+        The same quotes and a different count is not new evidence: it is the count that changed.
+        It happened on 5-Sep-2026, when support stopped counting observations and started counting
+        distinct bundles of quotes; every stored number was written by the old formula, and with
+        the rule above alone the first pass rewrote every belief whose evidence overlapped — a new
+        sentence, in whatever language the model chose, over a belief the person had already read,
+        with nothing behind it having changed. The number is corrected in place and the sentence,
+        which the person has seen, stays as it was.
+       */
+      changes.push({ kind: "recount", id: known.id, observations: draft.observations });
       continue;
     }
     changes.push({

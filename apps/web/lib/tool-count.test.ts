@@ -12,6 +12,12 @@ import { t } from "./i18n";
  * So the count is read from the source that decides it — one `registerTool` per tool — and the
  * sentences have to agree with it. In words and not in digits, because that is how the copy says
  * it and the house rule keeps a number from being glued to an inflected word.
+ *
+ * The bridge's half moved on 9-Sep-2026. The screen was redrawn around what each step is FOR
+ * instead of what is missing, so it stopped rendering `bridge.step.agent.pending` — and this guard
+ * went on passing over a sentence nobody could read any more, which is the same failure it was
+ * written for, one floor down. The figure now lives in `bridge.step.agent.purpose`, which is the
+ * line the step actually shows, and that is what is checked here.
  */
 describe("las dos pantallas cuentan las mismas herramientas", () => {
   const server = readFileSync(
@@ -34,7 +40,7 @@ describe("las dos pantallas cuentan las mismas herramientas", () => {
   };
 
   /** Where the figure is written down. Both, because they disagreed. */
-  const CLAIMS = ["connect.lead", "bridge.step.agent.pending"] as const;
+  const CLAIMS = ["connect.lead", "bridge.step.agent.purpose"] as const;
 
   it("el servidor MCP registra herramientas y se pueden contar", () => {
     expect(REAL, "no `registerTool` in packages/mcp/src/index.ts — has it been renamed?").toBeGreaterThan(0);

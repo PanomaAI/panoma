@@ -1,5 +1,7 @@
 import {
   deleteVerdicts,
+  deleteNarratives,
+  queueWrite,
   listVerdicts,
   projectNamesByIdentity,
   resolveProject,
@@ -304,8 +306,8 @@ export async function DELETE(request: Request) {
   if (blocked) return blocked;
 
   const locale = localeFrom(request);
-  const body = (await request.json().catch(() => ({}))) as { source?: unknown };
-  const source = typeof body.source === "string" ? body.source : "";
+  const body = (await request.json().catch(() => ({}))) as { source?: unknown } | null;
+  const source = typeof body?.source === "string" ? body.source : "";
 
   if (source !== "all" && !FORGETTABLE.includes(source)) {
     return Response.json(
@@ -320,7 +322,12 @@ export async function DELETE(request: Request) {
   }
 
   const { db: database } = await db();
-  const forgotten = await deleteVerdicts(database, source === "all" ? {} : { source });
+  const result = await queueWrite(() => database.transaction(async (tx) => {
+    const filter = source === "all" ? {} : { source };
+    const forgotten = await deleteVerdicts(tx, filter);
+    const memory = await deleteNarratives(tx, filter);
+    return { forgotten, narrativesForgotten: memory.narratives, episodesForgotten: memory.episodes };
+  }));
 
-  return Response.json({ forgotten });
+  return Response.json(result);
 }

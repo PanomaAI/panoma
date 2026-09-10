@@ -1,10 +1,11 @@
 {
   "name": "panoma",
-  "version": "0.1.9",
+  "version": "0.9.0",
   "license": "AGPL-3.0-only",
   "type": "module",
   "description": "The local catalog of your projects: everything on your disk, ready to pick up — by you or by your agents.",
   "homepage": "https://panoma.ai",
+  "author": "Jesus Castillo",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/PanomaAI/panoma.git",
@@ -46,6 +47,7 @@
     "yaml": "^2.6.1"
   },
   "devDependencies": {
+    "@panoma/apps": "workspace:*",
     "@panoma/ai": "workspace:*",
     "@panoma/core": "workspace:*"
   }

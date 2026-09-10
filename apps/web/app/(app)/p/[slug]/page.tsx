@@ -1,3 +1,4 @@
+import { refreshProjectMemory } from "@/lib/sentinels";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
@@ -10,6 +11,10 @@ import {
   listProjectLaunches,
   listProjectConsultations,
   listProjectNotes,
+  memoryJobCounts,
+  latestProjectMemoryJob,
+  NOTE_PENDING_MAX,
+  NOTE_SLEEPING_MAX,
   listProjectTasks,
   noteUsage,
   stateOf,
@@ -38,6 +43,7 @@ import {
 } from "react-icons/hi2";
 import { SiClaude } from "react-icons/si";
 import { db } from "@/lib/db";
+import { appIsReady } from "@/lib/apps";
 import { cliName } from "@/lib/cli-name";
 import { getLocale, t, type Locale, type MessageKey } from "@/lib/i18n";
 import { VersionDiff, SeverityTag } from "@/components/deps";
@@ -77,7 +83,7 @@ import { Rich } from "@/components/rich-text";
 import { ProjectTaste } from "@/components/project-taste";
 import { CommitActivityChart, HealthScoreRing } from "@/components/project-charts";
 import { TechnologyMark } from "@/components/technology-mark";
-import { ProjectIcon, StateDot, formatBytes, relativeDate } from "@/components/primitives";
+import { EmptyState, ProjectIcon, StateDot, formatBytes, relativeDate } from "@/components/primitives";
 import { platform } from "node:os";
 
 export const dynamic = "force-dynamic";
@@ -150,7 +156,9 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
   const data = await getProject(database, slug);
   if (!data) notFound();
 
-  const [activity, tasks, runs, launches, memoryNotes, memoryUsage, consultations] = await Promise.all([
+  await refreshProjectMemory(database, data.project);
+
+  const [activity, tasks, runs, launches, memoryNotes, memoryUsage, consultations, memoryJobs, latestMemoryJob, videoReady] = await Promise.all([
     listProjectActivity(database, data.project.id),
     listProjectTasks(database, data.project.id),
     listProjectRuns(database, data.project.id),
@@ -160,7 +168,17 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
     listProjectNotes(database, data.project.id, ["approved", "proposed", "challenged"]),
     noteUsage(database, data.project.id),
     listProjectConsultations(database, data.project.id),
+    memoryJobCounts(database, data.project.id),
+    latestProjectMemoryJob(database, data.project.id),
+    // One catalog row, no walk of the app's files: the button knows where it points before painting.
+    appIsReady("panoma-video"),
   ]);
+
+  const coverageValue = (latestMemoryJob?.receipt as { coverage?: unknown } | null)?.coverage;
+  const coverage = coverageValue && typeof coverageValue === "object" &&
+    ["selected", "total", "omitted", "clipped"].every((key) => typeof (coverageValue as Record<string, unknown>)[key] === "number")
+    ? coverageValue as { selected: number; total: number; omitted: number; clipped: number }
+    : null;
 
   /*
     The beliefs cited by the drafts of the double, so that the label judges the answer WITH its
@@ -428,11 +446,38 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
               {shownSummary && (
                 <p className="project-hero__description">{shownSummary}</p>
               )}
+              {/*
+                 Five facts in a table of three columns, and not a row that wraps.
+                 They were a flex row with a divider on every sibling but the first, which is only
+                 true while nothing wraps: at every width this screen actually has, the fifth fact
+                 dropped to a second line and took the divider with it, so health hung under the
+                 status indented by a rule that led nothing. The shape is the one this same page
+                 already uses for the inventory — three columns, the divider on every cell that
+                 does not start a row, a rule above the second row — so the sheet has one table
+                 and not two.
+                 The order ranks them: what state it is in, how healthy, when it was last touched;
+                 and below, the two that git answers. The conditional ones go last on purpose, so
+                 that a project without a repository is left with a full first row and no second.
+                */}
               <dl className="project-hero__facts">
                 <div className="project-hero__fact">
                   <dt>{t(locale, "project.heroStatus")}</dt>
                   <dd>
                     <StateDot state={state} withLabel locale={locale} />
+                  </dd>
+                </div>
+                {/*
+                   The figure with the total it is out of. Alone it was two digits nobody could
+                   place — 98 of 100 and 98 of 5 are written the same — and the total costs four
+                   characters. A bar was tried here and taken out again: at the score most projects
+                   have it fills the cell end to end and reads as an underline, which is a worse
+                   answer than the one the ring further down this page already gives.
+                  */}
+                <div className="project-hero__fact project-hero__fact--health">
+                  <dt>{t(locale, "project.heroHealth")}</dt>
+                  <dd title={t(locale, "project.healthTitle", { n: health })}>
+                    <strong>{health}</strong>
+                    <span>/100</span>
                   </dd>
                 </div>
                 <div className="project-hero__fact">
@@ -442,23 +487,20 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
                 {project.gitBranch && (
                   <div className="project-hero__fact">
                     <dt>{t(locale, "project.branch")}</dt>
-                    <dd>{project.gitBranch}</dd>
+                    <dd title={project.gitBranch}>{project.gitBranch}</dd>
                   </div>
                 )}
                 {project.gitCommitCount !== null && (
                   <div className="project-hero__fact">
                     <dt>{t(locale, "project.heroCommits")}</dt>
-                    <dd>
-                      {project.gitCommitCount === 1
-                        ? t(locale, "project.commitOne", { n: project.gitCommitCount })
-                        : t(locale, "project.commitMany", { n: project.gitCommitCount })}
-                    </dd>
+                    {/*
+                       The figure and nothing else: the label above it already says "commits", and
+                       repeating the word under it was the only cell of the five that answered its
+                       own question twice.
+                      */}
+                    <dd>{project.gitCommitCount}</dd>
                   </div>
                 )}
-                <div className="project-hero__fact">
-                  <dt>{t(locale, "project.heroHealth")}</dt>
-                  <dd title={t(locale, "project.healthTitle", { n: health })}>{health}</dd>
-                </div>
               </dl>
               <div className="project-hero__path">
                 <span className="project-hero__path-label">{t(locale, "project.path")}</span>
@@ -471,6 +513,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
           </div>
 
           <ProjectActionBar
+            slug={slug}
+            videoReady={videoReady}
             projectId={project.id}
             projectName={project.name}
             path={project.root}
@@ -900,33 +944,13 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
             <CaptureTask slug={project.slug} tasks={tasks} />
           </div>
           {/*
-             Right under the tail on purpose: the task is what is going to happen and memory is
-             what remains true — the reading order is the order of urgency. The gate lives here
-             and only here: the agents propose by MCP, and nothing travels until this card says
-             yes.
-            */}
-          {/*
              If the log of THIS project writes itself, said here and not only in the added account
              of the bridge — and if not, the button that fixes it.
             */}
           <div className="mt-4">
             <ProjectHooks slug={project.slug} installed={hooksInstalled} />
           </div>
-          <div className="mt-4">
-            <ProjectMemory
-              slug={project.slug}
-              notes={memoryNotes.map((note) => ({
-                id: note.id,
-                body: note.body,
-                status: note.status,
-                createdBy: note.createdBy,
-                trigger: note.trigger,
-                /* The lawsuit of a contested [party] travels whole: without it, the evidence comes out «?». */
-                challenge: note.challenge as { sentinel?: { target?: string }; observed?: string } | null,
-              }))}
-              usage={{ used: memoryUsage.used, budget: memoryUsage.budget }}
-            />
-          </div>
+
 
           {/*
              The double's exam, beneath memory: first what is true of the project, then what your
@@ -950,6 +974,26 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
             />
           </div>
         </section>
+        </ProjectViewFrame>
+
+        <ProjectViewFrame view="memoria" title={t(locale, "notes.title")}>
+          <div className="mt-4">
+            <ProjectMemory
+              slug={project.slug}
+              notes={memoryNotes.map((note) => ({
+                id: note.id,
+                body: note.body,
+                status: note.status,
+                createdBy: note.createdBy,
+                trigger: note.trigger,
+                anchors: Array.isArray(note.sentinels) ? note.sentinels.length : 0,
+                /* The lawsuit of a contested [party] travels whole: without it, the evidence comes out «?». */
+                challenge: note.challenge as { sentinel?: { target?: string }; observed?: string } | null,
+              }))}
+              extraction={{ ...memoryJobs, coverage }}
+              usage={{ ...memoryUsage, sleepingMax: NOTE_SLEEPING_MAX, pendingMax: NOTE_PENDING_MAX }}
+            />
+          </div>
         </ProjectViewFrame>
 
         {/*
@@ -1390,9 +1434,22 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
                   <div className="project-detail-icon"><HiOutlineInformationCircle aria-hidden /></div>
                   <h3>{t(locale, "project.whatItIs")}</h3>
                 </div>
-                <p className={contextSummary ? "project-context-summary" : "project-empty-state"}>
-                  {contextSummary ?? t(locale, "project.noDescription")}
-                </p>
+                {/*
+                   One element with a class that swapped under it, which is how the same paragraph
+                   came to be both the summary and the absence of one. They are two things: a
+                   description is prose the card is for, and «no description yet» is the house
+                   note. Splitting them is what lets the empty half read like every other empty
+                   half in the application instead of like a description in a quieter grey.
+                  */}
+                {contextSummary ? (
+                  <p className="project-context-summary">{contextSummary}</p>
+                ) : (
+                  <EmptyState
+                    variant="note"
+                    className="mt-[var(--space-8)]"
+                    title={t(locale, "project.noDescription")}
+                  />
+                )}
                 <Describe
                   slug={project.slug}
                   initial={
@@ -1424,7 +1481,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
                     </ul>
                   </>
                 ) : (
-                  <p className="project-empty-state">{t(locale, "project.noOriginEvidence")}</p>
+                  <EmptyState variant="note" className="mt-[var(--space-8)]" title={t(locale, "project.noOriginEvidence")} />
                 )}
               </article>
             </div>
@@ -1493,7 +1550,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
                 ))}
               </div>
             ) : (
-              <p className="project-empty-state">{t(locale, "project.noTechnologies")}</p>
+              <EmptyState variant="note" className="mt-[var(--space-8)]" title={t(locale, "project.noTechnologies")} />
             )}
           </section>
 
@@ -1527,7 +1584,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
                 )}
               </div>
             ) : (
-              <p className="project-empty-state">{t(locale, "project.servicesEmpty")}</p>
+              <EmptyState variant="note" className="mt-[var(--space-8)]" title={t(locale, "project.servicesEmpty")} />
             )}
           </section>
         </ProjectViewFrame>
@@ -1559,23 +1616,35 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
                tasks from this very page, so one of their own notes could remove the empty state
                that explains how to connect an agent.
               */}
+            {/*
+               The second of the three dashed panels the theme counted, and the one that was
+               drawn in this sheet rather than in the markup: `.project-log-empty` dashed
+               `--color-edge-bright` at `--corner`, with a title at `--type-base` and a line at
+               `--type-sm` — a fourth title size and a second dashed border for one panel with one
+               writer. It is `EmptyState` now, so the frame, the corner and the two voices are the
+               ones every other emptiness in the application uses, and the three rules it needed in
+               `project-sections.css` are gone.
+
+               The command goes with the folder in front: the key and the `.mcp.json` have to be
+               placed in this project and not where the terminal was. And the example is Claude
+               Code and not Codex, which is what I was saying: Codex does not read `.mcp.json`
+               —yours is a TOML in the home directory— so here a command was offered that did
+               nothing for that agent.
+              */}
             {activity.length === 0 && (
-              <div className="project-log-empty">
-                <p className="project-log-empty__what">{t(locale, "project.logEmpty")}</p>
-                <p className="project-log-empty__how">{t(locale, "project.logEmptyHow")}</p>
-                {/*
-                   The command goes with the folder in front: the key and the `.mcp.json` have to
-                   be placed in this project and not where the terminal was.
-                   And the example is Claude Code and not Codex, which is what I was saying: Codex
-                   does not read `.mcp.json` —yours is a TOML in the home directory— so here a
-                   command was offered that did nothing for that agent.
-                  */}
-                <CopyCommand
-                  command={inFolder(project.root, 'panoma agent-key "Claude Code" --install', shell)}
-                  label={'panoma agent-key "Claude Code" --install'}
-                  locale={locale}
-                />
-              </div>
+              <EmptyState
+                className="mt-[var(--space-9)]"
+                title={t(locale, "project.logEmpty")}
+                action={
+                  <CopyCommand
+                    command={inFolder(project.root, 'panoma agent-key "Claude Code" --install', shell)}
+                    label={'panoma agent-key "Claude Code" --install'}
+                    locale={locale}
+                  />
+                }
+              >
+                {t(locale, "project.logEmptyHow")}
+              </EmptyState>
             )}
 
             <div className="project-log-grid">

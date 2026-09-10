@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLocale, useT } from "./i18n-provider";
 import { useLocalAgent } from "./use-local-agent";
-import { ActionButton, formatBytes } from "./primitives";
+import { ActionButton, Card, formatBytes } from "./primitives";
 
 /*
   The critic, with a screen.
@@ -67,6 +67,8 @@ interface Finding {
 interface Receipt {
   /** The line that was saved: is what is needed to order a finding. */
   lookId?: string;
+  /** What the critic was actually shown. See `Sent`. */
+  sent?: Sent;
   findings?: Finding[];
   dropped?: number;
   unreadable?: boolean;
@@ -79,18 +81,83 @@ interface Estimate {
   statements?: number;
   estimatedTokens?: number;
   imageBytes?: number;
+  /** In pixels, when the server read the file and its header said so. */
+  width?: number;
+  height?: number;
+  sent?: Sent;
   error?: string;
+}
+
+/**
+ * What the critic is going to be shown, or was shown. See `ShotSent` in `lib/look.ts`.
+ *
+ * It arrives twice —in the rehearsal and on the receipt— and it is painted both times. That
+ * repetition is the point: panoma reduces a capture only when its owner asks for it, and never
+ * without saying so, so the sentence has to appear before the money is spent and again next to
+ * the verdict it produced.
+ */
+interface Sent {
+  policy: "full" | "fit";
+  maxEdge: number;
+  fitted?: boolean;
+  width?: number;
+  height?: number;
+  from?: { width: number; height: number };
+  why?: "format" | "variant" | "already" | "broken" | "huge";
+  /** What the bytes that travel weigh. Absent in a rehearsal that carried no image. */
+  bytes?: number;
+}
+
+/** The five refusals, each with the sentence that explains it. See `FitRefusal` in the engine. */
+const WHY = {
+  format: "look.whyFormat",
+  variant: "look.whyVariant",
+  already: "look.whyAlready",
+  broken: "look.whyBroken",
+  huge: "look.whyHuge",
+} as const;
+
+/**
+ * The reduction in one sentence, or nothing at all.
+ *
+ * Nothing at all with `full`, and that is not an omission: nothing was done to the capture, so
+ * there is nothing to warn about. What must never be silent is the other branch — including the
+ * one where the reduction was asked for and did not happen, because a person who chose to spend
+ * less and is being charged for every pixel deserves to be told why.
+ */
+function sentLine(
+  translate: ReturnType<typeof useT>,
+  sent: Sent | undefined,
+): string | null {
+  if (sent === undefined || sent.policy !== "fit") return null;
+  if (sent.fitted === undefined) return translate("look.fitAsked", { edge: sent.maxEdge });
+  if (!sent.fitted) return translate("look.fitWhole", { why: translate(WHY[sent.why ?? "broken"]) });
+  return translate("look.fitSent", {
+    size: `${sent.width}×${sent.height}`,
+    from: `${sent.from?.width}×${sent.from?.height}`,
+  });
 }
 
 export function TwinLook({
   boards,
   projects,
   maxBytes,
+  shots,
 }: {
   boards: LookBoard[];
   /** All projects, for the upload: a single image is also judged against one. */
   projects: { slug: string; name: string }[];
+  /**
+   * What the server will open from this door, in bytes.
+   *
+   * It depends on what the owner chose —a capture that is going to be reduced may arrive much
+   * heavier than one that travels as it is— and it is resolved on the server for that reason: a
+   * second number written here would be a browser refusing what the route would have accepted, or
+   * uploading what it would not.
+   */
   maxBytes: number;
+  /** The choice that picked that number, so the sentence under the picker can name it. */
+  shots: "full" | "fit";
 }) {
   const translate = useT();
   // The date of a delivery is displayed with the language set, not with the system's: on a screen
@@ -117,17 +184,29 @@ export function TwinLook({
     setResult(null);
 
     try {
-      const dry = (await post({ ...body, dryRun: true })) as Estimate;
+      /*
+        Without the image. The dry run exists to say the price before paying it, and it does not
+        need the pixels for that: the route measures `imageBytes` when `image` is absent. Until
+        6-Sep-2026 the upload path sent the whole base64 twice —once to ask, once to spend—, up to
+        4.67 MB for nothing.
+       */
+      const dry = (await post({ ...withoutImage(body), dryRun: true })) as Estimate;
       if (dry.error) {
         setNote(dry.error);
         return;
       }
+      const pixels =
+        dry.width !== undefined && dry.height !== undefined ? ` · ${dry.width}×${dry.height}` : "";
+      /* And what is going to travel, which is the other half of the price. See `sentLine`. */
+      const fit = sentLine(translate, dry.sent);
       setNote(
         translate("look.estimate", {
           statements: dry.statements ?? 0,
           tokens: dry.estimatedTokens ?? 0,
           size: formatBytes(dry.imageBytes ?? 0),
-        }),
+        }) +
+          pixels +
+          (fit === null ? "" : ` · ${fit}`),
       );
 
       const receipt = (await post({ ...body, dryRun: false })) as Receipt;
@@ -151,7 +230,9 @@ export function TwinLook({
    *
    * The two checks are the same ones the engine makes when reading a file from the disk, and they
    * are here because the place where a denial costs less is before uploading four megabytes. The
-   * limit comes from the server —`MAX_SCREENSHOT_BYTES`— so that there are not two numbers.
+   * limit comes from the server —`readCeiling` with the saved choice— so that there are not two
+   * numbers: the browser must not refuse what the route would look at, which is exactly what it
+   * did while it carried the provider's cap and the route had learned to reduce.
    */
   async function upload(picked: File) {
     if (!TYPES.includes(picked.type)) {
@@ -183,16 +264,16 @@ export function TwinLook({
       <p className="font-mono text-xs text-idle">{translate("look.notRedacted")}</p>
 
       {boards.length === 0 ? (
-        <div className="rounded-lg border border-edge px-4 py-4">
+        <Card tone="plain">
           <p className="eyebrow">{translate("look.inboxTitle")}</p>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed">{translate("look.noInbox")}</p>
           <p className="mt-1 max-w-2xl font-mono text-xs text-smoke">
             {translate("look.noInboxHint")}
           </p>
-        </div>
+        </Card>
       ) : (
         boards.map((board) => (
-          <div key={board.slug} className="rounded-lg border border-edge px-4 py-4">
+          <Card key={board.slug} tone="plain">
             <p className="eyebrow">{translate("look.inboxOf", { project: board.name })}</p>
             <p className="mt-1 font-mono text-xs text-faint">{board.dir}</p>
 
@@ -229,16 +310,17 @@ export function TwinLook({
                               : translate("look.looked", { n: shot.findings })}
                           </span>
                         )}
-                        <button
+                        <ActionButton
+                          tone="plain"
                           type="button"
                           onClick={() => look({ slug: board.slug, shot: shot.name }, key, shot.name)}
+                          busy={busy === key}
+                          busyLabel={translate("look.looking")}
                           disabled={busy !== null}
-                          className="mt-auto self-start rounded border border-edge px-2.5 py-1 font-mono text-xs text-smoke transition-colors hover:border-chalk disabled:opacity-50"
+                          className="mt-auto self-start"
                         >
-                          {busy === key
-                            ? translate("look.looking")
-                            : translate(shot.findings === null ? "look.button" : "look.buttonAgain")}
-                        </button>
+                          {translate(shot.findings === null ? "look.button" : "look.buttonAgain")}
+                        </ActionButton>
                       </div>
                     </div>
                   );
@@ -251,16 +333,26 @@ export function TwinLook({
                 {translate("look.inboxSkipped", { n: board.skipped })}
               </p>
             )}
-          </div>
+          </Card>
         ))
       )}
 
       {/* And what no agent can capture. See header. */}
       {projects.length > 0 && (
-        <div className="rounded-lg border border-edge px-4 py-4">
+        <Card tone="plain">
           <p className="eyebrow">{translate("look.uploadTitle")}</p>
           <p className="mt-1 max-w-2xl text-sm leading-relaxed text-smoke">
             {translate("look.uploadHint")}
+          </p>
+          {/*
+             And which ceiling is in force here, which is not a detail: it changes by a factor of
+             four with the choice on the Spend screen, and whoever is about to pick a full-screen
+             capture deserves to know before the file dialog and not after it.
+            */}
+          <p className="mt-1 font-mono text-xs text-faint">
+            {translate(shots === "fit" ? "look.uploadCapFit" : "look.uploadCapFull", {
+              cap: formatBytes(maxBytes),
+            })}
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <select
@@ -298,7 +390,7 @@ export function TwinLook({
               {translate("look.uploadPick")}
             </ActionButton>
           </div>
-        </div>
+        </Card>
       )}
 
       {note && <p className="font-mono text-xs text-smoke">{note}</p>}
@@ -318,9 +410,10 @@ export function TwinLook({
 function Verdict({ subject, receipt }: { subject: string; receipt: Receipt }) {
   const translate = useT();
   const findings = receipt.findings ?? [];
+  const fit = sentLine(translate, receipt.sent);
 
   return (
-    <div className="rounded-lg border border-edge px-4 py-4">
+    <Card tone="plain">
       <p className="eyebrow">{translate("look.verdictOf", { subject })}</p>
 
       {receipt.unreadable ? (
@@ -338,6 +431,12 @@ function Verdict({ subject, receipt }: { subject: string; receipt: Receipt }) {
         {receipt.model ? ` · ${receipt.model}` : ""}
       </p>
       {/*
+         And what it was shown, next to what it was measured against. It is the same sentence as
+         the rehearsal and it is repeated on purpose: the rehearsal promised a size, and this is
+         the one that was actually paid for.
+        */}
+      {fit !== null && <p className="mt-1 font-mono text-xs text-faint">{fit}</p>}
+      {/*
          Unbacked judgments, counted. The model will have opinions about your screen —it has
          opinions about everything— and saying how many have been thrown out is what distinguishes
          'this comes from your phrases' from 'this comes from its taste'.
@@ -347,7 +446,7 @@ function Verdict({ subject, receipt }: { subject: string; receipt: Receipt }) {
           {translate("look.dropped", { n: receipt.dropped ?? 0 })}
         </p>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -525,7 +624,7 @@ export function LookFindings({
   }
 
   return (
-    <ol className="mt-3 flex flex-col gap-4">
+    <ol className="mt-3 flex flex-col gap-4" role="list">
       {findings.map((finding, index) => {
         const taskId = tasks[index];
         const no = dead.has(index);
@@ -568,14 +667,14 @@ export function LookFindings({
                    be accommodated.
                   */}
                 {!no && (
-                  <button
+                  <ActionButton
+                    tone="quiet"
                     type="button"
                     onClick={() => void dismiss(index)}
                     disabled={busy !== null}
-                    className="rounded border border-edge px-2.5 py-1 font-mono text-xs text-faint transition-colors hover:border-chalk hover:text-smoke disabled:opacity-50"
                   >
                     {translate("look.dismissButton")}
-                  </button>
+                  </ActionButton>
                 )}
                 {no && (
                   <span className="font-mono text-xs text-faint">
@@ -583,11 +682,11 @@ export function LookFindings({
                   </span>
                 )}
                 {taskId !== undefined && agent.available && (
-                  <button
+                  <ActionButton
+                    tone="accent"
                     type="button"
                     onClick={() => void launch(index, taskId)}
                     disabled={busy !== null}
-                    className="rounded border border-accent bg-accent px-2.5 py-1 font-mono text-xs text-white transition-opacity hover:opacity-85 disabled:opacity-50"
                   >
                     {/*
                        'Again' when it has already come out, which is something that until now
@@ -596,7 +695,7 @@ export function LookFindings({
                        be seen, not for it to be prevented.
                       */}
                     {translate(out.has(taskId) ? "look.assignAgain" : "look.assignNow")}
-                  </button>
+                  </ActionButton>
                 )}
               </div>
             )}
@@ -608,6 +707,11 @@ export function LookFindings({
       })}
     </ol>
   );
+}
+
+/** The same body minus the image: what the dry run sends. `imageBytes` stays, which is all it needs. */
+function withoutImage(body: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(body).filter(([key]) => key !== "image"));
 }
 
 async function post(body: Record<string, unknown>): Promise<Record<string, unknown>> {

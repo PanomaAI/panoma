@@ -1,7 +1,7 @@
 import { revalidatePath } from "next/cache";
-import { closeSession, logActivity, openSession, resolveProject } from "@panoma/db";
+import { closeSession, enqueueMemoryJob, logActivity, openSession, queueWrite, resolveProject } from "@panoma/db";
 import { requireAgent } from "@/lib/agent-auth";
-import { distillSession } from "@/lib/memory-distill";
+import { startMemoryWorker } from "@/lib/memory-worker";
 import { localeFrom, t } from "@/lib/i18n";
 
 /** Record what the agent has done. */
@@ -10,7 +10,11 @@ export async function POST(request: Request) {
   const auth = await requireAgent(request);
   if ("error" in auth) return auth.error;
 
-  const body = (await request.json().catch(() => ({}))) as {
+  const payload: unknown = await request.json().catch(() => undefined);
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
+    return Response.json({ error: "Invalid activity input." }, { status: 400 });
+  }
+  const body = payload as {
     cwd?: string;
     remote?: string;
     slug?: string;
@@ -22,22 +26,37 @@ export async function POST(request: Request) {
     closeSession?: boolean;
   };
 
-  if (!body.summary) return Response.json({ error: "Missing 'summary'." }, { status: 400 });
+  if (typeof body.summary !== "string" || !body.summary.trim()) return Response.json({ error: "Missing 'summary'." }, { status: 400 });
+  const fields = [body.cwd, body.remote, body.slug, body.kind, body.details, body.commitSha];
+  if (fields.some((value) => value !== undefined && typeof value !== "string") ||
+      (body.closeSession !== undefined && typeof body.closeSession !== "boolean") ||
+      (body.filesTouched !== undefined && (!Array.isArray(body.filesTouched) || body.filesTouched.some((file) => typeof file !== "string")))) {
+    return Response.json({ error: "Invalid activity input." }, { status: 400 });
+  }
 
   const project = await resolveProject(auth.database, body);
   if (!project) return Response.json({ error: t(locale, "api.noProject") }, { status: 404 });
 
-  const sessionId = await openSession(auth.database, auth.agent.id, project.id);
-  const logged = await logActivity(auth.database, {
-    agentId: auth.agent.id,
-    projectId: project.id,
-    sessionId,
-    kind: body.kind ?? "change",
-    summary: body.summary,
-    details: body.details,
-    filesTouched: body.filesTouched,
-    commitSha: body.commitSha,
-  });
+  const { logged, sessionId } = await queueWrite(() => auth.database.transaction(async (tx) => {
+    const sessionId = await openSession(tx, auth.agent.id, project.id);
+    const logged = await logActivity(tx, {
+      agentId: auth.agent.id,
+      projectId: project.id,
+      sessionId,
+      kind: body.kind ?? "change",
+      summary: body.summary!,
+      details: body.details,
+      filesTouched: body.filesTouched,
+      commitSha: body.commitSha,
+    });
+    if (!("refused" in logged) && body.closeSession) {
+      // Closing and scheduling are one durable operation. A restart cannot lose the extraction
+      // between them; the paid work itself remains outside the request and the write transaction.
+      await closeSession(tx, sessionId, body.summary);
+      await enqueueMemoryJob(tx, sessionId);
+    }
+    return { logged, sessionId };
+  }));
   if ("refused" in logged) {
     // The house being untyped, not a 500 from the index: before, a build log dump would blow up the
     // INSERT against the top of the tsvector and no one knew why.
@@ -51,20 +70,7 @@ export async function POST(request: Request) {
   const activityId = logged.id;
 
   if (body.closeSession) {
-    await closeSession(auth.database, sessionId, body.summary);
-    /*
-      The frontier is the moment to distill: the session is complete and the agent expects nothing
-      anymore. Without `await` and with the swallowed error, according to the hardest rule this
-      house has: memory never delays the turn. This server is a long process in the user's
-      machine, so the promise ends by itself; if the distiller falls — without a configured model,
-      without a network — memory loses a source and the session loses nothing. The trace of those
-      that do run remains in `model_calls`.
-     */
-    void distillSession(auth.database, {
-      projectId: project.id,
-      identity: project.identity,
-      sessionId,
-    }).catch(() => undefined);
+    startMemoryWorker(auth.database);
   }
 
   revalidatePath(`/p/${project.slug}`);

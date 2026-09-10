@@ -1,0 +1,263 @@
+# Optional apps and the work they keep
+
+Panoma installs and drives optional official programs. Panoma video is the first, packaged
+as `@panoma/video` in its own repository. The catalog remains usable without it; installing
+it adds a production screen to each project and an optional Create video step to Open
+everything. That step opens the screen. Producing a video requires a separate action.
+
+This release installs only the packages enumerated in `packages/apps/src/official.ts`.
+There is no third-party marketplace, payment system, account, or arbitrary shell recipe.
+The package manager, `@panoma/apps`, has no database dependency. The Next server composes it
+with the catalog, the MCP client and the durable job queue.
+
+## Installation and storage
+
+The manifest lives at `package.json` → `panoma.app`. It declares an ID, protocol version,
+compiled MCP entry point, localized descriptions, requirements, actions, provider disclosures
+and legal files. Validation rejects unknown fields, shell commands, incompatible protocols,
+unsafe paths and missing files before activation. Node runs compiled JavaScript; neither
+production TypeScript compilation nor package lifecycle scripts are required.
+
+By default, registry requests go only to `registry.npmjs.org`, use a two-second timeout and
+cache their result for a day. `PANOMA_NO_UPDATE_CHECK=1` suppresses background version checks;
+the explicit Check action can refresh the cache. An unavailable registry leaves the cached
+version and its date visible. Tests inject a loopback fixture registry through a constructor
+that is deliberately absent from the package's public entry point.
+
+An installation runs npm with `--ignore-scripts`, `--no-audit`, `--no-fund` and no package
+lock generation in an isolated version directory. It validates files and completes the MCP
+guide handshake before atomically replacing the active pointer. Updates can be staged,
+and the previous version remains available for rollback. Failed partial installations do
+not replace the working version. npm is detected separately from Node, with an actionable
+message when it is missing.
+
+All paths below follow `PANOMA_HOME` (normally `~/.panoma`):
+
+| Location | Content |
+| --- | --- |
+| `apps/panoma-video/versions/<version>/` | npm installation, including dependencies |
+| `apps/panoma-video/current.json` | Active and previous version pointers |
+| `apps/panoma-video/staged.json` | A validated update waiting for activation |
+| `apps/panoma-video/browsers/` | Playwright browser cache shared across versions |
+| `apps/panoma-video/logs/` | Bounded, credential-redacted diagnostics for each job |
+| `video/` | Projects, recordings, revisions, renders and export artifacts |
+
+Each app names its own data directory in the official list, so two of them can never share one
+and no app's Clean data can reach another's work. The home itself may be a symbolic link — a
+dotfile directory on another volume is an ordinary arrangement — and every path below it must
+still be a real directory of that home.
+
+Disabling prevents new production work. Uninstalling removes the installed program while
+preserving productions. Clean data is a separate, explicitly confirmed operation; the UI
+shows the bytes it will remove. Removing or hiding a project from the catalog does not delete
+its video workspace.
+
+There is no migration path from an earlier home directory, and there was one until 10-Sep-2026.
+It existed for a predecessor of this app that was never published, so nobody but its author ever
+had a directory for it to adopt — fifteen files, four fault codes and a staged copy-and-rename,
+for a move a person makes once with `mv`. An app that ships to strangers should not carry the
+author's own migration.
+
+## Requirements and boundaries
+
+A browser download is watched for silence rather than against a total clock: hundreds of
+megabytes on a slow line used to hit a fifteen-minute ceiling and report a timeout, which reads
+like a program that hung. Five minutes without a word ends it, and the failure repeats the last
+line it printed, which is a percentage.
+
+Browser installation is a separate button after the size and Google's terms are shown.
+It uses Playwright's downloader; the package installation never downloads the browser
+implicitly. FFmpeg is detected on the user's PATH and is never installed by Panoma. The
+installed package supplies installation guidance and the guide reports actual availability.
+The app detail links to the installed license, notices and codec document.
+
+The child runs as the current OS user. **A separate process is not a sandbox.** Official
+code can read files accessible to that user. When Video starts a project's development
+server, that project also executes as the user. The curated catalog, explicit actions and
+restricted inherited environment reduce accidental exposure; they do not isolate hostile
+code. Panoma does not install third-party code through this feature.
+
+The manager accesses npm to install/check packages and the browser's distribution servers
+when download is requested. Video may access project development URLs and services enabled
+in its provider settings. The catalog itself is not uploaded by the app manager.
+
+## Durable jobs and the MCP contract
+
+Every installation, requirement check and video operation is an `app_jobs` row before it
+runs. Canonical input hashing deduplicates identical live work, including cancellation in
+progress. Claiming a job is a short database transaction with a global concurrency limit of
+one. Filesystem operations, downloads and rendering never hold the catalog write queue.
+Progress writes coalesce to at most once per second, with a final flush on completion.
+
+A claim is exclusive, so a job is always closed: whatever happens while it runs, including a
+failure in the write that ends it, the row becomes `failed` rather than staying claimed. One
+unwritten ending would otherwise stop every later job until a restart. A spend receipt is
+bounded where it is read for the same reason — an absurd figure from a child must not become
+an exception in that write — and the queue only takes the table lock once a plain read says
+something is waiting.
+
+States are `pending`, `running`, `cancelling`, `cancelled`, `failed` and `done`. Completed
+rows retain input, output, version, progress and timestamps. A disconnected HTTP observer
+only stops observing. Explicit cancellation signals the child and terminates its process
+tree. Errors and failed render reviews remain failures even when the MCP envelope itself
+is valid; their returned artifacts remain available for inspection and retry.
+
+Each running job owns a fresh MCP client and app process. The connection is given twenty
+seconds and the guide a minute after it — `GUIDE_TIMEOUT_MS` in
+`packages/apps/src/environment.ts`, which is a minute because twenty was once the whole
+budget and a cold browser launch behind an antivirus spent most of it. The guide must
+report protocol `1` inside that minute, and one typed entry for every requirement the
+installed manifest declares. Which capabilities those are is read from that manifest on both sides — the probe
+that records them and the check that calls an app ready — so a package that later declares a
+third one cannot have it silently left out. Tool timeouts are bounded
+by `TOOL_TIMEOUT_MS`. A small guardian process owns the app's process group and terminates
+its descendants on cancellation, stdin EOF or host death. Stored PIDs are diagnostic only:
+startup never kills an unrelated process merely because its PID matches an old row.
+
+Because every job runs in this process, the supervisor announces each change and a waiting
+observer sleeps on that announcement instead of asking the catalog on a timer; a short
+backstop bounds what a missed announcement can cost. The supervisor starts lazily from Apps
+routes, the home page and `/api/watch`, not from Next instrumentation. After restart,
+unfinished running/cancelling work becomes `failed: interrupted`; pending jobs can continue.
+The host stops the supervisor before closing its database. With `DATABASE_URL`, app mutations
+and the local supervisor are off.
+
+Workspace associations use project identity. A selected catalog copy is recorded as host-only
+job metadata; execution resolves its current root, falling back to an unambiguous identity
+after a move. App arguments never accept an arbitrary `project_path` from HTTP, and a `url` to
+film must be a loopback address: filming a public deployment is not refused because it would
+fail but because the catalog does not send this machine to an address a request chose. Once
+returned, Video's workspace ID is reused, so moving a checkout does not split its production
+history. Ambiguous identities require an explicit catalog project selection.
+
+## Providers and spending
+
+Settings start at `brain: none` and `voice: false`. Enabling a provider requires the app's
+disclosure and an explicit confirmation. Jobs capture that choice when enqueued and check it
+again before launch. Only enabled provider credentials are passed to that child; the parent's
+database URL, operator credentials, `NODE_OPTIONS` and unrelated secrets are not inherited.
+The child's environment is an allowlist rather than a filter, and it names the Windows
+variables explicitly: without `SystemRoot`, `ComSpec`, `PATHEXT`, `TEMP` and the two app-data
+directories, Node, the `cmd.exe` wrapper around `npm.cmd` and a browser profile cannot start
+there. Every name on the list is itself checked against the secret pattern. The Video entry
+point does not implicitly load a project's `.env`.
+
+Panoma Video's **Script and voice** section now manages the ElevenLabs API key directly.
+It stores the key in `PANOMA_HOME/ai.json`, using the existing atomic, owner-only config
+writer. The credential route returns presence only: saved keys are never sent back to the
+browser, and replacing or removing one preserves the selected text model and other keys.
+Saving a key does not test it, enable narration or call a provider. Enabling voice remains a
+separate confirmed settings change. The server's `ELEVENLABS_API_KEY` and project `.env`
+files are not alternative sources for this app.
+
+The `app` budget starts at twenty provider attempts per local day and follows the Spend
+screen, pause switch and `PANOMA_APP_BUDGET`. Capacity is reserved atomically before paid
+work enters the queue and revalidated before execution, including a lowered cap. Video
+enforces that allowance before model retries and ElevenLabs network requests. Voice-only
+jobs also reserve capacity.
+
+Structured results and bounded stderr receipts report attempted calls. Ledger entries carry
+`app_id` and `app_job_id`; receipt recording and release of unused reservation are atomic and
+idempotent. A receipt is recorded up to what the job reserved and no further: the app is told
+its allowance and enforces it, so a receipt above it means the app overspent, and the ledger
+records the reservation rather than a number it cannot vouch for. It can therefore count
+short, and never long. If a process dies before reporting usage, its uncertain reservation
+stays held for the day; the ledger never fabricates usage or money. Without known
+tokens/rates, cost remains unknown. A call budget is not a currency spending limit.
+
+## HTTP, interface and terminal
+
+`/apps` lists official programs, `/apps/panoma-video` manages one, and `/p/<slug>/video`
+creates, previews, reviews and exports a production. ProductPromo additionally supports
+bounded scene-text revisions with a required current revision and restoration of history.
+The app detail separates project selection, setup, optional script and voice providers, and
+maintenance. Its project selector opens the existing production screen without starting work;
+only catalog projects with a stable identity are offered, with project copies kept distinct.
+The interface is bilingual and the mobile navigation exposes its overflow through More.
+
+Every Apps route checks same origin. Mutation handlers additionally check local operator
+authorization and refuse remote catalogs before reading the request body or opening the
+database. The eleven lifecycle operations share one handler and are validated against the same
+closed list the supervisor dispatches on; any other path segment is refused. App detail
+responses omit filesystem paths, and they redact the app's own words rather than the manifest,
+which is validated data whose prose reads the same on every machine. What an installation and
+its productions occupy is a walk of thousands of files, so it is answered only when `space=1`
+asks for it, which is the app's own page and nothing else. Job artifacts must be explicitly
+present in the persisted result and physically inside the managed video directory; sibling
+paths and escaping symlinks are refused. Video streaming supports byte ranges. Installed legal
+files have a separate endpoint constrained to the declared legal paths.
+
+The terminal uses `panoma apps` for lifecycle operations and `panoma video` for production.
+These commands delegate work to HTTP and do not become a second catalog writer. Direct
+`panoma video doctor` probes the installed executable without opening the catalog.
+See [cli.md](cli.md) for syntax and [http-api.md](http-api.md) for the endpoints.
+
+## What a failure says
+
+Every way an app operation can fail has a code from a closed union in
+`packages/apps/src/faults.ts`, and `AppFault` carries it. The message is still the code —
+`offline`, or `code: detail` when there is a payload — which is why this change did not
+rewrite a single existing assertion: the vocabulary changed how a failure is *read*, not what
+it *is*.
+
+The set is closed inside the package and open at its edge. Inside, a code is a union member
+the compiler checks, and two dispatch tables — `apps/web/lib/apps-view.ts` for the browser,
+`apps/cli/src/messages.ts` for the terminal — are `satisfies Record<AppFaultCode, MessageKey>`,
+so a code added without a sentence does not compile in either place. At the edge, `faultOf` is
+total and returns a null code for anything it does not recognise: a row an older version wrote,
+a transport failure, the app's own prose. A null code means quote the text under the generic
+label, which is exactly what the screen did for everything before this existed. There is no
+migration and no `code` column; both `error` columns stay plain text.
+
+Three things reach the vocabulary without ever being thrown as a code. The operating system's
+refusals arrive as an errno, and `asAppFault` maps them, so a full disk is a sentence instead
+of `ENOSPC: no space left on device, write '/Users/…tmp'`. Zod's refusals are an array of
+issues, pretty-printed, and used to arrive on screen as one; they are wrapped at four sites.
+And npm's own engine wall is read at the throw site in `process.ts`, not later — that message
+is what gets persisted and re-read on every page load, so a code parsed now stays translatable
+a week from now.
+
+**The Node floor has two halves and only the second is authoritative.** `NODE_FLOOR` in
+`official.ts` is a copy of what the app declares in its own `engines`, checked against
+`process.version` before npm is spawned; it is fast, and it is a hint that can silently fall
+behind, because the app is published from another repository no test here can read. `engineFault`
+reads what npm actually said. That half cannot be wrong, and it is required rather than
+belt-and-braces: measured against npm 11.19.0, `--engine-strict` refuses for a floor declared by
+one of the app's own *dependencies*, and for a floor on *npm* rather than on Node. No declared
+value here can see either. Both halves emit the same code, so the screen says one thing however
+the refusal arrived.
+
+The HTTP body is `{error: <code>}` with an optional `detail`, and the status comes from a table
+in `apps-http.ts` rather than from a regular expression over the message. The two it replaced
+were deciding more than anyone had chosen: `unknown-app-operation` answered 404 because it
+*contains* `unknown-app` — which is the status [http-api.md](http-api.md) promises, kept
+deliberately now — while `unknown-app-tool` and `unknown-app-input` answered 404 by the same
+accident and are body validation, so they answer 400. The code travels bare and the detail is
+scrubbed, because a detail can be 64 KB of npm's output and that is where home directories live.
+
+`packages/db` still throws plain strings on purpose: it is the lowest layer, and importing the
+app installer to name its own failures would point an arrow the wrong way. What that costs is
+the compiler's check on four spellings, and `apps/web/lib/apps-http.test.ts` buys it back by
+reading the source of the whole surface as text.
+
+## Verification and release limits
+
+`.github/workflows/apps.yml` runs the app suites on Windows and Linux for every pull request that
+touches them, which is where the guardian, the npm lookup and the child's environment differ;
+the weekly matrix runs the same tests inside the whole suite.
+
+Tests exercise the manifest, environment, real npm installation against fixture metadata,
+rollback, containment, MCP handshake/progress/process cancellation, durable jobs, migration
+idempotence, budget reservations, route authorization and UI/CLI argument helpers. Video's
+package gate installs its actual tarball into an empty directory and renders/reviews an
+encoded preview. The opt-in HTTP test composes that local artifact with a real Next server
+using a separate `PANOMA_HOME`; it does not add a production registry override.
+
+What has deliberately not been measured, and who decides each of those, is a table of its own in
+[open-questions.md](open-questions.md): Windows above all, where nothing has yet run.
+
+Publication is separate from implementation. Until `@panoma/video` has its first authorized
+npm release, the normal registry install button cannot retrieve that package. Trusted npm
+publishing requires owner setup. Cross-platform CI and installation on Windows/Linux must
+pass before announcing those platforms as verified for this integration; local macOS
+checks alone do not establish that. `apps/site` is outside this change.

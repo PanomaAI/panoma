@@ -48,18 +48,18 @@ describe("el encargo del reparto", () => {
     No quotes, no context, no submissions: just the sentence. That's what makes this the cheapest
     call from Twin and allows it to run alone before synthesizing.
    */
-  it("no manda nada más que la frase", () => {
-    expect(built.prompt).not.toContain("dijo:");
-    expect(built.prompt).not.toContain("le habían entregado");
+  it("sends statements without source quotations or assistant deliveries", () => {
+    expect(built.prompt).not.toContain("owner said:");
+    expect(built.prompt).not.toContain("assistant delivery:");
   });
 
-  it("le dice que el cajón no es el desempate", () => {
-    expect(built.prompt).toContain("`other` solo cuando de verdad no encaje");
+  it("reserves other for statements that fit no existing topic", () => {
+    expect(built.prompt).toContain("`other` only when no other topic fits");
   });
 
-  it("y que puede acuñar una, con la forma acotada", () => {
-    expect(built.prompt).toContain("una materia que no esté en la lista");
-    expect(built.prompt).toContain("en minúsculas");
+  it("allows a new topic using a constrained English identifier", () => {
+    expect(built.prompt).toContain("a topic not in the list");
+    expect(built.prompt).toContain("single lowercase word in English");
   });
 
   /*
@@ -67,8 +67,9 @@ describe("el encargo del reparto", () => {
     sentences about a person written by another model: without the explicit prohibition, a model
     given a list of sentences and a short question tends to improve them along the way.
    */
-  it("el papel prohíbe reescribir lo que se le da a clasificar", () => {
-    expect(built.system).toContain("no las reescribes");
+  it("forbids rewriting or translating input statements", () => {
+    expect(built.system).toContain("Do not rewrite, translate");
+    expect(built.prompt).toContain("in their original language");
   });
 });
 

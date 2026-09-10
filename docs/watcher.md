@@ -114,6 +114,20 @@ changed— and reading a few files costs less than the analysis that has just ru
 when they fall —challenge the note, open the dispute, wait for the person— is in
 [memory.md](memory.md).
 
+Since 6-Sep-2026 the watcher is not the only patrol. Memory delivery re-evaluates a
+project's sentinels right before serving its notes (`refreshProjectMemory`,
+`apps/web/lib/sentinels.ts`): the root and git subscriptions are not recursive, so a nested
+file can change without any watched event, and a note served on the strength of the last
+pass would be served on a stale one. That patrol is decided by the disk, not by the driver:
+it runs whenever the project root is a directory on the serving machine, with a remote
+catalog too. And when the root is absent —a volume unmounted, a folder moved without a
+rescan, a catalog served from elsewhere— it has a third state besides "holds" and "fell":
+**unknown**. Every `path_exists` would read as `missing` there, and the first version
+challenged every anchored note of the project in one pass on that evidence; now the patrol
+challenges nothing, reports how many notes it left unverified and why (`root-missing`, or
+`remote` under `DATABASE_URL`), and the briefing says so. The same rule holds for the patrol
+the watcher runs after a reanalysis, which is the same function.
+
 Of the mechanical critic only the findings and the failures are recorded. A catalog of a
 hundred and twelve projects writing one line per commit to say nothing is wrong would fill the
 log with silence. See [review.md](review.md).
@@ -290,7 +304,7 @@ Four ways for the watcher not to be watching, and all four are said:
 
 | Situation | `state.reason` | What is seen on the front page |
 | --- | --- | --- |
-| `DATABASE_URL` set | "Con DATABASE_URL el servidor no ve el disco del usuario." | the `watch.off` strip: `active` is `false` and `WatchWarning` does not look at the reason |
+| `DATABASE_URL` set | "Con DATABASE_URL el servidor no ve el disco del usuario." | the `watch.off` strip: `active` is `false` and `CatalogContext` does not look at the reason |
 | `PANOMA_WATCH=0` | "Apagado con PANOMA_WATCH=0." | the same strip, for the same reason |
 | The catalog will not open | "El catálogo no se pudo abrir: …", and the facts apart in `state.catalog`: the first line of what the database said, trimmed to 200 characters, with the path alongside | the "The catalog will not open" box, which beats the strip |
 | The watches died | none | the `watch.off` strip |
@@ -343,7 +357,7 @@ its own on Tuesday" is exactly what Wednesday's report has to be able to tell.
   again until the next server startup, even if the reason was passing.
 - **The reconciliation gives up at 25.** The rest wait for somebody to touch them, and that
   may be never.
-- **The warning strip does not tell "down" from "switched off".** `WatchWarning` accuses on
+- **The warning strip does not tell "down" from "switched off".** `CatalogContext` accuses on
   seeing `active: false` alone, so in hosted mode and with `PANOMA_WATCH=0` —the two
   situations in which nothing is broken— it paints "The watcher isn't running" all the same.
   The reason already travels in that same `/api/watch` response; what is missing is reading

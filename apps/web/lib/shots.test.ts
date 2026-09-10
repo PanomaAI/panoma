@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { SHOTS_DIR } from "@panoma/core";
 import { pickShot, shotDigest } from "./shots";
-import { autoLookCap, budgetFrom } from "./look";
+import { autoLookCap } from "./look";
 import { digestOf } from "./look-run";
 
 /**
@@ -102,6 +102,7 @@ describe("cuánto puede gastar el vigía por su cuenta", () => {
   });
 
   it("y apagar el crítico apaga también el disparo", () => {
-    expect(autoLookCap(budgetFrom("0"))).toBe(0);
+    // A cap of zero — from the file, the variable or the pause — leaves nothing for the watcher.
+    expect(autoLookCap(0)).toBe(0);
   });
 });

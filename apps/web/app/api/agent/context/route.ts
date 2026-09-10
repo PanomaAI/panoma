@@ -14,7 +14,11 @@ import {
 } from "@panoma/db";
 import { revalidatePath } from "next/cache";
 import { requireAgent } from "@/lib/agent-auth";
+import { ownerDecisionsFor } from "@/lib/decision-brief";
 import { ablationArm, ablationEnabled } from "@/lib/memory-ablation";
+import { memoryFiles, projectMemoryForFiles } from "@/lib/project-memory-files";
+import { refreshProjectMemory } from "@/lib/sentinels";
+import { projectMemoryForTask, taskText } from "@/lib/task-memory";
 
 /**
  * Returns everything the agent should know before touching the project.
@@ -38,7 +42,19 @@ export async function POST(request: Request) {
   const auth = await requireAgent(request);
   if ("error" in auth) return auth.error;
 
-  const hint = (await request.json().catch(() => ({}))) as Hint;
+  const payload = await request.json().catch(() => ({})) as unknown;
+  const hint = (payload !== null && typeof payload === "object" && !Array.isArray(payload) ? payload : {}) as Hint;
+  if ([hint.cwd, hint.root, hint.remote, hint.slug].some((value) => value !== undefined && typeof value !== "string")) {
+    return Response.json({ error: "Project location fields must be strings." }, { status: 400 });
+  }
+  let files: string[];
+  let task: string | undefined;
+  try {
+    files = memoryFiles(hint.files);
+    task = taskText(hint.task);
+  } catch (error) {
+    return Response.json({ error: (error as Error).message }, { status: 400 });
+  }
 
   const known = await resolveProject(auth.database, hint);
   const high = known ? undefined : await enrollNow(auth.database, hint);
@@ -56,6 +72,13 @@ export async function POST(request: Request) {
   }
 
   /*
+    The patrol runs before any memory read, and its result travels with the delivery: when it
+    could not look at the disk — a remote catalog, a root that is not here — the anchored notes go
+    out unverified, and the agent is told so instead of reading them as checked this morning.
+   */
+  const patrol = await refreshProjectMemory(auth.database, project);
+
+  /*
     Three readings in parallel, and one of them is fatter than what is usually used.
     `getProject` brings seven sets of results to choose one from: the distribution of agents of
     `project_agents`. Ideally, it would be a two-line query against that table, but `drizzle-orm`
@@ -64,15 +87,34 @@ export async function POST(request: Request) {
     three rows. Against a local catalog of a single user, paying for the record query is cheaper
     than that dependency.
    */
-  const [context, detail, runs] = await Promise.all([
+  const [context, detail, runs, decisions, pathNotes] = await Promise.all([
     getAgentContext(auth.database, project.id),
     getProject(auth.database, project.slug),
     listProjectRuns(auth.database, project.id),
+    /*
+      What the owner decided here, in their own words, with the reasons and the exceptions. The
+      only wire out of decision memory, and a read like the notes: no model, six at most, bounded
+      in characters. Why owner-authored only is written in `lib/decision-brief.ts`.
+     */
+    ownerDecisionsFor(auth.database, project.identity ?? null),
+    projectMemoryForFiles(auth.database, project.id, files),
   ]);
 
   if (!context) {
     return Response.json({ error: "The project is no longer in the catalog" }, { status: 404 });
   }
+
+  /*
+    The task read waits for the brief: it excludes the decisions the brief already carries, and
+    those are only known once the brief is fitted. One more round trip, only when a task came, is
+    cheaper than serving the same decision twice with two different reasons.
+   */
+  const taskMemory = task === undefined ? undefined : await projectMemoryForTask(
+    auth.database,
+    { id: project.id, identity: project.identity ?? null },
+    task,
+    { decisionIds: decisions.map((one) => one.id) },
+  );
 
   /*
     The scale weighs the delivery before sending it. Only when there is memory to deliver: a visit
@@ -84,11 +126,12 @@ export async function POST(request: Request) {
    */
   let memory = {};
   if (context.notes.length > 0) {
+    const experimentEnabled = ablationEnabled();
     const arm = ablationArm({
       agentId: auth.agent.id,
       projectId: project.id,
       at: new Date(),
-      enabled: ablationEnabled(),
+      enabled: experimentEnabled,
     });
     await recordServing(auth.database, {
       projectId: project.id,
@@ -96,6 +139,7 @@ export async function POST(request: Request) {
       arm,
       noteIds: context.notes.map((note) => note.id),
       noteChars: context.noteUsage.used,
+      experimentId: experimentEnabled ? "memory-v1" : null,
     });
     if (arm === "withheld") {
       memory = { notes: [], noteUsage: { used: 0, budget: context.noteUsage.budget, pending: 0 } };
@@ -106,6 +150,16 @@ export async function POST(request: Request) {
     projectId: project.id,
     ...context,
     ...memory,
+    decisions,
+    // Path-specific rules are always delivered, like the edit hook; ablation applies to the brief.
+    ...(hint.files !== undefined ? { pathNotes, memoryFiles: files } : {}),
+    // So are task matches: the agent asked for them by name, and they carry their reason.
+    ...(taskMemory ? { taskNotes: taskMemory.notes, taskDecisions: taskMemory.decisions, taskOmitted: taskMemory.omitted } : {}),
+    sentinels: {
+      checked: patrol.checked,
+      unverified: patrol.unverified ?? 0,
+      ...(patrol.skipped ? { skipped: patrol.skipped } : {}),
+    },
     delta: buildDelta({
       recentCommits: project.recentCommits,
       scannedAt: project.lastScannedAt,
@@ -120,6 +174,9 @@ export async function POST(request: Request) {
 }
 
 interface Hint {
+  files?: unknown;
+  /** What the agent is about to do, in one sentence. Matched by words against sleeping memory. */
+  task?: unknown;
   cwd?: string;
   /** Repository root, as detected by the client MCP. See `describeLocation`. */
   root?: string;

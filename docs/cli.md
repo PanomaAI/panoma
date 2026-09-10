@@ -1,4 +1,4 @@
-# The terminal: twenty-one verbs that ask and render
+# The terminal: twenty-three verbs that ask and render
 
 This page tells how `apps/cli` is put together and what contract each verb has: which ones
 need the catalog up, which spend model, which leave the machine, which write to your disk,
@@ -54,9 +54,9 @@ And there is a fourth half-case, `panoma scan`, which analyzes locally: it only 
 catalog if you ask for `--save`, and it only leaves the machine if the version check is due
 that day.
 
-## The twenty-one verbs, and what each one needs
+## The twenty-three verbs, and what each one needs
 
-`grep -o 'command === "[a-z-]*"' apps/cli/src/index.ts | sort -u` gives twenty-one. To them
+`grep -o 'command === "[a-z-]*"' apps/cli/src/index.ts | sort -u` gives twenty-three. To them
 add bare `panoma`, which is not a verb but the absence of one: `parseArgs` returns flags with
 zero positionals and `index.ts` decides that this is the day's report.
 
@@ -70,7 +70,7 @@ already installed here.
 | `today` | the same, when you would rather type it | yes | no | no | no |
 | `next` | what to do next in each project and the fact that picked it; with two arguments, it opens your agent with the assignment | yes | no | no | no |
 | `north` | what "done" means in each project, how many do not say, and the place to write it | yes | no | no | no |
-| `open` | opens the project in the editor (`--folder` · `--terminal`) | yes | no | no | no — the server opens it |
+| `open` | opens the project in the editor (`--folder` · `--terminal`); with `--all`, everything its plan lists —links, terminal, editor, agent— and prints what opened step by step | yes | no | no | no — the server opens it |
 | `scan` | analyzes one project or every one under the path | only with `--save` | no | not with `--save`; the version check yes | with `--out <file>`; and `version.json` |
 | `up` | brings the catalog up (`--on-boot` · `--network` · `--rotate-key`); with a folder after it, brings it up and fills it | it is the one bringing it up | no | the version check | pid, stamp, log; `access.json` with `--network`; the startup service with `--on-boot` |
 | `down` | stops it | no | no | no | deletes the pid and the stamp |
@@ -80,11 +80,13 @@ already installed here.
 | `disk` | how much disk the catalog takes and how much of it regenerates by itself | yes | no | no | no |
 | `search` | searches the code of every project at once | yes | no | no | no |
 | `secrets` | credentials committed in the files git tracks | yes | no | no | no |
-| `describe` | asks the model to explain what a project is about | yes | yes | depends on the provider | no |
+| `describe` | asks the model to explain what a project is about; an unchanged project is answered from the saved paragraph and nothing is paid, and the terminal says so in a dim line (`--force` asks the model again); a project with no repository gets its paragraph and a dim line saying it could not be stored | yes | yes, unless the answer came from the record | depends on the provider | no |
 | `review` | what is wrong and provable without opening it: images with no alt, broken links, loose colors and corners | no | no | no | no |
-| `md` | `check` · `fix` · `init` · `sync` · `review` — see [agents-md.md](agents-md.md) | `check`/`fix` no; `init`/`sync`/`review` yes | only `review` | only `review`, depends on the provider | `fix`, `init` and `sync` |
+| `md` | `check` · `fix` · `init` · `sync` · `review` — see [agents-md.md](agents-md.md). `review` answers an unchanged file from the saved opinion and says so in a dim line (`--force` asks again), and says "not stored" instead of "stored in its page" for a project with no repository | `check`/`fix` no; `init`/`sync`/`review` yes | only `review`, and not when the answer came from the record | only `review`, depends on the provider | `fix`, `init` and `sync` |
 | `ai` | `status` · `use` · `key` · `ask` — see [ai-providers.md](ai-providers.md) | no | only `ask` | only `ask`, depends on the provider | `use` and `key` write `@panoma/ai`'s configuration |
+| `spend` | what the models cost today and in the last thirty days: one line per family as "read: 12 of 300 (factory)" with who decided the cap (factory · chosen on the Spend screen · the named variable decides, or is set and cannot be read · paused), the kinds no cap holds back, calls, tokens, unmetered calls and images, and money only once a rate is written; `--json` prints the whole receipt of `GET /api/spend`; the last line points to `/spend`, which is where caps and rates are written — see [budgets.md](budgets.md) | yes | no | no | no |
 | `twin` | `sources` · `allow` · `revoke` · `forget` · `mine` · `verdicts` · `distill` · `synthesize` · `taste` · `score` · `design` · `look` — see [twin.md](twin.md) | `sources`/`allow`/`revoke` no; the rest yes | `distill`, `synthesize` and `look` | depends on the provider | `allow`/`revoke` write `~/.panoma/twin.json` |
+| `memory` | `export <project>` — the project's memory as one versioned JSON document: its notes in every state, its decisions with their revision links, the owner's general decisions and the distiller's receipts — see [memory.md](memory.md) | yes | no | no | with `--out <file>` |
 | `agent-key` | creates an agent key and, with `--install`, leaves it plugged in where that agent will read it | yes | no | no | with `--install` |
 | `hooks` | the state of the passive hooks; `--install` puts them in, `--remove` takes them out | no — it only writes the address inside the script | no | no | with `--install` and `--remove` |
 | `signal` | the `PreToolUse` hook: delivers the sleeping notes for the path about to be edited | yes, and if it is not there it keeps quiet | no | no | `~/.panoma/signal-seen.json` |
@@ -94,6 +96,14 @@ that is on purpose — it is a machine surface, Claude Code invokes it and nobod
 second: there are four places where the CLI writes the user's files without the catalog having
 to be alive —`hooks`, `md fix`, `ai use` and `ai key`—, and `hooks` is the strangest of the
 four, because **what it writes is the script that will call the catalog later**.
+
+And a third, which is the one `memory export` adds: **it only works against the catalog of this
+machine, by design.** `GET /api/memory/export` asks for the operator key —the file carries the
+owner's own testimony, and that is what `GET /api/twin/episodes` already reserves for the
+person at the keyboard— and `catalogFetch` sends that key on the local loop only. With `--api`
+pointing at another host the route answers 403 and the verb exits 1: the network key was
+printed to look at a catalog, not to carry its memory out. The slug is exact, like in `next`
+and `north`, because the wrong file carries somebody else's memory.
 
 ## `args.ts` is the only parser, and an unknown flag is an error
 
@@ -139,15 +149,15 @@ already `--verbose`, so the short form for version is `-V`, as in npm.
 
 | token | what it does | who actually uses it |
 | --- | --- | --- |
-| `--json` | prints the raw analysis as JSON | `scan` |
-| `--out <file>` | writes that JSON to a file | `scan` |
+| `--json` | prints the raw analysis as JSON; with `spend`, the whole receipt of `GET /api/spend` | `scan`, `spend` |
+| `--out <file>` | writes that JSON to a file | `scan`, `memory export` |
 | `--verbose` · `-v` | dependencies and health breakdown | `scan` |
 | `--duplicates` · `-d` | only the families of copies of the same project | `scan` |
 | `--save` | sends the result to the catalog | `scan`, `twin mine` |
 | `--api <url>` | the catalog's address (`PANOMA_API` or `http://localhost:4173` by default) | everyone that talks to the catalog |
 | `--depth <n>` | how deep it goes looking for projects (3 by default) | `scan` |
 | `--no-git` | do not read git, and therefore faster | `scan` |
-| `--force` | `enrich`: skip the 24 h cache · `run`: retry a proposal that already failed · `north`: blindly write the north this terminal cannot read | `enrich`, `run`, `north` |
+| `--force` | `enrich`: skip the 24 h cache · `run`: retry a proposal that already failed · `north`: blindly write the north this terminal cannot read · `describe` and `md review`: ask the model again even if nothing changed; without it an unchanged project or file is answered from the saved text and nothing is paid | `enrich`, `run`, `north`, `describe`, `md review` |
 | `--security` | bump to the version that fixes the worst vulnerability instead of to the latest | `run` |
 | `--isolation <level>` | `local` · `hardened` · `container` | `run` |
 | `--folder` | reveal the folder in the file manager | `open` |
@@ -159,11 +169,11 @@ already `--verbose`, so the short form for version is `-V`, as in npm.
 | `--rotate-key` | generate a new key and invalidate the previous one | `up --network` |
 | `--model <name>` | pin which of the provider's models is used | `ai use` |
 | `--provider <which>` | ask one specific provider | `ai ask` |
-| `--limit <n>` | how many are collected or read | `twin mine`, `twin verdicts`, `twin distill` |
+| `--limit <n>` | how many are collected or read; with `twin distill`, a value below 2 plans nothing, because a batch needs two quotes from one project and a remainder of one is left for the next pass | `twin mine`, `twin verdicts`, `twin distill` |
 | `--project <path>` | only the sessions under that path | `twin mine` |
 | `--source <source>` | a single history instead of every allowed one | `twin mine`, `twin verdicts`, and also `twin allow`/`revoke` |
-| `--all` | chains passes until the whole history has been read | `twin distill` |
-| `--dry-run` | stop at the estimate instead of spending | `twin distill`, `twin look` |
+| `--all` | with `open`, everything the project's plan lists, in order; without a saved plan the suggestion —which here ends with the first installed editor, because the browser's preferred destination lives in that browser— said in a dim line. Contradicts `--folder` and `--terminal`, and the parser says so. With `twin distill`, chains passes until the whole history has been read | `open`, `twin distill` |
+| `--dry-run` | stop at the estimate instead of spending; with `twin look` the estimate also says at what size the capture would travel, and why it would travel whole when it cannot be reduced | `twin distill`, `twin look` |
 | `--help` · `-h` | the help, and it beats anything else | global |
 | `--version` · `-V` | the bare number, like node and npm | global |
 
@@ -210,7 +220,7 @@ that says what to do.
 | `today` | the report rendered | catalog down, or the report answers badly |
 | `next` | the list, a project's card, the launch done, and the empty catalog | a third argument too many, a slug that does not exist, an assignment that project does not offer, the launch route saying no |
 | `north` | the list, the card, the north saved | a slug that does not exist; the 400 for an empty or overlong sentence; the 409 for a project with no stable identity; a north unreadable from here without `--force` |
-| `open` | opened | no query, no match, **several** matches, or a catalog error |
+| `open` | opened; with `--all`, at least one step opened | no query, no match, **several** matches, or a catalog error; with `--all`, also when not a single step opened |
 | `check` | verdict `ok` **and also `no-build`** | `failed`, `no-git`, `no-toolchain`, and the same resolution failures as `open` |
 | `scan` | the analysis rendered, or the JSON written | zero projects under the path, or a save rejected by the catalog |
 | `up` | brought up, or already up with this same version | an invalid or non-local `--api`; the port taken by a stranger; a database in the old format; `--on-boot` without built JavaScript or on a platform with no plan; **and already up with another version** |
@@ -223,7 +233,9 @@ that says what to do.
 | `md fix` | **always**: repaired, or there was no file to repair | — |
 | `md init` · `md sync` · `md review` | written, or already up to date | catalog down or a not-ok response; a project the catalog does not know; `sync` on a project with no block in place; a block with an unpaired marker. And an `md` subcommand that does not exist exits 1 before anything else |
 | `ai` | status, provider chosen, key saved, the model's answer | an unknown subcommand, a provider that takes no key, an empty key, or the model fails |
+| `spend` | the receipt printed, empty day included | catalog down, or `/api/spend` answers badly |
 | `twin` | whatever each subcommand asks for | an unknown subcommand, a source that does not exist, a missing source, catalog down |
+| `memory export` | the document printed, or written with `--out` | no `export` subcommand, no slug or an extra argument; catalog down; a slug the catalog does not know (404); from another host, or from the network without the operator key (403) |
 | `hooks` | status, installed, or removed — **and also with unreadable Claude Code settings**: it warns in yellow, leaves the git hook in place and exits 0 | there is no git repository; there is somebody else's `post-commit`; the hooks cannot be merged with the settings that were already there |
 | `signal` | **always** | — |
 
@@ -394,6 +406,21 @@ off the three someone *starts* with —the day's report, `scan` and `up`—. `pa
 open the editor and shut up, and a network query, even a two-second one once a day, has no
 business in the middle of that.
 
+And **not on the run nobody asked for**, since 7-Sep-2026. The login autostart starts `up` at
+every session with its output going to a log, the journal or an appended file, so the notice was
+printed where nobody would ever read it and, worse, spent the machine's one question of the day
+doing it — usually before the Wi-Fi was up, which stamps the visit with no answer and silences
+every command typed afterwards until tomorrow. The three services now carry `PANOMA_ON_BOOT=1`
+(`on-boot.ts`) and `avisoDeVersion` reads that mark.
+
+It is a mark and **not** `process.stdout.isTTY`, which was the first attempt. The terminal test
+covers the same case and takes the notice away from a real person in Git Bash on Windows, where a
+Node process sees a pipe and not a console; the mark is true of the run nobody asked for and of no
+other. A service written before this exists keeps printing into its log, which is what it did
+anyway — running `panoma up --on-boot` again rewrites it. And the catalog covers the rest: it asks
+on its own while it is running, sharing this same file and this same clock
+([update-notice.md](update-notice.md)).
+
 It is needed because whoever arrives through `npx` installs nothing: npm keeps the package in
 its cache and reuses it, **and that cache does not update itself**. Here that is worse than an
 annoyance, because the database migrations only look forward: an old binary against a new
@@ -405,10 +432,17 @@ here, and the difference is not one of degree**: if this asked a server of our o
 would be a counter of active users and "panoma has no server to send anything to" would become
 a lie. That is why it asks npm and not a domain of ours.
 
+The `accept` is `application/json`. It used to be npm's abbreviated document format, which is
+defined for a package's full packument and not for `/<name>/latest`: the registry answers 406 to
+that pair, and since any non-200 reads as "no answer" the check failed with no symptom at all —
+stamping the visit, learning nothing and telling nobody. It is pinned by a test on each side now.
+
 How it behaves: a two-second ceiling, it never fails outward, and it does not ask more than
 once a day (`~/.panoma/version.json` records the visit **even if the query fails**, so that a
 machine with no network does not pay the two seconds on every run). It is turned off entirely
-with `PANOMA_NO_UPDATE_CHECK=1`. The version comparison is by numeric parts and nothing else,
+with `PANOMA_NO_UPDATE_CHECK=1`, which since 7-Sep-2026 silences the catalog's half of the
+question too. The day is shared, not doubled: whichever half asks first writes the answer, and the
+other one reads it. The version comparison is by numeric parts and nothing else,
 ignoring the prerelease suffix: whoever is on `0.2.0-rc.1` must not get a notice telling them
 to move to `0.2.0` as if it were something else, and whoever is on `0.1.0` must see it.
 
@@ -456,7 +490,7 @@ command—. What gets executed starts with the binary.
   [ai-providers.md](ai-providers.md). In the big table they are grouped under their verb, so
   the columns in those three rows describe the whole set and not each subcommand.
 - **The "model?" column does not say how much.** The brakes by calls per day live in the server
-  and are inventoried in [twin.md](twin.md); from the terminal they cannot be seen, and this
+  and are inventoried in [budgets.md](budgets.md); `panoma spend` reads them, and this
   document does not repeat them so there are not two places where a figure can fall behind.
 - **Agent keys have no per-project scope.** `panoma agent-key` creates one that opens the whole
   catalog: an agent working in A can ask for B's context by passing its path. It is consistent
@@ -477,3 +511,34 @@ command—. What gets executed starts with the binary.
   `KNOWN_FLAGS` is a global list: `panoma open x --security` gives no error, it simply does
   nothing. The parser validates names and values, not verb-and-flag combinations, and that is
   the one door left open from the original `--securiy` bug.
+
+## Optional official apps
+
+`panoma apps` lists the official catalog and each installation's state. Operations run through
+the local server: `panoma apps install panoma-video`, `panoma apps update panoma-video`,
+`panoma apps rollback panoma-video`, `panoma apps enable panoma-video`,
+`panoma apps disable panoma-video`, and `panoma apps remove panoma-video`. Removing keeps
+productions. `panoma apps clean panoma-video` shows their size and asks before deleting them.
+`panoma apps doctor panoma-video` refreshes and prints the runtime requirements;
+`panoma apps check panoma-video` refreshes registry metadata.
+
+`panoma apps install panoma-video --browser` installs the package, then separately presents
+the browser download and its terms for confirmation. Noninteractive calls do not accept this
+download on the operator's behalf. The browser can also be downloaded from the app's page.
+
+`panoma video auto <project>` creates a ProductPromo preview, vertical and in English by default.
+Choose with `--goal`, `--format v|h|s`, `--langs en,es`, and `--until plan|preview|final`.
+`panoma video scout <project>` inspects the project. `panoma video story <project> [brief]`
+reads its scenes; `panoma video render <project> <brief>` renders;
+`panoma video review <project> <render>` reviews an existing cut.
+`panoma video revise <project> <brief> --input <json>` accepts the app's structured revision
+request, including `expectedRevision` and `edits`. `--input` also accepts tool-specific input
+for the other video commands. The server owns project paths, workspace identity and provider
+settings, and validates the tool's input before starting it.
+
+These operations are durable jobs: progress goes to stderr, `--json` prints the finished job
+to stdout, and closing the terminal leaves it running in the catalog. Ctrl-C stops following
+and prints the job id. Exit codes: 0 completed (or detached), 1 job or request failed,
+2 Video not installed, 3 job cancelled or a requested confirmation declined.
+`panoma video doctor --json` is the exception: it runs the validated installed binary locally,
+without the server, under the same reduced environment as an app job.

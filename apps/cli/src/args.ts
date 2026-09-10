@@ -46,7 +46,10 @@ export interface Flags {
    * from not spending it, with nothing in between to show the figure.
    */
   dryRun: boolean;
-  /** `panoma twin distill --all`: chain passes until reading the entire history. */
+  /**
+   * `panoma twin distill --all`: chain passes until reading the entire history.
+   * `panoma open <project> --all`: open everything the project's plan lists.
+   */
   all: boolean;
   /** With `open`: open the folder in the explorer instead of in the editor. */
   folder: boolean;
@@ -69,6 +72,12 @@ export interface Flags {
   rotateKey: boolean;
   /** Arguments that are neither flags nor flag values. */
   positionals: string[];
+  browser?: boolean;
+  until?: string;
+  format?: string;
+  langs?: string;
+  goal?: string;
+  input?: string;
 }
 
 /**
@@ -76,6 +85,7 @@ export interface Flags {
  * error.
  */
 export const KNOWN_FLAGS = [
+  "--browser", "--until", "--format", "--langs", "--goal", "--input",
   "--json",
   "--verbose",
   "-v",
@@ -199,6 +209,12 @@ export function parseArgs(argv: string[]): Flags | "help" | "version" | { error:
     };
 
     if (arg === "--json") flags.json = true;
+    else if (arg === "--browser") flags.browser = true;
+    else if (arg === "--until") flags.until = takeValue();
+    else if (arg === "--format") flags.format = takeValue();
+    else if (arg === "--langs") flags.langs = takeValue();
+    else if (arg === "--goal") flags.goal = takeValue();
+    else if (arg === "--input") flags.input = takeValue();
     else if (arg === "--verbose" || arg === "-v") flags.verbose = true;
     else if (arg === "--duplicates" || arg === "-d") flags.duplicates = true;
     else if (arg === "--save") flags.save = true;
@@ -294,12 +310,22 @@ export function parseArgs(argv: string[]): Flags | "help" | "version" | { error:
   if (flags.folder && flags.terminal) {
     return { error: say("error.folderAndTerminal") };
   }
+  /*
+    `--all` with `open` says "everything the plan lists"; `--folder` and `--terminal` say "this
+    one thing". The same trap: one of the two halves of the order would be silently ignored.
+   */
+  if (flags.all && (flags.folder || flags.terminal)) {
+    return { error: say("error.allAndOne") };
+  }
   if (flags.install && flags.remove) {
     return { error: say("error.installAndRemove") };
   }
 
   // positionals[0] is the command ("scan"); the rest is the path.
   flags.path = positionals[1] ?? ".";
+  if (positionals[0] === "video" && !["auto", "scout", "story", "render", "review", "revise", "doctor"].includes(positionals[1] ?? "")) {
+    return { error: say("apps.videoVerb", { verb: positionals[1] ?? "" }) };
+  }
   return flags;
 }
 

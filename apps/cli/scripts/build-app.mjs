@@ -137,6 +137,21 @@ try {
     to the child's `error` to say «couldn't launch pnpm»; here the same failure was silent, and a
     silent failure on the one system nobody can attach a terminal to costs an afternoon.
    */
+  /*
+    The previous `standalone`, out of the way before Next writes the new one.
+
+    `next build` does not empty that directory: it writes over it. And what it writes are folders
+    of `node_modules/.pnpm` named `paquete@version`, so a dependency that changes version leaves
+    the old folder there, complete and readable, next to the new one. On 6-Sep-2026 bumping next
+    from 15.5.23 to 15.5.25 left both, and `pack-app` refused to package because two versions of
+    the same package wanted to travel — which is the guard from the drizzle 0.38.4 episode
+    working, and it is the reason the stale copy was seen at all.
+
+    It is deleted here because that guard only fires when the versions differ. Stale content
+    under the same version does not fire anything: it travels.
+   */
+  rmSync(join(web, DIST, "standalone"), { recursive: true, force: true });
+
   const build = spawnSync("pnpm", ["exec", "next", "build"], {
     cwd: web,
     stdio: "inherit",

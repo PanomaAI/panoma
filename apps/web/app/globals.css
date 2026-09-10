@@ -6,7 +6,7 @@
   The dependencies that require this specific order are written in the header of each piece, and
   `styles/README.md` counts them all at once. The four that hurt the most:
   · `catalog-empty.css` steps on `catalog-screen`, `catalog-views`, and `detail-panel`. ·
-  `project-sections.css` steps on `project-panels.css` in three rules. · `responsive.css` steps on
+  `project-sections.css` steps on `project-panels.css` in two rules. · `responsive.css` steps on
   almost all the previous ones: it goes after them on purpose.
   `styles/styles.test.ts` checks that the list here and the files in the directory are still the
   same, and in the same order.

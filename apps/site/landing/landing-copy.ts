@@ -151,7 +151,7 @@ export type LandingCopy = {
   /*
     The closing responded to two different questions at once —"how do I start" in the headline and
     "where does my data end up" in the list— and didn't quite answer either. Now it is just one:
-    where all of this lives. The headline gives the reason from which the four promises hang
+    where all of this lives. The headline gives the reason from which the five promises hang
     (there is no server), each promise comes with its why —a statement without a mechanism is a
     'trust me,' which is exactly what cannot be asked when talking about credentials—, and
     starting from a folder down to the command, which is where it's needed and where it finally
@@ -283,10 +283,10 @@ const en: LandingCopy = {
       "health, its activity and the state of each one, moving from one project to the next.",
   },
   /*
-    The third command is not a third folder: it is the next step. `scan` teaches and does not save
-    anything; `up` is the one that opens the catalog — and until the catalog traveled inside the
-    npm package, this page couldn't provide it because outside the monorepo it wouldn't start. Now
-    it starts. The label shows where it is located and does not "open," because `up` prints the
+    No box carries `scan` any more: the pair is `up` twice, a folder and `~`. `scan` teaches and
+    saves nothing; `up` is the one that opens the catalog — and until the catalog traveled inside
+    the npm package, this page couldn't provide it because outside the monorepo it wouldn't start.
+    Now it starts. The label shows where it is located and does not "open," because `up` prints the
     address and does not launch the browser.
    */
   command: {

@@ -14,8 +14,95 @@
  */
 
 import type { RiskCode } from "@panoma/core";
+import { FAULT_PART, faultOf, type AppFaultCode } from "@panoma/apps/faults";
 
 const MESSAGES = {
+  "apps.help": "  panoma apps                  manage optional official apps (install, doctor, update, remove)",
+  "apps.videoHelp": "  panoma video auto <project>  create a preview as a durable job (story, revise, render, review)",
+  "apps.doctorHelp": "  panoma video doctor          check the installed video runtime without the catalog",
+  "apps.usage": "Usage: panoma apps [install|update|rollback|remove|clean|doctor|enable|disable|check] <id> [--browser]",
+  "apps.line": "{id} · {status} · {version}",
+  "apps.rejected": "App operation failed: {detail}",
+  /*
+    What went wrong with an app, said in a sentence. Same codes as the browser, same words; the
+    table that dispatches them is `appFaultText` below. It cannot be shared with `apps-view.ts`
+    because that one is bilingual and the terminal is English only, so what the two share is the
+    vocabulary — `AppFaultCode` — and each writes its own sentences.
+   */
+  "apps.fault.npmNotFound": "panoma needs npm to install apps. Install Node.js with npm and try again.",
+  "apps.fault.appError": "The app answered: {detail}",
+  "apps.fault.offline": "The published version could not be looked up, and none is cached. Check the connection and try again.",
+  "apps.fault.nodeTooOld": "The app needs a newer Node.js than this machine has. Required: {needed}. Installed: {running}.",
+  "apps.fault.npmTooOld": "The app needs a newer npm than this machine has. Required: {needed}. Installed: {running}.",
+  "apps.fault.engineUnsupported": "npm rejected this machine's version of Node.js or npm, so the app cannot be installed here.",
+  "apps.fault.doesNotStart": "The app installed, but it did not start.",
+  "apps.fault.cancelled": "The operation was cancelled.",
+  "apps.fault.timeout": "The operation took too long and was stopped.",
+  "apps.fault.stalled": "The download stopped making progress and was halted.",
+  "apps.fault.processFailed": "npm ended with an error.",
+  "apps.fault.noPreviousVersion": "There is no previous version to go back to.",
+  "apps.fault.operationInProgress": "This app already has an operation running. Wait for it to finish.",
+  "apps.fault.playwrightMissing": "This version of the app does not ship Playwright, so it cannot download the browser.",
+  "apps.fault.browserNotDeclared": "This version of the app declares no browser download.",
+  "apps.fault.malformedRequirements": "The app did not answer with the requirements it declares.",
+  "apps.fault.incompatibleProtocol": "This version of the app speaks a protocol this panoma does not understand. Update panoma.",
+  "apps.fault.stagedUpdateInvalid": "The staged update could not be read and was discarded. The active version still works.",
+  "apps.fault.diskUnreadable": "The app's installation on disk could not be read.",
+  "apps.fault.unknownApp": "That app is not in the catalog.",
+  "apps.fault.brokenPackage": "The downloaded package is damaged, so it was not installed.",
+  "apps.fault.noSpaceLeft": "There is no space left on the disk.",
+  "apps.fault.permissionDenied": "panoma is not allowed to write where it keeps apps.",
+  "apps.fault.readOnlyDisk": "The disk where panoma keeps apps is read-only.",
+  "apps.fault.tooManyOpenFiles": "The system would not open more files. Close something and try again.",
+  "apps.fault.diskError": "A disk operation failed.",
+  "apps.fault.commandDidNotStart": "The program that performs the installation could not be launched.",
+  "apps.fault.localCatalogRequired": "This only works on the local catalog on your machine.",
+  "apps.fault.unknownOperation": "That operation does not exist.",
+  "apps.fault.appNotEnabled": "The app is disabled. Enable it before using it.",
+  "apps.fault.providerNotEnabled": "That model is not enabled for this app.",
+  "apps.fault.budgetExhausted": "Today's app call budget is used up.",
+  "apps.fault.providerKeyMissing": "The chosen model has no key. Set one in AI.",
+  "apps.fault.voiceKeyMissing": "The ElevenLabs key is missing. Save one before using narration.",
+  "apps.fault.requirementMissing": "The app has requirements left to complete. Check them before creating the video.",
+  "apps.fault.interrupted": "The catalog restarted while the job was running.",
+  "apps.fault.appFailed": "The app failed without saying why.",
+  "apps.fault.invalidIdentity": "The chosen project has no valid catalog identity.",
+  "apps.fault.musicOutsideProject": "The music track has to live inside the project.",
+  "apps.fault.confirmationRequired": "Enabling a model or a voice needs an explicit confirmation.",
+  "apps.fault.invalidSetting": "That setting is not valid.",
+  "apps.fault.appSpokeWrong": "The app answered something panoma could not read.",
+  "apps.fault.badRequest": "The request was not valid.",
+  "apps.fault.localUrlRequired": "The address has to be on this machine (localhost).",
+  "apps.fault.jobNotFound": "That job no longer exists.",
+  "apps.fault.projectNotFound": "That project is no longer in the catalog.",
+  "apps.fault.ambiguousProject": "More than one project has that identity. Choose one.",
+  "apps.fault.requestFailed": "The request to the app failed.",
+  "apps.fault.artifactNotFound": "That file is no longer where the production left it.",
+  "apps.fault.reviewFailed": "The video review did not pass.",
+  "apps.fault.stageFailed": "A stage of the production failed.",
+  "apps.fault.noProduction": "This production produced no video.",
+  "apps.fault.internal": "panoma stopped on an internal check. The code is quoted below.",
+  "apps.fault.notInstalled": "panoma video is not installed. Install it with: panoma apps install panoma-video",
+  "apps.notInstalled": "panoma video is not installed. Install it with: panoma apps install panoma-video",
+  "apps.browserConsent": "Playwright downloads {browser} from Google's servers, and Google's terms apply: {terms}. Approximate download in MB: {n}.",
+  "apps.browserUndeclared": "This version of the app declares no browser download.",
+  "apps.confirm": "Continue? Type yes: ",
+  "apps.cleanConfirm": "This permanently deletes the app's productions. Space in bytes: {bytes}.",
+  "apps.cancelled": "Cancelled.",
+  "apps.job": "Job: {id}",
+  "apps.jobProgress": "{status} · {message}",
+  "apps.jobDone": "Job complete: {id}",
+  "apps.jobFailed": "Job failed: {detail}",
+  "apps.jobDetached": "The job continues in the catalog: {id}",
+  "apps.requirement": "{name}: {status}",
+  "apps.present": "available",
+  "apps.missing": "missing",
+  "apps.unchecked": "not checked",
+  "apps.videoUsage": "Usage: panoma video auto|scout|story|render|review|revise <project> [brief-or-render-id] [--input <json>]. Use panoma video doctor for a local check.",
+  "apps.videoVerb": "Unknown video operation: {verb}. Choose auto, scout, story, render, review, revise or doctor.",
+  "apps.videoInput": "--input must be a JSON object.",
+  "apps.noIdentity": "The selected project has no repository identity. Create its first commit and scan it again.",
+  "apps.browserRequired": "Browser download needs confirmation in an interactive terminal. Open the app page to accept the download.",
   "server.unreachable": "Couldn’t reach the catalog at {api}.",
   "server.startIt": "Start it with: panoma up",
   "server.badApi": "“{api}” is not a valid address.",
@@ -141,6 +228,12 @@ const MESSAGES = {
   "open.andMore": "and {n} more",
   "open.useSlug": "Try again with the exact slug.",
   "open.opened": "{name} opened with {with}",
+  "open.allOpened": "{name}: everything open",
+  "open.allPartial": "{name}: opened {done} of {n}",
+  "open.allNothing": "{name}: nothing could be opened",
+  "open.allStepFailed": "{name}: {error}",
+  "open.allSuggested":
+    "No plan saved for this project, so the suggested set opened. Decide what one click opens on its page, under “Open everything”.",
   "card.code": "Code",
   "card.git": "Git",
   "card.origin": "Origin",
@@ -451,6 +544,7 @@ const MESSAGES = {
   "error.isolationLevels": "The ones there are: {list}",
   "error.badLimit": "--limit needs a whole number greater than zero.",
   "error.folderAndTerminal": "--folder and --terminal ask for two different things. Pick one.",
+  "error.allAndOne": "--all opens everything the plan lists; --folder and --terminal open one thing. Pick one.",
   "error.installAndRemove": "--install and --remove ask for two different things. Pick one.",
   // ── The agents' .md ───────────────────────────────────────────────────────
   "md.usage": "panoma md [check|fix|init|sync|review] [path]",
@@ -473,6 +567,8 @@ const MESSAGES = {
   "md.fixNothing": "Nothing to fix: everything it claims exists.",
   "md.reviewAsking": "Reading the instructions file and asking the model…",
   "md.reviewBy": "opinion by {model} on “{name}” · stored in its page",
+  "md.reviewUnsaved": "opinion by {model} on “{name}” · not stored: the project has no repository, so the catalog has nowhere to keep it",
+  "md.reviewCached": "answered from the saved opinion; the file has not changed since it was written. --force asks the model again",
   "md.inherited": "also inherits: {path} ({tokens} tokens)",
   "md.inheritedHint": "agents read it on top of the project's own; check it with: panoma md check {dir}",
   "md.findingRow": "line {line} · {claim} — {reason}",
@@ -542,6 +638,8 @@ const MESSAGES = {
   "disk.walking": "Walking each project’s tree. This takes several minutes…",
   "secrets.revoke": "Revoke it in the provider’s dashboard first: that is the only thing that disables it.\nClean the history afterwards, with git filter-repo. Deleting the file and committing\ndoes not help — the key is still in every earlier commit.",
   "describe.reading": "Reading {slug} and asking the model…",
+  "describe.cached": "answered from the saved description; nothing changed since it was written. --force asks the model again",
+  "describe.unsaved": "not stored: the project has no repository, so the catalog has nowhere to keep it",
   "enrich.asking": "Querying public registries and OSV.dev…",
   "mcp.configTitle": "MCP configuration",
   "mcp.pasteIt": "Paste it into .mcp.json or ~/.claude.json — or run it again with --install",
@@ -571,7 +669,8 @@ const MESSAGES = {
   "card.lockUnresolved": "{path} (versions unresolved)",
   "hooks.noPostCommit": "· there was no post-commit",
   "ai.notEncrypted": "The file is mode 0600, but it is not encrypted.",
-  "mcp.noMonorepo": "Can’t find the monorepo from here, so the config points at @panoma/mcp,\nwhich is not published on npm yet. Run this from your clone of the repository.",
+  "mcp.noServer":
+    "No MCP server on this disk, so there is no configuration to give: it travels inside\nthe panoma package, and this copy has not got it. Reinstall panoma, or run this from\nyour clone of the repository.",
   "twin.usage":
     "panoma twin [sources|allow|revoke|forget|mine|verdicts|distill|synthesize|taste|score|design|look]",
   "twin.unknownSub": "Unknown subcommand: {sub}",
@@ -654,6 +753,8 @@ const MESSAGES = {
   "twin.saveRejected": "The catalog rejected the reactions ({status}). {detail}",
   "twin.forgetUsage": "Say what to forget: panoma twin forget <source>. The ones that work:",
   "twin.forgotten": "Forgotten: {n} verdict{s} deleted from the catalog.",
+  "twin.forgottenNarratives": "History records deleted with them: {n}.",
+  "twin.forgottenEpisodes": "Extracted decision episodes deleted with them: {n}.",
   "twin.nothingSaved":
     "None of this was stored: it is read from disk, printed, and that is the end of it.",
   "twin.saveHint": "--save stores them in the catalog, the only thing that takes them out of here.",
@@ -685,6 +786,14 @@ const MESSAGES = {
   "twin.distilledNone": "The model pulled no observation out of these quotes.",
   "twin.distilledNext":
     "panoma twin synthesize turns them into your portrait, without asking you anything.",
+  /*
+    What no pass can send: a project's only unread quote cannot back an observation —the parser
+    wants two from the same batch— so the route leaves it out and says so. Without this line the
+    corpus said "1 left" forever, and `--all` paid a call per pass to keep it there.
+   */
+  "twin.distilledThin": "alone in their project, and so unread: {n}",
+  /* Answers the output limit cut, asked again at once with twice the room. Each was a call. */
+  "twin.distilledTruncated": "answers cut short and asked again with more room: {n}",
   "twin.distillMore": "still unread: {left} · next pass, number {pass}…",
   "twin.distillPasses": "chained passes: {n}",
   "twin.distillNoModel": "No model is connected, so there is nothing to distil with.",
@@ -705,6 +814,8 @@ const MESSAGES = {
   "twin.synthDone": "new: {created} · refined: {refined} · retired: {retired}",
   "twin.synthProposed":
     "{n} belief{s} you signed have a proposed version waiting for your answer.",
+  /* The same count as `twin.distilledTruncated`, over the sorting call and the synthesis. */
+  "twin.synthTruncated": "answers cut short and asked again with more room: {n}",
   "twin.synthNext": "panoma twin taste shows how it turned out.",
   "twin.churnTitle": "How your portrait has moved",
   "twin.churnMonth": "{month} — new: {created} · refined: {refined} · retired: {retired}",
@@ -816,6 +927,21 @@ const MESSAGES = {
     "It is {width} px wide. Below {floor}, whatever gets judged will be about the scale the\n  file was saved at rather than about your screen.",
   "twin.lookEstimate":
     "{statements} statement{s} from your portrait · {tokens} tokens of text · {size} of image · {provider}/{model}",
+  /*
+    What the critic is going to be shown, and what it was shown.
+    Panoma refused for months to shrink a capture, and the reason still stands in
+    `packages/core/src/screenshot.ts`: reducing what a model is going to judge, without saying so,
+    changes the judgment behind the back of whoever asked for it. The owner can now ask for it on
+    the Spend screen, and these seven sentences are what keeps the refusal's promise — the reason
+    a capture travels whole is said as plainly as the reduction itself.
+   */
+  "twin.lookFitSent": "reduced for the critic · what it sees: {size} · what the file has: {from}",
+  "twin.lookFitWhole": "you asked for it reduced and it travels whole: {why}",
+  "twin.lookFitAsked": "you asked for it reduced: its long edge will be at most {edge} px",
+  "twin.lookWhyFormat": "it isn’t a PNG, and only a PNG can be reduced here",
+  "twin.lookWhyVariant": "it is a PNG written in a way panoma cannot read",
+  "twin.lookWhyAlready": "it is already smaller than that size",
+  "twin.lookWhyBroken": "it couldn’t be read to reduce it",
   "twin.lookCost":
     "The image is billed separately and every provider counts it its own way: this is its\n  size, not its price.",
   "twin.lookDryRun": "That’s as far as the rehearsal goes: nothing was looked at.",
@@ -836,8 +962,14 @@ const MESSAGES = {
   "twin.lookMissing": "I can’t find that file: {path}",
   "twin.lookEmpty": "That file is empty: {path}",
   "twin.lookNotImage": "That isn’t an image: {path}",
+  /*
+    The cap named here is the one for reading a file off this disk, which is not the one for what
+    travels to a provider: how much of a capture is sent is chosen on the Spend screen and applied
+    by the route, so this terminal no longer answers that question. What is left for it to refuse
+    is a file so big that it is an export and not a screen.
+   */
   "twin.lookTooBig":
-    "That screenshot weighs {size} and the cap is {cap}. Crop it or export it as JPEG: it\n  isn’t shrunk automatically, because shrinking it would change what gets judged without\n  telling you.",
+    "That screenshot weighs {size} and the most that gets read off a disk is {cap}. A file that\n  big is an export, not a screen: crop it or export it smaller. How much of a capture the\n  critic is shown is decided on the Spend screen, not here.",
   "twin.lookRejected": "Couldn’t look at that ({status}). {detail}",
 
   "next.title": "What’s next",
@@ -935,11 +1067,44 @@ const MESSAGES = {
     "What is left —whether it looks good, whether it matches the rest— needs an eye, and this command hasn’t got one.",
 
   "usage.next": "Usage: panoma next   ·   panoma next <project> <assignment>",
-  "usage.open": "Usage: panoma open <project>   ·   --folder   ·   --terminal",
+  "usage.open": "Usage: panoma open <project>   ·   --folder   ·   --terminal   ·   --all",
   "usage.describe": "Usage: panoma describe <project>",
   "usage.search": 'Usage: panoma search "text to find"',
   "usage.run": "Usage: panoma run <project> <package> [version]   ·   panoma run <project> --security",
   "usage.agentKey": 'Missing the name: panoma agent-key "Claude Code"',
+
+  // ── The portable memory ───────────────────────────────────────────────────
+  "memory.usage": "Usage: panoma memory export <project> [--out <file>]",
+  "memory.usageHint":
+    "The project is its exact slug, the one the catalog shows. Without --out the JSON goes to stdout.",
+  "memory.wrote": "Wrote {path} · notes: {notes} · decisions: {decisions}",
+
+  // ── The spend: what the models cost, and the caps ─────────────────────────
+  "spend.title": "Spend",
+  "spend.today": "Today",
+  "spend.month": "Last 30 days",
+  "spend.family": "{name}: {used} of {cap} ({source})",
+  "spend.source.factory": "factory",
+  "spend.source.file": "chosen on the Spend screen",
+  "spend.source.paused": "paused",
+  "spend.source.env": "{variable} decides",
+  "spend.source.envUnread": "{variable} is set but cannot be read, so the factory value applies",
+  "spend.unbudgeted": "{name}: {n} (no cap)",
+  "spend.shotsFull": "screenshots: the critic sees every pixel of the capture",
+  "spend.shotsFit": "screenshots: fitted before travelling, to a long edge of {n} px",
+  "spend.none": "No model was called today.",
+  "spend.monthNone": "No model was called in the last thirty days.",
+  "spend.calls": "calls: {n}",
+  "spend.tokens": "tokens: {input} in · {output} out",
+  "spend.unmetered": "unmetered: {n}",
+  "spend.images": "images: {n}",
+  "spend.cost": "cost: {money}",
+  "spend.unpriced": "calls without a rate: {n}",
+  "spend.noRate": "No rate written yet, so no money: write yours on the Spend screen.",
+  "spend.paused": "Paused: every cap reads as zero until it is lifted on the Spend screen.",
+  "spend.broken": "spend.json exists and cannot be read: the factory values apply.",
+  "spend.screen": "The caps and your rates, at {url}",
+  "spend.rejected": "The catalog could not report the spend ({status}). {detail}",
 } as const;
 
 export type MessageKey = keyof typeof MESSAGES;
@@ -989,6 +1154,121 @@ export function plural(n: number, many = "s", one = ""): string {
  * It is the twin of `riskText` in `apps/web/lib/i18n.ts` —same keys, same words— and now the
  * engine has nothing to contradict either of them with.
  */
+/**
+ * What went wrong with an app, as one line for the terminal.
+ *
+ * `satisfies Record<AppFaultCode, MessageKey>` is the whole point: a code added to the
+ * vocabulary without a sentence here does not compile. It is the same enforcement `apps-view.ts`
+ * gets on the browser side, and the same reason `CASOS` above is a `Record<RiskCode, …>` — a
+ * key composed at a call site escapes the compiler unless something closes the set.
+ *
+ * The fallback is not decoration. This function is fed the `error` column of a job row, and
+ * those rows hold values written before this vocabulary existed, plus the app's own prose. An
+ * unrecognised value is quoted exactly as it was before, under the sentence it always had.
+ */
+const FAULT_KEY = {
+  offline: "apps.fault.offline",
+  "npm-not-found": "apps.fault.npmNotFound",
+  "node-too-old": "apps.fault.nodeTooOld",
+  "npm-too-old": "apps.fault.npmTooOld",
+  "engine-unsupported": "apps.fault.engineUnsupported",
+  "does-not-start": "apps.fault.doesNotStart",
+  cancelled: "apps.fault.cancelled",
+  timeout: "apps.fault.timeout",
+  stalled: "apps.fault.stalled",
+  "process-failed": "apps.fault.processFailed",
+  "no-previous-version": "apps.fault.noPreviousVersion",
+  "not-installed": "apps.fault.notInstalled",
+  "app-operation-in-progress": "apps.fault.operationInProgress",
+  "playwright-not-installed": "apps.fault.playwrightMissing",
+  "browser-not-declared": "apps.fault.browserNotDeclared",
+  "malformed-requirements": "apps.fault.malformedRequirements",
+  "incompatible-protocol": "apps.fault.incompatibleProtocol",
+  "staged-update-invalid": "apps.fault.stagedUpdateInvalid",
+  "disk-unreadable": "apps.fault.diskUnreadable",
+  "unknown-app": "apps.fault.unknownApp",
+  "no-space-left": "apps.fault.noSpaceLeft",
+  "permission-denied": "apps.fault.permissionDenied",
+  "read-only-disk": "apps.fault.readOnlyDisk",
+  "too-many-open-files": "apps.fault.tooManyOpenFiles",
+  "disk-error": "apps.fault.diskError",
+  "command-did-not-start": "apps.fault.commandDidNotStart",
+  "broken-installation": "apps.fault.brokenPackage",
+  "broken-package-manifest": "apps.fault.brokenPackage",
+  "package-outside-installation": "apps.fault.brokenPackage",
+  "package-version-mismatch": "apps.fault.brokenPackage",
+  "manifest-id-mismatch": "apps.fault.brokenPackage",
+  "manifest-file-missing-or-outside": "apps.fault.brokenPackage",
+  "invalid-version": "apps.fault.brokenPackage",
+  "path-outside-home": "apps.fault.internal",
+  "managed-path-is-symlink": "apps.fault.internal",
+  "use-clean-data": "apps.fault.internal",
+  "invalid-brain-budget": "apps.fault.internal",
+  "provider-key-not-allowed": "apps.fault.internal",
+  "fixtures-are-test-only": "apps.fault.internal",
+  "fixture-registry-must-be-loopback": "apps.fault.internal",
+  "invalid-app-job-transition": "apps.fault.internal",
+  "invalid-app-spend-receipt": "apps.fault.internal",
+  "local-catalog-required": "apps.fault.localCatalogRequired",
+  "unknown-app-operation": "apps.fault.unknownOperation",
+  "app-not-enabled": "apps.fault.appNotEnabled",
+  "provider-not-enabled": "apps.fault.providerNotEnabled",
+  "app-budget-exhausted": "apps.fault.budgetExhausted",
+  "provider-key-missing": "apps.fault.providerKeyMissing",
+  "voice-key-missing": "apps.fault.voiceKeyMissing",
+  "requirement-missing": "apps.fault.requirementMissing",
+  interrupted: "apps.fault.interrupted",
+  "app-failed": "apps.fault.appFailed",
+  "invalid-identity": "apps.fault.invalidIdentity",
+  "music-outside-project": "apps.fault.musicOutsideProject",
+  "provider-confirmation-required": "apps.fault.confirmationRequired",
+  "unknown-setting": "apps.fault.invalidSetting",
+  "invalid-brain": "apps.fault.invalidSetting",
+  "invalid-voice": "apps.fault.invalidSetting",
+  "malformed-guide": "apps.fault.appSpokeWrong",
+  "protocol-mismatch": "apps.fault.appSpokeWrong",
+  "invalid-job-id": "apps.fault.badRequest",
+  "invalid-body": "apps.fault.badRequest",
+  "body-too-large": "apps.fault.badRequest",
+  "invalid-app-input": "apps.fault.badRequest",
+  "unknown-app-input": "apps.fault.badRequest",
+  "unknown-app-tool": "apps.fault.badRequest",
+  "invalid-brief_id": "apps.fault.badRequest",
+  "invalid-render_id": "apps.fault.badRequest",
+  "invalid-hook": "apps.fault.badRequest",
+  "invalid-job": "apps.fault.badRequest",
+  "invalid-document": "apps.fault.badRequest",
+  "unexpected-operation-input": "apps.fault.badRequest",
+  "invalid-range": "apps.fault.badRequest",
+  "local-url-required": "apps.fault.localUrlRequired",
+  "job-not-found": "apps.fault.jobNotFound",
+  "app-job-not-found": "apps.fault.jobNotFound",
+  "project-not-found": "apps.fault.projectNotFound",
+  "ambiguous-project": "apps.fault.ambiguousProject",
+  "app-request-failed": "apps.fault.requestFailed",
+  "artifact-not-found": "apps.fault.artifactNotFound",
+  "review-failed": "apps.fault.reviewFailed",
+  "stage-failed": "apps.fault.stageFailed",
+  "no-supported-production": "apps.fault.noProduction",
+  "app-error": "apps.fault.appError",
+} satisfies Record<AppFaultCode, MessageKey>;
+
+const FAULT_FIGURES: ReadonlySet<AppFaultCode> = new Set(["node-too-old", "npm-too-old"]);
+
+export function appFaultText(value: string | null | undefined, unknown: MessageKey): string {
+  const { code, detail } = faultOf(value);
+  if (!code) return say(unknown, { detail: value ?? "" });
+  if (FAULT_FIGURES.has(code)) {
+    const [needed, running, ...rest] = (detail ?? "").split(FAULT_PART);
+    // Two figures through one text column. Anything but exactly two and the sentence names none.
+    if (!needed || !running || rest.length) return say("apps.fault.engineUnsupported");
+    return say(FAULT_KEY[code], { needed, running });
+  }
+  if (code === "app-error") return say("apps.fault.appError", { detail: detail ?? "" });
+  const said = say(FAULT_KEY[code]);
+  return detail ? `${said} ${detail}` : said;
+}
+
 export function riskText(risk: { code: RiskCode; count?: number }): string {
   const n = risk.count ?? 0;
   /* Both forms always go: the sentence stays with the gap it uses. */

@@ -24,11 +24,12 @@ the interface turns it on.
 
 **The agent channel only.** The ablation lives in the two deliveries of the briefing —
 `/api/agent/context` and the re-read of `POST /api/agent/notes`— and nowhere else. The
-project page, the "Memory" card and everything a person reads stay out of it: what is
+project page, the Memory tab and everything a person reads stay out of it: what is
 measured is the agent's obedience, **nothing is ever hidden from the person, ever.**
 
 **The dormant channel is left out on purpose.** The note that wakes when an agent is about
-to touch its path (`panoma signal` → `GET /api/agent/notes`) is always served and never
+to touch its path (`panoma signal` → `GET /api/agent/notes`, or an explicit `files` lookup through
+`panoma_context`) is always served and never
 enters the scale. Withholding the traffic sign at the accident site in order to measure
 obedience would be measuring at the cost of causing the accident. There is a mechanical
 reason pointing the same way, too: the hook carries no agent identity, so there would be no
@@ -37,12 +38,12 @@ arm to compute.
 And one boundary that is not ethical but a matter of scope, worth saying here anyway: **the
 serving ledger is written with the ablation off as well.** That record does not belong to
 the experiment — it is the substrate for being able to ask tomorrow whether a note was ever
-any use at all.
+any use at all. Ordinary rows have no experiment identifier and are excluded from arm comparisons.
 
 ## The serving ledger: `servings`
 
 Every time the briefing delivers —or withholds— a project's memory, a row is left in
-`servings`, with seven columns:
+`servings`, with eight columns:
 
 | column | what it is |
 | --- | --- |
@@ -50,6 +51,7 @@ Every time the briefing delivers —or withholds— a project's memory, a row is
 | `project_id` | the project, cascading |
 | `agent_id` | the agent, cascading |
 | `arm` | `served` · `withheld` |
+| `experiment_id` | `memory-v1` when enrolled; null for ordinary deliveries and older rows |
 | `note_ids` | jsonb: the notes that traveled **or that would have been served** |
 | `note_chars` | how much the delivery weighed |
 | `at` | when |
@@ -109,7 +111,11 @@ route that does the same thing by another path.
 
 ## What the report can say
 
-`scaleReport(db, days)` returns two halves, both of them with their honesty up front.
+`scaleReport(db, days, experimentId = "memory-v1")` separates experimental rows from
+ordinary observation. `observationalServings` counts rows without an experiment identifier;
+`arms` includes only the selected experiment. Older rows remain unenrolled because their
+original switch state cannot be reconstructed safely. Turning the experiment on later no
+longer adds earlier ordinary deliveries to the served arm.
 
 **The arms.** One row per arm, with the window in days:
 
@@ -175,7 +181,9 @@ screen will earn its place the day the numbers say something. The route carries 
 like the rest —the tab next door does not read your catalog, and `curl`, which sends no
 browser headers, gets let through—. `days` is 30 if unsaid, and is clamped between 1 and
 365. The response opens with `ablation: "on" | "off"`, so that a number is never read
-without knowing whether the experiment was running.
+with the current switch state visible. This is not the historical enrollment state: the
+response also identifies `experimentId`, and only rows enrolled under that identifier enter
+the arm comparison.
 
 ## Where each thing is
 
@@ -199,7 +207,8 @@ without knowing whether the experiment was running.
 - **`launchesAfter` is a coarse measure, and it is said out loud.** It counts launch
   gestures in a project, not corrections on one specific note: two deliveries close together
   count the same gestures twice and a delivery late in the day has a short window. It is
-  comparable across arms by ratio and not in the absolute. The fine measure —the owner's
+  a descriptive proxy rather than a causal estimate. A ratio alone does not establish
+  that a memory prevented a correction. The fine measure —the owner's
   corrections via Twin verdicts— will arrive when there are rows enough to hold it up.
 - **There is no published result.** This document describes the instrument, not a
   conclusion: the experiment is off out of the box and there is no measured figure of

@@ -12,7 +12,7 @@ import { BRAND_ICONS } from "./brand-icons";
 import { useOpenTarget } from "./use-open-target";
 import { useT } from "./i18n-provider";
 import { useCopied } from "./use-copied";
-import { ActionError } from "./primitives";
+import { ActionButton, ActionError } from "./primitives";
 
 /**
  * Connect an agent to the catalog from here, without going to the terminal.
@@ -157,32 +157,44 @@ function AgentRow({
            That it is already connected is said here and not just on the button: the badge is read
            without interpreting a verb, and that is what explains why the button changed its word.
           */}
+        {/*
+           The state is the icon's color, and the word is read in ink.
+           `live` and `idle` are the house pair for this exact pair of states, but they are 2.56:1
+           and 2.15:1: fine for a mark, unreadable for a ten-pixel word. So the hue stays on the
+           mark — the same division `primitives.tsx` already makes with its dot — and the label
+           takes `chalk`.
+           There is no dark variant here on purpose: this application is single-palette, `base.css`
+           pins `color-scheme: light`, and a `dark:` utility would activate unreviewed the day a
+           dark theme exists.
+          */}
         {hasKey && !result && (
-          <span
-            className={`flex items-center gap-1 rounded-full border border-edge px-2 py-0.5 font-mono text-[10px] ${
-              hasEntered ? "text-green-700" : "text-amber-700 dark:text-amber-500"
-            }`}
-          >
+          <span className="flex items-center gap-1 rounded-full border border-edge px-2 py-0.5 font-mono text-[10px] text-chalk">
             {hasEntered ? (
-              <HiOutlineCheckCircle aria-hidden className="h-3.5 w-3.5" />
+              <HiOutlineCheckCircle aria-hidden className="h-3.5 w-3.5 text-live" />
             ) : (
-              <HiOutlineKey aria-hidden className="h-3.5 w-3.5" />
+              <HiOutlineKey aria-hidden className="h-3.5 w-3.5 text-idle" />
             )}
             {t(hasEntered ? "connect.alreadyOn" : "connect.keyIssued")}
           </span>
         )}
-        <button
+        {/*
+           Two tones for one button, which is what the ternary above was writing by hand: the first
+           connection is the accent, and a repeat — which only rotates a key that already exists —
+           steps back to the card's own paper. `ml-auto` is placement, which is the only thing
+           `className` carries.
+          */}
+        <ActionButton
+          tone={hasKey ? "surface" : "accent"}
+          size="sm"
           type="button"
+          className="ml-auto"
           onClick={() => void connect()}
+          busy={state === "working"}
+          busyLabel={t("connect.working")}
           disabled={state === "working" || ephemeral}
-          className={`ml-auto rounded px-3 py-1.5 font-mono text-[11px] transition-opacity hover:opacity-85 disabled:opacity-50 ${
-            hasKey
-              ? "border border-edge text-smoke"
-              : "border border-accent bg-accent text-white"
-          }`}
         >
-          {t(state === "working" ? "connect.working" : hasKey ? "connect.again" : "connect.do")}
-        </button>
+          {t(hasKey ? "connect.again" : "connect.do")}
+        </ActionButton>
       </div>
 
       {/*
@@ -240,8 +252,9 @@ function AgentRow({
 
       {result?.wrote === true && (
         <div className="mt-3 text-xs leading-relaxed text-smoke">
-          <p className="flex items-center gap-1.5 text-green-700">
-            <HiOutlineCheckCircle aria-hidden className="h-4 w-4" />
+          {/* The green is the check; the sentence keeps the `smoke` of the block, which is read. */}
+          <p className="flex items-center gap-1.5">
+            <HiOutlineCheckCircle aria-hidden className="h-4 w-4 text-live" />
             {t(result.replaced ? "connect.updated" : "connect.written")}
           </p>
           <code className="mt-1 block font-mono text-[11px] text-faint">{result.file}</code>
@@ -251,9 +264,15 @@ function AgentRow({
               {t("connect.coexists", { list: result.coexists.join(", ") })}
             </p>
           )}
-          {/* The key is clearly in there, and that file is in a repository. */}
+          {/*
+             The key is clearly in there, and that file is in a repository.
+             This sentence is the one thing on the card that can cost something, so it is written
+             in the ink that is read best rather than in an alarm hue: the house amber
+             (`--color-warn`) is 3.54:1 and would make the warning harder to read than the prose
+             around it. No `dark:` variant either — see the badge above.
+            */}
           {result.exposedToGit && (
-            <p className="mt-1 text-amber-700 dark:text-amber-500">{t("connect.gitWarning")}</p>
+            <p className="mt-1 text-chalk">{t("connect.gitWarning")}</p>
           )}
           {/* What the documentation did not say and needs to be known. */}
           <p className="mt-2 font-medium text-chalk">{t("connect.restart", { name })}</p>
@@ -270,23 +289,26 @@ function AgentRow({
             <pre className="min-w-0 flex-1 overflow-x-auto rounded border border-edge bg-ground p-3 font-mono text-[11px] text-chalk">
               {result.snippet}
             </pre>
-            <button
+            <ActionButton
+              tone="surface"
+              size="sm"
               type="button"
               onClick={() => void copy(result.snippet)}
               aria-label={t("connect.copy")}
-              className="rounded border border-edge px-2 py-1 font-mono text-[11px] text-smoke transition-colors hover:border-accent hover:text-accent"
             >
               {copied ? t("connect.copied") : <HiOutlineClipboard aria-hidden className="h-4 w-4" />}
-            </button>
+            </ActionButton>
           </div>
           {result.file && (
-            <button
+            <ActionButton
+              tone="surface"
+              size="sm"
               type="button"
+              className="mt-2"
               onClick={() => void openFile()}
-              className="mt-2 rounded border border-edge px-2 py-1 font-mono text-[11px] text-smoke transition-colors hover:border-accent hover:text-accent"
             >
               {t("connect.openFile")}
-            </button>
+            </ActionButton>
           )}
           <p className="mt-2 font-medium text-chalk">
             {opened !== null ? t("connect.opened", { editor: opened, name }) : t("connect.restart", { name })}

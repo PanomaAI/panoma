@@ -137,13 +137,13 @@ function redaction(overrides: Partial<QuoteRedaction> = {}): QuoteRedaction {
   they are forty-character hashes and what is being checked is that they are shortened without
   losing their distinctness.
  */
-const ANOTES = "git:5f2a1c9d0e11223344556677889900aabbccddee";
+const APUNTES = "git:5f2a1c9d0e11223344556677889900aabbccddee";
 const OTRO = "git:bb31cc7d0e11223344556677889900aabbccddee";
 
 /** A verdict just as it comes from `GET /api/twin/verdicts`, that is, already passed through JSON. */
 function stored(overrides: Partial<StoredVerdict> = {}): StoredVerdict {
   return {
-    identity: ANOTES,
+    identity: APUNTES,
     source: "claude-code",
     at: "2026-08-19T21:40:00.000Z",
     quote: "no era eso",
@@ -728,7 +728,7 @@ describe("los veredictos guardados, repartidos por proyecto", () => {
    */
   it("dos proyectos con la misma ruta interna no se funden en uno", () => {
     const groups = groupVerdicts([
-      stored({ identity: `${ANOTES}:apps/web` }),
+      stored({ identity: `${APUNTES}:apps/web` }),
       stored({ identity: `${OTRO}:apps/web` }),
     ]);
     expect(groups).toHaveLength(2);
@@ -754,8 +754,8 @@ describe("los veredictos guardados, repartidos por proyecto", () => {
 
 describe("la identidad de catálogo, acortada para que quepa", () => {
   it("se recorta el sha y se conserva la ruta de dentro", () => {
-    expect(projectLabel(`${ANOTES}:apps/web`)).toBe("git:5f2a1c9d:apps/web");
-    expect(projectLabel(ANOTES)).toBe("git:5f2a1c9d");
+    expect(projectLabel(`${APUNTES}:apps/web`)).toBe("git:5f2a1c9d:apps/web");
+    expect(projectLabel(APUNTES)).toBe("git:5f2a1c9d");
   });
 
   /* The `project` of an appointment can already come as a name, and there is nothing to cut there. */
@@ -1273,6 +1273,46 @@ describe("qué está mal en esta pantalla", () => {
     const text = plain(lookEstimateLines(ESTIMATE, 512_000));
     expect(text).toContain("500 KB");
     expect(text).toContain("openai-codex/gpt-5");
+  });
+
+  /*
+    And what the critic is shown, which since 6-Sep-2026 its owner chooses. The rehearsal travels
+    without the image, so before spending all that can be said is what was asked for; the receipt
+    says what happened. Both have to be said: panoma reduces a capture only when it is asked to,
+    and never without saying so.
+   */
+  const FIT = { policy: "fit", maxEdge: 1_568 } as const;
+
+  it("the rehearsal says what was asked for, with no image to measure", () => {
+    const text = plain(lookEstimateLines({ ...ESTIMATE, sent: { ...FIT } }, 512_000));
+    expect(text).toContain("1568 px");
+  });
+
+  it("and the receipt says the size the critic was shown, next to the one the file has", () => {
+    const sent = { ...FIT, fitted: true, width: 1_568, height: 784, from: { width: 3_024, height: 1_512 } };
+    const text = plain(lookLines({ ...RESPUESTA, sent }));
+    expect(text).toContain("1568×784");
+    expect(text).toContain("3024×1512");
+  });
+
+  it("a reduction that could not happen names its reason instead of staying quiet", () => {
+    const sent = { ...FIT, fitted: false, why: "format" } as const;
+    const text = plain(lookLines({ ...RESPUESTA, sent }));
+    expect(text).toContain("travels whole");
+    expect(text).toContain("PNG");
+  });
+
+  /* Nothing was done to the capture, so there is nothing to warn about. */
+  it("says nothing at all when the capture travels as it is", () => {
+    const text = plain(lookLines({ ...RESPUESTA, sent: { policy: "full", maxEdge: 1_568, fitted: false } }));
+    expect(text).not.toContain("reduced");
+  });
+
+  it("and the sentence fits a terminal like the rest", () => {
+    const sent = { ...FIT, fitted: true, width: 1_568, height: 784, from: { width: 3_024, height: 1_512 } };
+    for (const line of plain(lookLines({ ...RESPUESTA, sent })).split("\n")) {
+      expect(line.length).toBeLessThan(96);
+    }
   });
 });
 

@@ -107,6 +107,19 @@ What does still stand, because it was never about the landing:
   the second one photographs the `tsconfig.json` the first has just rewritten; a Ctrl+C with no
   handler skips the `finally` and leaves it touched. In this repository there is usually
   another session working at the same time, so it is not hypothetical.
+- **The previous `standalone` is deleted before Next writes the new one.** `next build` does not
+  empty that directory, it writes over it — and what it writes are folders of
+  `node_modules/.pnpm` named `package@version`, so a dependency that changes version leaves the
+  old folder there, whole and readable, beside the new one.
+- **And the trace asks Node where `next` is instead of globbing it.** The include patterns in
+  `next.config.ts` used to say `next@*`, and that wildcard was a trap that stayed shut while the
+  whole repository was on one version. On 6-Sep-2026 `apps/web` moved to 15.5.25 for two
+  critical advisories, `apps/site` stayed on 15.5.23, and the glob took both: two entire copies
+  of Next into the same standalone, 20 MB and 2,167 files of the wrong one, without so much as a
+  `package.json` — so it did not even have a version to show. `pack-app` refused to package it,
+  which is the guard from the drizzle 0.38.4 episode doing its job and the only reason any of it
+  was seen. The patterns now come from `createRequire(...).resolve("next/package.json")`, which
+  is the same question the bundle asks at run time.
 
 The build runs with `PANOMA_DIST=.next-bundle`, which is the other half of the decision:
 [environment.md](environment.md) has the variable, and the reason is not to trample the `.next`
@@ -138,9 +151,89 @@ Silicon only, and the web app runs with `images.unoptimized`), out go the `*.nft
 runtime—, out go the `*.map` files and out go the PGlite extension tarballs that no migration
 declares.
 
+Then two manifests get taken out of the way, and this is about truthfulness rather than
+weight. `app/package.json` is the manifest of the **monorepo**: nothing writes it on purpose,
+the tracing simply copies it because `outputFileTracingRoot` points at the root of the
+repository — and so the tarball was publishing eslint, vitest, tsup, tsx and typescript, none of
+which travel, plus a `packageManager` that Corepack would obey for anyone running a command from
+inside the installed folder. It is deleted whole. `app/apps/web/package.json` Next does write on
+purpose, and it is a verbatim copy of ours: it declared `react-icons` and `recharts` —which live
+inside `.next-bundle`, not in `node_modules`— and six `workspace:*` that no npm tool can
+resolve; it is left with `name`, `version`, `private` and `type`. Only the last one carries
+weight: it is what tells Node that the `server.js` Next emitted is ESM, and without it the
+server dies at its first `import` on Node 22.0 to 22.6, which `engines` still admits.
+
+What is **not** touched is `app/apps/web/.next-bundle/package.json`, the `{"type": "commonjs"}`
+that `next build` writes into its own output directory. Take it away and the server says
+«✓ Ready» and then answers 500 on every route. That is why the two paths above are named one by
+one and never matched by a pattern.
+
 And at the end `app/BUILD-INFO.json` gets written: version, commit, whether the tree was clean,
 the lockfile's sha256, the node version, the build platform and the exact version of every
 package that travels. That file exists **only** so that the guard in the next step can refuse.
+
+## Three dependencies held above what their parent asks for
+
+`pnpm-workspace.yaml` carries an `overrides` block with `postcss`, `fast-uri` and `qs`. It is
+not a preference: on 6-Sep-2026 socket.dev reported ten advisories against `panoma@0.1.9`, and
+the three of them were real. `next` pins `postcss` to exactly `8.4.31`, which follows any
+`sourceMappingURL` a stylesheet names and reads files off the disk; `ajv` —which arrives with
+the MCP SDK— brought `fast-uri` 3.1.5, with four high advisories for hostnames that resolve
+somewhere other than they read; and `express` brought `qs` 6.15.3. Each line is a debt, and it
+goes when its parent catches up.
+
+Two details about that block are deliberate. It lives in `pnpm-workspace.yaml` and **not** in
+`package.json`: pnpm 11 no longer reads the `pnpm` field there, it warns and carries on, so an
+override written in the obvious place looks applied and covers nothing — the same lesson
+`packages/runner/src/detect.ts` already wrote down for `allowBuilds`. And the pins are keyed by
+**name** and not by version, though `postcss@8.4.31: 8.5.28` is valid pnpm too: keyed to the bad
+version, the pin stops applying in silence the day next moves its own pin to 8.4.32.
+
+Two of those three stopped travelling later the same day. `fast-uri` and `qs` arrived through
+the MCP SDK's HTTP transport, and that whole tree left the package (below), so what they pin now
+is the development tree and the lockfile, not the tarball. Only `postcss` still travels, because
+it is next's. The pins stay on all three: what they protect from is a version resolving badly
+here, and here is where the package is built.
+
+The fourth of that day was not an override. `next` itself was 15.5.23, and 15.5.24 —published
+six days before the release— closed two critical advisories: an unauthenticated remote code
+execution on servers hosted on Windows, and another one through AVIF in the image optimizer.
+The second one does not reach here (`images.unoptimized`, and `sharp` is pruned); the first one
+does, because the catalog runs a Next server on the machine of whoever installed it, and that
+machine is a Windows one in one case out of three. Neither OSV nor `npm audit` knew about them:
+both advisories are still only in Vercel's repository and have not reached GitHub's global
+database. Both are on 15.5.25 — `apps/site` too, which is otherwise not changed without asking.
+
+## The MCP SDK stopped travelling, and 91 packages left with it
+
+`@modelcontextprotocol/sdk` brings **express, hono, cors, jose, ajv, eventsource** and a dozen
+more as normal dependencies, because it carries all of its transports in one package. panoma
+uses one, stdio, and the rest is an HTTP server that never runs. `packages/mcp` bundles itself
+with tsup and inlines the SDK, so none of it is needed on disk — which is what
+`packages/mcp/tsup.config.ts` has said in writing since it was written, and why it says the SDK
+and `zod` belong in `devDependencies`.
+
+They were not there. On 25-Aug-2026 they were moved to `dependencies` on the premise that the
+server imported them at run time and would die at first startup — true of `src/index.ts`, false
+of the `dist/index.js` that actually ships. And the premise looked confirmed, because the MCP
+server *was* dead, for the unrelated reason this same file documents: a CJS-only `yaml` inside
+an ESM bundle, fixed on 31-Aug. So a correct decision was reverted by a symptom that came from
+somewhere else, and `pack-app.mjs` went on describing the world as it had been —"the 26 packages
+that travel", "the 90 HTTP transport packages that are never executed"— while 117 travelled.
+
+Put back on 6-Sep-2026, and measured rather than argued: **117 packages became 26**, 9,463 files
+became 6,559, and the tarball went from 19.9 MB to 17.3 MB. What left includes every advisory
+this release was chasing except next's and postcss's — `fast-uri`, `qs` and `ajv` are simply not
+there any more — and the three phantom packages a scanner used to read out of
+`fast-uri/benchmark/package.json`.
+
+The evidence that it is safe is not that the tests pass. It is that the bundle answers the
+protocol from a directory with **no `node_modules` anywhere above it**: copy
+`app/node_modules/@panoma/mcp/dist/index.js` alone into an empty folder, send it `initialize`,
+and it replies with its nine tools. A server that owes nothing to its neighbours cannot be
+broken by taking the neighbours away. Both guards say the same from the other side: `prepack`
+spawns the packaged server and demands `serverInfo` in the reply, and the packaged journey does
+it again over a really installed tarball.
 
 ## The `prepack` guard
 
@@ -164,6 +257,11 @@ ones, and any of the three not matching aborts with the remedy spelled out. It a
 resolved: that is the 2 % of the package that does not travel frozen, and without it a
 compromised release of `yaml` or of the Anthropic SDK would land on every fresh install.
 
+And, since 6-Sep-2026, **that the number inside it is this version's**. The file carries it
+twice, it is regenerated by hand, and a release that bumps only `package.json` leaves it behind
+without a word: `0.1.10` was packed once carrying a shrinkwrap that still said `0.1.9`. This
+page already claimed the two moved together or `prepack` refused. Now that is true.
+
 And, since 28-Aug-2026, **that the file is inside the tarball**. It was not. `files` is an
 allowlist and npm does not add the shrinkwrap on its own —measured with npm 11.19.0 on a
 three-file package built separately to isolate it—, so the whole paragraph above had been,
@@ -175,7 +273,22 @@ checks both halves.
 **That what should not travel does not.** Build traces, `.env` files that the standalone copies,
 native `.node` binaries compiled for a single platform, `sharp`, `THIRD-PARTY-NOTICES.md`
 entries with no declared license or with copyleft announced, and a weight ceiling of 220 MB for
-the `app/`.
+the `app/`. And, since 6-Sep-2026, that the manifests outside `node_modules` are **exactly two**
+and say what they have to say: the monorepo's one has not come back, the web one carries
+`type: module` and declares no dependencies, and `.next-bundle`'s one carries
+`type: commonjs`. The check goes in both directions on purpose — one of the two failures is a
+file that returns, and the other is a file that goes missing, and neither shows at pack time.
+
+It also counts the manifests **inside** the vendored packages, which are 120 and every one of
+which holds something up. 111 live under `next/dist/compiled/`: next declares no `exports`, so
+`next/dist/compiled/<x>` resolves as a plain directory through that nested `main`, and 30 of
+them have no `index.js` to fall back on. The other 9 declare no name: they are `{"type": "…"}`
+markers and `main` redirections, and `@swc/helpers/_/_interop_require_default/` is a folder
+holding nothing but its manifest. So the rule cannot be "no nested manifests"; it is "no nested
+manifest that declares a name and is not one of Next's". The one that did was
+`fast-uri/benchmark/package.json`, a folder of benchmarks that a scanner read as three packages
+that are not here, one of them published by an npm account that no longer exists. It left with
+the SDK; the count stays so the next one does not reach the registry unremarked.
 
 ## `PANOMA_PACK_SUCIO`, and why it is called that
 

@@ -9,7 +9,7 @@ import { useT } from "./i18n-provider";
  *
  * It is asked here and not on the server because the answer has to be settled: the cover wakes the
  * watcher unexpectedly, so reading the state in the same render would catch the moment when it is
- * still being assembled. See `watch-warning.tsx`, which is where it was learned.
+ * still being assembled. See `catalog-context.tsx`, which is what asks it today.
  */
 export interface WatchSnapshot {
   active?: boolean;
@@ -53,7 +53,7 @@ export function CatalogDown({ failure }: { failure: { detail: string; path: stri
   /*
     Without `id="app-main"`, and by the way: this is rendered in TWO places. As a full page from
     `(app)/error.tsx` —which already wraps whatever I render with that destination— and inside the
-    catalog from `WatchWarning`, that is, inside the `<main id="app-main">` of the cover. Putting
+    catalog from `CatalogContext`, that is, inside the `<main id="app-main">` of the cover. Putting
     it here would leave two elements with the same id on the same page, and the jump link would go
     to the first one it found, which is not this one.
    */

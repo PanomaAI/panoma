@@ -106,3 +106,70 @@ function powershell(input: {
     "",
   ].join("\r\n");
 }
+
+/**
+ * The script that opens a terminal in the project and runs one command the owner wrote.
+ *
+ * It is the terminal step of "open everything" with a command in it —`pnpm run dev`, `docker
+ * compose up`, `flutter run`— so that one click leaves the dev server running in a window and
+ * not a prompt waiting for it. Three things are decided here and they are the whole design:
+ *
+ * - **The command is the owner's, verbatim, and it is meant for a shell.** It is not a task
+ *   from someone's README, which is why `composeScript` keeps that one out of the script: this
+ *   text was typed into the plan by the operator of this machine, through a route that carries
+ *   both keys, and is stored in the catalog. `pnpm dev && open http://localhost:3000` is a valid
+ *   thing to write and has to keep meaning that. What is quoted is the envelope around it: the
+ *   folder, and the command as a single-quoted argument of the shell that will read it.
+ * - **The owner's interactive shell runs it, not `sh`.** `pnpm` and `flutter` are on the PATH
+ *   that `.zshrc` or `.bashrc` builds, and a `#!/bin/sh` script does not read those. Handing the
+ *   text to `$SHELL -ic` is what makes the same command work here that works when typed.
+ * - **The window outlives the command.** When the server stops —or the command fails on the
+ *   first line—, an interactive shell takes over in the folder instead of the window closing on
+ *   the error. The failure stays readable; the folder stays at hand.
+ */
+export function composeCommandScript(input: {
+  root: string;
+  command: string;
+  shell?: Shell;
+}): string {
+  if (input.shell === "powershell") return powershellCommand(input);
+
+  const shell = '"${SHELL:-/bin/sh}"';
+  return [
+    "#!/bin/sh",
+    "# Written by Panoma to open a terminal here. Safe to delete.",
+    `cd ${quoteForShell(input.root)} || exit 1`,
+    `printf '\\n  $ %s\\n\\n' ${quoteForShell(input.command)}`,
+    `${shell} -ic ${quoteForShell(input.command)}`,
+    `exec ${shell} -i`,
+    "",
+  ].join("\n");
+}
+
+/**
+ * The same, in PowerShell. `-NoExit` in the terminal's own arguments keeps the window, so here
+ * only the folder, the echo and the command. `Invoke-Expression` is the point and not a
+ * shortcut: the text is a line the owner would type, and this is the one place where reading it
+ * as such is what was asked for.
+ */
+function powershellCommand(input: { root: string; command: string }): string {
+  const ps = (text: string) => quoteForShell(text, "powershell");
+  /*
+    The command is quoted **always**, and not through `quoteForShell`.
+    That function returns a safe token bare on purpose, which is right in argument mode
+    —`Invoke-Expression make` reads the bare word as a string— and is a parse error in expression
+    mode: `Write-Host ('  > ' + make)` fails with "You must provide a value expression following
+    the '+' operator". And a `.ps1` is parsed whole before its first line runs, so a one-word
+    command —`make`, `cargo`, `.\dev.ps1`— broke the entire script: the window opened, printed the
+    parser's complaint and ran nothing, while the server reported the step as opened.
+   */
+  const literal = `'${input.command.replace(/'/g, "''")}'`;
+  return [
+    "# Written by Panoma to open a terminal here. Safe to delete.",
+    `Set-Location -LiteralPath ${ps(input.root)}`,
+    "if (-not $?) { exit 1 }",
+    `Write-Host ('  > ' + ${literal})`,
+    `Invoke-Expression ${literal}`,
+    "",
+  ].join("\r\n");
+}

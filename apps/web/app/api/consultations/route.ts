@@ -34,7 +34,7 @@ export async function POST(request: Request) {
   const project = await resolveProject(database, { slug: body.slug });
   if (!project) return Response.json({ error: t(locale, "api.noProject") }, { status: 404 });
 
-  if (!(await labelConsultation(database, body.id, body.verdict))) {
+  if (!(await labelConsultation(database, body.id, body.verdict, project.id))) {
     return Response.json({ error: t(locale, "double.gone") }, { status: 409 });
   }
 

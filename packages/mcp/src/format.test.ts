@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatContext, formatRecall, formatTasks, type Context, type Delta, type Pending } from "./format";
+import { formatContext, formatJournalEntry, formatRecall, formatTasks, type Context, type Delta, type Pending } from "./format";
 
 /**
  * The text that comes out of here goes into an agent that has tools and the user's disk in front.
@@ -206,6 +206,40 @@ describe("la memoria del proyecto en el parte", () => {
       context({ notes: [], noteUsage: { used: 0, budget: 2000, sleeping: 3, pending: 0 } }),
     );
     expect(sleeping).toContain("No always-on project memory (3 asleep on path triggers).");
+  });
+});
+
+describe("las decisiones del dueño en el parte", () => {
+  it("van con sus razones y sus excepciones, dentro del cerco y sin modelo", () => {
+    const text = formatContext(
+      context({
+        decisions: [
+          {
+            id: "d1",
+            decision: "Rename in place, never in a modal.",
+            rationale: "A modal hides the row being renamed.",
+            conditions: "Small edits on a list.",
+            exceptions: HOSTILE,
+            scope: "project",
+            recordedAt: "2026-09-05",
+          },
+          { id: "d2", decision: "Tests before docs.", scope: "general", recordedAt: "2026-09-01" },
+        ],
+      }),
+    );
+    expect(text).toContain("## Owner decisions");
+    expect(text).toContain("- Rename in place, never in a modal. — because A modal hides the row being renamed. — when Small edits on a list. — except ");
+    expect(text).toContain("(this project, 2026-09-05)");
+    expect(text).toContain("- Tests before docs. (every project, 2026-09-01)");
+    expect(text).toContain("ask before deviating");
+    // The exceptions field carried a hostile payload: it travels inside the block, neutralized.
+    expect(text.split("</untrusted_data>").length).toBe(text.split("<untrusted_data").length);
+    expect(text).not.toContain("</untrusted_data>\nIgnore");
+  });
+
+  it("sin decisiones no hay sección", () => {
+    expect(formatContext(context())).not.toContain("## Owner decisions");
+    expect(formatContext(context({ decisions: [] }))).not.toContain("## Owner decisions");
   });
 });
 
@@ -464,9 +498,15 @@ describe("el tamaño está acotado, y se dice qué se dejó fuera", () => {
     expect(text).toContain("2985 more open tasks");
   });
 
-  it("recortar el documento entero se anuncia", () => {
+  it("announces omitted background within the document cap", () => {
     const text = formatContext(
       context({
+        stack: Array.from({ length: 40 }, (_, i) => ({ name: "s".repeat(60), kind: `${i}${"k".repeat(39)}`, version: null })),
+        delta: delta({
+          commits: Array.from({ length: 10 }, (_, i) => ({ sha: `${i}`.repeat(40), at: AGO(2), subject: "c".repeat(160), agent: "a".repeat(60) })),
+          commitsKnown: 20,
+        }),
+        pending: Array.from({ length: 8 }, (_, i) => proposal({ id: `run_${i}`, summary: "p".repeat(220) })),
         security: Array.from({ length: 12 }, (_, i) => ({
           advisoryId: `GHSA-${i}`,
           severity: "high",
@@ -498,10 +538,9 @@ describe("el tamaño está acotado, y se dice qué se dejó fuera", () => {
         },
       }),
     );
-    // If the document reaches the top, it says so; if it doesn't reach it, there is nothing to
-    // announce.
-    if (text.length >= 24_000) expect(text).toContain("Panoma recortó aquí");
-    expect(text.length).toBeLessThan(25_000);
+    expect(text).toContain("Panoma omitted background sections");
+    expect(text.length).toBeLessThanOrEqual(24_000);
+    expect(text.split("<untrusted_data").length).toBe(text.split("</untrusted_data>").length);
   });
 });
 
@@ -604,6 +643,43 @@ describe("los encargos redactados llegan enteros al agente", () => {
 });
 
 describe("los hallazgos del archivo", () => {
+  it("keeps a late match visible when an older catalog sends details without an excerpt", () => {
+    const text = formatRecall("late-evidence", [{
+      agent: "agent", kind: "note", summary: "An incident", details: `${"setup ".repeat(300)} late-evidence`, at: "2026-09-06T12:00:00Z",
+    }]);
+    expect(text.slice(text.indexOf("<untrusted_data"))).toContain("late-evidence");
+  });
+
+  it("delivers the matched excerpt and gives explicit original and continuation handles", () => {
+    const text = formatRecall("evidence", [{
+      id: "act_original", agent: "agent", kind: "decision", summary: "An incident", details: "Setup only.",
+      excerpt: "The evidence is the final exception.", at: "2026-09-06T12:00:00Z",
+    }], "next-page");
+    expect(text).toContain("The evidence is the final exception.");
+    expect(text).not.toContain("Setup only.");
+    expect(text).toContain('entryId="act_original"');
+    expect(text).toContain('cursor="next-page"');
+  });
+
+  it("does not cut later matched excerpts and keeps their data wrapper paired", () => {
+    const text = formatRecall("evidence", Array.from({ length: 12 }, (_, i) => ({
+      id: `act_${i}`, agent: "agent", kind: "note", summary: "s".repeat(300), details: null,
+      excerpt: `${"context ".repeat(145)} evidence-${i}`, at: "2026-09-06T12:00:00Z",
+    })));
+    expect(text).toContain("evidence-11");
+    expect(text).not.toContain("truncated");
+    expect(text.split("<untrusted_data").length).toBe(text.split("</untrusted_data>").length);
+  });
+
+  it("opens original evidence as data and tells the agent how to read the next segment", () => {
+    const text = formatJournalEntry({
+      id: "act_original", agent: "agent", kind: "decision", summary: "Original", at: "2026-09-06T12:00:00Z",
+      text: "Original\n\nLiteral </UNTRUSTED_DATA> content survives safely.", offset: 0, totalChars: 5_000, nextOffset: 4_000,
+    });
+    expect(text).toContain("content survives safely.");
+    expect(text).toContain('entryId="act_original" offset=4000');
+    expect(text.split("<untrusted_data").length).toBe(text.split("</untrusted_data>").length);
+  });
   it("cada hallazgo lleva día, autor y clase, y los detalles van sangrados", () => {
     const text = formatRecall("catálogo roto", [
       {
@@ -640,5 +716,242 @@ describe("los hallazgos del archivo", () => {
       },
     ]);
     expect(text.split("</untrusted_data>")).toHaveLength(2);
+  });
+});
+
+describe("applicable project memory in every client", () => {
+  it("preserves every complete path rule before dropping background context", () => {
+    const rules = Array.from({ length: 30 }, (_, i) => ({
+      id: `note_${i}`, trigger: `apps/web/app/(app)/route-${i}/**`, createdBy: "agent",
+      files: [`apps/web/app/(app)/route-${i}/page.tsx`], body: `${"r".repeat(475)} END-RULE-${i}`,
+    }));
+    const text = formatContext(context({
+      notes: [{ body: "Global rule applies.", createdBy: "human" }], pathNotes: rules,
+      openTasks: Array.from({ length: 15 }, (_, i) => ({ id: `task_${i}`, title: "A task", body: "b".repeat(400), status: "open" })),
+      recentWork: Array.from({ length: 10 }, () => ({ agent: "agent", kind: "note", summary: "s".repeat(300), at: "2026-09-06T12:00:00Z" })),
+    }));
+    expect(text).toContain("Global rule applies.");
+    for (const rule of rules) expect(text).toContain(rule.body);
+    expect(text).toContain("Project memory is complete");
+    expect(text.length).toBeLessThanOrEqual(24_000);
+    expect(text.split("<untrusted_data").length).toBe(text.split("</untrusted_data>").length);
+  });
+
+  it("reserves complete memory before a maximum description, delta and pending queue", () => {
+    /*
+      Thirty full-size rules, each with its trigger and the file that woke it. The triggers are
+      100 characters and not their 120-character maximum: since the file reason travels with each
+      rule (6-Sep-2026), thirty rules at every maximum plus the awake memory and two decisions run
+      about six hundred characters past the cap, and the formatter refuses them whole rather than
+      cutting one — which the next test proves. This shape is the largest that is promised to fit.
+     */
+    const pathNotes = Array.from({ length: 30 }, (_, i) => {
+      const ending = ` END-RULE-${i}`;
+      return {
+        id: `note_${i}`, trigger: `src/${"p".repeat(91)}${String(i).padStart(2, "0")}/**`,
+        createdBy: "agent", files: [`src/file-${i}.ts`], body: "r".repeat(500 - ending.length) + ending,
+      };
+    });
+    const notes = Array.from({ length: 4 }, (_, i) => ({ body: `${i}${"g".repeat(499)}`, createdBy: "a".repeat(60) }));
+    const decisions: NonNullable<Context["decisions"]> = Array.from({ length: 2 }, (_, i) => ({
+      id: `decision_${i}`, decision: `${i}${"d".repeat(239)}`, rationale: "r".repeat(100),
+      conditions: `CONDITION-${i} ${"c".repeat(80)}`, exceptions: `EXCEPTION-${i} ${"e".repeat(80)}`,
+      scope: "project", recordedAt: "2026-09-06", source: `/twin?episode=decision_${i}#episode-decision_${i}`,
+    }));
+    const memory = context({ notes, pathNotes, decisions, noteUsage: { used: 2000, budget: 2000, sleeping: 30, pending: 20 } });
+    expect(formatContext(memory).length).toBeLessThanOrEqual(24_000);
+    const text = formatContext({
+      ...memory,
+      project: { ...memory.project, description: "description ".repeat(100) },
+      delta: delta({
+        commits: Array.from({ length: 10 }, (_, i) => ({ sha: `${i}`.repeat(40), at: AGO(2), subject: "c".repeat(160), agent: "a".repeat(60) })),
+        commitsKnown: 20,
+        agents: Array.from({ length: 6 }, () => ({ name: "a".repeat(60), commits: 10 })),
+      }),
+      pending: Array.from({ length: 8 }, (_, i) => proposal({ id: `run_${i}`, package: "p".repeat(80), summary: "s".repeat(220) })),
+      openTasks: Array.from({ length: 15 }, (_, i) => ({ id: `task_${i}`, title: "A task", body: "b".repeat(400), status: "open" })),
+      recentWork: Array.from({ length: 10 }, () => ({ agent: "agent", kind: "note", summary: "s".repeat(300), at: "2026-09-06T12:00:00Z" })),
+    });
+    expect(text.length).toBeLessThanOrEqual(24_000);
+    for (const note of [...notes, ...pathNotes]) expect(text).toContain(note.body);
+    for (const note of pathNotes) expect(text).toContain(` — matches ${note.files[0]}\n`);
+    for (const decision of decisions) {
+      expect(text).toContain(decision.decision);
+      expect(text).toContain(decision.conditions);
+      expect(text).toContain(decision.exceptions);
+    }
+    expect(text).toContain("Panoma omitted background sections");
+    expect(text).not.toContain("## Since yesterday");
+    expect(text).not.toContain("## Waiting on a decision");
+    expect(text.split("<untrusted_data").length).toBe(text.split("</untrusted_data>").length);
+  });
+
+  it("refuses an oversized memory collection within the cap instead of serving partial rules", () => {
+    // The character budget bounds bodies, not how many short notes have author metadata.
+    const notes = Array.from({ length: 2000 }, () => ({ body: "x", createdBy: "a".repeat(60) }));
+    const text = formatContext(context({ notes, noteUsage: { used: 2000, budget: 2000, pending: 0 } }));
+    expect(text).toContain("Project memory could not be delivered within the 24000-character briefing limit");
+    expect(text).toContain("This is not an absence of memory");
+    expect(text).not.toContain("- x —");
+    expect(text).not.toContain("Project memory is complete");
+    expect(text).not.toContain("<untrusted_data");
+    expect(text).not.toContain("## Dependencies");
+    expect(text.length).toBeLessThanOrEqual(24_000);
+    expect(text.split("<untrusted_data").length).toBe(text.split("</untrusted_data>").length);
+  });
+
+  it("distinguishes a checked path with no rules from an older server without path delivery", () => {
+    expect(formatContext(context({ memoryFiles: ["src/a.ts"], pathNotes: [] }))).toContain("No approved path-specific rules match");
+    expect(formatContext(context())).not.toContain("No approved path-specific rules match");
+  });
+
+  it("does not present an abbreviated decision as an applicable complete rule", () => {
+    const text = formatContext(context({ decisions: [{
+      id: "decision_a", decision: "Prefer an inline control…", scope: "project", recordedAt: "2026-09-06",
+      incomplete: true, source: "/twin?episode=decision_a#episode-decision_a",
+    }] }));
+    expect(text).toContain("do not apply until the owner supplies the full decision and its conditions");
+    expect(text).toContain("/twin?episode=decision_a");
+  });
+});
+
+describe("the memory delivered for the words of a task", () => {
+  /*
+    The third road to a sleeping note: the agent says what it is about to do and the rules whose
+    words overlap it travel with those words as the reason. What this section must never do is
+    read as a verdict — a shared word is a reason to read a rule, not proof that it applies — and
+    what it must always do is count what matched and did not fit.
+   */
+  const taskNote = (overrides: Partial<NonNullable<Context["taskNotes"]>[number]> = {}) => ({
+    id: "n1", body: "Run the migration before the seed script.", createdBy: "human", trigger: "packages/db/**", matched: ["migration"],
+    ...overrides,
+  });
+  const taskDecision = (overrides: Partial<NonNullable<Context["taskDecisions"]>[number]> = {}) => ({
+    id: "d1", decision: "Modal dialogs only for destructive actions.", rationale: "A modal hides the row.",
+    scope: "project" as const, recordedAt: "2026-09-06", source: "/twin?episode=d1#episode-d1", matched: ["modal"],
+    ...overrides,
+  });
+
+  it("appears only when a task was sent, inside the memory block and before the owner's recency decisions", () => {
+    expect(formatContext(context())).not.toContain("## Project memory for your task");
+    expect(formatContext(context({ decisions: [taskDecision()] }))).not.toContain("## Project memory for your task");
+    const text = formatContext(context({
+      notes: [{ body: "Always on.", createdBy: "human" }], noteUsage: { used: 10, budget: 2000, pending: 0 },
+      pathNotes: [{ id: "p1", body: "Path rule.", createdBy: "human", trigger: "src/**", files: ["src/a.ts"] }], memoryFiles: ["src/a.ts"],
+      taskNotes: [taskNote()], taskDecisions: [taskDecision()], taskOmitted: { notes: 0, decisions: 0 },
+      decisions: [{ id: "d0", decision: "Tests before docs.", scope: "general", recordedAt: "2026-09-01" }],
+      stack: [{ name: "next", kind: "framework", version: "15" }],
+    }));
+    const at = (needle: string) => { const index = text.indexOf(needle); expect(index, needle).toBeGreaterThanOrEqual(0); return index; };
+    expect(at("## Project memory")).toBeLessThan(at("## Project memory for the requested files"));
+    expect(at("## Project memory for the requested files")).toBeLessThan(at("## Project memory for your task"));
+    expect(at("## Project memory for your task")).toBeLessThan(at("## Owner decisions"));
+    expect(at("## Owner decisions")).toBeLessThan(at("## Stack"));
+    expect(text).toContain("The matched words are the reason they are here, not proof they apply");
+    expect(text.split("<untrusted_data").length).toBe(text.split("</untrusted_data>").length);
+  });
+
+  it("gives every item its reason: the matched words, where they matched, and the trigger it sleeps on", () => {
+    const text = formatContext(context({
+      taskNotes: [
+        taskNote(),
+        taskNote({ id: "n2", body: "Keep this screen bilingual.", trigger: "apps/web/app/migration/**", matched: ["migration"] }),
+        taskNote({ id: "n3", body: "Rebuild pglite after a schema change.", trigger: "packages/db/**", matched: ["pglite", "db"] }),
+      ],
+      taskDecisions: [taskDecision()],
+      taskOmitted: { notes: 0, decisions: 0 },
+    }));
+    expect(text).toContain("- Run the migration before the seed script. — matched “migration” in body; sleeps on packages/db/**");
+    expect(text).toContain("- Keep this screen bilingual. — matched “migration” in trigger; sleeps on apps/web/app/migration/**");
+    expect(text).toContain("- Rebuild pglite after a schema change. — matched “pglite” in body and “db” in trigger; sleeps on packages/db/**");
+    // The decision reads exactly as it would in the recency section, plus its reason.
+    expect(text).toContain("- Modal dialogs only for destructive actions. — because A modal hides the row. (this project, 2026-09-06) Source: /twin?episode=d1#episode-d1 — matched “modal” in decision");
+  });
+
+  it("says when nothing matched, and how much matched but did not fit, singular and plural", () => {
+    const nothing = formatContext(context({ taskNotes: [], taskDecisions: [], taskOmitted: { notes: 0, decisions: 0 } }));
+    expect(nothing).toContain("## Project memory for your task\nNothing approved matches the words of your task.");
+    expect(nothing).not.toContain("did not fit");
+
+    const one = formatContext(context({ taskNotes: [taskNote()], taskDecisions: [], taskOmitted: { notes: 1, decisions: 1 } }));
+    expect(one).toContain("1 more note and 1 more decision matched but did not fit; narrow the task or ask the owner to consolidate.");
+    const many = formatContext(context({ taskNotes: [taskNote()], taskDecisions: [], taskOmitted: { notes: 3, decisions: 0 } }));
+    expect(many).toContain("3 more notes matched but did not fit");
+    expect(many).not.toContain("more decision");
+    const decisions = formatContext(context({ taskNotes: [], taskDecisions: [taskDecision()], taskOmitted: { notes: 0, decisions: 2 } }));
+    expect(decisions).toContain("2 more decisions matched but did not fit");
+  });
+
+  it("names the file that woke each path rule, unless the trigger is that very file", () => {
+    const text = formatContext(context({
+      pathNotes: [
+        { id: "p1", body: "One file.", createdBy: "human", trigger: "src/**", files: ["src/a.ts"] },
+        { id: "p2", body: "Three files.", createdBy: "human", trigger: "app/**", files: ["app/x.ts", "app/y.ts", "app/z.ts"] },
+        { id: "p3", body: "Exact file.", createdBy: "human", trigger: "docs/memory.md", files: ["docs/memory.md"] },
+      ],
+      memoryFiles: ["src/a.ts", "app/x.ts", "app/y.ts", "app/z.ts", "docs/memory.md"],
+    }));
+    expect(text).toContain("- src/** — matches src/a.ts\nOne file.");
+    expect(text).toContain("- app/** — matches app/x.ts (+2 more)\nThree files.");
+    expect(text).toContain("- docs/memory.md\nExact file.");
+  });
+
+  it("confesses when the anchored notes were not re-checked, with the reason, and stays silent when they were", () => {
+    const memory = { notes: [{ body: "docs/memory.md explains it.", createdBy: "human" }], noteUsage: { used: 30, budget: 2000, pending: 0 } };
+    const checked = formatContext(context({ ...memory, sentinels: { checked: 3, unverified: 0 } }));
+    expect(checked).not.toContain("were not re-checked");
+    expect(formatContext(context(memory))).not.toContain("were not re-checked");
+
+    const remote = formatContext(context({ ...memory, sentinels: { checked: 0, unverified: 0, skipped: "remote" } }));
+    expect(remote).toContain("## Project memory");
+    expect(remote).toContain("(Anchored notes were not re-checked against the disk before this delivery: the catalog is remote. Treat their file claims as unverified.)");
+    expect(remote.indexOf("## Project memory")).toBeLessThan(remote.indexOf("were not re-checked"));
+
+    const missing = formatContext(context({ ...memory, sentinels: { checked: 0, unverified: 0, skipped: "root-missing" } }));
+    expect(missing).toContain("the project root is not on this disk. Treat their file claims as unverified.");
+
+    const unreadable = formatContext(context({ ...memory, sentinels: { checked: 2, unverified: 2 } }));
+    expect(unreadable).toContain("2 of their anchors could not be read. Treat their file claims as unverified.");
+
+    // With no always-on notes the confession still precedes whatever memory does travel.
+    const asleep = formatContext(context({
+      taskNotes: [taskNote()], taskDecisions: [], taskOmitted: { notes: 0, decisions: 0 },
+      sentinels: { checked: 0, unverified: 0, skipped: "remote" },
+    }));
+    expect(asleep.split("were not re-checked").length - 1).toBe(1);
+    expect(asleep.indexOf("were not re-checked")).toBeLessThan(asleep.indexOf("## Project memory for your task"));
+  });
+
+  it("counts toward the indivisible memory: it survives an omitted background and shares the refusal", () => {
+    const taskNotes = Array.from({ length: 8 }, (_, i) => taskNote({ id: `t${i}`, body: `TASK-RULE-${i} ${"t".repeat(480)}` }));
+    const kept = formatContext(context({
+      taskNotes, taskDecisions: [taskDecision()], taskOmitted: { notes: 2, decisions: 0 },
+      project: { ...context().project, description: "description ".repeat(100) },
+      delta: delta({
+        commits: Array.from({ length: 10 }, (_, i) => ({ sha: `${i}`.repeat(40), at: AGO(2), subject: "c".repeat(160), agent: "a".repeat(60) })),
+        commitsKnown: 20,
+      }),
+      pending: Array.from({ length: 8 }, (_, i) => proposal({ id: `run_${i}`, package: "p".repeat(80), summary: "s".repeat(220) })),
+      openTasks: Array.from({ length: 15 }, (_, i) => ({ id: `task_${i}`, title: "A task", body: "b".repeat(400), status: "open" })),
+      recentWork: Array.from({ length: 10 }, () => ({ agent: "agent", kind: "note", summary: "s".repeat(300), at: "2026-09-06T12:00:00Z" })),
+      security: Array.from({ length: 12 }, (_, i) => ({ advisoryId: `GHSA-${i}`, severity: "high", package: "p".repeat(80), summary: "s".repeat(300), fixedIn: [] })),
+      stack: Array.from({ length: 40 }, (_, i) => ({ name: "s".repeat(60), kind: `${i}${"k".repeat(39)}`, version: null })),
+    }));
+    expect(kept.length).toBeLessThanOrEqual(24_000);
+    for (const note of taskNotes) expect(kept).toContain(note.body);
+    expect(kept).toContain("2 more notes matched but did not fit");
+    expect(kept).toContain("Panoma omitted background sections");
+    expect(kept).toContain("the rules pinned to the files you named and the matches for your task");
+
+    // Thousands of tiny matches: the memory block alone overflows, and the refusal names the task section.
+    const flood = formatContext(context({
+      taskNotes: Array.from({ length: 2000 }, (_, i) => taskNote({ id: `t${i}`, body: "x", createdBy: "a".repeat(60) })),
+      taskDecisions: [], taskOmitted: { notes: 0, decisions: 0 },
+    }));
+    expect(flood).toContain("Project memory could not be delivered within the 24000-character briefing limit");
+    expect(flood).toContain("No memory rules, task matches, owner decision previews or background sections are included.");
+    expect(flood).toContain("Request fewer files or a narrower task");
+    expect(flood).not.toContain("## Project memory for your task");
+    expect(flood.length).toBeLessThanOrEqual(24_000);
   });
 });

@@ -12,7 +12,7 @@ import type { Database } from "@panoma/db";
 const completeMock = vi.fn();
 vi.mock("@panoma/ai", () => ({ complete: (...args: unknown[]) => completeMock(...args) }));
 
-const { buildDistillPrompt, distillSession, distillBudgetFrom, parseCandidates, whereToTrigger, DISTILL_KIND } =
+const { buildDistillPrompt, byOwnerDecision, distillSession, parseCandidates, whereToTrigger, DISTILL_KIND } =
   await import("./memory-distill");
 const { listProjectNotes, logActivity, modelSpendToday, openSession, proposeNote } = await import(
   "@panoma/db"
@@ -59,6 +59,8 @@ beforeEach(async () => {
   const { schema: t } = await import("@panoma/db");
   await db.delete(t.notes);
   await db.delete(t.modelCalls);
+  await db.delete(t.agentActivities);
+  await db.delete(t.agentSessions);
   delete process.env["PANOMA_DISTILL_BUDGET"];
 });
 
@@ -98,7 +100,7 @@ describe("destilar", () => {
     const sessionId = await sessionWith(["tests fallaban en frío", "build primero lo arregló"]);
 
     const receipt = await distillSession(db, { projectId: PROJECT, identity: "id-x", sessionId });
-    expect(receipt).toEqual({ did: "distilled", proposed: 1, dropped: 0 });
+    expect(receipt).toMatchObject({ did: "distilled", proposed: 1, dropped: 0, coverage: { total: 2, selected: 2, omitted: 0, clipped: 0 } });
 
     const pending = await listProjectNotes(db, PROJECT, ["proposed"]);
     expect(pending).toHaveLength(1);
@@ -111,7 +113,7 @@ describe("destilar", () => {
     completeMock.mockResolvedValue(answer("pues yo creo que esta sesión estuvo muy bien"));
     const sessionId = await sessionWith(["a", "b"]);
 
-    expect(await distillSession(db, { projectId: PROJECT, identity: null, sessionId })).toEqual({
+    expect(await distillSession(db, { projectId: PROJECT, identity: null, sessionId })).toMatchObject({
       did: "unreadable",
     });
     expect((await modelSpendToday(db, DISTILL_KIND)).calls).toBe(1);
@@ -127,7 +129,7 @@ describe("destilar", () => {
     const sessionId = await sessionWith(["a", "b"]);
 
     const receipt = await distillSession(db, { projectId: PROJECT, identity: null, sessionId });
-    expect(receipt).toEqual({ did: "distilled", proposed: 1, dropped: 1 });
+    expect(receipt).toMatchObject({ did: "distilled", proposed: 1, dropped: 1 });
     const pending = await listProjectNotes(db, PROJECT, ["proposed"]);
     expect(pending.map((n) => n.body)).toEqual(["Algo nuevo de verdad."]);
   });
@@ -135,11 +137,73 @@ describe("destilar", () => {
   it("[] no es un fallo: la mayoría de las sesiones no descubren nada durable", async () => {
     completeMock.mockResolvedValue(answer("```json\n[]\n```"));
     const sessionId = await sessionWith(["a", "b"]);
-    expect(await distillSession(db, { projectId: PROJECT, identity: null, sessionId })).toEqual({
+    expect(await distillSession(db, { projectId: PROJECT, identity: null, sessionId })).toMatchObject({
       did: "distilled",
       proposed: 0,
       dropped: 0,
     });
+  });
+
+  it("keeps the latest resolution and reports the earlier session window it omitted", async () => {
+    completeMock.mockResolvedValue(answer("[]"));
+    const sessionId = await sessionWith(Array.from({ length: 110 }, (_, i) => i === 109 ? "Final resolution: use the verified build procedure." : `Earlier step ${i}.`));
+    const receipt = await distillSession(db, { projectId: PROJECT, identity: null, sessionId });
+    expect(receipt).toMatchObject({ coverage: { total: 110, selected: 100, omitted: 10, clipped: 0 } });
+    const prompt = completeMock.mock.calls[0]?.[0].prompt;
+    expect(prompt).toContain("Final resolution: use the verified build procedure.");
+    expect(prompt).not.toContain("Earlier step 0.");
+    expect(prompt).toContain("omitted earlier records 10");
+  });
+
+  it("sends a session longer than the window before 6-Sep-2026 to the model whole", async () => {
+    /*
+      The window was 50 records and the envelope 24,000 characters until that day, so a session
+      of eighty records reached the model without its first thirty — and the goal of a session
+      is stated at its beginning, not at its end. One call still, a bigger one: 100 records
+      fitted into 36,000 characters.
+     */
+    completeMock.mockResolvedValue(answer("[]"));
+    const sessionId = await sessionWith(Array.from({ length: 80 }, (_, i) =>
+      i === 0 ? "Goal: replace the migration that leaves the catalog unreadable." : `Step ${i}.`));
+    const receipt = await distillSession(db, { projectId: PROJECT, identity: null, sessionId });
+    expect(receipt).toMatchObject({ coverage: { total: 80, selected: 80, omitted: 0, clipped: 0 } });
+    const prompt = completeMock.mock.calls[0]?.[0].prompt;
+    expect(prompt).toContain("Goal: replace the migration that leaves the catalog unreadable.");
+    expect(prompt).toContain("Step 79.");
+    expect(prompt).toContain("omitted earlier records 0");
+    expect(completeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not discard a final finding after the first 400 detail characters", async () => {
+    completeMock.mockResolvedValue(answer("[]"));
+    const sessionId = await sessionWith(["Initial investigation."]);
+    await logActivity(db, { agentId: "ag-d", projectId: PROJECT, sessionId, kind: "discovery", summary: "Resolved.",
+      details: `${"Background. ".repeat(100)}Final verified requirement: build packages first.` });
+    await distillSession(db, { projectId: PROJECT, identity: null, sessionId });
+    expect(completeMock.mock.calls[0]?.[0].prompt).toContain("Final verified requirement: build packages first.");
+  });
+
+  it("does not repropose a challenged note while its owner decision is pending", async () => {
+    const { addHumanNote, challengeNote } = await import("@panoma/db");
+    const note = await addHumanNote(db, { projectId: PROJECT, body: "Use the verified procedure." });
+    if (!("id" in note)) throw new Error("Fixture note was refused.");
+    await challengeNote(db, note.id, { at: new Date().toISOString(), sentinel: { kind: "path_exists", target: "docs/guide.md", expected: true }, observed: "missing" });
+    completeMock.mockResolvedValue(answer('["Use the verified procedure."]'));
+    const sessionId = await sessionWith(["Initial attempt.", "Resolved."]);
+    expect(await distillSession(db, { projectId: PROJECT, identity: null, sessionId })).toMatchObject({ did: "distilled", proposed: 0, dropped: 1 });
+    expect(await listProjectNotes(db, PROJECT, ["proposed"])).toHaveLength(0);
+  });
+
+  it("serializes the final daily paid slot across concurrent sessions", async () => {
+    const { closeSession } = await import("@panoma/db");
+    process.env["PANOMA_DISTILL_BUDGET"] = "1";
+    completeMock.mockResolvedValue(answer("[]"));
+    const first = await sessionWith(["First investigation.", "First resolution."]);
+    await closeSession(db, first);
+    const second = await sessionWith(["Second investigation.", "Second resolution."]);
+    const results = await Promise.all([first, second].map((sessionId) => distillSession(db, { projectId: PROJECT, identity: null, sessionId })));
+    expect(completeMock).toHaveBeenCalledTimes(1);
+    expect(results.map((result) => result.did)).toEqual(["distilled", "budget"]);
   });
 });
 
@@ -151,10 +215,21 @@ describe("el encargo y su lectura, sin pagar nada", () => {
     });
     expect(built.prompt).toContain('<untrusted_data origin="journal">');
     expect(built.prompt).toContain('<untrusted_data origin="notes">');
-    expect(built.system).toContain("NO resumas");
-    expect(built.system).toContain("array JSON");
+    expect(built.system).toContain("Do not summarize");
+    expect(built.system).toContain("JSON array");
     // The touched files travel: they are the map from which the 'where' comes.
-    expect(built.prompt).toContain("ficheros: apps/web/lib/guard.ts");
+    expect(built.prompt).toContain('"files":["apps/web/lib/guard.ts"]');
+  });
+
+  it("fits whole newest records and declares clipping even when JSON escaping expands text", () => {
+    const built = buildDistillPrompt({ activities: Array.from({ length: 5 }, (_, i) => ({
+      kind: "change", summary: `Stage ${i}`, details: `${"\u0001".repeat(7900)}Final resolution ${i}.`, filesTouched: [],
+    })), existing: [] });
+    expect(built.coverage.clipped).toBeGreaterThan(0);
+    expect(built.coverage.omitted).toBeGreaterThan(0);
+    expect(built.prompt).toContain("Final resolution 4.");
+    expect(built.prompt.length).toBeLessThan(26_000);
+    expect(built.prompt).toContain("Earlier detail text omitted");
   });
 
   it("la lectura distingue «nada» de «no se entendió», y admite cadenas y objetos", () => {
@@ -183,12 +258,36 @@ describe("el encargo y su lectura, sin pagar nada", () => {
     expect(whereToTrigger(undefined, touched)).toBeUndefined();
   });
 
-  it("el presupuesto lee el entorno como el del crítico: vacío o inválido, el de fábrica", () => {
-    expect(distillBudgetFrom(undefined)).toBe(12);
-    expect(distillBudgetFrom("")).toBe(12);
-    expect(distillBudgetFrom("tres")).toBe(12);
-    expect(distillBudgetFrom("-1")).toBe(12);
-    expect(distillBudgetFrom("0")).toBe(0);
-    expect(distillBudgetFrom("30")).toBe(30);
+  /*
+    The cap comes from `capFor("memory")` since 6-Sep-2026; `spend-settings.test.ts` holds its
+    contract. What stays here is the order of the memory block, because it decides what the
+    4,000-character cut removes: until that day, newest-first with every status mixed, so an
+    overflowing memory lost its oldest approved notes while last week's discarded ones travelled.
+   */
+  it("puts the owner's decisions first, newest first within each rank", () => {
+    const existing = [
+      { body: "discarded newest", status: "discarded" },
+      { body: "proposed newest", status: "proposed" },
+      { body: "approved newest", status: "approved" },
+      { body: "challenged old", status: "challenged" },
+      { body: "approved oldest", status: "approved" },
+      { body: "discarded oldest", status: "discarded" },
+    ];
+    expect(byOwnerDecision(existing).map((n) => n.body)).toEqual([
+      "approved newest", "challenged old", "approved oldest",
+      "proposed newest",
+      "discarded newest", "discarded oldest",
+    ]);
+  });
+
+  it("so the cut of the memory block eats discarded notes before an old approved one", () => {
+    const flood = Array.from({ length: 60 }, (_, i) => ({ body: `Discarded ${i} ${"x".repeat(90)}`, status: "discarded" }));
+    const built = buildDistillPrompt({
+      activities: [],
+      existing: [...flood, { body: "Build the packages before testing.", status: "approved" }],
+    });
+    expect(built.prompt).toContain("[approved] Build the packages before testing.");
+    expect(built.prompt).toContain("(truncated)");
+    expect(built.prompt).not.toContain("Discarded 59 ");
   });
 });

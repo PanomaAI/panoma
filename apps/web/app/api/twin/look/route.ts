@@ -10,15 +10,21 @@ import { getProject, modelSpendToday, type ModelSpend } from "@panoma/db";
 import { db } from "@/lib/db";
 import { localOperatorOnly, sameOrigin } from "@/lib/guard";
 import { cliName } from "@/lib/cli-name";
+import { formatBytes } from "@/lib/format-bytes";
 import { localeFrom, t, type Locale } from "@/lib/i18n";
 import {
-  budgetFrom,
+  REFUSAL_SENTENCE,
   buildLookPrompt,
   estimateLookTokens,
+  fitForLook,
+  readCeiling,
+  shotAsked,
+  type LookShot,
   type LookSubject,
 } from "@/lib/look";
 import { LOOK_KIND, runLook, type LookImage } from "@/lib/look-run";
 import { pickShot } from "@/lib/shots";
+import { capFor, shotPolicy } from "@/lib/spend-settings";
 
 /**
  * Look at a screen and it says what is wrong, quoting what you had already said.
@@ -159,7 +165,18 @@ export async function POST(request: Request) {
   if (blocked) return blocked;
 
   const locale = localeFrom(request);
-  const body = (await request.json().catch(() => ({}))) as LookBody;
+  /*
+    A body that cannot be read is not the same as a body that forgot the project, and until today
+    both answered "you didn't say which project". The one that happens in real life is a capture
+    that outgrew what the server accepts: Next cuts the clone it makes for the middleware and the
+    JSON arrives truncated, so the parse throws and every field goes missing at once. Saying so is
+    the difference between a caller that trims the file and one that keeps sending the same
+    twenty megabytes at a route that says nothing about them.
+   */
+  const body = (await request.json().catch(() => undefined)) as LookBody | undefined;
+  if (body === undefined) {
+    return Response.json({ error: t(locale, "look.unreadableBody") }, { status: 413 });
+  }
 
   if (typeof body.slug !== "string" || body.slug === "") {
     return Response.json({ error: t(locale, "api.missingProject") }, { status: 400 });
@@ -197,6 +214,16 @@ export async function POST(request: Request) {
   }
 
   /*
+    And how much of the capture the critic gets to see, which the owner decides on the Spend
+    screen. It is read here, at request time, like the cap, and before the file is opened because
+    it is the choice that says how much of it may be opened: with `fit` the capture is going to be
+    reduced before it travels, so the provider's 3.5 MB is not what bounds this reading — see
+    `readCeiling` and the header of `screenshot.ts`. Applying the choice is another matter and
+    comes further down, after every refusal.
+   */
+  const policy = await shotPolicy();
+
+  /*
     The capture: the one from the mailbox that is requested by its name, or the one that arrives
     in the body.
     The one from the mailbox is also read in full in the test, and the reason why the terminal's
@@ -209,6 +236,13 @@ export async function POST(request: Request) {
   let mediaType = "";
   let shot: string | undefined;
   let shotBytes = 0;
+  /*
+    The pixels, when the header says them. They go out in the dry run because they are what the
+    image is actually billed by —patches of 28 px, capped by tier— and the bytes are not: a PNG
+    with flat colors weighs little and costs the same as a photograph of the same size. See
+    `estimateLookTokens` for the arithmetic and why no token figure is computed here.
+   */
+  let shotPixels: { width: number; height: number } | undefined;
 
   if (wanted !== undefined) {
     const found = await pickShot(data.project.root, wanted);
@@ -216,16 +250,20 @@ export async function POST(request: Request) {
       return Response.json({ error: t(locale, "look.noShot", { name: wanted }) }, { status: 404 });
     }
     try {
-      const read = await readScreenshot(found.path);
+      const read = await readScreenshot(found.path, { maxBytes: readCeiling(policy) });
       image = read.data;
       mediaType = read.mediaType;
       shotBytes = read.bytes;
       shot = found.name;
+      if (read.width !== undefined && read.height !== undefined) {
+        shotPixels = { width: read.width, height: read.height };
+      }
     } catch (error) {
       /*
         A file that was in the listing and cannot be read when opened: it was deleted between the
-        two instances, or it is too large. It is not a catalog error nor the fault of the
-        requester, so it is reported with the name first and with the size when it was known.
+        two instances, or it is too large even for the ceiling this choice reads with. It is not a
+        catalog error nor the fault of the requester, so it is reported with the name first and
+        with the size when it was known.
        */
       if (!(error instanceof ScreenshotError)) throw error;
       const detail = error.bytes === undefined ? wanted : `${wanted} · ${error.bytes} B`;
@@ -242,6 +280,30 @@ export async function POST(request: Request) {
       return Response.json({ error: t(locale, "look.noImage") }, { status: 400 });
     }
     mediaType = typeof body.mediaType === "string" ? body.mediaType : "";
+
+    /*
+      And the size, which this door did not check at all: the browser refused what it would not
+      accept, and the browser is not the one who decides. `panoma up --network` serves this route
+      to a phone, and a body arriving from anywhere may carry whatever it likes.
+      The ceiling is the one the choice asks for, exactly as with the mailbox: under `fit` an
+      image may arrive up to `MAX_FITTABLE_BYTES` because it is going to be reduced before it
+      travels, and under `full` what arrives is what leaves, so the provider's number governs from
+      the door. What comes out of the reduction is measured further down, and that is the check
+      neither of the two doors can skip.
+     */
+    const arrived = Buffer.byteLength(image, "base64");
+    const ceiling = readCeiling(policy);
+    if (arrived > ceiling) {
+      return Response.json(
+        {
+          error: t(locale, "look.tooBig", {
+            size: formatBytes(arrived),
+            cap: formatBytes(ceiling),
+          }),
+        },
+        { status: 400 },
+      );
+    }
   }
 
   if (!TYPES.has(mediaType)) {
@@ -264,7 +326,7 @@ export async function POST(request: Request) {
     return Response.json({ error: t(locale, "look.noProfile", { cli: cliName() }) }, { status: 409 });
   }
 
-  const cap = budgetFrom(process.env["PANOMA_LOOK_BUDGET"]);
+  const { cap } = await capFor("look");
   const spent = await modelSpendToday(database, KIND);
   if (spent.calls >= cap) {
     return Response.json(
@@ -287,6 +349,59 @@ export async function POST(request: Request) {
   const credential = await resolveCredential().catch((error: unknown) => error as Error);
   if (credential instanceof Error) return failure(locale, credential, { budget: bare(spent, cap) });
 
+  /*
+    And the choice applied, which is the same one for the three doors —this route, the terminal
+    and the watcher— through the same function, so none of them can end up showing a different
+    screen from the other two.
+    It goes after every refusal on purpose. Reducing is arithmetic over every pixel of the file,
+    and doing it in front of a 429 would be spending a second of somebody's machine on a call that
+    is not going to happen.
+   */
+  const fit: LookShot | undefined =
+    image === "" ? undefined : fitForLook(image, mediaType, policy);
+
+  /*
+    And the last word on the size, on the bytes that are about to leave and not on the file they
+    came from. Reaching here means the choice was honoured as far as it went —a JPEG that only its
+    author can reduce, a palette PNG, a capture with more pixels than the decoder holds— and the
+    result is still above what a provider accepts.
+    It is a 409 and the same sentence the mailbox uses for a file it cannot open, because for the
+    person asking it is the same thing: this capture is not going to be looked at. What the detail
+    adds is why, which is what tells them whether to crop it, re-export it, or change the choice.
+    Sending it anyway would buy a paid error about encoding, and dropping the look in silence
+    would be worse: neither of the two is an option here.
+   */
+  if (fit?.sent.tooBig === true) {
+    // In bytes and not in megabytes, which is how the other two refusals of this same sentence
+    // write it: one shape per sentence, whatever door produced it.
+    /*
+      There are two ways to end up here and they are not the same news. One is that the capture
+      could not be reduced at all —a JPEG, a palette PNG, too many pixels— and the bytes are the
+      file's. The other is that it WAS reduced, correctly, and what came out still does not fit:
+      a screen full of noise or of photography compresses badly, and 1,568 px of that still weigh
+      megabytes. Saying "it could not be looked at" without that distinction sends somebody to
+      re-export a file whose format was never the problem.
+     */
+    const said =
+      fit.sent.why !== undefined
+        ? t(locale, REFUSAL_SENTENCE[fit.sent.why])
+        : fit.sent.fitted && fit.sent.width !== undefined && fit.sent.height !== undefined
+          ? t(locale, "look.stillBig", { width: fit.sent.width, height: fit.sent.height })
+          : undefined;
+    const detail = [
+      ...(shot === undefined ? [] : [shot]),
+      `${fit.sent.bytes ?? 0} B`,
+      ...(said === undefined ? [] : [said]),
+    ].join(" · ");
+    /*
+      The sentence that guesses is for the file that vanished; this one knows why, so it does not
+      end with «it was probably deleted». A refusal that both explains itself and speculates reads
+      as if it had not understood its own answer.
+     */
+    const key = said === undefined ? "look.unreadableShot" : "look.shotRefused";
+    return Response.json({ error: t(locale, key, { detail }) }, { status: 409 });
+  }
+
   if (dryRun) {
     return Response.json({
       statements: built.labels.size,
@@ -298,17 +413,31 @@ export async function POST(request: Request) {
        */
       estimatedTokens: estimateLookTokens(built),
       imageBytes: imageBytesOf(body, image),
+      ...(shotPixels ?? {}),
+      /*
+        And what is actually going to be shown, before a single cent is spent. With the image in
+        hand —the mailbox path always has it— the figures are the real ones, because the reduction
+        is done here and not guessed; without it, all that can be said is what was asked for. See
+        `ShotSent`.
+       */
+      sent: fit?.sent ?? shotAsked(policy),
       provider: credential.provider.id,
       model: credential.model,
       budget: bare(spent, cap),
     });
   }
 
+  /*
+    What travels is the reduced capture when there is one; what is written down is still the file.
+    The size in the row goes with the digest and with the name: the three describe the delivery
+    that arrived, which is what the watcher and the mailbox screen ask about later.
+   */
   const picture: LookImage = {
-    data: image,
+    data: fit?.data ?? image,
     mediaType,
     bytes: shot === undefined ? imageBytesOf(body, image) : shotBytes,
     ...(shot === undefined ? {} : { shot }),
+    ...(fit?.sent.fitted === true ? { whole: image } : {}),
   };
 
   let receipt;
@@ -339,6 +468,12 @@ export async function POST(request: Request) {
     dropped: receipt.dropped,
     ...(receipt.unreadable ? { unreadable: true } : {}),
     statements: receipt.statements,
+    /*
+      And the same field as the rehearsal, now in the past tense: this is what the critic was
+      shown. Saying it twice is the whole promise — panoma reduces a capture when it is asked to,
+      and never without saying so.
+     */
+    sent: fit?.sent ?? shotAsked(policy),
     model: `${receipt.provider}/${receipt.model}`,
     ...(receipt.usage ? { usage: receipt.usage } : {}),
     budget: withCall(spent, cap, receipt.usage),

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   HiOutlineArrowDownTray,
   HiOutlineEye,
@@ -223,7 +224,12 @@ export function SharePanel({
     window.setTimeout(() => setXShareState("idle"), 2600);
   }
 
-  return (
+  /*
+    On the `body`, like the other four. It is written inside the catalog screen and nothing on the
+    way up seals it in today; the portal is what stops that from being a fact about this month's
+    markup. `modal-keyboard.test.ts` holds the whole account.
+   */
+  return createPortal(
     <div className="share" role="dialog" aria-modal="true" aria-label={t("share.abrir")}>
       <div className="share__box" ref={boxRef}>
         <header>
@@ -328,7 +334,8 @@ export function SharePanel({
         onClick={onClose}
         aria-label={t("share.cerrar")}
       />
-    </div>
+    </div>,
+    document.body,
   );
 }
 

@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useT } from "./i18n-provider";
-import { ActionButton } from "./primitives";
+import { ActionButton, Card } from "./primitives";
 
 /**
  * What the mechanical critic saw, one finding and one button at a time.
@@ -171,7 +171,7 @@ export function Critiques({
   }
 
   return (
-    <div className="mt-4 rounded-lg border border-edge bg-surface px-4 py-3">
+    <Card pad="none" className="mt-4 px-4 py-3">
       <button
         type="button"
         onClick={() => setOpen((before) => !before)}
@@ -217,14 +217,20 @@ export function Critiques({
                     {taskId !== undefined ? t("look.assigned") : t("look.assignButton")}
                   </ActionButton>
                   {!no && (
-                    <button
+                    /*
+                       `quiet` next to `plain`, and the pair is the point: the two buttons do
+                       opposite things a centimetre apart, so the affirmative one carries the frame
+                       and the dismissal does not. `quiet` keeps `border-transparent` rather than
+                       dropping the border, so both still measure the same and the row lines up.
+                      */
+                    <ActionButton
+                      tone="quiet"
                       type="button"
                       onClick={() => void decide(finding, "discard")}
                       disabled={busy !== null}
-                      className="rounded border border-edge px-2.5 py-1 font-mono text-xs text-faint transition-colors hover:border-chalk hover:text-smoke disabled:opacity-50"
                     >
                       {t("look.dismissButton")}
-                    </button>
+                    </ActionButton>
                   )}
                   {no && <span className="font-mono text-xs text-faint">{t("look.dismissed")}</span>}
                 </div>
@@ -241,6 +247,6 @@ export function Critiques({
           })}
         </ol>
       )}
-    </div>
+    </Card>
   );
 }

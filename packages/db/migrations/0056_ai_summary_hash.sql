@@ -1,0 +1,1 @@
+ALTER TABLE "decisions" ADD COLUMN "ai_summary_hash" text;

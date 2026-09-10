@@ -1,5 +1,6 @@
 import { ensureWatcher, watchState, watcherEvents } from "@/lib/watch";
 import { sameOrigin } from "@/lib/guard";
+import { ensureAppSupervisor } from "@/lib/app-jobs";
 
 /**
  * What the watcher is watching and what it has seen pass by.
@@ -13,6 +14,7 @@ export async function GET(request: Request) {
   if (blocked) return blocked;
 
   await ensureWatcher();
+  await ensureAppSupervisor();
   const state = watchState();
   // Those on the disk include what was before the last reboot; those in memory, only this life.
   const events = await watcherEvents(50);

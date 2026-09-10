@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 import type { Database } from "./client";
 import {
   NOTE_BUDGET,
@@ -9,20 +10,22 @@ import {
   NOTE_PENDING_MAX,
   NOTE_SLEEPING_MAX,
   addHumanNote,
+  challengeNote,
   decideNote,
   listProjectNotes,
+  listSentinels,
   notesAt,
   noteUsage,
   proposeNote,
   triggerMatches,
+  validMemoryPath,
   validTrigger,
 } from "./notes";
 import * as t from "./schema";
 
 /**
- * Against a real Postgres, like the rest of the package: what is checked here is budget arithmetic
- * done with `filter (where …)` and state races done with `where status = 'proposed'`, which is
- * exactly what a double does not reproduce.
+ * Against a real Postgres: concurrent capacity checks, state transitions and transaction
+ * boundaries are exactly the behavior a database double would not reproduce.
  */
 
 let home: string;
@@ -145,6 +148,107 @@ describe("el presupuesto visible", () => {
     const fifth = await addHumanNote(db, { projectId: PROJECT, body: "z" });
     expect(fifth).toEqual({ refused: "overBudget", used: 2000, budget: NOTE_BUDGET });
   });
+
+  it("counts supplementary Unicode with the same units as validation and delivery", async () => {
+    const body = "😀".repeat(NOTE_MAX / 2);
+    for (let i = 0; i < NOTE_BUDGET / NOTE_MAX; i++) {
+      expect(await addHumanNote(db, { projectId: PROJECT, body })).toHaveProperty("id");
+    }
+    const notes = await listProjectNotes(db, PROJECT);
+    expect((await noteUsage(db, PROJECT)).used).toBe(notes.reduce((sum, note) => sum + note.body.length, 0));
+    expect(await addHumanNote(db, { projectId: PROJECT, body: "one more" })).toMatchObject({ refused: "overBudget" });
+  });
+});
+
+describe("capacity under concurrent writes", () => {
+  // The audit accepted both last-slot requests: 2,020 / 2,000 characters, proposals 21 / 20,
+  // and sleeping notes 31 / 30. The shared transaction lock protects every entry path.
+  it("does not spend the final briefing space twice", async () => {
+    for (let i = 0; i < 4; i++) await addHumanNote(db, { projectId: PROJECT, body: "x".repeat(490) });
+    const results = await Promise.all(["a", "b"].map((letter) => addHumanNote(db, { projectId: PROJECT, body: letter.repeat(30) })));
+    expect(results.filter((result) => "id" in result)).toHaveLength(1);
+    expect(results.filter((result) => "refused" in result)).toEqual([{ refused: "overBudget", used: 1990, budget: NOTE_BUDGET }]);
+    expect((await noteUsage(db, PROJECT)).used).toBe(1990);
+  });
+
+  it("does not let an approval race a human note for the same space", async () => {
+    for (let i = 0; i < 4; i++) await addHumanNote(db, { projectId: PROJECT, body: "x".repeat(490) });
+    const proposal = await proposeNote(db, { projectId: PROJECT, body: "p".repeat(30), createdBy: "audit" });
+    if (!("id" in proposal)) throw new Error("Fixture proposal was refused.");
+    const [added, approved] = await Promise.all([
+      addHumanNote(db, { projectId: PROJECT, body: "h".repeat(30) }),
+      decideNote(db, proposal.id, "approved"),
+    ]);
+    expect(Number("id" in added) + Number(approved.decided)).toBe(1);
+    expect((await noteUsage(db, PROJECT)).used).toBe(1990);
+  });
+
+  it("reserves the final proposal slot once", async () => {
+    for (let i = 0; i < NOTE_PENDING_MAX - 1; i++) await proposeNote(db, { projectId: PROJECT, body: `Fact ${i}`, createdBy: "audit" });
+    const results = await Promise.all(["a", "b"].map((letter) => proposeNote(db, { projectId: PROJECT, body: `Extra ${letter}`, createdBy: "audit" })));
+    expect(results.filter((result) => "id" in result)).toHaveLength(1);
+    expect(results.filter((result) => "refused" in result)).toEqual([{ refused: "pendingFull", max: NOTE_PENDING_MAX }]);
+    expect((await noteUsage(db, PROJECT)).pending).toBe(NOTE_PENDING_MAX);
+  });
+
+  it("reserves the final sleeping slot once", async () => {
+    await db.insert(t.notes).values(Array.from({ length: NOTE_SLEEPING_MAX - 1 }, (_, i) => ({
+      id: `concurrent-sleep-${i}`, projectId: PROJECT, body: `Signal ${i}`, status: "approved", createdBy: "audit", trigger: "src/**",
+    })));
+    const proposals = [];
+    for (const letter of ["a", "b"]) {
+      const result = await proposeNote(db, { projectId: PROJECT, body: `Signal ${letter}`, createdBy: "audit", trigger: "docs/**" });
+      if (!("id" in result)) throw new Error("Fixture proposal was refused.");
+      proposals.push(result.id);
+    }
+    const results = await Promise.all(proposals.map((id) => decideNote(db, id, "approved")));
+    expect(results.filter((result) => result.decided)).toHaveLength(1);
+    expect(results.filter((result) => !result.decided)).toEqual([{ decided: false, reason: "sleepingFull", used: NOTE_SLEEPING_MAX, budget: NOTE_SLEEPING_MAX }]);
+    expect((await noteUsage(db, PROJECT)).sleeping).toBe(NOTE_SLEEPING_MAX);
+  });
+
+  it("gives a human path rule the same slot budget and validation", async () => {
+    expect(await addHumanNote(db, { projectId: PROJECT, body: "Local rule.", trigger: "../other" })).toEqual({ refused: "badTrigger" });
+    await db.insert(t.notes).values(Array.from({ length: NOTE_SLEEPING_MAX - 1 }, (_, i) => ({
+      id: `human-sleep-${i}`, projectId: PROJECT, body: `Signal ${i}`, status: "approved", createdBy: "audit", trigger: "src/**",
+    })));
+    const results = await Promise.all(["a", "b"].map((letter) => addHumanNote(db, {
+      projectId: PROJECT, body: `Rule ${letter}`, trigger: "apps/web/app/(app)/**",
+    })));
+    expect(results.filter((result) => "id" in result)).toHaveLength(1);
+    expect(results.filter((result) => "refused" in result)).toEqual([{ refused: "sleepingFull", used: NOTE_SLEEPING_MAX, budget: NOTE_SLEEPING_MAX }]);
+    expect(await noteUsage(db, PROJECT)).toMatchObject({ used: 0, sleeping: NOTE_SLEEPING_MAX });
+  });
+});
+
+describe("approval scope and grounding", () => {
+  it("refuses a decision attributed to a different project", async () => {
+    const proposal = await proposeNote(db, { projectId: PROJECT, body: "Follow the project guide.", createdBy: "audit" });
+    if (!("id" in proposal)) throw new Error("Fixture proposal was refused.");
+    for (const decision of ["approved", "discarded"] as const) {
+      expect(await decideNote(db, proposal.id, decision, { projectId: "another-project" })).toEqual({ decided: false, reason: "gone" });
+    }
+    expect(await listProjectNotes(db, PROJECT, ["proposed"])).toHaveLength(1);
+  });
+
+  it("commits approval and replacement anchors together, including an empty replacement", async () => {
+    const sentinel = { kind: "path_exists" as const, target: "docs/guide.md", expected: true };
+    const note = await addHumanNote(db, { projectId: PROJECT, body: "Follow docs/guide.md.", sentinels: [sentinel] });
+    if (!("id" in note)) throw new Error("Fixture note was refused.");
+    const [before] = await listSentinels(db, PROJECT);
+    expect(before?.sentinels).toEqual([sentinel]);
+    const challenge = { at: new Date().toISOString(), sentinel, observed: "missing" };
+    expect(await challengeNote(db, note.id, challenge, before!.decidedAt)).toBe(true);
+    expect(await decideNote(db, note.id, "approved", { projectId: PROJECT, sentinels: [] })).toMatchObject({ decided: true });
+    const [after] = await db.select().from(t.notes).where(eq(t.notes.id, note.id));
+    expect(after?.status).toBe("approved");
+    expect(after?.sentinels).toEqual([]);
+    expect(after?.challenge).toBeNull();
+    expect(after!.decidedAt!.getTime()).toBeGreaterThan(before!.decidedAt!.getTime());
+    // A patrol started before the owner's new approval cannot reopen the stale challenge.
+    expect(await challengeNote(db, note.id, challenge, before!.decidedAt)).toBe(false);
+    expect(await listProjectNotes(db, PROJECT)).toHaveLength(1);
+  });
 });
 
 describe("consolidar", () => {
@@ -169,6 +273,34 @@ describe("consolidar", () => {
 });
 
 describe("la nota que duerme", () => {
+  it.each([
+    "apps/web/app/(app)/p/[slug]/page.tsx",
+    "src/[[...segments]]/page.tsx",
+    "docs/project notes/diseño.md",
+    "docs/🧭-guide.md",
+  ])("matches literal application paths: %s", async (path) => {
+    expect(validMemoryPath(path)).toBe(true);
+    expect(validTrigger(path)).toBe(true);
+    const proposal = await proposeNote(db, { projectId: PROJECT, body: "Keep this path's rule.", createdBy: "audit", trigger: path });
+    if (!("id" in proposal)) throw new Error("A literal project path was refused.");
+    await decideNote(db, proposal.id, "approved");
+    expect(await notesAt(db, PROJECT, path)).toHaveLength(1);
+    expect(await notesAt(db, PROJECT, `${path}.other`)).toHaveLength(0);
+  });
+
+  it.each(["", "/etc/passwd", "C:/Users/test", "C:relative", "\\server\\file", "../other", "src/../other", "./src", "src//file", "src/", "src/\nfile", "src/\u0000file", "src/**/file"])("refuses nonliteral or escaping paths: %j", (path) => {
+    expect(validMemoryPath(path)).toBe(false);
+    expect(validTrigger(path)).toBe(false);
+  });
+
+  it("keeps the recursive suffix explicit and only on triggers", () => {
+    expect(validTrigger("apps/web/app/(app)/**")).toBe(true);
+    expect(validMemoryPath("apps/web/app/(app)/**")).toBe(false);
+    expect(triggerMatches("apps/web/app/(app)/**", "apps/web/app/(app)/p/[slug]/page.tsx")).toBe(true);
+    expect(validMemoryPath("a".repeat(2048))).toBe(true);
+    expect(validMemoryPath("a".repeat(2049))).toBe(false);
+  });
+
   it("el gatillo tiene forma acotada: dirección dentro del proyecto, no expresión", () => {
     expect(validTrigger("docs/memory.md")).toBe(true);
     expect(validTrigger("apps/web/**")).toBe(true);

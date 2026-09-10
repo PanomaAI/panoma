@@ -49,6 +49,17 @@ describe("un flag desconocido nunca se ignora", () => {
   });
 });
 
+describe("open --all no se mezcla con abrir una sola cosa", () => {
+  it("acepta --all a secas", () => {
+    expect(flagsOf(["open", "shop", "--all"]).all).toBe(true);
+  });
+
+  it("y rechaza --all junto a --folder o --terminal, que piden lo contrario", () => {
+    expect(errorOf(["open", "shop", "--all", "--folder"])).toContain("--all");
+    expect(errorOf(["open", "shop", "--terminal", "--all"])).toContain("--terminal");
+  });
+});
+
 describe("los valores de los flags no se convierten en otra cosa", () => {
   it("acepta --api=valor igual que --api valor", () => {
     expect(flagsOf(["scan", "--api=http://x"]).api).toBe("http://x");

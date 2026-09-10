@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { HiOutlineCheckCircle, HiOutlinePlay, HiOutlineXCircle } from "react-icons/hi2";
 import { useLocale, useT } from "./i18n-provider";
-import { ActionError } from "./primitives";
+import { ActionButton, ActionError } from "./primitives";
 
 /*
   Does this still compile? — the verdict and its button, in the Resume view.
@@ -69,16 +69,13 @@ export function ProjectBuildCheck({
     }
   }
 
+  /* `raised` at the `sm` step: the 11px this button already measured, and the icon and its gap
+     come from the primitive's own base rather than being written again here. */
   const button = (
-    <button
-      type="button"
-      onClick={check}
-      disabled={running}
-      className="inline-flex items-center gap-1.5 rounded border border-edge px-2.5 py-1 font-mono text-[11px] text-smoke transition-colors hover:border-accent hover:text-accent disabled:opacity-50"
-    >
+    <ActionButton tone="raised" size="sm" type="button" onClick={check} disabled={running}>
       <HiOutlinePlay className="h-3.5 w-3.5" aria-hidden />
       {translate(verdict ? "check.rerun" : "check.run")}
-    </button>
+    </ActionButton>
   );
 
   if (running) {
@@ -111,7 +108,7 @@ export function ProjectBuildCheck({
     <div className="project-build-check">
       <p className="flex items-center gap-1.5 text-sm">
         {verdict.status === "ok" ? (
-          <HiOutlineCheckCircle className="h-4 w-4 shrink-0 text-emerald-600" aria-hidden />
+          <HiOutlineCheckCircle className="h-4 w-4 shrink-0 text-live" aria-hidden />
         ) : verdict.status === "failed" ? (
           <HiOutlineXCircle className="h-4 w-4 shrink-0 text-fail" aria-hidden />
         ) : null}
@@ -132,8 +129,13 @@ export function ProjectBuildCheck({
       </p>
       {/* The runner's summary: the honest phrase of in what conditions it was checked. */}
       <p className="mt-1 text-[13px] text-smoke">{verdict.summary}</p>
+      {/*
+         A caveat about the verdict, not an alarm: it says which commit was measured. It reads in
+         the same `smoke` as the runner's summary right above, because amber and red are kept for
+         what is going wrong, and this is not.
+        */}
       {verdict.dirty && (
-        <p className="mt-1 font-mono text-[11px] text-amber-600">{translate("check.dirty")}</p>
+        <p className="mt-1 font-mono text-[11px] text-smoke">{translate("check.dirty")}</p>
       )}
       {verdict.reason && (
         <pre className="project-build-check-reason">{verdict.reason}</pre>

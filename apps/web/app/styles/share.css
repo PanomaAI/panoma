@@ -11,7 +11,7 @@
   z-index: var(--z-overlay);
   display: grid;
   place-items: center;
-  padding: 24px;
+  padding: var(--space-12);
 }
 
 .share__backdrop {
@@ -24,12 +24,14 @@
 }
 
 .share__box {
+  /* A layout measurement, above the last step of the scale: how wide the dialog is allowed to
+     grow, not a rhythm. */
   width: min(100%, 920px);
   max-height: 92vh;
   overflow: auto;
-  padding: 18px;
+  padding: var(--space-9);
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--corner-lg);
   background: var(--paper);
   box-shadow: var(--shadow-share);
 }
@@ -38,24 +40,24 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 14px;
+  gap: var(--space-6);
+  margin-bottom: var(--space-7);
 }
 
 .share__box h2 {
   margin: 0;
   color: var(--ink);
-  font-size: 0.95rem;
-  font-weight: 600;
+  font-size: var(--type-base);
+  font-weight: var(--weight-semibold);
 }
 
 .share__box header button {
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  width: var(--space-14);
+  height: var(--space-14);
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--corner);
   background: transparent;
   color: var(--ink-3);
   cursor: pointer;
@@ -77,24 +79,26 @@
   width: auto;
   height: auto;
   max-width: 100%;
+  /* Both 240s are layout measurements of the dialog, above the scale: the floor the preview
+     never goes under, and the room the header and footer need above and below it. */
   max-height: max(240px, calc(92vh - 240px));
   margin-inline: auto;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--corner);
 }
 
 .share__options {
   display: grid;
   grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr) auto;
-  gap: 10px;
-  margin-top: 14px;
+  gap: var(--space-5);
+  margin-top: var(--space-7);
 }
 
 .share__options label {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 0.78rem;
+  gap: var(--space-5);
+  font-size: var(--type-xs);
   color: var(--ink-2);
 }
 
@@ -102,23 +106,25 @@
 .share__options label > input:not([type]) {
   flex: 1;
   min-width: 0;
-  padding: 6px 10px;
+  padding: var(--space-3) var(--space-5);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--corner);
   background: var(--wash);
   color: var(--ink);
   font-family: inherit;
-  font-size: 0.78rem;
+  font-size: var(--type-xs);
 }
 
 .share__visibility {
   display: inline-grid;
+  /* Measured to match the height of the field beside it, which its own padding and line box
+     make; the scale has no 34, and both neighbours are two pixels away. */
   width: 34px;
   height: 34px;
   place-items: center;
   align-self: end;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--corner);
   background: var(--paper);
   color: var(--ink-2);
   cursor: pointer;
@@ -136,8 +142,8 @@
 }
 
 .share__visibility svg {
-  width: 16px;
-  height: 16px;
+  width: var(--space-8);
+  height: var(--space-8);
 }
 
 .share__visibility:focus-visible {
@@ -148,23 +154,25 @@
 .share__language {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-5);
   color: var(--ink-2);
-  font-size: 0.78rem;
+  font-size: var(--type-xs);
 }
 
 .share__language > div {
   display: inline-flex;
-  padding: 2px;
+  padding: var(--space-1);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--corner);
   background: var(--wash);
 }
 
 .share__language button {
-  padding: 4px 9px;
+  padding: var(--space-2) var(--space-5);
   border: 0;
-  border-radius: 6px;
+  /* The small step, not the large one: this sits inside a track cornered at `--corner` with two
+     pixels of padding, and a child as round as its parent reads as a mistake. */
+  border-radius: var(--corner-xs);
   background: transparent;
   color: var(--ink-3);
   font: inherit;
@@ -183,19 +191,19 @@
 }
 
 .share__note {
-  margin: 12px 0 0;
+  margin: var(--space-6) 0 0;
   color: var(--ink-3);
-  font-size: 0.72rem;
-  line-height: 1.55;
+  font-size: var(--type-xs);
+  line-height: var(--lead-body);
 }
 
 .share__box footer {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  margin-top: 14px;
-  padding-top: 14px;
+  gap: var(--space-4);
+  margin-top: var(--space-7);
+  padding-top: var(--space-7);
   border-top: 1px solid var(--line);
 }
 
@@ -203,13 +211,13 @@
 .share__box footer a {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 7px 12px;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-6);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--corner);
   background: var(--paper);
   color: var(--ink-2);
-  font-size: 0.76rem;
+  font-size: var(--type-xs);
   text-decoration: none;
   cursor: pointer;
   transition: border-color var(--duration-fast) ease, color var(--duration-fast) ease;
@@ -232,8 +240,8 @@
 }
 
 .share__box footer svg {
-  width: 14px;
-  height: 14px;
+  width: var(--space-7);
+  height: var(--space-7);
 }
 
 @media (max-width: 680px) {
@@ -255,50 +263,50 @@
  */
 .catalog-down {
   max-width: 62ch;
-  margin: 40px auto;
-  padding: 20px 22px;
-  border: 1px solid var(--line, var(--color-line-catalog));
-  border-radius: 10px;
+  margin: var(--space-20) auto;
+  padding: var(--space-10) var(--space-12);
+  border: 1px solid var(--line, var(--color-edge));
+  border-radius: var(--corner);
   background: var(--paper, var(--color-surface));
 }
 
 .catalog-down h2 {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-4);
   color: var(--bad, var(--color-danger-ink-deep));
-  font-size: 1rem;
-  font-weight: 650;
-  letter-spacing: -0.02em;
+  font-size: var(--type-base);
+  font-weight: var(--weight-title);
+  letter-spacing: var(--track-tight);
 }
 
 .catalog-down h2 svg {
-  width: 16px;
-  height: 16px;
+  width: var(--space-8);
+  height: var(--space-8);
   flex: none;
 }
 
 .catalog-down p {
-  margin-top: 10px;
-  color: var(--ink-2, var(--color-ink-muted-catalog));
-  font-size: 0.86rem;
-  line-height: 1.55;
+  margin-top: var(--space-5);
+  color: var(--ink-2, var(--color-ink-muted));
+  font-size: var(--type-sm);
+  line-height: var(--lead-body);
 }
 
 .catalog-down__detail code {
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 0.78rem;
+  font-size: var(--type-xs);
   word-break: break-word;
 }
 
 .catalog-down__button {
-  margin-top: 16px;
-  padding: 7px 14px;
-  border: 1px solid var(--line-strong, var(--color-line-strong-catalog));
-  border-radius: 7px;
+  margin-top: var(--space-8);
+  padding: var(--space-4) var(--space-7);
+  border: 1px solid var(--line-strong, var(--color-edge-bright));
+  border-radius: var(--corner);
   background: var(--paper, var(--color-surface));
-  color: var(--ink, var(--color-ink-catalog));
-  font-size: 0.82rem;
+  color: var(--ink, var(--color-ink));
+  font-size: var(--type-sm);
   cursor: pointer;
 }
 

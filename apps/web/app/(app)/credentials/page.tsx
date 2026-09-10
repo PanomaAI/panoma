@@ -1,3 +1,4 @@
+import { PageSection, PageShell } from "@/components/page-shell";
 import { SecretScan } from "@/components/secret-scan";
 import { Rich } from "@/components/rich-text";
 import { getLocale, t } from "@/lib/i18n";
@@ -11,30 +12,35 @@ export async function generateMetadata() {
 export default async function SecretsPage() {
   const locale = await getLocale();
 
-  return (
-    <main id="app-main" tabIndex={-1} className="app-main legacy-page">
-      <section className="pt-12">
-        <p className="eyebrow">{t(locale, "nav.credentials")}</p>
-        <h1 className="mt-2 font-display text-4xl font-semibold tracking-tight">
-          {t(locale, "credentials.title")}
-        </h1>
-        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-smoke">
-          <Rich
-            text={t(locale, "credentials.intro")}
-            slots={{ env: <code className="font-mono text-chalk">.env</code> }}
-          />
-        </p>
-        <p className="mt-3 max-w-2xl text-xs leading-relaxed text-faint">
-          <Rich
-            text={t(locale, "credentials.allowlist")}
-            slots={{ not: <strong>{t(locale, "credentials.not")}</strong> }}
-          />
-        </p>
-      </section>
+  /*
+    The second paragraph goes in `headExtra` and not in `note`, and the difference is not a detail:
+    `note` is the monospaced line of figures some screens carry, and this is a sentence with a
+    `<strong>` inside it. It keeps the size and the ink it already had.
+   */
+  const allowlist = (
+    <p className="mt-3 max-w-2xl text-xs leading-relaxed text-faint">
+      <Rich
+        text={t(locale, "credentials.allowlist")}
+        slots={{ not: <strong>{t(locale, "credentials.not")}</strong> }}
+      />
+    </p>
+  );
 
-      <div className="mt-8">
+  return (
+    <PageShell
+      eyebrow={t(locale, "nav.credentials")}
+      title={t(locale, "credentials.title")}
+      lead={
+        <Rich
+          text={t(locale, "credentials.intro")}
+          slots={{ env: <code className="font-mono text-chalk">.env</code> }}
+        />
+      }
+      headExtra={allowlist}
+    >
+      <PageSection>
         <SecretScan />
-      </div>
-    </main>
+      </PageSection>
+    </PageShell>
   );
 }

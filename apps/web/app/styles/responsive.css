@@ -5,7 +5,45 @@
   and they win only by being behind. Do not move it forward.
   The `:focus-visible` global here belongs by content to `base.css`. It stays so as not to move a
   line in the same change that splits the file.
+  That dependency is also the rule for the tokens. What a cut restates has to keep its
+  RELATIONSHIP with the rule above it and not its number, and the two are not the same thing: a
+  value that lands on the step its own base lands on has not been tidied, it has been deleted, and
+  the cut quietly stops happening. Where the two were more than a pixel apart, the narrow one stays
+  a literal and says so where it is written. Where they were less, they were never two decisions,
+  and the DECLARATION GOES: giving both sides the same token leaves a rule that looks like it is
+  still narrowing something and is not, which is the worse of the two failures — a dead override
+  survives every review, because it reads exactly like a live one.
+  The page shells work the other way round: `styles.test.ts` pins their
+  padding as a literal, so the paddings that restate them here stay literal too, and the two
+  halves of one measurement keep one vocabulary.
  */
+/*
+  The header of a project stops being two columns here, and 1340 is measured and not chosen.
+  Its right half is four controls that do not shrink —560 pixels of them— on a `flex: none` cell,
+  so every pixel the window loses comes out of the left half, and the left half is the name, the
+  description and the five facts. The arithmetic of this screen is
+  `copy = min(viewport - 292, 1184) - 706`: at 1340 that leaves about 340, which is what the name
+  needs to stay on one line and what the facts need to print "ACTIVITY" without an ellipsis. Below
+  it the two halves stop being two halves — until 8-Sep-2026 the cut was at 900, and the four
+  hundred pixels in between drew a title broken in two, a row of buttons painted over it and five
+  facts reading "S." and "B.".
+ */
+@media (max-width: 1340px) {
+  .project-hero {
+    flex-direction: column;
+  }
+
+  .project-action-bar {
+    width: 100%;
+    justify-items: start;
+  }
+
+  .project-overflow-menu {
+    right: auto;
+    left: 188px;
+  }
+}
+
 @media (max-width: 1180px) {
   .project-detail-page__inner {
     width: min(100% - 40px, 1184px);
@@ -30,20 +68,6 @@
 }
 
 @media (max-width: 900px) {
-  .project-hero {
-    flex-direction: column;
-  }
-
-  .project-action-bar {
-    width: 100%;
-    justify-items: start;
-  }
-
-  .project-overflow-menu {
-    right: auto;
-    left: 188px;
-  }
-
   .project-secondary-column,
   .project-context-grid,
   .project-inventory-grid,
@@ -71,45 +95,69 @@
 @media (max-width: 760px) {
   .project-detail-page__inner {
     width: min(100% - 28px, 1184px);
-    padding-top: 24px;
+    padding-top: var(--space-12);
   }
 
   .project-hero__identity {
-    gap: 15px;
+    gap: var(--space-8);
   }
 
+  /*
+    68 here is the size of the project's icon and shares its number with `--sidebar-rail` by
+    coincidence. Two things that measure the same are not one measurement: the token belongs to
+    the folded lane and writing it here would tie this icon to the width of a bar.
+   */
   .project-hero__identity > img,
   .project-hero__identity > span {
     width: 68px !important;
     height: 68px !important;
   }
 
+  /*
+    28px, and it stays a literal. The nearest step of the type scale is `--type-3xl` at 30px, two
+    pixels away, and nothing in this sweep is allowed to move more than one. What it has to keep
+    is the relationship: the sheet's title is `--type-hero`, and on a phone it comes down.
+   */
   .project-hero__copy h1 {
     font-size: 1.75rem;
   }
 
+  /*
+    15.2px against a base of 1.02rem, and both round to `--type-base`. Taking the token here would
+    not move a pixel worth seeing — it would delete this rule, and the description would stop
+    shrinking on a phone. The step below, `--type-sm`, is 1.2px away. The pair is decided together
+    or not at all.
+   */
   .project-hero__description {
     font-size: 0.95rem;
   }
 
+  /*
+    Two columns instead of three, and the dividers move with them. The sheet draws the rule on
+    every cell that does not open a row of THREE; here a row is two, so the whole set is undone
+    and drawn again on the even cell and above the third. Both selectors of the reset are written
+    out because a selector list does not share its weight: `.project-hero__fact` alone does not
+    reach the `:not(…)` rule it has to undo.
+   */
   .project-hero__facts {
-    display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 12px 0;
   }
 
   .project-hero__fact,
-  .project-hero__fact + .project-hero__fact {
-    min-width: 0;
+  .project-hero__fact:not(:nth-child(3n + 1)) {
     margin: 0;
-    padding: 0 12px 0 0;
-    border: 0;
+    padding: var(--space-5) var(--space-6) var(--space-5) 0;
+    border-left: 0;
   }
 
   .project-hero__fact:nth-child(even) {
-    padding-left: 12px;
+    padding-left: var(--space-6);
     padding-right: 0;
     border-left: 1px solid var(--line);
+  }
+
+  .project-hero__fact:nth-child(n + 3) {
+    border-top: 1px solid var(--line);
   }
 
   .project-hero__path {
@@ -159,7 +207,7 @@
 
   .project-subnav {
     width: calc(100vw - 28px);
-    gap: 24px;
+    gap: var(--space-12);
     overflow-x: auto;
   }
 
@@ -186,7 +234,7 @@
 
   .project-timeline li {
     grid-template-columns: 30px 64px minmax(0, 1fr);
-    padding: 7px 0;
+    padding: var(--space-4) 0;
   }
 
   .project-timeline code {
@@ -202,7 +250,7 @@
   }
 
   .project-timeline small {
-    margin-top: 1px;
+    margin-top: var(--space-1);
   }
 
   .project-safety-strip {
@@ -216,13 +264,13 @@
 
   .project-deep-section,
   .project-utility-section {
-    padding: 18px;
+    padding: var(--space-9);
   }
 
   .project-dependency-table > div {
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: 8px;
-    padding: 10px 12px;
+    gap: var(--space-4);
+    padding: var(--space-5) var(--space-6);
   }
 
   .project-dependency-table [role="cell"]:nth-child(2) {
@@ -258,6 +306,21 @@
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+
+  /*
+    And the two that turn for ever, by name. Flattening the duration does not stop
+    `animation: … infinite`: it makes each turn last a hundredth of a millisecond, so a spinner
+    asked to hold still spins faster than it did before, which is the opposite of what was asked
+    for. Only `animation: none` stops it, and `.nav-pending` in `catalog-extras.css` was already
+    switched off exactly this way — the shape of the fix was written once and never generalized.
+    Both sheets are imported ahead of this one, so the name is undone here by order.
+    It is the reduced-motion row of `docs/open-questions.md`; what is left of it is
+    `scroll-behavior`.
+   */
+  .is-spinning,
+  .opening-spinner {
+    animation: none;
+  }
 }
 
 /*
@@ -276,13 +339,18 @@
 @media (max-width: 980px) {
   .app-topbar {
     grid-template-columns: minmax(200px, max-content) minmax(0, 1fr) auto;
-    column-gap: 24px;
+    column-gap: var(--space-12);
   }
 
   .top-navigation > a {
     display: none;
   }
 
+  /*
+    204px is this cut's own bar, narrower than the 228 of `--sidebar-width`, and the three rules
+    below subtract it. A width above 64px that is not furniture is a layout measurement and has
+    no step to land on; what matters is that the four numbers stay the same number.
+   */
   .app-sidebar {
     width: 204px;
   }
@@ -292,14 +360,9 @@
     margin-left: 204px;
   }
 
-  .legacy-page {
-    width: calc(100% - 204px);
-  }
-
-  html.sidebar-collapsed .app-main,
-  html.sidebar-collapsed .legacy-page {
-    width: calc(100% - 68px);
-    margin-left: 68px;
+  html.sidebar-collapsed .app-main {
+    width: calc(100% - var(--sidebar-rail));
+    margin-left: var(--sidebar-rail);
   }
 
 }
@@ -307,14 +370,14 @@
 @media (max-width: 760px) {
   .app-topbar {
     grid-template-columns: auto 1fr auto;
-    gap: 12px;
+    gap: var(--space-4);
     min-height: 64px;
-    padding: 0 14px;
+    padding: 0 var(--space-6);
   }
 
   .sidebar-toggle,
   .brand-lockup span,
-  .global-search kbd,
+  .global-search button,
   .top-navigation {
     display: none;
   }
@@ -325,8 +388,16 @@
   }
 
   .global-search {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--space-4);
     height: 40px;
+    padding: 0 var(--space-5);
   }
+
+  /* The toggle stays tighter than the 4px it is padded with above this cut, in both axes. */
+  .topbar-actions { gap: var(--space-3); }
+  .lang-toggle { padding: var(--space-1); }
+  .lang-toggle button { min-width: 28px; padding: 0 var(--space-2); }
 
   html.sidebar-collapsed .app-sidebar,
   .app-sidebar {
@@ -334,8 +405,8 @@
     z-index: var(--z-dock);
     display: block;
     width: auto;
-    height: 66px;
-    padding: 7px 10px;
+    height: calc(var(--dock-height) + env(safe-area-inset-bottom, 0px));
+    padding: var(--space-4) var(--space-5) calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
     border-top: 1px solid var(--color-edge);
     border-right: 0;
   }
@@ -347,7 +418,6 @@
 
   html.sidebar-ready .app-sidebar,
   html.sidebar-ready .app-main,
-  html.sidebar-ready .legacy-page,
   html.sidebar-ready.sidebar-collapsed .app-sidebar {
     transition: none;
   }
@@ -355,40 +425,129 @@
   .app-sidebar nav {
     display: grid;
     grid-template-columns: repeat(5, 1fr);
-    gap: 4px;
+    gap: var(--space-2);
   }
 
   .app-sidebar nav a {
     position: relative;
+    flex-direction: column;
     justify-content: center;
+    gap: var(--space-2);
+    min-width: 0;
     min-height: 50px;
     padding: 0;
   }
 
-  .app-sidebar nav a:nth-child(n + 6),
-  .nav-label,
+  .app-sidebar nav a .nav-label {
+    max-width: 100%;
+    overflow: hidden;
+    font-size: var(--type-3xs);
+    line-height: var(--lead-tight);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* MOBILE_NAV_ITEMS + 1 in app-shell.tsx: what the bar shows, and where «More» begins. */
+  .app-sidebar nav a:nth-child(n + 5),
   .nav-badge,
-  .catalog-summary,
   .sidebar-foot {
     display: none;
   }
 
+  .mobile-more {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-1);
+    min-height: 50px;
+    border: 0;
+    border-radius: var(--corner);
+    background: var(--color-surface);
+    color: var(--color-chalk);
+    font-size: var(--type-3xs);
+  }
+
   /*
-    The footer bar is also just icons, so the spinner also got lost here — and on a mobile, where
-    the route takes longer, is where it is most needed.
+    22px, and it stays a literal, as does the `.app-sidebar nav a svg` below it that has to match:
+    the dock's two icons are one size and the ladder's top step is `--icon-lg` at 20, two pixels
+    away. This is the phone's only row of icons without a label big enough to lean on, and
+    shrinking it is a decision about the dock rather than a rename.
+   */
+  .mobile-more svg { width: 22px; height: 22px; }
+
+  .mobile-more.is-active,
+  .mobile-more[aria-expanded="true"] {
+    background: var(--color-selected);
+    font-weight: var(--weight-semibold);
+  }
+
+  .mobile-sections {
+    display: grid;
+    position: absolute;
+    bottom: calc(var(--dock-height) + var(--space-2) + env(safe-area-inset-bottom, 0px));
+    right: 10px;
+    left: 10px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2);
+    max-height: min(70vh, 520px);
+    overflow-y: auto;
+    padding: var(--space-7);
+    border: 1px solid var(--color-edge);
+    /*
+      12px, and it comes down to the 8 of `--corner` rather than up to the 14 of `--corner-lg`,
+      which is the same move `.account-card` makes in `app-shell.css`: the two popovers that hang
+      off the frame land together, and the 14 stays with the things that cover the screen — the
+      command palette, the destructive dialog, the share sheet. The cost is that this panel now
+      shares a corner with the rows inside it, and if that reads as flat on a phone, the answer
+      is to take `--corner-lg` HERE AND on `.account-card`, not on one of the two.
+     */
+    border-radius: var(--corner);
+    background: var(--color-surface);
+    color: var(--color-chalk);
+  }
+
+  .mobile-sections > p {
+    grid-column: 1 / -1;
+    padding: var(--space-2) var(--space-4) var(--space-4);
+    font-size: var(--type-xs);
+  }
+
+  /*
+    The corner is the 8px of the buttons in the dock and of the sidebar links these rows repeat,
+    and it stays under the panel that holds them. The 44px is a minimum hit area, not a step.
+   */
+  .mobile-sections a {
+    display: flex;
+    align-items: center;
+    gap: var(--space-5);
+    min-height: 44px;
+    padding: var(--space-4);
+    border-radius: var(--corner);
+    font-size: var(--type-xs);
+  }
+
+  .mobile-sections a[aria-current="page"] { background: var(--color-raised); }
+  /* 19px was one pixel under the ladder's top step and nothing was reading the difference. */
+  .mobile-sections a svg { flex-shrink: 0; width: var(--icon-lg); height: var(--icon-lg); }
+
+  /*
+    Keep the pending ring around the icon, above the visible destination label.
     The selector is intentionally long: `.nav-pending` by itself matches in weight with the base
     rule and **the base is lower in the file**, so it would win and this caused no issues.
     Measured, not deduced: the rotator was still coming out at 11 pixels and stuck to the edge.
    */
   .app-sidebar nav a .nav-pending {
     position: absolute;
-    top: 50%;
+    top: 18px;
     left: 50%;
     width: 30px;
     height: 30px;
+    /* Half of the 30px above, negated: the pair centres the ring and is not a step of anything. */
     margin: -15px 0 0 -15px;
   }
 
+  /* The other half of the dock's 22, argued above `.mobile-more svg`. The two move together. */
   .app-sidebar nav a svg {
     width: 22px;
     height: 22px;
@@ -400,60 +559,177 @@
     repeated with the same weight or the content will remain with 68px of left margin due to a bar
     that is below.
    */
-  html.sidebar-collapsed .app-main,
-  html.sidebar-collapsed .legacy-page {
+  html.sidebar-collapsed .app-main {
     width: 100%;
     margin-left: 0;
   }
 
+  /*
+    The 64px is not a step of the rhythm: it is the compact bar's own height, declared as
+    `min-height` at the top of this block, and the content is pushed down by exactly what covers
+    it. `--bar-height` is the 74px of the wide screen, `--space-32` happens to be 64px and means
+    something else, so the two literals stay equal to each other until this bar has a name.
+    The foot below it is the dock, which does have one.
+   */
   .app-main {
     width: 100%;
     margin-left: 0;
     padding-top: 64px;
-    padding-bottom: 66px;
+    padding-bottom: calc(var(--dock-height) + env(safe-area-inset-bottom, 0px));
   }
 
-  .legacy-page {
-    width: 100%;
-    padding: 98px 16px 94px;
-  }
-
-  .content-page {
-    width: min(100% - 32px, 1080px);
-    padding-top: 34px;
-  }
-
+  /*
+    26px falls between `--space-12` and `--space-14`, two pixels from each. Rounding up to 28
+    would not just move it: 28 is what the catalog already pads with above this cut, so the rule
+    would stop doing anything at all.
+   */
   .catalog-screen__inner {
     width: min(100% - 28px, 1240px);
     padding-top: 26px;
   }
 
+  .brief__line {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: var(--space-4);
+  }
+
+  .brief__facts {
+    grid-column: 2 / -1;
+    grid-row: 2;
+  }
+
+  .brief__arrow {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
   .catalog-bar {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 12px;
+    gap: var(--space-7);
+    padding-top: 0;
+    padding-bottom: var(--space-9);
   }
 
   .catalog-bar__tools {
-    width: 100%;
-    justify-content: space-between;
+    margin-left: auto;
   }
 
-  /* The filters do not stack in four rows: they slide, like a tab bar. */
+  .catalog-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-6);
+    padding: var(--space-6);
+  }
+
   .catalog-filters {
-    width: calc(100vw - 28px);
-    padding-bottom: 8px;
+    width: 100%;
     overflow-x: auto;
     flex-wrap: nowrap;
+    padding: var(--space-1) 0 var(--space-3);
   }
 
+  /*
+    No `font-size` here any more, and its absence is the decision. It said 0.75rem against a base
+    of 0.78rem: 0.48px, which is not a step down, it is two people rounding the same intention on
+    two different days. Both landed on `--type-xs`, so the rule restated the size it was there to
+    change — a dead override that reads as a live one, which is worse than either answer.
+    The phone does not want a smaller filter: this strip scrolls sideways at 12px already, and the
+    step below is `--type-2xs` at 11. What it does want is the tighter padding, and that stays.
+   */
   .catalog-filters button {
     flex: none;
+    padding: 0 var(--space-5);
   }
 
-  /* Three per row on a mobile, like a home screen. With two it reads like a list. */
+  .catalog-view-tools {
+    grid-column: 1;
+    grid-row: 3;
+    flex-wrap: wrap;
+    padding-top: var(--space-5);
+    border-top: 1px solid var(--line);
+  }
+
+  .catalog-sort {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .catalog-sort select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .catalog-activity {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .catalog-actions button {
+    padding-inline: var(--space-5);
+  }
+
+  /* Two tiles fit at 320px; wider phones gain a column instead of oversized empty cards. */
   .catalog-rows--grid {
-    grid-template-columns: repeat(auto-fill, 118px);
-    gap: 10px;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 132px), 1fr));
+    gap: var(--space-5);
+  }
+
+  /*
+    The same case, and settled the same way. 0.69rem against a base of 0.71rem is 0.32px, and both
+    are `--type-2xs`. The line under a tile name keeps the size it has everywhere and closes its
+    column gap, which is the part a 132px tile actually needs.
+   */
+  .catalog-tile__meta {
+    column-gap: var(--space-2);
+  }
+
+  .catalog-filter-state {
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 360px) {
+  /*
+    9px, one under the 10px of the cut above, and it stays a literal for that reason: the nearest
+    step is `--type-3xs`, which is that 10px, so taking the token would leave this block declaring
+    the size it is here to change.
+   */
+  .app-sidebar nav a .nav-label {
+    font-size: 9px;
+  }
+}
+
+@media (max-width: 480px) {
+  .catalog-view-tools {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .catalog-sort {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .catalog-view-tools .view-switch {
+    justify-self: end;
+  }
+
+  .catalog-overview {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-6);
+  }
+
+  .catalog-overview .catalog-overview__states {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-4) var(--space-6);
+  }
+
+  .catalog-overview .catalog-overview__aside {
+    align-self: stretch;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: var(--space-4);
+    padding-left: var(--space-6);
   }
 }

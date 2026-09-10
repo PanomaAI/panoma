@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { getStats, listFamilies, stateOf } from "@panoma/db";
 import { db } from "@/lib/db";
-import { StateDot, formatBytes } from "@/components/primitives";
+import { PageSection, PageShell } from "@/components/page-shell";
+import { Card, EmptyState, StateDot, formatBytes } from "@/components/primitives";
 import { Rich } from "@/components/rich-text";
 import { cliName } from "@/lib/cli-name";
 import { getLocale, t } from "@/lib/i18n";
@@ -20,47 +21,48 @@ export default async function CopiesPage() {
     getLocale(),
   ]);
 
+  /*
+    `n` and not `families`: the shape gap that keeps «1 familias» away looks at that name and no
+    other. See the key in `lib/i18n.ts`.
+   */
+  const counted = t(locale, "families.stats", {
+    n: families.length,
+    bytes: formatBytes(stats.redundantBytes),
+  });
+
   return (
-    <>
-
-      <main id="app-main" tabIndex={-1} className="app-main legacy-page">
-        <section className="pt-12">
-          <p className="eyebrow">{t(locale, "nav.copies")}</p>
-          <h1 className="mt-2 font-display text-4xl font-semibold tracking-tight">
-            {t(locale, stats.copies === 1 ? "families.titleOne" : "families.titleMany", {
-              n: stats.copies,
-            })}
-          </h1>
-          <p className="mt-3 max-w-xl text-sm leading-relaxed text-smoke">
-            {t(locale, "families.intro")}
-          </p>
-          <p className="mt-4 font-mono text-xs text-faint">
-            {/*
-               `n` and not `families`: the shape gap that keeps «1 familias» away looks at that
-               name and no other. See the key in `lib/i18n.ts`.
-              */}
-            {t(locale, "families.stats", {
-              n: families.length,
-              bytes: formatBytes(stats.redundantBytes),
-            })}
-          </p>
-        </section>
-
+    <PageShell
+      eyebrow={t(locale, "nav.copies")}
+      title={t(locale, stats.copies === 1 ? "families.titleOne" : "families.titleMany", {
+        n: stats.copies,
+      })}
+      lead={t(locale, "families.intro")}
+      note={counted}
+    >
+      <PageSection>
         {families.length === 0 ? (
-          <p className="mt-12 rounded border border-edge bg-surface p-6 text-sm text-smoke">
-            <Rich
-              text={t(locale, "families.empty")}
-              slots={{
-                cmd: (
-                  <code className="font-mono text-chalk">{cliName()} scan ~/Desktop --save</code>
-                ),
-              }}
-            />
-          </p>
+          /*
+             The house empty state, not a ninth panel of its own. The whole sentence is the title
+             because the dictionary holds it as one string with one `{cmd}` gap in the middle:
+             splitting it into a heading and a line would mean two new keys in two languages, and
+             `families.empty` is already the shape a translator agreed to.
+            */
+          <EmptyState
+            title={
+              <Rich
+                text={t(locale, "families.empty")}
+                slots={{
+                  cmd: (
+                    <code className="font-mono text-chalk">{cliName()} scan ~/Desktop --save</code>
+                  ),
+                }}
+              />
+            }
+          />
         ) : (
-          <ul className="mt-10 space-y-8">
+          <ul className="space-y-8">
             {families.map((family) => (
-              <li key={family.id} className="rounded-lg border border-edge bg-surface">
+              <Card key={family.id} as="li" pad="none">
                 <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-edge px-5 py-3">
                   <h2 className="font-display text-lg font-semibold tracking-tight">
                     {family.name}
@@ -125,12 +127,12 @@ export default async function CopiesPage() {
                     ))}
                   </ul>
                 </div>
-              </li>
+              </Card>
             ))}
           </ul>
         )}
-      </main>
-    </>
+      </PageSection>
+    </PageShell>
   );
 }
 

@@ -6,7 +6,8 @@ import { db } from "@/lib/db";
 import { inFolder, joinSteps, shellOf, type Shell } from "@/components/command";
 import { CopyCommand } from "@/components/copy-button";
 import { OpenFolder } from "@/components/open-folder";
-import { ProjectIcon, relativeDate } from "@/components/primitives";
+import { PageSection, PageShell } from "@/components/page-shell";
+import { Card, EmptyState, ProjectIcon, Tag, relativeDate } from "@/components/primitives";
 import { Rich } from "@/components/rich-text";
 import { getLocale, riskText, t, type Locale, type MessageKey } from "@/lib/i18n";
 import { platform } from "node:os";
@@ -70,87 +71,92 @@ export default async function WorkPage() {
     .filter((p) => p.work?.ownRepo && !p.gitRemoteUrl)
     .reduce((sum, p) => sum + (p.gitCommitCount ?? 0), 0);
 
-  return (
-    <main id="app-main" tabIndex={-1} className="app-main legacy-page">
-        <section className="pt-12">
-          <p className="eyebrow">{t(locale, "nav.unsaved")}</p>
-          <h1 className="mt-2 font-display text-4xl font-semibold tracking-tight">
-            {projects.length === 0
-              ? t(locale, "unsaved.safe")
-              : t(locale, projects.length === 1 ? "unsaved.countOne" : "unsaved.countMany", {
-                  n: projects.length,
-                })}
-          </h1>
-          <p className="mt-3 max-w-2xl text-sm leading-relaxed text-smoke">
-            {t(locale, "unsaved.intro")}
-          </p>
-          {projects.length > 0 && (
-            <p className="mt-4 flex flex-wrap gap-x-5 gap-y-1 font-mono text-xs text-faint">
-              {stats.unversioned > 0 && (
-                <span className="text-idle">
-                  {t(locale, "unsaved.statUnversioned", { n: stats.unversioned })}
-                </span>
-              )}
-              {stats.noRemote > 0 && (
-                <span className="text-idle">
-                  {/*
-                     Two names for the same figure: `shown` is what is read —with its thousands
-                     separator— and `n` is what `{s}` counts. `shapeFor` only accepts a number,
-                     and with the formatted string it gave up and left «commit{s}» written on the
-                     page, braces included.
-                    */}
-                  {t(locale, "unsaved.statOrphanCommits", {
-                    shown: orphanCommits.toLocaleString(locale),
-                    n: orphanCommits,
-                  })}
-                </span>
-              )}
-              {unpushed > 0 && <span>{t(locale, "unsaved.statUnpushed", { n: unpushed })}</span>}
-              <span>
-                <Rich
-                  text={t(locale, "unsaved.statChecked")}
-                  slots={{ cmd: <code className="text-smoke">panoma scan</code> }}
-                />
-              </span>
-            </p>
-          )}
-        </section>
+  /*
+    The line of figures under the lead is the shell's `note`, which is already monospaced, faint
+    and 12px. What the shell cannot give it is the row: the four figures are laid out side by side
+    with a gap, so the flex lives on a `<span>` inside the note rather than on the note itself —
+    `.page-shell__note` is one rule for every page that counts something, and a page that needs a
+    row of its own does not get to redefine it for the rest.
+   */
+  const figures = projects.length > 0 && (
+    <span className="flex flex-wrap gap-x-5 gap-y-1">
+      {stats.unversioned > 0 && (
+        <span className="text-idle">
+          {t(locale, "unsaved.statUnversioned", { n: stats.unversioned })}
+        </span>
+      )}
+      {stats.noRemote > 0 && (
+        <span className="text-idle">
+          {/*
+             Two names for the same figure: `shown` is what is read —with its thousands
+             separator— and `n` is what `{s}` counts. `shapeFor` only accepts a number,
+             and with the formatted string it gave up and left «commit{s}» written on the
+             page, braces included.
+            */}
+          {t(locale, "unsaved.statOrphanCommits", {
+            shown: orphanCommits.toLocaleString(locale),
+            n: orphanCommits,
+          })}
+        </span>
+      )}
+      {unpushed > 0 && <span>{t(locale, "unsaved.statUnpushed", { n: unpushed })}</span>}
+      <span>
+        <Rich
+          text={t(locale, "unsaved.statChecked")}
+          slots={{ cmd: <code className="text-smoke">panoma scan</code> }}
+        />
+      </span>
+    </span>
+  );
 
-        {projects.length === 0 ? (
-          <div className="mt-12 rounded-lg border border-edge bg-surface p-8">
-            <p className="text-sm text-smoke">{t(locale, "unsaved.emptyBody")}</p>
+  return (
+    <PageShell
+      eyebrow={t(locale, "nav.unsaved")}
+      title={
+        projects.length === 0
+          ? t(locale, "unsaved.safe")
+          : t(locale, projects.length === 1 ? "unsaved.countOne" : "unsaved.countMany", {
+              n: projects.length,
+            })
+      }
+      lead={t(locale, "unsaved.intro")}
+      note={figures}
+    >
+      {projects.length === 0 ? (
+        <PageSection>
+          <Card pad="lg">
+            <EmptyState variant="note" title={t(locale, "unsaved.emptyBody")} />
             <p className="mt-3 font-mono text-[11px] text-faint">
-              <Rich
-                text={t(locale, "unsaved.emptyNote")}
-                slots={{ flag: <code>--no-git</code> }}
-              />
+              <Rich text={t(locale, "unsaved.emptyNote")} slots={{ flag: <code>--no-git</code> }} />
             </p>
-          </div>
-        ) : (
-          <div className="mt-10 space-y-10">
-            {groups.map((group) => (
-              <section key={group.id}>
-                <h2 className="flex items-baseline gap-3 border-b border-edge pb-2">
-                  <span className="font-display text-lg font-semibold tracking-tight">
-                    {t(locale, `unsaved.group.${group.id}` as MessageKey)}
-                  </span>
-                  <span className="font-mono text-[11px] text-faint">
-                    {group.projects.length}
-                  </span>
-                </h2>
-                <p className="mt-2 max-w-2xl text-xs leading-relaxed text-smoke">
-                  {t(locale, `unsaved.blurb.${group.id}` as MessageKey)}
-                </p>
-                <ul className="mt-4 space-y-2">
-                  {group.projects.map((project) => (
-                    <ProjectRow key={project.id} project={project} locale={locale} shell={shell} />
-                  ))}
-                </ul>
-              </section>
-            ))}
-          </div>
-        )}
-    </main>
+          </Card>
+        </PageSection>
+      ) : (
+        groups.map((group) => (
+          /*
+            One `<PageSection>` per group, and no wrapper with `space-y-10` around them: the gap
+            between two groups is the same gap as the one under the header, and writing it twice
+            is how the page ended up with `mt-10` above and 40px between.
+           */
+          <PageSection key={group.id}>
+            <h2 className="flex items-baseline gap-3 border-b border-edge pb-2">
+              <span className="font-display text-lg font-semibold tracking-tight">
+                {t(locale, `unsaved.group.${group.id}` as MessageKey)}
+              </span>
+              <span className="font-mono text-[11px] text-faint">{group.projects.length}</span>
+            </h2>
+            <p className="mt-2 max-w-2xl text-xs leading-relaxed text-smoke">
+              {t(locale, `unsaved.blurb.${group.id}` as MessageKey)}
+            </p>
+            <ul className="mt-4 space-y-2">
+              {group.projects.map((project) => (
+                <ProjectRow key={project.id} project={project} locale={locale} shell={shell} />
+              ))}
+            </ul>
+          </PageSection>
+        ))
+      )}
+    </PageShell>
   );
 }
 
@@ -173,7 +179,7 @@ function ProjectRow({
   });
 
   return (
-    <li className="rounded-lg border border-edge bg-surface p-4">
+    <Card as="li">
       <div className="flex items-start gap-4">
         <ProjectIcon
           name={project.name}
@@ -194,12 +200,12 @@ function ProjectRow({
               </span>
             )}
             {project.copyOf && (
-              <span
-                className="rounded border border-edge bg-raised px-1.5 font-mono text-[10px] text-faint"
+              <Tag
+                tone="quiet"
                 title={t(locale, "unsaved.copyOfTitle", { name: project.copyOf })}
               >
                 {t(locale, "common.copyOf", { name: project.copyOf })}
-              </span>
+              </Tag>
             )}
             {/*
                Without commits there is no date to show, and a '—' where a date goes is read as
@@ -251,6 +257,6 @@ function ProjectRow({
           </div>
         </div>
       </div>
-    </li>
+    </Card>
   );
 }

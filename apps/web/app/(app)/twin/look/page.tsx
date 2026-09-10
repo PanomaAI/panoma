@@ -1,4 +1,4 @@
-import { MAX_SCREENSHOT_BYTES, readShots, readTaste, shotsOpen } from "@panoma/core";
+import { readShots, readTaste, shotsOpen } from "@panoma/core";
 import {
   assignedFindings,
   discardedFindings,
@@ -10,10 +10,14 @@ import {
   type LookRow,
 } from "@panoma/db";
 import { db } from "@/lib/db";
+import { PageSection, PageShell } from "@/components/page-shell";
+import { Card, EmptyState } from "@/components/primitives";
 import { LookFindings, TwinLook, type LookBoard } from "@/components/twin-look";
-import { autoLookCap, budgetFrom } from "@/lib/look";
+import { autoLookCap, readCeiling } from "@/lib/look";
 import { LOOK_KIND } from "@/lib/look-run";
+import { labelProjects } from "@/lib/project-label";
 import { shotDigest } from "@/lib/shots";
+import { capFor, shotPolicy, SHOT_MAX_EDGE } from "@/lib/spend-settings";
 import { getLocale, t, type Locale } from "@/lib/i18n";
 
 /**
@@ -120,64 +124,89 @@ export default async function LookPage() {
     });
   }
 
-  const cap = budgetFrom(process.env["PANOMA_LOOK_BUDGET"]);
+  const { cap } = await capFor("look");
+  /* And how much of each capture the critic gets to see, which is the other thing that is paid. */
+  const shots = await shotPolicy();
   const statements = profile.lines.length;
 
   /*
-    And the names of the selector, tied with the slug when they are repeated.
+    And the names of the selector, told apart when they are repeated.
     In this catalog there are four projects called `kiosk`, so a plain list of names offers four
     identical options for choosing which one to judge. The other solution —removing duplicates, as
     the portrait screen does to narrow a belief— doesn’t work here: there a function that couldn’t
     be offered properly was discarded, and here the entire project of a screen that exists to be
     looked at would be discarded.
+    The rule used to live here as `name · slug`, and it now lives in `lib/project-label.ts`,
+    because `/twin` had the same list in three more selectors and had not solved it at all. A slug
+    does tell two rows apart, but `kiosk_new copy 14` is the folder the person can actually go
+    and look at, so that is what the shared rule spends.
    */
-  const veces = new Map<string, number>();
-  for (const project of projects) veces.set(project.name, (veces.get(project.name) ?? 0) + 1);
-  const pickable = projects.map((project) => ({
+  const pickable = labelProjects(projects).map((project) => ({
     slug: project.slug,
-    name: (veces.get(project.name) ?? 0) > 1 ? `${project.name} · ${project.slug}` : project.name,
+    name: project.label,
   }));
 
+  /*
+    The four lines of accounts, which are the header and not the body: what the critic measures
+    with, what it has spent today, what it may spend on its own, and how much of a capture it gets
+    to see. They travel as `headExtra` rather than as `note`, because `note` is one line and this
+    is a block of four — and because the first two are read at `--type-sm`, which is the size at
+    which a figure about money is legible.
+   */
+  const accounts = (
+    <div className="mt-6 flex flex-col gap-2">
+      {/*
+         What it is measured with, said before offering the button. Without a portrait the critic
+         is not broken: it has no yardstick, and all its judgments would collapse when checking the
+         quotations. Saying it here is the difference between a screen that is useless and one that
+         explains why.
+        */}
+      <p className="font-mono text-sm text-smoke">
+        {statements === 0
+          ? t(locale, "look.noYardstick")
+          : t(locale, "look.yardstick", { n: statements })}
+      </p>
+      <p className="font-mono text-sm text-smoke">
+        {t(locale, "look.budget", { used: spend.calls, cap })}
+      </p>
+      {/*
+         And what the machine can spend without anyone asking it, in the same line of accounts.
+         See `autoLookCap`.
+        */}
+      <p className="font-mono text-xs text-faint">
+        {t(locale, "look.watch", { cap: autoLookCap(cap) })}
+      </p>
+      {/*
+         And what is shown of each capture, which the owner chooses on the Spend screen. It goes
+         here and not only there because this screen has the button: an image is billed by its
+         pixels, and the watcher above spends without anybody in front of it, so the choice that
+         governs both has to be readable where they are fired.
+        */}
+      <p className="font-mono text-xs text-faint">
+        {t(locale, shots === "fit" ? "look.shotsFit" : "look.shotsFull", {
+          edge: SHOT_MAX_EDGE,
+        })}
+      </p>
+    </div>
+  );
+
   return (
-    <main id="app-main" tabIndex={-1} className="app-main legacy-page">
-      <section className="pt-12">
-        <p className="eyebrow">{t(locale, "look.kicker")}</p>
-        <h1 className="mt-2 max-w-3xl font-display text-4xl font-semibold tracking-tight">
-          {t(locale, "look.title")}
-        </h1>
-        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-smoke">
-          {t(locale, "look.intro")}
-        </p>
-
-        <div className="mt-6 flex flex-col gap-2">
-          {/*
-             What it is measured with, said before offering the button. Without a portrait the
-             critic is not broken: it has no yardstick, and all its judgments would collapse when
-             checking the quotations. Saying it here is the difference between a screen that is
-             useless and one that explains why.
-            */}
-          <p className="font-mono text-sm text-smoke">
-            {statements === 0
-              ? t(locale, "look.noYardstick")
-              : t(locale, "look.yardstick", { n: statements })}
-          </p>
-          <p className="font-mono text-sm text-smoke">
-            {t(locale, "look.budget", { used: spend.calls, cap })}
-          </p>
-          {/*
-             And what the machine can spend without anyone asking it, in the same line of
-             accounts. See `autoLookCap`.
-            */}
-          <p className="font-mono text-xs text-faint">
-            {t(locale, "look.watch", { cap: autoLookCap(cap) })}
-          </p>
-        </div>
-      </section>
-
+    <PageShell
+      eyebrow={t(locale, "look.kicker")}
+      title={t(locale, "look.title")}
+      lead={t(locale, "look.intro")}
+      headExtra={accounts}
+    >
+      {/*
+         And the ceiling of the upload comes from the same choice that governs the mailbox, resolved
+         here: with `fit` a capture may arrive much heavier because it is reduced before it travels.
+         One number, decided on the server, so the browser cannot refuse what the route accepts.
+        */}
       <TwinLook
         boards={boards}
         projects={pickable}
-        maxBytes={MAX_SCREENSHOT_BYTES}
+        maxBytes={readCeiling(shots)}
+        shots={shots}
       />
 
       <History
@@ -188,7 +217,7 @@ export default async function LookPage() {
         no={no}
         locale={locale}
       />
-    </main>
+    </PageShell>
   );
 }
 
@@ -219,17 +248,17 @@ function History({
   locale: Locale;
 }) {
   return (
-    <section className="mt-12">
-      <p className="eyebrow">{t(locale, "look.historyTitle")}</p>
-
+    <PageSection title={t(locale, "look.historyTitle")}>
       {looks.length === 0 ? (
-        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-smoke">
-          {t(locale, "look.historyEmpty")}
-        </p>
+        <EmptyState
+          variant="note"
+          className="max-w-2xl leading-relaxed"
+          title={t(locale, "look.historyEmpty")}
+        />
       ) : (
-        <div className="mt-3 flex flex-col gap-4">
+        <div className="flex flex-col gap-4">
           {looks.map((look) => (
-            <div key={look.id} className="rounded-lg border border-edge px-4 py-3">
+            <Card key={look.id} tone="plain" pad="none" className="px-4 py-3">
               <p className="font-mono text-xs text-faint">
                 {names[look.identity] ?? look.identity}
                 {look.shot ? ` · ${look.shot}` : ""}
@@ -258,11 +287,11 @@ function History({
                   discarded={discardedIn(look, no)}
                 />
               )}
-            </div>
+            </Card>
           ))}
         </div>
       )}
-    </section>
+    </PageSection>
   );
 }
 

@@ -6,7 +6,7 @@ import type { SecretFinding } from "@panoma/core";
 import { useT } from "./i18n-provider";
 import { Rich } from "./rich-text";
 import type { MessageKey } from "@/lib/i18n";
-import { ActionButton, ActionError } from "./primitives";
+import { ActionButton, ActionError, Card, EmptyState } from "./primitives";
 
 type Result = {
   id: string;
@@ -32,9 +32,17 @@ type Payload = {
  */
 const FILE_RULES = new Set(["env-file", "key-file", "google-service-account", "ssh-private-key"]);
 
+/*
+  Severity is the border and the tint; the word is only read.
+  `high` used to write a raw `#b45309` — a Tailwind amber that nobody chose and that the
+  stylesheet guard cannot see, picked by hand because `text-idle`, which is what this pill means,
+  gives 2.02:1 on its own tint. The amber is already saying «high» twice here, in the border and
+  in the background, so the label does not have to say it a third time in a hue that cannot be
+  read.
+ */
 const TONE: Record<SecretFinding["severity"], string> = {
   critical: "text-fail border-fail/40 bg-fail/8",
-  high: "text-[#b45309] border-idle/40 bg-idle/[0.08]",
+  high: "text-chalk border-idle/40 bg-idle/[0.08]",
   medium: "text-smoke border-edge bg-raised",
 };
 
@@ -119,13 +127,11 @@ export function SecretScan() {
           </p>
 
           {payload.results.length === 0 ? (
-            <p className="mt-4 rounded border border-edge bg-surface p-5 text-sm text-smoke">
-              {t("scan.clean")}
-            </p>
+            <EmptyState className="mt-4" title={t("scan.clean")} />
           ) : (
             <ul className="mt-4 space-y-3">
               {payload.results.map((result) => (
-                <li key={result.id} className="rounded-lg border border-edge bg-surface">
+                <Card as="li" key={result.id} pad="none">
                   <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-edge px-4 py-2.5">
                     <Link href={`/p/${result.slug}`} className="text-sm font-medium hover:text-accent">
                       {result.name}
@@ -168,12 +174,12 @@ export function SecretScan() {
                       </li>
                     ))}
                   </ul>
-                </li>
+                </Card>
               ))}
             </ul>
           )}
 
-          <div className="mt-6 rounded border border-edge bg-surface p-4 text-xs leading-relaxed text-smoke">
+          <Card className="mt-6 text-xs leading-relaxed text-smoke">
             <p className="font-medium text-chalk">{t("scan.orderTitle")}</p>
             <ol className="mt-2 list-inside list-decimal space-y-1 text-faint">
               <li>
@@ -193,7 +199,7 @@ export function SecretScan() {
               </li>
             </ol>
             <p className="mt-3 font-mono text-[10px]">{t("scan.notStored")}</p>
-          </div>
+          </Card>
         </>
       )}
     </div>

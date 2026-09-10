@@ -60,7 +60,12 @@ of disk, so without a row the question cannot even be asked.
 |---|---|---|---|
 | **Inventory** | `inventoryHistory` (core) | `panoma twin sources` · `GET /api/twin/sources` · the card on `/twin` | nothing: it returns the four sources and measures with `stat` the three that have a path, without opening a single file |
 | **Consent** | `setConsent` · `isAllowed` (core) | `panoma twin allow/revoke` · `POST /api/twin/sources` | `~/.panoma/twin.json` |
-| **Mining** | `mineHistory` (core) | `panoma twin mine --save` → `POST /api/twin/verdicts` · `POST /api/twin/mine` in-process · the `/twin` button | `verdicts` table |
+| **Direct teaching** | `lib/teach.ts` · `TwinTeach` | the signed criterion form on `/twin` · `POST /api/twin/taste` with `teach` | a signed `beliefs` row and `TASTE.md`, in the same publication transaction |
+| **Decision memory** | `TwinMemory` · `lib/episode-learning.ts` | `/twin` · `GET/POST /api/twin/episodes` · `POST /api/twin/episodes/learn` | scoped episodes with goals, alternatives, reasons, conditions, outcomes, source quotations and owner revisions, and the owner's decisions in every agent's briefing |
+| **Narrative capture** | `captureNarratives` · `toNarratives` | `POST /api/twin/mine`, after source consent | `narratives`: opening goals, structured briefs and reactions, with assistant context kept separate |
+| **Decision rehearsal** | `lib/consult.ts` · `TwinLab` | `/twin` · `POST /api/twin/rehearse`, with optional project and local evidence preview | a cited preview or abstention; paid calls enter the `rehearse` ledger, and rehearsals never enter training evidence |
+| **Decisions to agents** | `lib/decision-brief.ts` · `formatContext` (mcp) | `POST /api/agent/context` · `panoma_context` | the "Owner decisions" section of the briefing: owner-authored, active, with a decision; six at most, 240 characters a field, 1,500 in all; no model call |
+| **Mining** | `mineHistory` (core) | `panoma twin mine --save` → `POST /api/twin/verdicts` · `POST /api/twin/mine` in-process · the `/twin` button · the decision-memory «capture» button, which is the SAME call | `verdicts` **and** `narratives` tables: the route hard-codes `captureNarratives: true`, so one reading always saves both, and since 9-Sep-2026 both buttons report both halves instead of each naming the one it was built for |
 | **Distilling** | `lib/distill.ts` | `panoma twin distill` · `POST /api/twin/distill` · the `/twin` button | `observations` table |
 | **Sorting by topic** | `lib/classify.ts` | `POST /api/twin/classify`, chained off the synthesize button | `observations.topic` |
 | **Synthesis** | `lib/synthesize.ts` · `lib/beliefs.ts` | `panoma twin synthesize` · `POST /api/twin/synthesize` · the `/twin` button | `beliefs` and `synthesis_passes` tables |
@@ -122,24 +127,262 @@ signed. The mechanical one compares the project **against itself**: a color that
 once next to a nearly identical one used forty times is not a decision, it is a typo. That is
 why the second works in a catalog with no portrait and the first does not.
 
+## The order of the screen, which is the order of the chain
+
+The wiring table above says every organ has someone to fire it. `/twin` proved there is a
+second way for an organ to be unreachable, and no test was looking for it: it can be wired,
+rendered, and **three thousand pixels below the thing that depends on it**.
+
+Until 9 September 2026 the screen emitted eleven blocks as flat siblings in an order nobody
+had chosen. Granting a history source — which this file calls the first gesture of all — sat
+at 83% of a 4,009px page, under three forms that can do nothing until it is pressed. The
+orientation sentence shown to a brand-new owner, `twin.introEmptyHint`, said «start just
+below, in your histories» and pointed 3,032px down. The one control that builds the portrait,
+`TwinSynthesize`, was rendered only when there was already evidence to read — so on a Twin
+nobody had trained it was absent, beside a meter reading «0 of 3000» and an empty portrait,
+with nothing on screen that would move either number. The screen was dense and read as basic,
+because for a first-time owner most of it deleted itself at zero.
+
+The order is now the dependency, and the header states it before anything else:
+
+| | Block | Why here |
+|---|---|---|
+| 01 | `#history` — sources, then read them | nothing downstream can read a byte without it |
+| 02 | `#teach` — one rule you already know | free, offline, and it works on an empty catalog |
+| 03 | `#decision-memory` — a decision with its reasons | the other thing you can write by hand |
+| 04 | `#portrait` — what it came to believe, and the synthesis that writes it | the output of 01–03 |
+| 05 | `#file` — TASTE.md, and what today cost | where the portrait actually lands |
+| 06 | `#reach` — who reads it | the only figure that measures outward |
+| 07 | the Lab, then the visual portrait | both READ the above; neither writes to it |
+
+`TwinPath` draws the first, fourth, fifth and sixth of those as four cells with their own
+figures, over one sentence naming the chain. It is a readout and not a checklist, on purpose:
+a tour has to be dismissed and is then gone, while those four numbers are worth reading on
+the four hundredth visit — they are the four that decide whether any of this is working.
+Empty, the same cells read as the path, which is the only state a first visit has.
+
+Two rules came out of this and are worth keeping:
+
+**A control that cannot work says so; it does not vanish.** «A button that cannot work is
+worse than its absence» was the rule, and the case it was written for is the case it got
+wrong. `TwinSynthesize` and `TwinDistill` are always drawn now and carry their own reason when
+they are disabled — and each reason is also the instruction, because the route already had the
+sentence: «there is no evidence to synthesize yet, read your history above».
+
+**Reordering a screen ages its copy, and nothing tests that.** Thirteen Twin strings point
+somewhere with a direction — «aquí abajo», «más arriba», «just above». Moving the sections
+turned two of them into lies in the same commit that fixed the layout: `twinMemory.capturedDenied`
+sent the reader down to a card that had just moved up, and `twin.mineNoConsent` had been pointing
+the wrong way since before the move, because it is rendered by two callers and the histories card
+is above both. Neither is a thing the compiler, the dictionary guards or the wiring test can see.
+When a section changes place, grep the dictionary for the four words and read each hit against the
+new order; the audit takes a minute and the alternative is copy that instructs people into a wall.
+
+**A cell only links where the section is drawn.** `Reach` returns nothing on a catalog with no
+scanned project, so the fourth cell of the strip carries no `href` there. A link into an
+element that is sometimes absent is the same bug as a chip pointing at an anonymous div.
+
+## Teaching and rehearsing a decision
+
+Twin can start from an explicit criterion without reading any history. The owner writes a
+sentence of up to 300 characters, chooses a topic and optionally a project, and signs it.
+`teachBelief` records authorship as `model: "owner"`, with no observations or fabricated
+citations. Repeating the same instruction in the same topic and scope reuses the existing
+belief. Owner-authored rules stay outside Twin's prediction and density scores, including when
+the owner later edits or vetoes them. Publication still passes through reconciliation and the hard portrait cap: if it does
+not fit, the new signature is rolled back and the form keeps the person's text.
+
+The Decision Lab is a rehearsal, not a new channel of authority. Its first action retrieves
+signed or sufficiently supported beliefs and relevant active decision episodes locally,
+restricted to the selected project plus general context. A deterministic lexical ranking gives question-relevant rules priority within
+the context budget; it is not a semantic relevance guarantee or a confidence score. Whole
+rules are fitted before their citation labels are assigned. The next action explicitly calls
+the configured model once to draft a short decision or abstain. The result shows the rules
+actually cited, with links back to the editable portrait.
+
+The rehearsal answers in the language the question is written in, and it pays from its own
+ledger: kind `rehearse`, capped by the `rehearse` family —`capFor("rehearse")` in
+`apps/web/lib/spend-settings.ts`: the Spend screen, `PANOMA_REHEARSE_BUDGET`, or the factory
+20— on the same in-process queue as the shadow (`queueAsk`), so two paid calls never race the
+same daily slot on either ledger. The double keeps the `ask` family, and the split is measured
+rather than tidy: with
+one cap, a morning of rehearsals stranded the day's `panoma_ask` questions in `drafting`. The
+agent's shadow drafts retain their belief-only evidence contract. Both flows use strict
+citation validation and redaction, and a mixed list of real and invented citations fails
+closed. Paid decisions are serialized separately from catalog writes, so concurrent requests
+cannot spend the same final daily slot and two sweepers cannot pay twice for the same pending
+consultation. The preview never calls a model or records an observation; its own answer cannot
+become evidence for its next answer. A drafted answer offers one way to disagree —teach a
+criterion— and no label: the owner's verdict on a rehearsal is not a fidelity measurement,
+because rehearsing a decision already made is not a held-out test. Agent questions remain in
+shadow: the rehearsal does not enable autonomous replies or count toward shadow fidelity.
+
+## Decision memory before preference synthesis
+
+The preference pyramid is now accompanied by a richer episodic layer. Opening intentions,
+structured briefs and reactions retain their own source, session, date and project. Each
+episode can record context, goal, constraints, alternatives, decision, rationale, outcome,
+conditions and exceptions. Missing dimensions remain unknown. Coverage counts recorded
+dimensions; it is not a confidence or fidelity score.
+
+The owner can record an episode without a model, or explicitly preview and run extraction
+over captured history. Every extracted field must quote a contiguous span of owner text and
+cite the source record. Assistant context can explain a reply but cannot support an owner
+field. A revision creates an owner-authored successor with `supersedesId` and dismisses the
+prior version atomically. Forgetting a history source deletes its narratives and extracted
+episodes, while retaining records the owner explicitly authored.
+
+Episodes enter the owner's Decision Lab as contextual cases with traceable evidence, and the
+owner-authored ones that carry a decision reach every agent of the project through
+`panoma_context`, under "Owner decisions", with no model call. Extracted episodes never
+travel to an agent, whatever their coverage: the grounding checks prove the bytes are the
+owner's, not that the model filed them in the right role. Episodes do not become beliefs, do
+not change `TASTE.md`, do not feed the critics and do not enter agent shadow fidelity.
+
+The extraction, in numbers. Sessions are packed into calls —12 records a call, at most two
+calls a request— so at the factory `episodes` cap of 20 (`PANOMA_EPISODE_BUDGET`, or the cap
+chosen on the Spend screen) the day reads at most 240 records, and the screen says so next to
+the pending count. An extracted field is a literal
+owner excerpt of up to 600 characters; a field the owner types is allowed 1,200. A brief is
+captured as context and never cited. A pass that meets an unusable answer does not stop: it
+marks that batch once (`narratives.failed_at`), which sends it behind the records no pass has
+failed on, and continues with the next call; only a pass in which every answer was unusable
+is reported as a failure. Restoring a dismissed episode is refused with a 409 while its
+revision is still active, because two live versions of one decision would be cited as two
+cases. Families that already held two — written before that rule — are listed at the top of
+the memory screen with what their silence costs, and one click keeps a version and dismisses
+its rivals. The archive under them answers a search and pages older records, instead of
+ending at the newest hundred.
+
+The capture form asks for one thing at a time. Its seven optional dimensions used to arrive
+together behind a single disclosure, which made the two that matter —the goal and the
+decision— the smallest part of a very long form; now each one is a button carrying that
+dimension's own name, and clicking it opens that textarea and takes the button away. A field
+that already holds words is always open, which is how a revision arrives with everything its
+owner wrote in front of them. Next to them the form takes an optional date: the last day the
+decision applies, kept as that calendar day at 23:59:59.999 UTC, and settable or clearable
+afterwards from inside a card. Once that instant has passed the record is not sent to any
+agent and is not cited in the Lab —which is the whole point of writing a date on it, since an
+expired decision spends an agent's context and gives nothing back— and it stays in the
+owner's archive, where the card says the day it expired and offers to clear the date. Reading
+that day out of the stored instant is done in UTC, never in the reader's zone: a local
+reading of 23:59:59.999 lands on the following day for every reader east of Greenwich.
+
+The languages are three, and none of them is chosen by policy. Prompts are English, like
+everything a machine reads. Observations and beliefs are written in the language of the
+quotes they rest on —the rule in the header of `lib/distill.ts`, which the distiller has
+carried since the portrait once came out in a language the person had never used—; a fixed
+English policy for new statements was tried on 5-Sep-2026 and reverted the same day, and
+`apps/web/app/api/model-language.test.ts` now reads `lib/` as well as the routes to catch the
+next attempt. The person's screen is bilingual through `t()`, like every other screen.
+Evidence stays verbatim in its source language, and stored rows are never migrated. The
+complete contract and limits are in [decision-memory.md](decision-memory.md).
+
+## Learning integrity
+
+Distillation commits each understood batch and its read markers in one transaction before
+requesting the next batch. A storage failure rolls both back; a later provider failure keeps
+earlier completed batches. An understood empty response advances the read marker, while
+unreadable output leaves its quotes available for retry. The spend ledger still records the
+call that returned before parsing or saving it.
+
+The receipts of the three read routes say what a pass could not do, in three optional fields.
+`thin` on `POST /api/twin/distill` —on the dry run and on the empty `verdicts: 0` receipt
+too— counts the verdicts no pass can send: a project's lone unread quote, kept apart by
+`planDistillation` because an observation needs two distinct citations from the same batch,
+and excluded, with the rejected-unread ones, from the `corpus` of that receipt and from
+`corpusProgress`. `truncated`, on the three, counts the answers cut by the output limit and
+asked again once with double room. `graveyardOmitted`, on synthesize, says how many vetoes did
+not travel because the graveyard is bounded to the 40 newest. The web paints them with
+`twin.distillThin`, `twin.distillTruncated` and `twin.synthTruncated`; the CLI with
+`twin.distilledThin`, `twin.distilledTruncated` and `twin.synthTruncated`, and
+`panoma twin distill --all` sums the usage of every pass instead of printing the last one's.
+The dry run's `model` for a session agent is `session` in the three routes, the same fallback
+`complete()` writes to the ledger. [budgets.md](budgets.md) has the reasons.
+
+Support counts distinct normalized bundles of human quotations, capped by the number of
+distinct quotations. Reordering citations, paraphrasing an observation, copying a transcript,
+or returning different subsets of the same two quotes cannot create a third corroboration.
+Repeated identical quote text contributes its earliest known day; this is conservative and
+does not distinguish a genuinely repeated sentence from a transcript copy.
+
+When a belief's citations are unchanged and only its support count differs, `planChanges`
+(`apps/web/lib/beliefs.ts`) emits a `recount` instead of a `refine`, and the synthesize route
+corrects the number in place without touching the sentence and without counting a
+refinement. The case has a date: on 5-Sep-2026 support stopped counting observations and
+started counting distinct bundles of quotes, so every stored number had been written by the
+old formula, and with the refine rule alone the first pass would have rewritten every belief
+whose evidence overlapped —a new sentence, in whatever language the model chose, over a
+belief the person had already read, with nothing behind it having changed.
+
+Synthesis freshness uses successful `synthesis_passes`, not the last edit to a belief.
+Direct teaching and signing therefore cannot hide unread topic evidence. A pass records the
+start of its evidence read, so evidence arriving while the model answers remains pending.
+An understood response that changes nothing still closes that read; unreadable responses do
+not. Existing installations without a pass for a topic perform one initial pass.
+
 ## The brakes, in one place
 
 | Brake | How much | Where |
 |---|---|---|
-| History reads per day | 300 calls | `lib/reads.ts`, `PANOMA_READ_BUDGET` |
-| Looks per day | 20 calls | `lib/look.ts`, `PANOMA_LOOK_BUDGET` |
-| Of those, automatic | half | `autoLookCap` |
+| History reads per day | 300 calls | family `read` in `lib/spend-settings.ts` — the Spend screen or `PANOMA_READ_BUDGET` |
+| Decision-memory extraction per day | 20 calls, at most two per request | family `episodes` — the Spend screen or `PANOMA_EPISODE_BUDGET` |
+| Rehearsals per day | 20 calls | family `rehearse` — the Spend screen or `PANOMA_REHEARSE_BUDGET` |
+| Looks per day | 20 calls | family `look` — the Spend screen or `PANOMA_LOOK_BUDGET` |
+| Of those, automatic | half | `autoLookCap` in `lib/look.ts`, over the cap `capFor` returns |
 | Portrait size | 3,000 characters of the worst block | `TASTE_CAP` · `worstBlock` |
 | Floor for a belief | 3 observations and 2 days or 2 projects | `SUPPORT_FLOOR` · `standsUp` |
-| Image that can be looked at | 3.5 MB | `MAX_SCREENSHOT_BYTES` |
+| Image that can travel to the model | 3.5 MB | `MAX_SCREENSHOT_BYTES` |
+| Image that can be opened off the disk, when it is going to be reduced first | 16 MB | `MAX_FITTABLE_BYTES`, picked by `readCeiling` |
 
-The first three rows are the day's budget — two caps and the reserve carved out of one of
+The first five rows are the day's budget — four caps and the reserve carved out of one of
 them — and they count **calls and not tokens**: with a `cli` provider there are no tokens to
-count, and a brake by tokens would let through exactly the runaway-loop case. The last three
-do not count calls: they are caps on shape — how much text, how much evidence, how many
-bytes — and they hold as well on day one as on day one thousand. The four daily budgets of
-the whole catalog — the two here and the two outside Twin — are laid out in
-[budgets.md](budgets.md), with the spend ledger and the reason they are shown without a price.
+count, and a brake by tokens would let through exactly the runaway-loop case. Since
+6-Sep-2026 every one of the four is asked of `capFor(family)` at request time, with the
+precedence pause → variable → `spend.json` → factory, and the `/twin` page paints them from
+the same call (`capsFor`) and links to `/spend`, where they are moved. The last four do not
+count calls: they are caps on shape — how much text, how much evidence, how many bytes — and
+they hold as well on day one as on day one thousand. The last two of those are bytes and they
+are **two ceilings over two different acts**, separated on 6-Sep-2026: what a provider accepts
+governs what travels and did not move, while what may be opened off this disk is the owner's
+choice to make, because reading a local file costs milliseconds and no provider is involved.
+Under `fit` a capture is read generously and reduced before it leaves; under `full` what is
+read is exactly what leaves, so there the provider's number governs from the door.
+
+**And one brake is a question, not a number.** `POST /api/twin/distill` accepts `dryRun`, and
+its own header says why: it tells you how many quotes and how many tokens the next pass would
+cost *before spending a single one*, because this is the only surface of Twin that actually
+spends and it spends many times in a row — up to `MAX_PASSES` of them. The terminal used that
+answer as a decision. The browser printed it and spent it in the same tick, so on that surface
+the estimate was a figure you watched go past. Since 9-Sep-2026 the screen stops there: the
+first press reads the disk and asks the price, and a second, separate press is what buys it.
+The free half and the paid half are two buttons, and the second one carries the count so the
+figure and the gesture cannot come apart.
+
+The seven daily budgets of the whole catalog — the four here and the three outside Twin: the
+memory distiller, the double and the project card — are laid out in
+[budgets.md](budgets.md), with the spend ledger, the screen and the price the owner types.
+
+**And since 6-Sep-2026 there is one more thing decided next to them, which is not a brake:
+how much of a capture the critic is shown.** An image is charged by its pixels, and the look
+is the only organ that sends any. The owner chooses on the Spend screen between the capture
+as it is —`full`, the factory value, which touches nothing— and one reduced so that its long
+edge measures 1,568 px, and `fitForLook` in `lib/look.ts` applies that choice at a single
+point, on the bytes about to travel, for the three doors: the browser upload,
+`panoma twin look` and the watcher. Only PNG is reduced; a JPEG, a palette PNG, an
+interlaced one, a capture already small enough, unreadable bytes or one with more pixels than
+the decoder holds travel whole and the surface says which of the five it was — unless what
+travels whole is still over what a provider accepts, and then it does not travel at all: the
+surface refuses with the size and the reason, because a paid call answered with an error
+about encoding is worse, and a look dropped in silence is worse still. The watcher is the one
+that could not be asked, so it obeys what was saved and writes the resulting size into its
+journal line — a setting that only worked while somebody was watching would not be one. And
+it is said twice: `POST /api/twin/look` answers `sent` in the dry run, before a cent is
+spent, and `sent` again on the receipt, with the pixels that travelled, the pixels the file
+has and what the bytes that travelled weigh. That is the promise that replaces the old
+refusal, which has not been reversed: panoma reduces a capture when it is asked to, and never
+without saying so. The reasons, the arithmetic, its five refusals and the two ceilings —what
+may be read and what may travel— are in [budgets.md](budgets.md).
 
 ## The portrait file, from the inside
 
@@ -297,10 +540,16 @@ moves by changing a product decision or by waiting for something outside to happ
   gave up on at number nineteen. The writer that existed with no door
   (`setVerdictAccepted`) was retired; the read stays because it is honest — almost everything
   is going to live in `pending` forever, and the filter says so instead of hiding it.
+- **The Lab's answer cannot be labeled or signed, and that is a decision.**
+  `POST /api/consultations` grades the double's shadow drafts `backed` or `vetoed`; nothing
+  grades a rehearsal, and the drafted answer offers one gesture —teach a criterion— as the
+  way to disagree. Rehearsing a decision the owner already made is not a held-out test, so a
+  verdict on it would be a fidelity number that measures nothing; and the answer never enters
+  learning evidence, so there is nothing for a label to correct.
 
 ## The mailbox, which is the part that confuses people
 
-`.panoma/shots/` inside each project. Three rules, and all three matter:
+`.panoma/shots/` inside each project. Four rules, and all four matter:
 
 1. **`panoma md init` creates it, never `sync`.** The folder existing is the switch for all
    of it: with it, the `AGENTS.md` block asks the agent to leave its screenshots there and
@@ -311,4 +560,18 @@ moves by changing a product decision or by waiting for something outside to happ
 3. **A screenshot is recognized by its content**, not by its name and not by its date:
    `sha256` of the bytes, in `looks.digest`. It is the only thing that holds up against an
    agent that overwrites `home.png` on every pass, and it is what stops the automatic trigger
-   from paying twice for the same thing.
+   from paying twice for the same thing. Those bytes are the **file's**, never the reduction's,
+   when the owner asked for a fitted capture: `runLook` digests `whole` when there is one.
+   Remembering a delivery by the digest of what travelled would answer no to "has this been
+   looked at?" on every pass, so the watcher would pay again each time and the badge on the
+   mailbox screen would never appear.
+4. **The thumbnail refuses at exactly the ceiling the look refuses at**, and since 6-Sep-2026
+   that is a number that depends on the owner's choice. `GET /api/twin/shot` reads
+   `shotPolicy()` and measures the file against `readCeiling` — the same function the look
+   uses — so the two failures it guards against are both closed: a beautiful thumbnail of a
+   capture that then refuses to be looked at, and its mirror image, which appeared the day the
+   look learned to reduce — a capture the button beside it looks at perfectly well and the
+   route will not render, leaving the person choosing between file names. Over that ceiling it
+   answers 409 with the name and the size; what the browser gets otherwise is the file's own
+   bytes, never a reduction, because the reduction exists for what travels to a provider and
+   not for what a screen shows.

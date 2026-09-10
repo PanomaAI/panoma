@@ -1,0 +1,1 @@
+ALTER TABLE "decisions" ADD COLUMN "open_plan" jsonb;

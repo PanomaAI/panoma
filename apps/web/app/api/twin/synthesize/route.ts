@@ -1,10 +1,11 @@
-import { complete, resolveCredential } from "@panoma/ai";
+import { complete, resolveCredential, type CompleteResult } from "@panoma/ai";
 import { TASTE_CAP } from "@panoma/core";
 import {
   ALIVE,
   insertBeliefs,
   listBeliefs,
   listObservations,
+  latestSynthesisByTopic,
   modelSpendToday,
   observationTopics,
   projectNamesByIdentity,
@@ -12,6 +13,7 @@ import {
   saveModelCall,
   saveSynthesisPass,
   updateBelief,
+  type BeliefRow,
   type Database,
   type NewBelief,
   type ObservationRow,
@@ -26,7 +28,8 @@ import {
   type CurrentBelief,
   type Draft,
 } from "@/lib/beliefs";
-import { READING_KINDS, readBudgetFrom } from "@/lib/reads";
+import { READING_KINDS } from "@/lib/reads";
+import { capFor } from "@/lib/spend-settings";
 import {
   MIN_TOPIC_BUDGET,
   SYNTH_OBSERVATIONS,
@@ -103,6 +106,23 @@ const MAX_TOPICS = 10;
  */
 const MIN_OBSERVATIONS = 2;
 
+/**
+ * How many vetoes travel with each subject, at most.
+ *
+ * The scope is deliberate: the **whole** cemetery and not the subject's. The vocabulary is open
+ * and the classification is decided sentence by sentence by a model —the prompt itself warns that
+ * `design` and `frontend` get confused—, so a belief vetoed in `design` would be reborn intact when
+ * synthesizing `frontend`. A veto that only applies within one folder is not a veto.
+ *
+ * What was not deliberate was the size. Every vetoed belief since the first day travelled with
+ * every subject of every pass —loaded once per subject, too—: unbounded, one more line for every
+ * veto forever, and the first thing `wrapUntrusted` truncates at `LIST_LIMIT`, with the
+ * observations, which are the evidence, behind it in the same block. Forty is the newest vetoes:
+ * they are about what the machine has been writing lately, which is what it is about to write
+ * again. The receipt says when the cut fires, in `graveyardOmitted`.
+ */
+const GRAVEYARD_MAX = 40;
+
 /** The class with which this route writes in the expense book. See `modelSpendByKind`. */
 const KIND = "synthesize";
 
@@ -116,31 +136,31 @@ export async function POST(request: Request) {
   const { db: database } = await db();
   const only = typeof body.topic === "string" ? body.topic : undefined;
 
+  const startedAt = new Date();
   const counts = await observationTopics(database);
   const conEvidencia = counts
     .filter((one) => one.observations >= MIN_OBSERVATIONS)
     .filter((one) => only === undefined || one.topic === only);
 
   /*
-    The latest thing written about each subject, in **one** consultation. It's what it says if it
-    is still, and you need to know it **before** the cut to ten.
+    The last successful evidence read for each subject, in one query, before the cut to ten.
+    A signature or manual edit is not a synthesis checkpoint: using a belief's updatedAt hid
+    evidence that had arrived before the person edited a sentence. An understood empty response
+    is a checkpoint too, so an unchanged topic does not keep paying for another empty response.
     It was decided afterward, and that did two bad things at once: the quota of ten was consumed
     by subjects that were then discarded for not having any updates, and subjects from the
     eleventh onward were never looked at, even if they were the only ones with new evidence.
     `observationTopics` sorts by quantity, so the small subject that had just received ten
     citations would fall behind nine large ones that were not going to be called.
    */
-  const escritas = new Map<string, number>();
-  for (const row of await listBeliefs(database, { states: ALIVE })) {
-    escritas.set(row.topic, Math.max(escritas.get(row.topic) ?? 0, row.updatedAt.getTime()));
-  }
+  const escritas = await latestSynthesisByTopic(database);
 
   /*
-    And stillness: a matter whose most recent observation is prior to the last belief written
+    And stillness: a matter whose most recent observation is prior to the last successful read
     about it does not synthesize. Asking for it by name reshapes it the same — that is asking for
     it to be reshaped, not to be brought up to date.
-    Without written beliefs, one always synthesizes: there is nothing to compare with, and a
-    subject with evidence and without beliefs is exactly the case for which this exists.
+    Without a successful pass, one always synthesizes. The pass records the start of this read,
+    so evidence arriving while the model works remains pending for the next pass.
    */
   const movidas = conEvidencia.filter((one) => {
     if (only !== undefined) return true;
@@ -170,6 +190,10 @@ export async function POST(request: Request) {
   }
 
   const names = await projectNamesByIdentity(database);
+  /* Once per request and bounded: see `GRAVEYARD_MAX`. Every subject reads the same list. */
+  const buried = await listBeliefs(database, { states: ["vetoed"] });
+  const graveyard = newestVetoes(buried, GRAVEYARD_MAX);
+  const graveyardOmitted = buried.length - graveyard.length;
   /*
     The budget of each subject, distributed by its evidence.
     It is what connects the top of the file with what is asked of the model, and it was missing.
@@ -207,11 +231,16 @@ export async function POST(request: Request) {
     requesting it by name.
    */
   const plans = await Promise.all(
-    topics.map((topic) => planTopic(database, topic, names, budgets.get(topic) ?? TASTE_CAP)),
+    topics.map((topic) =>
+      planTopic(database, topic, names, graveyard, budgets.get(topic) ?? TASTE_CAP),
+    ),
   );
 
-  /* The brake of the day, shared with distilling and distributing by material. See `lib/reads.ts`. */
-  const cap = readBudgetFrom(process.env["PANOMA_READ_BUDGET"]);
+  /*
+    The brake of the day, shared with distilling and distributing by material. See `lib/reads.ts`;
+    the number comes from `spend-settings.ts`, which is what the Spend screen moves.
+   */
+  const { cap } = await capFor("read");
   const spent = await modelSpendToday(database, READING_KINDS);
   if (spent.calls >= cap) {
     return Response.json(
@@ -233,7 +262,8 @@ export async function POST(request: Request) {
       observations: plans.reduce((total, plan) => total + plan.observations.length, 0),
       estimatedTokens: estimateSynthesisTokens(plans.map((plan) => plan.built)),
       provider: credential.provider.id,
-      model: credential.model || "sesión",
+      // The same fallback `complete()` writes to the ledger for a session agent: one name, not two.
+      model: credential.model || "session",
     });
   }
 
@@ -243,6 +273,7 @@ export async function POST(request: Request) {
   let proposed = 0;
   let dropped = 0;
   let unreadable = 0;
+  let truncated = 0;
   let failure: unknown;
 
   /*
@@ -252,6 +283,22 @@ export async function POST(request: Request) {
     starting with `backend` — and the next pass picks up where it left off.
    */
   let calls = spent.calls;
+
+  /*
+    One notes it when the answer returns, just like in distillation and in the look: a call that
+    is lost in a network error has been made by no one, but one that comes back unreadable has
+    already been paid for and must appear on the bill. Per answer: the retry below is a second
+    call with its own row.
+   */
+  const paid = async (answer: CompleteResult) => {
+    calls += 1;
+    await saveModelCall(database, {
+      kind: KIND,
+      provider: answer.provider,
+      model: answer.model,
+      ...(answer.usage ? { input: answer.usage.input, output: answer.usage.output } : {}),
+    });
+  };
 
   for (const plan of plans) {
     if (calls >= cap) break;
@@ -267,19 +314,27 @@ export async function POST(request: Request) {
       failure = error;
       break;
     }
-    calls += 1;
+    await paid(answer);
 
     /*
-      One notes it when the answer returns, just like in distillation and in the look: a call that
-      is lost in a network error has been made by no one, but one that comes back unreadable has
-      already been paid for and must appear on the bill.
+      A cut answer is asked again, once, with twice the room, while the subject is in hand. The
+      reason is next to the same loop in the distillation route: the next pass would send the
+      same input at the same cap and get cut at the same place. Not at the brake, and not twice.
      */
-    await saveModelCall(database, {
-      kind: KIND,
-      provider: answer.provider,
-      model: answer.model,
-      ...(answer.usage ? { input: answer.usage.input, output: answer.usage.output } : {}),
-    });
+    if (answer.stopReason === "length" && calls < cap) {
+      truncated += 1;
+      try {
+        answer = await complete({
+          system: plan.built.system,
+          prompt: plan.built.prompt,
+          maxTokens: MAX_ANSWER_TOKENS * 2,
+        });
+      } catch (error) {
+        failure = error;
+        break;
+      }
+      await paid(answer);
+    }
 
     const read = parseBeliefs(answer.text, plan.built, plan.graveyard);
     if (read.unreadable) unreadable += 1;
@@ -334,6 +389,13 @@ export async function POST(request: Request) {
       const support = supportOf(rows);
       const citations = citationsFor(rows);
 
+      // The count corrected without a word changing, and without counting as a refinement:
+      // `refined` is the churn metric, and nothing here churned. See `planChanges`.
+      if (change.kind === "recount") {
+        await updateBelief(database, change.id, { support });
+        continue;
+      }
+
       if (change.kind === "refine") {
         const done = await updateBelief(database, change.id, {
           statement: change.statement,
@@ -375,6 +437,7 @@ export async function POST(request: Request) {
       the next material fails due to a network error, what this one moved is already recorded.
      */
     await saveSynthesisPass(database, {
+      at: startedAt,
       topic: plan.topic,
       created: created - antes.created,
       refined: refined - antes.refined,
@@ -395,10 +458,30 @@ export async function POST(request: Request) {
     proposed,
     dropped,
     ...(unreadable > 0 ? { unreadable } : {}),
+    /* Answers cut by the output limit and asked again with double room. See the loop. */
+    ...(truncated > 0 ? { truncated } : {}),
+    /* Vetoes that did not travel: the cemetery is bounded. See `GRAVEYARD_MAX`. */
+    ...(graveyardOmitted > 0 ? { graveyardOmitted } : {}),
   };
 
   if (failure === undefined) return Response.json(receipt);
   return modelFailure(locale, failure, receipt);
+}
+
+/**
+ * The newest `max` vetoes, oldest first, as the prompt has always listed them.
+ *
+ * By the date of the veto and not of the belief: a belief from March vetoed yesterday is
+ * yesterday's news about what the machine gets wrong. Rows older than the column carry no date
+ * and count as the oldest, which is what they are. `listBeliefs` already comes in creation order,
+ * and the sort is stable, so ties keep that order.
+ */
+function newestVetoes(buried: BeliefRow[], max: number): string[] {
+  const at = (row: BeliefRow) => row.vetoedAt?.getTime() ?? 0;
+  return [...buried]
+    .sort((a, b) => at(a) - at(b))
+    .slice(-max)
+    .map((row) => row.statement);
 }
 
 interface TopicPlan {
@@ -426,18 +509,13 @@ async function planTopic(
   database: Database,
   topic: string,
   names: Record<string, string>,
+  /* The **entire** cemetery and not that of this subject, read once per request: see `GRAVEYARD_MAX`. */
+  graveyard: string[],
   budget: number,
 ): Promise<TopicPlan> {
-  const [observations, alive, buried, pending] = await Promise.all([
+  const [observations, alive, pending] = await Promise.all([
     listObservations(database, { topic, limit: SYNTH_OBSERVATIONS }),
     listBeliefs(database, { topic, states: ALIVE }),
-    /*
-      The **entire** cemetery and not that of this subject. The subject vocabulary is open, and
-      the classification is decided by a model phrase by phrase —the task itself warns that
-      `design` and `frontend` get confused—, so a belief banned in `design` would be reborn intact
-      when synthesizing `frontend`. A veto that only applies within one folder is not a veto.
-     */
-    listBeliefs(database, { states: ["vetoed"] }),
     listBeliefs(database, { topic, states: ["proposed"] }),
   ]);
   /*
@@ -455,7 +533,6 @@ async function planTopic(
     /* The verdicts it already cites: the other half of the rule of stability. */
     citations: row.citations.map((cite) => cite.verdictId),
   }));
-  const graveyard = buried.map((row) => row.statement);
 
   const forPrompt: SynthObservation[] = observations.map((row) => ({
     id: row.id,

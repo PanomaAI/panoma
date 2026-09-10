@@ -14,6 +14,7 @@
   weight written on them — four and three — for the same reason.
  */
 
+/* Millimetres of paper. The spacing scale is pixels of screen and does not reach this far. */
 @page {
   margin: 16mm 14mm;
 }
@@ -55,12 +56,12 @@
   .project-overflow-menu,
   .project-subnav,
   .open-menu,
+  .open-all,
   .open-project-action,
   .project-more-button,
   .open-handle,
   .catalog-bar__tools,
-  .catalog-filters,
-  .catalog-hint,
+  .catalog-toolbar,
   .catalog-sort,
   .view-switch,
   .detail-panel__open,
@@ -77,12 +78,25 @@
   }
 
   /*
+    ── The catalog panel, and the half of it that is not a fact ──────────────────────────── Of
+    `.catalog-context`, the breakdown by state, the watcher's warning and the day's activity all
+    stay: they are what the catalog knew about itself the moment it was printed, and a printed
+    total is worth as much as a printed row. The folders are the other half. `Sites` is already
+    gone with `.sites` above — it is a disclosure that opens a form with a text field, a search
+    and a button per folder — and what its `<h3>` announces goes with it. A heading over nothing
+    is worse than no heading: on paper it promises the list of watched folders and delivers an
+    empty column with a rule down its side.
+   */
+  .catalog-context__folders {
+    display: none;
+  }
+
+  /*
     ── The width that the frame was left ────────────────────────────────────────────── 228 px of
     bleed for a bar that is not there, and 64 + 66 px of reserve for two bars that aren't there
     either. On paper, the margin is set by `@page`.
    */
-  .app-main,
-  .legacy-page {
+  .app-main {
     width: auto;
     max-width: none;
     min-height: 0;
@@ -90,9 +104,16 @@
     padding: 0;
   }
 
+  /*
+    `.page-shell__inner` takes `.content-page`'s place in this list, because it took its place in
+    the markup: the conversion of the eighteen legacy pages left that rule with no writer, and the
+    guard in `styles.test.ts` fails a sheet that resets a class nobody draws. Without the swap
+    every converted page would print with a 64px gutter and 88px of empty foot, which is the whole
+    reason the three inners are named here.
+   */
   .project-detail-page__inner,
   .catalog-screen__inner,
-  .content-page {
+  .page-shell__inner {
     width: auto;
     padding: 0;
   }
@@ -114,14 +135,19 @@
   .project-view-frame__plate {
     position: static;
     transform: none;
-    padding: 0 0 10px;
+    padding: 0 0 var(--space-5);
   }
 
   /*
     ── The entire record, and not the view that remained open ────────────────────────────────
-    `data-view` hides eight of the nine views. On screen it is what is wanted; on paper it is not:
-    whoever prints a record prints it entirely, and going back to the screen to change tabs to
-    print nine times is not a functionality.
+    `data-view` hides nine of the ten views. On screen it is what is wanted; on paper it is not:
+    whoever prints a record prints it entirely, and going back to the screen to change tabs and
+    print it one view at a time is not a functionality.
+    `detalles` is spelled that way because that is the id in the DOM: `PROJECT_VIEWS` in
+    `components/project-views.ts` keeps the ten ids in Spanish on purpose — it is one of the four
+    exceptions written down in `docs/open-questions.md` — and `project-views.test.ts` pins them.
+    The English half is the anchor, `#details`. Translating this selector would silently stop
+    matching and the record's second column would go missing from the paper.
    */
   .project-detail-page[data-view]:not([data-view="all"]) .project-view {
     display: block;
@@ -158,11 +184,21 @@
 
   /*
     ── The text that gets lost on paper ─────────────────────────────────────────────────
-    `--color-faint` measures 2.58:1 on white and `--color-ink-faint-catalog` 2.94:1 on its paper:
-    on screen they are already marked as limit, and an inkjet printer turns them into a gray that
-    cannot be read. Here they go up to `--color-smoke`, which measures 4.77:1 on the card paper
-    and is the reading gray that the app already has. It is not a new color: it is the same token
-    used by the card footers.
+    Three of these seven write `--color-faint`, which measures 2.58:1 on white: `.eyebrow`, the
+    page footer and the md hint. On screen it is already marked as a limit, and an inkjet turns it
+    into a gray that cannot be read. They go up to `--color-smoke` — 5.17:1 on white, 4.96:1 on
+    the sheet's paper — which is the reading gray the app already has. It is not a new color: it
+    is the same token used by the card footers.
+    The other four were never that faint, and saying "up" of them is wrong: the two
+    `project-section-*` read `--faint`, `.catalog-tile__meta` reads `--ink-3`, and both resolve to
+    `--color-ink-faint`, 6.69:1 on white; `.detail-health__score span` reads `--ink-2`,
+    `--color-ink-muted`, 10.86:1. They are here so the whole group prints as ONE gray
+    instead of three, which is a decision about the page and not about legibility — and it costs
+    those four contrast rather than winning them any.
+    Measured again on 08-Sep-2026, because the figure that used to sit here was 2.94:1 for
+    `--color-ink-faint-catalog`, a token no rule ever read — `.catalog-screen` builds its `--ink-3`
+    from the SHEET faint, not from the catalog one — and which has now been removed from
+    `tokens.css` altogether. A number describing a color nothing paints ages without ever failing.
    */
   .eyebrow,
   .project-section-hint,
@@ -194,8 +230,13 @@
    */
   a[href^="http"]::after {
     content: " <" attr(href) ">";
+    /*
+      The only relative size in the application, and it stays relative on purpose: the address is
+      a fraction of the link it trails, whatever size that link was given, and a step of the type
+      scale would freeze it at one size for every place a link is printed from.
+     */
     font-size: 0.85em;
-    font-weight: 400;
+    font-weight: var(--weight-regular);
     word-break: break-all;
   }
 }

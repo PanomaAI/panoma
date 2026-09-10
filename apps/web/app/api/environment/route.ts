@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { sameOrigin } from "@/lib/guard";
 import { resolveExecutable } from "@panoma/core";
+import { findNpm } from "@panoma/apps";
 
 const run = promisify(execFile);
 
@@ -64,8 +65,9 @@ export async function GET(request: Request) {
     }),
   );
 
+  const npm = findNpm();
   return Response.json(
-    { tools: Object.fromEntries(entries) },
+    { tools: Object.fromEntries(entries), npm: { present: !!npm, source: npm?.source ?? null } },
     { headers: { "Cache-Control": "private, max-age=60" } },
   );
 }

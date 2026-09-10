@@ -30,6 +30,8 @@ interface Handle {
 const globalForDb = globalThis as unknown as {
   panomaDb?: Promise<Handle>;
   panomaDbCuidada?: boolean;
+  panomaMemoryStop?: () => void;
+  panomaClosing?: boolean;
 };
 
 export function db(): Promise<{ db: Database }> {
@@ -66,8 +68,37 @@ export function db(): Promise<{ db: Database }> {
 function cuidar(handle: Handle): void {
   if (globalForDb.panomaDbCuidada) return;
   globalForDb.panomaDbCuidada = true;
+  /*
+    The memory worker only starts against a local catalog, and this is a decision deferred, not
+    a limitation discovered. Nothing technical stops it from draining a remote one: the
+    distiller reads the journal from the database and asks the model, never a file, so the
+    watcher's reason for staying off there —the server does not see the user's disk— does not
+    apply to it; and the queue was built for several processes, with the claim under
+    `LOCK TABLE memory_jobs` and the publication under a lease token, both of which hold
+    across processes.
+    What stops it is money. The key that would pay is the server's, for every project it
+    serves, and the daily cap is read per process rather than under a lock, so a catalog served
+    by N processes can exceed twelve calls a day by N−1. Panoma is local today, so the owner
+    left it off on 6-Sep-2026 rather than pay for that.
+    Turning it on is one line in each of three places: this `if`, and the two early returns in
+    `memory-worker.ts`. `docs/open-questions.md` names all three, with the reasoning.
+   */
+  if (!process.env["DATABASE_URL"]) {
+    void import("./memory-worker").then(({ startMemoryWorker }) => {
+      if (!globalForDb.panomaClosing) globalForDb.panomaMemoryStop = startMemoryWorker(handle.db);
+    });
+  }
   void import("./db-lifecycle").then(({ manageLifecycle }) => {
-    manageLifecycle(handle, {
+    manageLifecycle({
+      checkpoint: handle.checkpoint,
+      close: async () => {
+        globalForDb.panomaClosing = true;
+        globalForDb.panomaMemoryStop?.();
+        const { stopAppSupervisor } = await import("./app-jobs");
+        await stopAppSupervisor(handle.db);
+        await handle.close();
+      },
+    }, {
       // `once` and not `on`: if the shutdown hangs and someone insists with another Ctrl-C, the
       // second signal has to do the usual —kill the process— and not enter here again.
       onSignal: (signal, handler) => process.once(signal as NodeJS.Signals, handler),

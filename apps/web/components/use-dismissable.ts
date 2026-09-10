@@ -50,7 +50,19 @@ export function useDismissable(
       arrived.
      */
     const onPointerDown = (event: PointerEvent) => {
-      if (!box.current?.contains(event.target as Node)) latest.current("outside");
+      const target = event.target as Node | null;
+      if (box.current?.contains(target)) return;
+      /*
+        A modal dialog is not «outside»: it is on top of everything, this panel included, and one
+        of them is opened FROM here — the ⋯ menu of a project sheet asks for the removal, and that
+        confirmation is rendered on the `body` because the menu's own layer would otherwise be its
+        ceiling (the why is in `project-actions.tsx`). Out there it is no longer inside the box, so
+        without this the first press on its field closed the menu, and closing the menu unmounts
+        the dialog the person was typing into. Reading the DOM and not a flag keeps the two panels
+        from having to know about each other.
+       */
+      if (target instanceof Element && target.closest('[aria-modal="true"]')) return;
+      latest.current("outside");
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") latest.current("escape");

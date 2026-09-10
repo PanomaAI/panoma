@@ -125,6 +125,30 @@ whatever this pass returned, advisories are updated in `advisories`, and health 
 from the last snapshot's signals rather than by adding onto the previous score, so that it
 does not depend on how many times you have enriched.
 
+## Two counts of the same thing, and they are not the same number
+
+`projects.vuln_count` is written by `summarize()`, whose first statement is `if (row.isDev)
+continue`. **A development dependency does not reach that counter — its advisories included** —
+and `summarize.test.ts` pins it in those words: «las de desarrollo no cuentan para nada, ni
+siquiera sus avisos». It is a decision, not an omission: that column feeds the health penalty, and
+a health score answers a question about what a project ships.
+
+The list beside it does not ask that question. `getProject`'s `advisories` joins the dependencies
+with no `is_dev` predicate at all, because a named advisory is worth reading whatever carries it.
+
+So the two disagree by design, and on 8-Sep-2026 that cost something: the managed block of this
+repository's own `AGENTS.md` printed «0 with security advisories» one line above «Advisories:
+`vitest`». Both numbers were right and the sentence was a lie, because two readers had taken them
+for the same number. The block now counts the list it prints, and
+`packages/core/src/agentsmd-stable.test.ts` fails on a rendering that counts one figure and names
+another. What did not change is the column, or the penalty that hangs from it.
+
+There is a second consequence of that same `continue`, and it is easier to trip over: a project
+whose dependencies are **all** development ones never enters `byProject`, so it is never stamped
+with `enriched_at`. For every reader downstream that project has never been enriched, which is why
+the block states an advisory count on the strength of a non-empty list even when the stamp is
+missing.
+
 ## `isSafeRegistryName` is not a defense against SSRF
 
 It rejects an empty name or one over 214 characters, one that starts with `/` or with `.`,

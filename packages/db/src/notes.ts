@@ -55,15 +55,21 @@ export const NOTE_SLEEPING_MAX = 30;
  * trigger is an address within the project, not an expression. What does not fit here is not
  * saved, and thus `triggerMatches` can be two comparisons instead of a glob engine.
  *
- * Segments speak Unicode (`\p{L}\p{N}`), not ASCII: `docs/diseño.md` is a normal file name in this
- * product, and the first version —`\w` without the `u` flag— denied the trigger to any path with
- * an accent while the rejection message promised "any relative path".
+ * Paths are literal: brackets and parentheses in application routes are file-name characters,
+ * not glob syntax. Spaces and Unicode have the same meaning here as they do on disk.
  */
-const TRIGGER_SHAPE = /^[\p{L}\p{N}_.@-]+(?:\/[\p{L}\p{N}_.@-]+)*(?:\/\*\*)?$/u;
 const TRIGGER_MAX = 120;
 
+/** A bounded literal path within a project, shared by triggers and on-demand memory retrieval. */
+export function validMemoryPath(path: string): boolean {
+  if (!path || path.length > 2048 || path !== path.trim() || /^[A-Za-z]:/.test(path)) return false;
+  if (path.includes("\\") || path.includes("*") || /\p{Cc}/u.test(path)) return false;
+  return path.split("/").every((segment) => segment.trim() !== "" && segment !== "." && segment !== "..");
+}
+
 export function validTrigger(trigger: string): boolean {
-  return trigger.length <= TRIGGER_MAX && TRIGGER_SHAPE.test(trigger) && !trigger.split("/").includes("..");
+  const path = trigger.endsWith("/**") ? trigger.slice(0, -3) : trigger;
+  return trigger.length <= TRIGGER_MAX && validMemoryPath(path);
 }
 
 /**
@@ -86,6 +92,7 @@ export interface ProjectNote {
   createdAt: Date;
   trigger: string | null;
   challenge?: unknown;
+  sentinels?: unknown;
 }
 
 /** The no of `proposeNote`, with the reason in data so that each surface can say it in its language. */
@@ -93,6 +100,11 @@ export type NoteRefusal =
   | { refused: "tooLong"; max: number }
   | { refused: "pendingFull"; max: number }
   | { refused: "badTrigger" };
+
+/** All note capacity checks share this lock, including helpers called outside the web routes. */
+async function lockNoteProject(db: Database, projectId: string): Promise<void> {
+  await db.select({ id: t.projects.id }).from(t.projects).where(eq(t.projects.id, projectId)).for("update");
+}
 
 /**
  * An agent leaves a proposed fact. He does not travel to anyone until someone says yes.
@@ -112,22 +124,25 @@ export async function proposeNote(
     return { refused: "badTrigger" };
   }
 
-  const [row] = await db
-    .select({ pending: sql<number>`count(*)::int` })
-    .from(t.notes)
-    .where(and(eq(t.notes.projectId, input.projectId), eq(t.notes.status, "proposed")));
-  const pending = row?.pending ?? 0;
-  if (pending >= NOTE_PENDING_MAX) return { refused: "pendingFull", max: NOTE_PENDING_MAX };
+  return db.transaction(async (tx) => {
+    await lockNoteProject(tx, input.projectId);
+    const [row] = await tx
+      .select({ pending: sql<number>`count(*)::int` })
+      .from(t.notes)
+      .where(and(eq(t.notes.projectId, input.projectId), eq(t.notes.status, "proposed")));
+    const pending = row?.pending ?? 0;
+    if (pending >= NOTE_PENDING_MAX) return { refused: "pendingFull", max: NOTE_PENDING_MAX };
 
-  const id = newId("note");
-  await db.insert(t.notes).values({
-    id,
-    projectId: input.projectId,
-    body,
-    createdBy: input.createdBy,
-    trigger: trigger || null,
+    const id = newId("note");
+    await tx.insert(t.notes).values({
+      id,
+      projectId: input.projectId,
+      body,
+      createdBy: input.createdBy,
+      trigger: trigger || null,
+    });
+    return { id, pending: pending + 1 };
   });
-  return { id, pending: pending + 1 };
 }
 
 /**
@@ -138,27 +153,37 @@ export async function proposeNote(
  */
 export async function addHumanNote(
   db: Database,
-  input: { projectId: string; body: string },
-): Promise<{ id: string } | NoteRefusal | { refused: "overBudget"; used: number; budget: number }> {
+  input: { projectId: string; body: string; trigger?: string; sentinels?: Sentinel[] },
+): Promise<{ id: string; body: string } | NoteRefusal | { refused: "overBudget" | "sleepingFull"; used: number; budget: number }> {
   // The same key customs as in the proposals: the entrance path does not exempt.
   const body = redactSecrets(input.body.trim());
   if (body.length === 0 || body.length > NOTE_MAX) return { refused: "tooLong", max: NOTE_MAX };
+  const trigger = input.trigger?.trim() || null;
+  if (trigger !== null && !validTrigger(trigger)) return { refused: "badTrigger" };
 
-  const { used } = await noteUsage(db, input.projectId);
-  if (used + body.length > NOTE_BUDGET) {
-    return { refused: "overBudget", used, budget: NOTE_BUDGET };
-  }
+  return db.transaction(async (tx) => {
+    await lockNoteProject(tx, input.projectId);
+    const usage = await noteUsage(tx, input.projectId);
+    if (trigger === null && usage.used + body.length > NOTE_BUDGET) {
+      return { refused: "overBudget", used: usage.used, budget: NOTE_BUDGET };
+    }
+    if (trigger !== null && usage.sleeping >= NOTE_SLEEPING_MAX) {
+      return { refused: "sleepingFull", used: usage.sleeping, budget: NOTE_SLEEPING_MAX };
+    }
 
-  const id = newId("note");
-  await db.insert(t.notes).values({
-    id,
-    projectId: input.projectId,
-    body,
-    status: "approved",
-    createdBy: "human",
-    decidedAt: new Date(),
+    const id = newId("note");
+    await tx.insert(t.notes).values({
+      id,
+      projectId: input.projectId,
+      body,
+      trigger,
+      status: "approved",
+      createdBy: "human",
+      decidedAt: new Date(),
+      sentinels: input.sentinels ?? [],
+    });
+    return { id, body };
   });
-  return { id };
 }
 
 /**
@@ -178,6 +203,7 @@ export async function decideNote(
   db: Database,
   noteId: string,
   decision: "approved" | "discarded",
+  options: { projectId?: string; sentinels?: Sentinel[] } = {},
 ): Promise<
   /**
    * Upon approval, `body` and `trigger` travel back: the anchoring customs anchor what is stored,
@@ -196,42 +222,47 @@ export async function decideNote(
    */
   const from = decision === "approved" ? ["proposed", "challenged"] : ["proposed", "approved", "challenged"];
 
-  if (decision === "approved") {
-    const [note] = await db
-      .select({ projectId: t.notes.projectId, body: t.notes.body, trigger: t.notes.trigger })
+  return db.transaction(async (tx) => {
+    const [owner] = await tx.select({ projectId: t.notes.projectId }).from(t.notes).where(and(
+      eq(t.notes.id, noteId),
+      options.projectId === undefined ? undefined : eq(t.notes.projectId, options.projectId),
+    )).limit(1);
+    if (!owner) return { decided: false, reason: "gone" };
+    await lockNoteProject(tx, owner.projectId);
+    const [note] = await tx
+      .select({ body: t.notes.body, trigger: t.notes.trigger, decidedAt: t.notes.decidedAt })
       .from(t.notes)
-      .where(and(eq(t.notes.id, noteId), inArray(t.notes.status, ["proposed", "challenged"])))
+      .where(and(eq(t.notes.id, noteId), eq(t.notes.projectId, owner.projectId), inArray(t.notes.status, from)))
       .limit(1);
     if (!note) return { decided: false, reason: "gone" };
 
-    /*
-      Each note pays in its currency: the awake one, characters from the report; the asleep one, a
-      seat of the thirty. Charging the report's budget to a note that does not travel in the
-      report would be charging for an empty seat.
-     */
-    const usage = await noteUsage(db, note.projectId);
-    if (note.trigger === null && usage.used + note.body.length > NOTE_BUDGET) {
-      return { decided: false, reason: "overBudget", used: usage.used, budget: NOTE_BUDGET };
+    if (decision === "approved") {
+      // A sleeping note pays a slot; only awake notes pay the briefing's character budget.
+      const usage = await noteUsage(tx, owner.projectId);
+      if (note.trigger === null && usage.used + note.body.length > NOTE_BUDGET) {
+        return { decided: false, reason: "overBudget", used: usage.used, budget: NOTE_BUDGET };
+      }
+      if (note.trigger !== null && usage.sleeping >= NOTE_SLEEPING_MAX) {
+        return { decided: false, reason: "sleepingFull", used: usage.sleeping, budget: NOTE_SLEEPING_MAX };
+      }
     }
-    /*
-      With its own reason, not the one from the report: the audit found that reusing `overBudget`
-      caused the form to explain the character limit to whoever ran into the slot limit — a
-      rejection with the wrong reason does not teach how to decide.
-     */
-    if (note.trigger !== null && usage.sleeping >= NOTE_SLEEPING_MAX) {
-      return { decided: false, reason: "sleepingFull", used: usage.sleeping, budget: NOTE_SLEEPING_MAX };
-    }
-  }
 
-  const moved = await db
-    .update(t.notes)
-    .set({ status: decision, decidedAt: new Date(), ...(decision === "approved" ? { challenge: null } : {}) })
-    .where(and(eq(t.notes.id, noteId), inArray(t.notes.status, from)))
-    .returning({ id: t.notes.id, body: t.notes.body, trigger: t.notes.trigger });
-  if (moved.length === 0) return { decided: false, reason: "gone" };
-  return decision === "approved"
-    ? { decided: true, body: moved[0]?.body, trigger: moved[0]?.trigger ?? null }
-    : { decided: true };
+    // A new approval gets a distinct revision even within one millisecond or after a clock change.
+    const decidedAt = new Date(Math.max(Date.now(), (note.decidedAt?.getTime() ?? 0) + 1));
+    const moved = await tx
+      .update(t.notes)
+      .set({
+        status: decision, decidedAt,
+        ...(decision === "approved" ? { challenge: null } : {}),
+        ...(decision === "approved" && options.sentinels !== undefined ? { sentinels: options.sentinels } : {}),
+      })
+      .where(and(eq(t.notes.id, noteId), eq(t.notes.projectId, owner.projectId), inArray(t.notes.status, from)))
+      .returning({ id: t.notes.id, body: t.notes.body, trigger: t.notes.trigger });
+    if (moved.length === 0) return { decided: false, reason: "gone" };
+    return decision === "approved"
+      ? { decided: true, body: moved[0]?.body, trigger: moved[0]?.trigger ?? null }
+      : { decided: true };
+  });
 }
 
 /**
@@ -256,6 +287,7 @@ export async function listProjectNotes(
         the agents' channel — `getAgentContext` chooses its fields and this is not among them.
        */
       challenge: t.notes.challenge,
+      sentinels: t.notes.sentinels,
     })
     .from(t.notes)
     .where(and(eq(t.notes.projectId, projectId), inArray(t.notes.status, statuses)))
@@ -272,25 +304,22 @@ export async function noteUsage(
   db: Database,
   projectId: string,
 ): Promise<{ used: number; budget: number; count: number; sleeping: number; pending: number }> {
-  const [row] = await db
-    .select({
-      /* Only the awake ones pay their share: a sleeping one does not travel in it. */
-      used: sql<number>`coalesce(sum(length(${t.notes.body})) filter (where ${t.notes.status} = 'approved' and ${t.notes.trigger} is null), 0)::int`,
-      count: sql<number>`count(*) filter (where ${t.notes.status} = 'approved' and ${t.notes.trigger} is null)::int`,
-      sleeping: sql<number>`count(*) filter (where ${t.notes.status} = 'approved' and ${t.notes.trigger} is not null)::int`,
-      pending: sql<number>`count(*) filter (where ${t.notes.status} = 'proposed')::int`,
-    })
+  const rows = await db
+    .select({ body: t.notes.body, status: t.notes.status, trigger: t.notes.trigger })
     .from(t.notes)
-    .where(eq(t.notes.projectId, projectId));
-  // The aggregate without rows does not exist: `count(*)` on zero rows returns a row with zeros,
-  // but the type does not know it.
-  return {
-    used: row?.used ?? 0,
-    budget: NOTE_BUDGET,
-    count: row?.count ?? 0,
-    sleeping: row?.sleeping ?? 0,
-    pending: row?.pending ?? 0,
-  };
+    .where(and(eq(t.notes.projectId, projectId), inArray(t.notes.status, ["approved", "proposed"])));
+  const usage = { used: 0, budget: NOTE_BUDGET, count: 0, sleeping: 0, pending: 0 };
+  for (const row of rows) {
+    if (row.status === "proposed") usage.pending++;
+    else if (row.trigger !== null) usage.sleeping++;
+    else {
+      // Match validation, the browser and briefing limits: SQL length counts Unicode code points,
+      // while JavaScript counts UTF-16 units. Mixing them let emoji notes overflow the envelope.
+      usage.used += row.body.length;
+      usage.count++;
+    }
+  }
+  return usage;
 }
 
 
@@ -359,11 +388,19 @@ export async function setSentinels(db: Database, noteId: string, sentinels: Sent
  * the disc has already spoken, and in the meantime serving a note whose basis has changed is worse
  * than silence. Getting out of suspicion does require the usual yes (`decideNote`).
  */
-export async function challengeNote(db: Database, noteId: string, challenge: Challenge): Promise<boolean> {
+export async function challengeNote(
+  db: Database,
+  noteId: string,
+  challenge: Challenge,
+  expectedDecidedAt?: Date | null,
+): Promise<boolean> {
   const moved = await db
     .update(t.notes)
     .set({ status: "challenged", challenge })
-    .where(and(eq(t.notes.id, noteId), eq(t.notes.status, "approved")))
+    .where(and(
+      eq(t.notes.id, noteId), eq(t.notes.status, "approved"),
+      expectedDecidedAt === undefined ? undefined : sql`${t.notes.decidedAt} is not distinct from ${expectedDecidedAt}`,
+    ))
     .returning({ id: t.notes.id });
   return moved.length > 0;
 }
@@ -372,13 +409,13 @@ export async function challengeNote(db: Database, noteId: string, challenge: Cha
 export async function listSentinels(
   db: Database,
   projectId: string,
-): Promise<{ id: string; body: string; sentinels: Sentinel[] }[]> {
+): Promise<{ id: string; body: string; sentinels: Sentinel[]; decidedAt: Date | null }[]> {
   const rows = await db
-    .select({ id: t.notes.id, body: t.notes.body, sentinels: t.notes.sentinels })
+    .select({ id: t.notes.id, body: t.notes.body, sentinels: t.notes.sentinels, decidedAt: t.notes.decidedAt })
     .from(t.notes)
     .where(and(eq(t.notes.projectId, projectId), eq(t.notes.status, "approved")));
   return rows
-    .map((row) => ({ id: row.id, body: row.body, sentinels: (row.sentinels as Sentinel[]) ?? [] }))
+    .map((row) => ({ id: row.id, body: row.body, sentinels: (row.sentinels as Sentinel[]) ?? [], decidedAt: row.decidedAt }))
     .filter((row) => row.sentinels.length > 0);
 }
 
@@ -387,13 +424,14 @@ export async function listSentinels(
 /** A submission of memory, noted. The reason for the entire book is in `schema.ts` (`servings`). */
 export async function recordServing(
   db: Database,
-  input: { projectId: string; agentId: string; arm: "served" | "withheld"; noteIds: string[]; noteChars: number },
+  input: { projectId: string; agentId: string; arm: "served" | "withheld"; noteIds: string[]; noteChars: number; experimentId?: string | null },
 ): Promise<void> {
   await db.insert(t.servings).values({
     id: newId("srv"),
     projectId: input.projectId,
     agentId: input.agentId,
     arm: input.arm,
+    experimentId: input.experimentId ?? null,
     noteIds: input.noteIds,
     noteChars: input.noteChars,
   });
@@ -401,6 +439,8 @@ export async function recordServing(
 
 export interface ScaleReport {
   days: number;
+  /** Ordinary deliveries are observable traffic, never an experimental control group. */
+  observationalServings: number;
   arms: {
     arm: string;
     servings: number;
@@ -444,7 +484,7 @@ export interface ScaleReport {
  * or a no. The day the median spikes or the queue doesn't go down, the gate is above its carrying
  * capacity — and this must be known BEFORE building more sources of proposals, not after.
  */
-export async function scaleReport(db: Database, days = 30): Promise<ScaleReport> {
+export async function scaleReport(db: Database, days = 30, experimentId = "memory-v1"): Promise<ScaleReport> {
   const since = new Date(Date.now() - days * 86_400_000);
 
   const arms = await db
@@ -474,9 +514,12 @@ export async function scaleReport(db: Database, days = 30): Promise<ScaleReport>
       ))::int`,
     })
     .from(t.servings)
-    .where(sql`${t.servings.at} >= ${since}`)
+    .where(and(sql`${t.servings.at} >= ${since}`, eq(t.servings.experimentId, experimentId)))
     .groupBy(t.servings.arm)
     .orderBy(asc(t.servings.arm));
+
+  const [observational] = await db.select({ count: sql<number>`count(*)::int` }).from(t.servings)
+    .where(and(sql`${t.servings.at} >= ${since}`, sql`${t.servings.experimentId} is null`));
 
   const [gate] = await db
     .select({
@@ -498,6 +541,7 @@ export async function scaleReport(db: Database, days = 30): Promise<ScaleReport>
 
   return {
     days,
+    observationalServings: observational?.count ?? 0,
     arms: arms.map((row) => ({
       arm: row.arm,
       servings: row.servings,

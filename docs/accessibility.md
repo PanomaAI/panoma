@@ -16,7 +16,7 @@ there is no DOM environment in this suite and nothing gets rendered.
 `app/(app)/layout.tsx:73-75` paints `<a href="#app-main" className="skip-link">` as the
 **first child of `<body>`**, ahead of `AppShell`. The arithmetic that justifies it: before
 reaching the content there are some twenty keyboard stops — collapsing the sidebar, the
-wordmark, the search box, ⌘K, the account, the twelve sections, the two languages and the
+wordmark, the search box, ⌘K, the account, the thirteen sections, the two languages and the
 link to the source — and they are the same twenty on every page you open. With a mouse you
 don't notice; with a keyboard it's the whole day. It is WCAG criterion 2.4.1, and it is
 level A: the lowest of the three.
@@ -119,7 +119,7 @@ elemento.tabIndex >= 0 && elemento.getClientRects().length > 0
   so on tabbing from the box it didn't recognize the end of the list and let the focus out.
   The one dialog where the trap didn't trap was precisely the most used one.
 - **`getClientRects().length > 0` and not `offsetParent`.** An element inside a `fixed`
-  container — which is what the three dialogs are — has a null `offsetParent` even though it
+  container — which is what the four dialogs are — has a null `offsetParent` even though it
   is perfectly visible. With that filter they would all have been discarded and the trap
   would have trapped nothing.
 
@@ -132,9 +132,9 @@ knows where it wants to start) and it doesn't mark the siblings `inert`.
 
 `modal-keyboard.test.ts` defends the whole list instead of three names: it collects **every**
 file that writes `aria-modal="true"` and demands that each one call `useFocusTrap(` and close
-on Escape, by its own listener or through `useDismissable`. Today there are three —
-`command-palette.tsx`, `project-actions.tsx` and `share-panel.tsx` — and a fourth that
-forgets either of the two turns red on its own. With a mouse it would work perfectly, which
+on Escape, by its own listener or through `useDismissable`. Today there are four —
+`command-palette.tsx`, `open-all.tsx`, `project-actions.tsx` and `share-panel.tsx` — and a
+fifth that forgets either of the two turns red on its own. With a mouse it would work perfectly, which
 is why a test is needed.
 
 ## The virtual cursor limitation, written down so that it can be closed
@@ -144,7 +144,7 @@ tour no longer leaves the dialog; the virtual cursor — the one a reader moves 
 accessibility tree with its own keys, without touching the focus — can indeed keep going down
 and read the sidebar, the grid and everything there is behind the curtain.
 
-What would fix it is `inert` on the dialog's siblings, and there is the problem: the three
+What would fix it is `inert` on the dialog's siblings, and there is the problem: the four
 dialogs mount inside the shell, and in Next's tree their siblings are not within reach. It
 is not an oversight; it is a known limitation, and a shortcoming written down is a decision.
 
@@ -184,7 +184,9 @@ That is why `app/styles/forced-colors.css` does not adjust a single color: it ch
 What the color used to say is now said by the shape — filled or ring, thick or thin, framed
 or not — which is the only thing the system does not touch. Six blocks, one per flattened
 signal: the status dots, the selected row and tile, health, the selected item in a list, the
-two tab underlines and the current step of the timeline.
+tab underline of a project and the current step of the timeline. It used to say «the two tab
+underlines»: `.top-navigation` marked its section the same way, no `.tsx` paints that class any
+more, and the rule that corrected it has been removed.
 
 Two details that matter when touching it: the values are **system keywords** (`CanvasText`,
 `GrayText`, `Highlight`), because inside that `@media` they are the only ones the browser
@@ -203,26 +205,29 @@ has to discover it all over again.
 
 [`contrast.test.ts`](../apps/web/app/styles/contrast.test.ts) measures every color the markup
 writes as `text-…` against `--color-surface`, which is `#ffffff` — **the most generous paper
-of the thirteen the application uses**. The threshold is WCAG 2.1's 4.5:1 for normal text;
+of the ten the application uses**. The threshold is WCAG 2.1's 4.5:1 for normal text;
 the 3:1 one is for large text and there is none here, because colored text runs at 11 and
 12 pixels.
 
 | token | on white | what it is |
 | --- | --- | --- |
 | `--color-idle` | 2.15:1 | the amber of "paused", and it is written out as a word |
-| `--color-dormant` | 2.54:1 | the gray of "dormant" |
+| `--color-dormant` | 2.55:1 | the gray of "dormant"; it was 2.54 until the palette went neutral |
 | `--color-live` | 2.56:1 | the green of "active", and it is written out as a word |
-| `--color-faint` | 2.58:1 | the gray of `.eyebrow`; the markup writes it in 185 places |
+| `--color-faint` | 2.58:1 | the gray of `.eyebrow`; the markup writes `text-faint` in 172 places |
 | `--color-warn` | 3.54:1 | the amber of the warnings |
 
-Plus two that **only the CSS consumes** and that therefore don't enter the markup sweep. They
-are annotated one by one in `tokens.css`, next to their declaration — the whole reasoning of
-the palette is in [`apps/web/app/styles/README.md`](../apps/web/app/styles/README.md) —:
-`--color-ink-faint-catalog` 2.94:1 over its paper (`tokens.css:53-54`) and
-`--color-success` 3.61:1 over white (`tokens.css:100-101`). Both are good for an icon or a
-border, not for text.
+Plus one that **only the CSS consumes** and that therefore does not enter the markup sweep. It
+is annotated in `tokens.css`, next to its declaration — the whole reasoning of the palette is
+in [`apps/web/app/styles/README.md`](../apps/web/app/styles/README.md) —: `--color-success`,
+3.61:1 over white. It is good for an icon or a border, not for text.
 
-**`--color-nogit` is outside the list, and it is the worst of them all: 1.60:1.** It is
+There were two. The other was `--color-ink-faint-catalog`, 2.94:1 over a paper that no longer
+exists: `.catalog-screen` builds its `--ink-3` from the **sheet's** faint gray, so no rule ever
+read that value, and it has been removed from `tokens.css` altogether. It was the quietest
+version of this trap — a figure describing a color nobody paints never fails.
+
+**`--color-nogit` is outside the list, and it is the worst of them all: 1.59:1.** It is
 neither an oversight nor a convenience exception. The markup writes `bg-nogit` and **never**
 `text-nogit` — the "no git" state says its word with `text-faint` — so it is a dot of color
 and not a word, and a dot answers to a different threshold. The day somebody writes
@@ -234,8 +239,31 @@ the real one. A list written by hand ages in silence, because a comment with an 
 never fails. And if one of them gets corrected, it has to be deleted from the list — the test
 doesn't allow a leftover either.
 
-What did get fixed, and serves as an example of what a closure looks like: the red of
-"something failed" is today `--color-fail`, it measures 5.39:1 on the worst of the thirteen
+### What white hides, and the list that looks underneath
+
+The table above measures on white, and that is a blind spot, not a shortcut: **an ink can clear
+4.5:1 on white and fail on the paper it actually lands on.** Whoever writes `text-smoke` does not
+choose what is underneath it — a utility travels, and the same class comes down on the raised
+panel, on the selected row, on the wash of the shared catalog and on the four danger tints. So
+the same file carries a second list, which crosses every ink the markup writes with all ten
+papers, to four decimals because the margin here lives in the third one.
+
+**That second list is empty, and empty is the working state, not a leftover.** It is re-measured
+on every run exactly like the table above, so the day a color lands below AA on a paper that is
+not white, the test names the pairing and its figure by itself. Nobody has to remember to check —
+which is the whole reason the list was kept rather than deleted along with its last entry.
+
+It was not empty this morning. `--color-smoke` — the workhorse gray, and the color the product
+writes more than any other: 257 `text-smoke` utilities in the markup and 51 rules in the sheets —
+measured 5.0249:1 on white and passed every run, while landing at 4.4093 on `--color-selected`
+and 4.4084 on `--color-danger-soft-deep`. On 8-Sep-2026 the owner closed it by taking the gray
+two steps down, `#6f6f6f` to `#6d6d6d`: 4.5404 and 4.5395, and above AA on all ten papers.
+`#6e6e6e` reaches 4.4733 and would not have done. Two steps of 255 is a luminance change of
+0.006, below what an eye resolves, so the most-written color in the product crossed AA without
+the interface moving. That is what a closure looks like when the fix is invisible.
+
+What else got fixed, and serves as the example when it is not: the red of
+"something failed" is today `--color-fail`, it measures 5.39:1 on the worst of the ten
 papers and 4.59:1 over its own tint at 10%, which is the background of the severity pills.
 It replaced three factory Tailwind reds nobody had chosen and four from `tokens.css`, two of
 which didn't reach either.

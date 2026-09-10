@@ -125,7 +125,7 @@ describe("escribir qué es «terminado» aquí", () => {
     const [row] = await db.select().from(t.projects);
 
     const { saveAiSummary } = await import("./queries");
-    await saveAiSummary(db, row!.id, "Un catálogo local de proyectos.", "anthropic/claude", "es");
+    await saveAiSummary(db, row!.id, "Un catálogo local de proyectos.", "anthropic/claude", "es", "sha1-del-material");
     await saveNorth(db, "uno", NORTH);
 
     const data = await getProject(db, "uno");
@@ -136,6 +136,27 @@ describe("escribir qué es «terminado» aquí", () => {
     // one call, it is stored, and it cannot follow the reader like the rest of the interface.
     expect(data?.decision?.aiSummaryLang).toBe("es");
     expect(data?.decision?.north).toBe(NORTH);
+  });
+
+  /*
+    The fingerprint of the material the description was written from. It is what lets the route
+    answer a second press on an unchanged project with the saved text instead of paying again, so
+    it has to come back through the same door the route reads: `getProject`, row whole.
+   */
+  it("the description fingerprint round-trips through the project sheet", async () => {
+    await ingestPortfolio(db, [analysis("uno")], [], ROOT);
+    const [row] = await db.select().from(t.projects);
+
+    const { saveAiSummary } = await import("./queries");
+    await saveAiSummary(db, row!.id, "Un catálogo local de proyectos.", "anthropic/claude", "es", "huella-1");
+    expect((await getProject(db, "uno"))?.decision?.aiSummaryHash).toBe("huella-1");
+
+    // Rewriting replaces the fingerprint with the text, so a stale one cannot vouch for a new paragraph.
+    await saveAiSummary(db, row!.id, "Otra descripción.", "anthropic/claude", "en", "huella-2");
+    const data = await getProject(db, "uno");
+    expect(data?.decision?.aiSummaryHash).toBe("huella-2");
+    expect(data?.decision?.aiSummary).toBe("Otra descripción.");
+    expect(await db.select().from(t.decisions), "one decision row per identity").toHaveLength(1);
   });
 
   it("de un slug que no existe no se guarda nada, y no revienta", async () => {

@@ -1,6 +1,6 @@
 # What the catalog stores, and under what rules
 
-The catalog is thirty-two tables in PostgreSQL —PGlite locally, a real server with
+The catalog is thirty-eight tables in PostgreSQL —PGlite locally, a real server with
 `DATABASE_URL`— and the whole schema lives in `packages/db/src/schema.ts`. This page does
 not list columns: it tells the rules that decided the shape, and above all where **the
 border between what a scan gives back and what a loss takes away forever** runs. Who may
@@ -14,6 +14,18 @@ the rehoming of memory), `packages/db/src/downgrade.test.ts` (the two refusals t
 
 ## The two decisions that condition everything else
 
+Migration `0058_apps` adds `apps`, `app_jobs` and `app_workspaces`, plus nullable `app_id`
+and `app_job_id` on `model_calls`. Neither jobs nor workspaces depend on a catalog project's
+path-based primary key. Their identities survive rescan, relocation and project removal.
+The live-job unique index includes pending, running and cancelling states. Queue claims
+and budget reservations use short table-locked transactions; rendering holds no transaction.
+
+Migration `0059_desktop_keys` rewrites the old single-segment `app:<desktopId>` step keys
+to `desktop:<desktopId>`, preserving array order and unrelated step fields. It leaves
+`app:<appId>:<actionId>` keys untouched and is idempotent. Tests in `src/apps.test.ts`
+exercise both migrations, queue concurrency and atomic usage receipts against PGlite.
+See [apps.md](apps.md) for the application lifecycle.
+
 They are written in the schema's header and they explain half the oddities of the rest:
 
 1. **`snapshots` is append-only.** An analysis is never updated, a new one is inserted. It
@@ -24,10 +36,13 @@ They are written in the schema's header and they explain half the oddities of th
    the engine's rule. That turns ingestion into pure upserts —no prior reads, no duplicate
    ids when rescanning— and makes rescanning idempotent by construction, not by care.
 
-## The thirty-two tables, by family
+## The thirty-eight tables, by family
 
 | Table | What for | What it hangs off |
 | --- | --- | --- |
+| `apps` | Installed official programs, requirements and explicit provider settings | the machine; no project foreign key |
+| `app_jobs` | Durable operations, pinned versions, results and budget reservations | app ID and project identity |
+| `app_workspaces` | Stable Video workspace association | app ID and project identity |
 | `projects` | The folder described: name, git, health, runbook, `.md`, disk | `id` = sha1 of the absolute path |
 | `snapshots` | Every full analysis, with its report in `jsonb` | `project_id`, cascading |
 | `technologies` | Canonical catalog of technologies | `id` = the engine rule's |
@@ -41,13 +56,19 @@ They are written in the schema's header and they explain half the oddities of th
 | `project_dependencies` | Which version each project declares and resolves | `(project_id, package_id)` |
 | `advisories` | The security advisory exactly as OSV publishes it | `id` = the OSV one |
 | `vulnerabilities` | Which exact version of which package is affected | `(package_id, version, advisory_id)` |
+
+`projects.vuln_count` is **not** the size of what those two tables return for a project: it is
+the non-dev tally, written by the enrichment pass, and it is what the health penalty reads.
+Comparing it with a list of advisories is comparing two questions. See
+[enrichment.md](enrichment.md), «Two counts of the same thing».
 | `families` | Families of copies of the same project, with their canonical one | `id` = sha1 of the canonical's path |
 | `family_members` | Who is a copy of whom, with its confidence | `(family_id, project_id)` |
-| `decisions` | What the person decided: hidden, north, accounts, build verdict | `identity` (primary key) |
+| `decisions` | What the person decided: hidden, north, accounts, the plan of «Open everything», build verdict; and the two fingerprints that keep the card from paying twice, `ai_summary_hash` and `md_review_hash` | `identity` (primary key) |
 | `exclusions` | Folders the user took out of the catalog, and they do not come back | `root` (primary key) |
 | `agents` | A registered agent, with its key stored hashed only | random `id` |
 | `agent_sessions` | One stretch of work by an agent on a project | `agent_id` · `project_id` |
 | `agent_activities` | What it did, with full-text search on top | `session_id` · `project_id` · `agent_id` |
+| `memory_jobs` | The distiller's queue: one row per closed session, with its status, attempts, lease and receipt | `session_id` (primary key), cascading from `agent_sessions` |
 | `tasks` | The queue of assignments an agent can pick up | `project_id` |
 | `notes` | The project's curated memory, with its gate and its trigger | `project_id` |
 | `consultations` | The judgment questions the twin answers in the shadows | `project_id` · `agent_id` |
@@ -55,6 +76,8 @@ They are written in the schema's header and they explain half the oddities of th
 | `launches` | Each assignment that went out to a terminal, one gesture per click | `project_id` · `task_id` |
 | `runs` | A proposal to bump a dependency, with its branch and its patch | `project_id` · `task_id` |
 | `verdicts` | Your literal quotes, mined from the agent history | `identity`, **no foreign key** |
+| `narratives` | Your verified turns —`opening`, `brief`, `reaction`— with the assistant's context kept apart, a read marker and a failed marker | `identity`, **no foreign key**; `id` = sha1 of source, session, date and redacted text |
+| `decision_episodes` | Goal, alternatives, rationale, outcome, conditions and exceptions as `jsonb` fields; origin `owner` or `history`; `supersedes_id`, `status` and `valid_until`, the last day the decision applies | nullable `identity`, no foreign key |
 | `observations` | What the distiller read across several quotes | nullable `identity`, no foreign key |
 | `beliefs` | The portrait's sentences: the only thing that reaches the agents | random `id` · nullable `identity` |
 | `synthesis_passes` | What each synthesis pass moved, one row per subject | random `id` |
@@ -63,7 +86,7 @@ They are written in the schema's header and they explain half the oddities of th
 
 The first nine describe **the disk**; the next four, **the supply**; the two family ones,
 **the copies**; `decisions` and `exclusions`, **what the person said**; the nine about
-agents and work, **what happened**; and the last six are **the twin**.
+agents and work, **what happened**; and the last eight are **the twin**.
 
 ## The border: what a scan gives back and what it does not
 
@@ -76,18 +99,19 @@ and it comes back the same. With it come back its technologies, its dependencies
 distributions, its links, its families and its design fingerprint. `reviews` recomputes in
 a second and a half by reading the same folder. `packages`, `advisories` and
 `vulnerabilities` come back with one pass of `panoma enrich`, which costs network but costs
-no decision. Fifteen of the thirty-two tables are on this side, and one of them with fine
+no decision. Fifteen of the thirty-five tables are on this side, and one of them with fine
 print: from `snapshots` today's analysis comes back, not the timeline of the earlier ones —
 which the pruning trims on purpose anyway.
 
-**What does not come back.** The other seventeen hold things no scan can reconstruct: what
+**What does not come back.** The other twenty hold things no scan can reconstruct: what
 a person wrote (`decisions`, `exclusions`, `notes`, `tasks`), what the agents did while
-they worked (`agents`, `agent_sessions`, `agent_activities`, `runs`, `launches`,
-`servings`, `consultations`) and the entire portrait (`verdicts`, `observations`,
-`beliefs`, `synthesis_passes`, `looks`, `model_calls`). Migration `0014` says it in the
-words that forced it to be done with `UPDATE` instead of by deleting and rescanning: there
-are things a scan cannot reconstruct, and they are "the tasks you wrote, the proposals
-waiting for your yes or your no, and the history of what the agents did".
+they worked (`agents`, `agent_sessions`, `agent_activities`, `memory_jobs`, `runs`, `launches`,
+`servings`, `consultations`) and the entire portrait (`verdicts`, `narratives`,
+`observations`, `beliefs`, `decision_episodes`, `synthesis_passes`, `looks`,
+`model_calls`). Migration `0014` says it in the words that forced it to be done with
+`UPDATE` instead of by deleting and rescanning: there are things a scan cannot reconstruct,
+and they are "the tasks you wrote, the proposals waiting for your yes or your no, and the
+history of what the agents did".
 
 The extreme case is `verdicts`, and that is why it is the table with the strangest rules in
 the schema: **a quote is the only thing in the whole catalog that cannot be recomputed by
@@ -116,35 +140,95 @@ Two things it cannot do on its own, and that ingestion settles:
   writes `ruta:<sha1>`, which dies with the path by definition and says so in its name.
 - **Two copies of the same repository share a root commit.** Handing the identity to both
   would duplicate it, so if more than one project claims it **none of them keeps it**: both
-  fall back to `ruta:`. Hanging off `identity` are `decisions`, `verdicts`, `observations`,
-  `beliefs`, `looks` and `model_calls`.
+  fall back to `ruta:`. Hanging off `identity` are `decisions`, `verdicts`, `narratives`,
+  `observations`, `beliefs`, `decision_episodes`, `looks` and `model_calls`.
 
-## Fifty migrations, and two snapshots that are missing
+## Fifty-eight migrations, and four snapshots that are missing
 
-`packages/db/migrations` has fifty `.sql` files, from `0000_lonely_tigra` to
-`0049_las_piezas_de_la_frase_compuesta`, and `meta/_journal.json` with its fifty entries.
-In `meta/` there are forty-eight snapshots: `0014_snapshot.json` and `0015_snapshot.json`
-are missing.
+`packages/db/migrations` has fifty-eight `.sql` files, from `0000_lonely_tigra` to
+`0057_open_plan`, and `meta/_journal.json` with its fifty-eight entries. In
+`meta/` there are fifty-four snapshots: `0014`, `0015`, `0052` and `0053` are missing.
 
-It is not an oversight, and it is worth knowing why before trying to "fix it". Those two
-migrations **were written by hand** —`0014_valores_en_ingles` moves the already stored
-values to English (`propio`→`own`, the severities) and `0015_runbook_en_ingles` does the
-same inside a `jsonb`, which the value inventory cannot see—, and the snapshots are
-generated by `drizzle-kit` when **it** is the one deriving a migration from the schema. The
-chain does not break: `meta/0016_snapshot.json` declares as its `prevId` the `id` of
-`meta/0013_snapshot.json`, and already carries inside the default values that `0014`
-changed.
+It is not an oversight, and it is worth knowing why before trying to "fix it". Those
+migrations **were written by hand**, and the snapshots are generated by `drizzle-kit` when
+**it** is the one deriving a migration from the schema. The first two changed data, not
+shape: `0014_valores_en_ingles` moves the already stored values to English (`propio`→`own`,
+the severities) and `0015_runbook_en_ingles` does the same inside a `jsonb`, which the value
+inventory cannot see. The chain does not break: `meta/0016_snapshot.json` declares as its
+`prevId` the `id` of `meta/0013_snapshot.json`, and already carries inside the default values
+that `0014` changed.
+
+`0052`, `0053` and `0054` (6-Sep-2026) are the other case: hand-written **and** changing the
+shape — a column on `servings`, the `memory_jobs` table, an index on `decision_episodes`. That
+is where a missing snapshot bites. `drizzle-kit generate` diffs the schema against the newest
+snapshot, so against `0051` it would emit those three changes again as a fresh migration, and
+that migration would fail on the second `CREATE TABLE` in every catalog that had applied the
+originals. So `meta/0054_snapshot.json` was generated from the schema once the three were in
+place, with `0051` as its `prevId`, and it carries all three: `generate` on a clean tree
+answers "No schema changes". That repair is what let `0055_decision_expiry` —the `valid_until`
+column on `decision_episodes`— be derived by `drizzle-kit` again, with its own snapshot chained
+on `0054`'s and a `when` the clock had already passed; `0056_ai_summary_hash` followed the
+same road on 6-Sep-2026 (`pnpm --filter ./packages/db generate --name ai_summary_hash`), one
+`ALTER TABLE` adding a text column, with its snapshot chained on `0055`'s; and `0057_open_plan`
+(7-Sep-2026, the `jsonb` that keeps the plan of «Open everything») on `0056`'s, the same way. The two `CHECK` constraints written by hand on `memory_jobs` are
+not in it because the schema does not declare them, and that is harmless — drizzle only ever
+diffs what the schema says, so it will neither drop them nor recreate them.
+
+One more thing a hand-written entry has to get right: its `when`. The migrator applies
+whatever is newer than the last `created_at` the database remembers, so a `when` set in the
+future makes every migration generated before that instant invisible to any catalog that
+applied it. The three were first written with a `when` hours ahead of the clock; they now
+carry a real past instant, later than `0051`'s.
 
 At startup no snapshot is read for anything: drizzle's migrator opens `meta/_journal.json`
 and from there reads the `.sql` files by their `tag`. The snapshots are only of use to
 `drizzle-kit generate`, so it knows what to diff against.
 
+## Two fingerprints on `decisions`, and the kinds the ledger knows
+
+`decisions.ai_summary_hash` (6-Sep-2026, migration `0056`) is the fingerprint of the material
+the AI description of a project was written from: name, declared description, stack, services,
+stores, commit subjects and README, hashed by `cardFingerprint` in
+`apps/web/lib/card-fingerprint.ts` —sha256 cut to sixteen hex characters, the pieces joined
+length-prefixed so two different lists cannot fold into one string, and over the raw pieces
+and not the prompt, so the wording of the untrusted envelope can change without every project
+paying a call to learn that nothing changed. `saveAiSummary` takes it as a required sixth
+argument. It is compared together with `ai_summary_lang`: a paragraph saved in another
+language is never the cached answer. Null means written before the fingerprint existed and is
+treated as unknown: the next press pays once and stores it. `md_review_hash` keeps its meaning
+—`agentsMdHash` over `AGENTS.md` and `CLAUDE.md`, the same the project page uses for `stale`—
+and since the same day it is computed **before** the call, which is what makes it a cache key
+and not only a staleness flag. Both stay silent for a project with no repository: `identity`
+is null, there is no row to hang the text from, and the routes say `saved: false`
+([open-questions.md](open-questions.md) has whose decision that is).
+
+`model_calls.kind` takes eleven values today —`look`, `distill`, `classify`, `synthesize`,
+`memory`, `ask`, `rehearse`, `episodes`, `describe`, `review` and `probe`— and the canonical
+list is not in this package: it is `FAMILY_KINDS` plus `UNBUDGETED_KINDS` in
+`apps/web/lib/spend-settings.ts`, because the budgets apply per **family** of kinds and not
+per kind. What this package adds is the counting: `modelSpendToday` for the brakes, and for
+the spend screen `modelSpendByKind` and `modelSpendByModel` with an exclusive optional
+`until`, and `listModelCalls`, whose rows are grouped by local day in JavaScript because
+PGlite runs in UTC ([budgets.md](budgets.md)).
+
+And one count that changed meaning the same day: `corpusProgress.total` is what a
+distillation pass can still reach, not every verdict stored. It leaves out the rejected
+verdicts nobody read and the *thin* ones —a project's only unread quote, which no batch can
+send because a belief needs `MIN_DISTILL_CITATIONS` (2) quotes from the same project to
+stand; the distiller's `MIN_CITATIONS` is the same number, and `apps/web/lib/distill.test.ts`
+compares the two. Counting them made the corpus line say "1 left" forever, and the two loops
+that chain passes stop on `total - read <= 0`, so each pass paid a call for a batch that could
+answer nothing. The screen and the distill receipt take the figure from the same place, so
+they cannot disagree about what is left; `read` is untouched and `total` never drops below it.
+
 ## Deterministic ids, and the ones that on purpose are not
 
 The rule is the schema's: if the row **describes** something, the id comes from whatever
 makes it unique —sha1 of the path, `ecosystem:name`, the OSV identifier, sha1 of
-`(source, sessionId, at, quote)` in `verdicts`, sha1 of `(identity, statement)` in
-`observations`—. That way, looking at the same thing again writes over it instead of
+`(source, sessionId, at, quote)` in `verdicts`, of `(source, sessionId, at, text)` in
+`narratives`, sha1 of `(identity, statement)` in `observations`, and in
+`decision_episodes` the sha1 of the origin, the scope, the `supersedes_id` and the fields
+themselves—. That way, looking at the same thing again writes over it instead of
 duplicating, and the miner's second pass is not indistinguishable from the first.
 
 And there are exceptions argued in the code itself, which are the rows where **the
@@ -345,7 +429,8 @@ exclusive lock and is not something you slip in at the end of every scan. The pr
 - **`verdicts` has no foreign key against anything**, so it can pile up quotes from folders
   that no longer exist: in the author's catalog there are 487, nearly all of them from work
   done where panoma has never scanned. With a foreign key, mining a year and a half of
-  conversations would blow up on the first dead folder.
+  conversations would blow up on the first dead folder. `narratives` and `decision_episodes`
+  have none either, by the same argument: a rescan must not erase what someone said.
 - **`panoma disk` deletes nothing.** It measures and says so; who runs the `rm` is the
   person.
 - **None of this protects against two writers.** The schema cannot: that lives in

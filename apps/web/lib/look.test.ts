@@ -1,15 +1,17 @@
-import type { TasteLine } from "@panoma/core";
+import { MAX_FITTABLE_BYTES, MAX_SCREENSHOT_BYTES, type TasteLine } from "@panoma/core";
 import { describe, expect, it } from "vitest";
 import {
-  LOOKS_PER_DAY,
   MAX_FINDINGS,
   NORTH_LABEL,
-  budgetFrom,
   buildLookPrompt,
+  fitForLook,
   labelProfile,
   parseFindings,
+  readCeiling,
+  shotAsked,
   type LookSubject,
 } from "./look";
+import { SHOT_MAX_EDGE } from "./spend-settings";
 
 /**
  * What is being checked here is the filter, not the wording of the assignment.
@@ -248,30 +250,109 @@ it("cero hallazgos no es una respuesta ilegible", () => {
   expect(salida.unreadable).toBe(false);
 });
 
-describe("el freno del día", () => {
-  const casos: { nombre: string; valor: string | undefined; sale: number }[] = [
-    { nombre: "sin variable, el de por defecto", valor: undefined, sale: LOOKS_PER_DAY },
-    { nombre: "vacía, el de por defecto", valor: "  ", sale: LOOKS_PER_DAY },
-    { nombre: "un número, el número", valor: "50", sale: 50 },
-    { nombre: "con espacios alrededor, también", valor: " 3 ", sale: 3 },
-    // Turning off the critic is a legitimate response, and it is not the same as saying nothing.
-    { nombre: "el cero apaga", valor: "0", sale: 0 },
-  ];
+/*
+  The day's brake used to be tested here, value by value. Since 6-Sep-2026 the critic asks
+  `capFor("look")` in `spend-settings.ts`, and `spend-settings.test.ts` holds that contract —
+  including the four ways of writing the variable wrong — for all seven families at once.
+ */
 
-  for (const caso of casos) {
-    it(caso.nombre, () => {
-      expect(budgetFrom(caso.valor)).toBe(caso.sale);
+/**
+ * The single door every capture goes through, checked where it decides nothing.
+ *
+ * The arithmetic of the reduction is `fitScreenshot`, and `packages/core/src/image.test.ts` builds
+ * PNGs by hand to prove it. What is proven here is the other half — the one that costs money if it
+ * is wrong: that `full` does not touch the bytes, that a type this repository cannot reduce comes
+ * back whole **with its reason**, and that a rehearsal without the image promises nothing.
+ */
+describe("what the critic is going to be shown", () => {
+  const CAPTURA = Buffer.from("no soy un PNG, y no hace falta que lo sea").toString("base64");
+
+  it("touches nothing under the policy it has always had", () => {
+    const salida = fitForLook(CAPTURA, "image/png", "full");
+    expect(salida.data).toBe(CAPTURA);
+    expect(salida.sent).toEqual({
+      policy: "full",
+      maxEdge: SHOT_MAX_EDGE,
+      fitted: false,
+      bytes: Buffer.from(CAPTURA, "base64").length,
     });
-  }
+  });
 
   /*
-    The direction of the failure is the only thing that matters here: a misspelled value cannot
-    turn into 'unlimited,' because a brake failure has to fall on the braking side. It is checked
-    with the four ways of misspelling it.
+    And it does not decode four megabytes to be told what the header already said: only PNG is
+    read here, so a JPEG is refused by its type before its bytes are ever turned into a buffer.
    */
-  for (const malo of ["cien", "-1", "2.5", "Infinity"]) {
-    it(`«${malo}» no levanta el freno, lo deja donde estaba`, () => {
-      expect(budgetFrom(malo)).toBe(LOOKS_PER_DAY);
-    });
-  }
+  it("gives back whole what it cannot reduce, and names the reason", () => {
+    for (const type of ["image/jpeg", "image/webp", "image/gif"]) {
+      const salida = fitForLook(CAPTURA, type, "fit");
+      expect(salida.data).toBe(CAPTURA);
+      expect(salida.sent).toEqual({
+        policy: "fit",
+        maxEdge: SHOT_MAX_EDGE,
+        fitted: false,
+        bytes: Buffer.from(CAPTURA, "base64").length,
+        why: "format",
+      });
+    }
+  });
+
+  it("does not half-send bytes that are not an image either", () => {
+    const salida = fitForLook(CAPTURA, "image/png", "fit");
+    expect(salida.data).toBe(CAPTURA);
+    expect(salida.sent.fitted).toBe(false);
+    expect(salida.sent.why).toBe("broken");
+  });
+
+  /*
+    The rehearsal the browser makes travels without the image. Answering `fitted: false` there
+    would be claiming that the capture travels whole, which nobody has looked at yet.
+   */
+  it("promises no size in a rehearsal without the image", () => {
+    expect(shotAsked("fit")).toEqual({ policy: "fit", maxEdge: SHOT_MAX_EDGE });
+    expect(shotAsked("fit")).not.toHaveProperty("fitted");
+  });
+});
+
+/**
+ * And the last word on the size, which is the half that decides whether the call happens.
+ *
+ * The provider's 3.5 MB used to be applied when the file was opened off the disk, which is another
+ * act with another price: a 6 MB capture was refused before anybody could reduce it, and reducing
+ * it is exactly what `fit` does. So the two numbers were separated —what may be read, and what may
+ * travel— and this is the second one, asked of the bytes that come out of here and of nothing else.
+ */
+describe("the two ceilings, and which one applies where", () => {
+  /** Bigger than the cap and not a PNG, so that nothing here can reduce it. See `fitScreenshot`. */
+  const PESADA = Buffer.alloc(MAX_SCREENSHOT_BYTES + 1_000, 0xff).toString("base64");
+  const LIGERA = Buffer.from("una captura que cabe de sobra").toString("base64");
+
+  it("reads generously when the capture is going to be reduced, and strictly when it is not", () => {
+    expect(readCeiling("fit")).toBe(MAX_FITTABLE_BYTES);
+    expect(readCeiling("full")).toBe(MAX_SCREENSHOT_BYTES);
+    expect(MAX_FITTABLE_BYTES).toBeGreaterThan(MAX_SCREENSHOT_BYTES);
+  });
+
+  it("says what the bytes that travel weigh, which is not what the file weighs", () => {
+    const salida = fitForLook(LIGERA, "image/png", "full");
+    expect(salida.sent.bytes).toBe(Buffer.from(LIGERA, "base64").length);
+    expect(salida.sent.tooBig).toBeUndefined();
+  });
+
+  /*
+    A JPEG of six megabytes is the case the owner will meet: the choice was honoured as far as it
+    goes —only a PNG can be reduced here— and what is left is above what a provider accepts. The
+    two fields are separate on purpose: `why` explains the reduction that did not happen, and
+    `tooBig` says that this one must not be sent at all, which the surfaces answer with a refusal.
+   */
+  it("marks what could not be reduced and still does not fit, with its reason beside it", () => {
+    const salida = fitForLook(PESADA, "image/jpeg", "fit");
+    expect(salida.sent.why).toBe("format");
+    expect(salida.sent.tooBig).toBe(true);
+    expect(salida.sent.bytes).toBe(MAX_SCREENSHOT_BYTES + 1_000);
+  });
+
+  /* And under the policy it has always had, the same: over the cap it does not leave either. */
+  it("marks it under the whole-capture policy too", () => {
+    expect(fitForLook(PESADA, "image/jpeg", "full").sent.tooBig).toBe(true);
+  });
 });

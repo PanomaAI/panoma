@@ -837,35 +837,78 @@ export async function listProjectActivity(db: Database, projectId: string) {
     .limit(100);
 }
 
-/**
- * What a session left written, in the order in which it was written.
- *
- * It is the raw material of the distiller: when a session is closed, it is read entirely —not the
- * project window, this visit— and from there come the candidates for a durable fact. In order of
- * arrival because the distiller reads a story, not a ranking.
- */
-export async function listSessionActivities(db: Database, sessionId: string) {
-  return db
-    .select({
-      kind: t.agentActivities.kind,
-      summary: t.agentActivities.summary,
-      details: t.agentActivities.details,
-      /* The site of the accident: the distiller gets the proposal's 'where' from this field. */
-      filesTouched: t.agentActivities.filesTouched,
-    })
-    .from(t.agentActivities)
-    .where(eq(t.agentActivities.sessionId, sessionId))
-    .orderBy(asc(t.agentActivities.createdAt), asc(t.agentActivities.id))
-    .limit(50);
-}
-
 /** A finding in the archive: who wrote it, what it was, and when. */
 export interface JournalHit {
+  id: string;
   agent: string;
   kind: string;
   summary: string;
   details: string | null;
   at: Date;
+  /** A bounded passage containing a search match, rather than the start of the details. */
+  excerpt: string;
+}
+
+interface JournalPosition { at: string; id: string }
+
+export interface JournalPage {
+  matches: JournalHit[];
+  nextCursor: string | null;
+}
+
+export interface JournalEntryPage {
+  id: string;
+  agent: string;
+  kind: string;
+  summary: string;
+  at: Date;
+  text: string;
+  offset: number;
+  totalChars: number;
+  nextOffset: number | null;
+}
+
+const JOURNAL_PAGE_SIZE = 12;
+const JOURNAL_ENTRY_CHARS = 4_000;
+const MATCH_START = "[[[panoma-match]]]";
+const MATCH_END = "[[[/panoma-match]]]";
+
+/** Keep the matched passage even when a long identifier exceeds the headline's word budget. */
+function boundedHeadline(headline: string): string {
+  const first = headline.indexOf(MATCH_START);
+  const plain = headline.replaceAll(MATCH_START, "").replaceAll(MATCH_END, "");
+  if (plain.length <= 1_200) return plain;
+  const start = Math.max(0, first - 100);
+  const end = Math.min(plain.length, start + 1_200);
+  return `${start > 0 ? "…" : ""}${plain.slice(start, end)}${end < plain.length ? "…" : ""}`;
+}
+
+/** The exact database timestamp preserves pagination even for entries written in one millisecond. */
+async function journalMatches(db: Database, projectId: string, query: string, limit: number, position?: JournalPosition) {
+  const rows = await db
+    .select({
+      id: t.agentActivities.id,
+      agent: t.agents.name,
+      kind: t.agentActivities.kind,
+      summary: t.agentActivities.summary,
+      details: t.agentActivities.details,
+      at: t.agentActivities.createdAt,
+      positionAt: sql<string>`to_char(${t.agentActivities.createdAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
+      headline: sql<string>`ts_headline('simple',
+        replace(replace(${t.agentActivities.summary} || E'\n\n' || coalesce(${t.agentActivities.details}, ''), ${MATCH_START}, ''), ${MATCH_END}, ''),
+        websearch_to_tsquery('simple', ${query}),
+        'StartSel=[[[panoma-match]]],StopSel=[[[/panoma-match]]],MaxWords=50,MinWords=15,MaxFragments=1')`,
+    })
+    .from(t.agentActivities)
+    .innerJoin(t.agents, eq(t.agents.id, t.agentActivities.agentId))
+    .where(and(
+      eq(t.agentActivities.projectId, projectId),
+      sql`to_tsvector('simple', ${t.agentActivities.summary} || ' ' || coalesce(${t.agentActivities.details}, '')) @@ websearch_to_tsquery('simple', ${query})`,
+      position === undefined ? undefined : sql`(${t.agentActivities.createdAt} < ${position.at}::timestamptz or (${t.agentActivities.createdAt} = ${position.at}::timestamptz and ${t.agentActivities.id} > ${position.id}))`,
+    ))
+    .orderBy(desc(t.agentActivities.createdAt), asc(t.agentActivities.id))
+    .limit(limit);
+  return rows.map(({ headline, ...row }) => ({ ...row, excerpt: boundedHeadline(headline) }));
 }
 
 /**
@@ -895,24 +938,50 @@ export async function searchJournal(
   const clean = query.trim();
   if (clean === "") return [];
 
-  return db
-    .select({
-      agent: t.agents.name,
-      kind: t.agentActivities.kind,
-      summary: t.agentActivities.summary,
-      details: t.agentActivities.details,
-      at: t.agentActivities.createdAt,
-    })
-    .from(t.agentActivities)
-    .innerJoin(t.agents, eq(t.agents.id, t.agentActivities.agentId))
-    .where(
-      and(
-        eq(t.agentActivities.projectId, projectId),
-        sql`to_tsvector('simple', ${t.agentActivities.summary} || ' ' || coalesce(${t.agentActivities.details}, '')) @@ websearch_to_tsquery('simple', ${clean})`,
-      ),
-    )
-    .orderBy(desc(t.agentActivities.createdAt), asc(t.agentActivities.id))
-    .limit(limit);
+  return journalMatches(db, projectId, clean, limit);
+}
+
+/** Search continuation is tied to both the project and the original query. */
+export async function searchJournalPage(db: Database, projectId: string, query: string, cursor?: string): Promise<JournalPage> {
+  const clean = query.trim();
+  let position: JournalPosition | undefined;
+  if (cursor !== undefined) {
+    try {
+      if (cursor.length > 4_096 || !/^[A-Za-z0-9_-]+$/.test(cursor)) throw new Error();
+      const saved = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as Record<string, unknown>;
+      if (saved["projectId"] !== projectId || saved["query"] !== clean ||
+        typeof saved["at"] !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/.test(saved["at"]) ||
+        !Number.isFinite(Date.parse(saved["at"])) || typeof saved["id"] !== "string" ||
+        !/^[A-Za-z0-9_-]{1,128}$/.test(saved["id"])) throw new Error();
+      position = { at: saved["at"], id: saved["id"] };
+    } catch {
+      throw new RangeError("Invalid journal cursor. Repeat the search without a cursor.");
+    }
+  }
+  if (clean === "") return { matches: [], nextCursor: null };
+  const rows = await journalMatches(db, projectId, clean, JOURNAL_PAGE_SIZE + 1, position);
+  const page = rows.slice(0, JOURNAL_PAGE_SIZE);
+  const last = page.at(-1);
+  const nextCursor = rows.length > JOURNAL_PAGE_SIZE && last ? Buffer.from(JSON.stringify({
+    projectId, query: clean, at: last.positionAt, id: last.id,
+  })).toString("base64url") : null;
+  return { matches: page, nextCursor };
+}
+
+/** Read the original in bounded segments. An ID from another project never opens a record. */
+export async function readJournalEntry(db: Database, projectId: string, entryId: string, offset = 0): Promise<JournalEntryPage | undefined> {
+  if (!Number.isSafeInteger(offset) || offset < 0) throw new RangeError("Journal offset must be a non-negative integer.");
+  const [entry] = await db.select({
+    id: t.agentActivities.id, agent: t.agents.name, kind: t.agentActivities.kind,
+    summary: t.agentActivities.summary, details: t.agentActivities.details, at: t.agentActivities.createdAt,
+  }).from(t.agentActivities).innerJoin(t.agents, eq(t.agents.id, t.agentActivities.agentId))
+    .where(and(eq(t.agentActivities.projectId, projectId), eq(t.agentActivities.id, entryId))).limit(1);
+  if (!entry) return undefined;
+  const original = `${entry.summary}${entry.details ? `\n\n${entry.details}` : ""}`;
+  if (offset > original.length) throw new RangeError("Journal offset is past the end of this entry.");
+  const end = Math.min(original.length, offset + JOURNAL_ENTRY_CHARS);
+  const { details: _details, ...metadata } = entry;
+  return { ...metadata, text: original.slice(offset, end), offset, totalChars: original.length, nextOffset: end < original.length ? end : null };
 }
 
 /**

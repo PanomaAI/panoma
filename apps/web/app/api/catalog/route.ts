@@ -29,6 +29,7 @@ export async function GET(request: Request) {
       name: project.name,
       slug: project.slug,
       root: project.root,
+      identity: project.identity,
       hasIcon: project.hasIcon,
       language: project.primaryLanguage,
       state: stateOf(project.lastCommitAt),

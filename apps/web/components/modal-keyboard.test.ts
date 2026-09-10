@@ -53,12 +53,69 @@ const MODALES = FICHEROS.filter((ruta) => leer(ruta).includes('aria-modal="true"
 const PALETA = leer(join(AQUI, "command-palette.tsx"));
 
 describe("los diálogos modales", () => {
-  it("son los tres de siempre, y si aparece un cuarto hay que mirarlo", () => {
+  it("son los cinco de siempre, y si aparece un sexto hay que mirarlo", () => {
+    /*
+      The fourth arrived on 7-Sep-2026: the plan of "open everything", which lists what one click
+      opens and lets the owner reorder it. It was looked at: focus fenced, Escape closes, and
+      every checkbox and field carries its name.
+
+      The fifth on 8-Sep-2026: what "Create video" says when the app that makes videos is not
+      installed on this machine. It used to be a link that took the person to the Apps page of a
+      program they had never heard of, with no sentence saying why. It was looked at too: the panel
+      itself takes the focus —there is nothing inside worth landing on before it has been read—,
+      Escape closes, and the two actions are a button and a link, both with a word in them.
+     */
     expect(MODALES.map(corto).sort()).toEqual([
       "components/command-palette.tsx",
+      "components/create-video.tsx",
+      "components/open-all.tsx",
       "components/project-actions.tsx",
       "components/share-panel.tsx",
     ]);
+  });
+
+  it("y todos cuelgan su cortina del `body`, no de donde estén escritos", () => {
+    /*
+      Where a dialog is written and where it has to be drawn are two different places, and until
+      9-Sep-2026 they were the same one. The curtain asks for `--z-overlay` —70, over the sidebar's
+      40 and the top bar's 50— but that number only means anything inside its STACKING CONTEXT, and
+      any ancestor opens one: a `z-index` on something positioned, a `position: sticky` —which opens
+      one on its own, with no number in sight—, a transform, a filter. Inside one of those, 70 is
+      not 70: it is whatever number the ancestor has.
+
+      The four that were broken, measured with `elementFromPoint` and not read off the screen: the
+      plan of "Open everything" and the invitation of "Create video", both sealed in by the
+      `z-index: 12` that `.project-hero` used to carry; the confirmation of removing a project from
+      the catalog, sealed in by the ⋯ menu's `--z-dropdown`, which that menu does need — without it,
+      thirty-three of forty points inside the menu are painted over by the sheet below; and the same
+      plan again in the catalog's detail panel, where the ceiling is not a number at all but the
+      `position: sticky` of `.detail-panel`. In all four the screen darkened as far as the edge of
+      the column and a press over the sidebar still answered its link: the dialog looked modal and
+      was not.
+
+      The rule left is the only one that does not require auditing the ancestors of every place a
+      component is mounted: the curtain goes on the `body`. The two that already worked follow it
+      too, because "it hangs from the body" has to be true of all of them to be worth remembering.
+
+      The other half is in `use-dismissable.ts`: a dropdown may not read a press inside a modal
+      dialog as a press outside itself, because a portalled confirmation is no longer inside the box
+      of the menu that opened it.
+     */
+    const sueltos = MODALES.filter((ruta) => {
+      const fuente = leer(ruta);
+      return !fuente.includes("createPortal(") || !fuente.includes("document.body");
+    }).map(corto);
+    expect(sueltos, `diálogos que no cuelgan del body: ${sueltos.join(", ")}`).toEqual([]);
+  });
+
+  it("y ningún panel desplegable confunde una pulsación dentro de un modal con una de fuera", () => {
+    /*
+      The guard that makes the rule above possible. Without it, the first press on the field of the
+      confirmation —which no longer sits inside the menu, but on the `body`— closed the menu, and
+      closing the menu unmounts the dialog that was being typed into.
+     */
+    const gancho = readFileSync(join(AQUI, "use-dismissable.ts"), "utf8");
+    expect(gancho).toContain('aria-modal="true"');
   });
 
   it("todos encierran el tabulador", () => {

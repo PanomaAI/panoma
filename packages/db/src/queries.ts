@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, or, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { DesignFingerprint, WorkState } from "@panoma/core";
 import type { Database } from "./client";
@@ -29,6 +29,7 @@ export function stateOf(lastCommitAt: Date | null | undefined): ProjectState {
 }
 
 export interface ProjectCard {
+  identity?: string | null;
   id: string;
   name: string;
   slug: string;
@@ -84,6 +85,7 @@ export async function listProjects(db: Database): Promise<ProjectCard[]> {
   const rows = await db
     .select({
       id: t.projects.id,
+      identity: t.projects.identity,
       name: t.projects.name,
       slug: t.projects.slug,
       root: t.projects.root,
@@ -693,6 +695,10 @@ export async function getProjectLocation(
  * In its own column and with the model that wrote it next to it, because it is the only text in
  * the catalog that does not come from a verifiable fact and one must be able to distinguish it
  * from the rest at a glance — and delete it without touching anything else.
+ *
+ * `hash` is the fingerprint of the material the text was written from, and it is required: it is
+ * what lets the route answer a second press on an unchanged project with the saved text instead
+ * of a second paid call. See `decisions.aiSummaryHash`.
  */
 export async function saveAiSummary(
   db: Database,
@@ -700,6 +706,7 @@ export async function saveAiSummary(
   text: string,
   model: string,
   lang: string,
+  hash: string,
 ): Promise<void> {
   const [project] = await db
     .select({ identity: t.projects.identity, name: t.projects.name })
@@ -713,6 +720,7 @@ export async function saveAiSummary(
     aiSummaryModel: model,
     aiSummaryAt: new Date(),
     aiSummaryLang: lang,
+    aiSummaryHash: hash,
     lastName: project.name,
   };
   await db
@@ -2653,7 +2661,10 @@ export async function signBelief(db: Database, id: string, statement?: string): 
         not churn from the machine: with the date moved, signing five beliefs without touching a
         word of them read as 'tuned: 5' in the weekly summary.
        */
-      ...(clean ? { statement: clean, model: "", updatedAt: new Date() } : {}),
+      // Editing an owner-authored rule stays authorship, not a correction of Twin's prediction.
+      ...(clean ? { statement: clean,
+        model: sql`case when ${t.beliefs.model} = 'owner' then 'owner' else '' end`,
+        updatedAt: new Date() } : {}),
     })
     .where(and(eq(t.beliefs.id, id), inArray(t.beliefs.state, ALIVE)))
     .returning({ id: t.beliefs.id });
@@ -3191,13 +3202,13 @@ export async function tasteScore(db: Database): Promise<TasteScore> {
     empty is to have passed through the hands of the person.
    */
   const corrected = sql.raw(
-    "(state = 'vetoed' or (state in ('signed', 'retired') and model = ''))",
+    "(model <> 'owner' and (state = 'vetoed' or (state in ('signed', 'retired') and model = '')))",
   );
   /*
     The fifths are distributed by **when the belief was born** and not by when it was corrected:
     see `TasteWindow`. This way the numerator is always inside the denominator.
    */
-  const dicha = sql.raw("state not in ('proposed', 'answered')");
+  const dicha = sql.raw("state not in ('proposed', 'answered') and model <> 'owner'");
 
   const [row] = await db
     .select({
@@ -3217,7 +3228,7 @@ export async function tasteScore(db: Database): Promise<TasteScore> {
         anything—in other words, the only product metric improved just by the act of answering
         questions.
        */
-      shown: sql<number>`count(*) filter (where state not in ('proposed', 'answered'))::int`,
+      shown: sql<number>`count(*) filter (where ${dicha})::int`,
       corrections: sql<number>`count(*) filter (where ${corrected})::int`,
       /*
         Two fifths go through one month: the middle one and the one before, not the one that goes.
@@ -3268,7 +3279,9 @@ export async function tasteScore(db: Database): Promise<TasteScore> {
   const standing = alive.filter(
     (one) => one.state === "signed" || standsUp(one.support),
   ).length;
-  const apoyo = alive.reduce((total, one) => total + one.support.observations, 0);
+  // Teaching is authorship, not a prediction by Twin. It cannot improve or dilute its grade.
+  const learned = alive.filter((one) => one.model !== "owner");
+  const apoyo = learned.reduce((total, one) => total + one.support.observations, 0);
   const [evidence] = await db
     .select({ observations: sql<number>`count(*)::int` })
     .from(t.observations);
@@ -3289,7 +3302,7 @@ export async function tasteScore(db: Database): Promise<TasteScore> {
     observations,
     // With one decimal: the difference between 1.0 and 1.4 is the difference between copying and
     // synthesizing, and a whole number would teach them as the same number.
-    density: counts.alive === 0 ? null : Math.round((apoyo * 10) / counts.alive) / 10,
+    density: learned.length === 0 ? null : Math.round((apoyo * 10) / learned.length) / 10,
     corrections: counts.corrections,
     shown: counts.shown,
     rate,
@@ -3497,7 +3510,13 @@ function readingOf(
 
 /** What is noted from a call. See table `modelCalls`: null is not zero. */
 export interface NewModelCall {
-  /** distill · look. */
+  appId?: string;
+  appJobId?: string;
+  /**
+   * Which organ spent: look · distill · classify · synthesize · memory · ask · rehearse · episodes
+   * · describe · review · probe. The list lives in `apps/web/lib/spend-settings.ts`
+   * (`FAMILY_KINDS`), and the budgets are applied per family there — not per kind, and not here.
+   */
   kind: string;
   provider: string;
   model: string;
@@ -3530,6 +3549,8 @@ export async function saveModelCall(db: Database, call: NewModelCall): Promise<v
     kind: call.kind,
     provider: call.provider,
     model: call.model,
+    appId: call.appId ?? null,
+    appJobId: call.appJobId ?? null,
     identity: call.identity ?? null,
     inputTokens: call.input ?? null,
     outputTokens: call.output ?? null,
@@ -3607,7 +3628,7 @@ export async function modelSpendToday(
 
 /** The same, separated by classes. See `modelSpendByKind`. */
 export interface KindSpend extends ModelSpend {
-  /** distill · look · consolidate. */
+  /** Which organ spent. The list is `FAMILY_KINDS` in `apps/web/lib/spend-settings.ts`. */
   kind: string;
 }
 
@@ -3624,17 +3645,112 @@ export interface KindSpend extends ModelSpend {
  * things — a glance sends an image, a distillation sends half a history — and putting them
  * together in a number would stop answering 'where did this come from?', which is the question
  * that anyone looking at an expense asks.
+ *
+ * `until` is exclusive and optional: without it the window is open-ended, which is what the
+ * brakes want — 'today so far'. The spend screen wants closed windows —'yesterday', 'last week'—
+ * and passes both cutoffs, calculated in JavaScript for the reason `startOfDay` explains.
  */
 export async function modelSpendByKind(
   db: Database,
   since: Date = startOfDay(),
+  until?: Date,
 ): Promise<KindSpend[]> {
   return db
     .select({ kind: t.modelCalls.kind, ...SPEND })
     .from(t.modelCalls)
-    .where(gte(t.modelCalls.createdAt, since))
+    .where(inWindow(since, until))
     .groupBy(t.modelCalls.kind)
     .orderBy(asc(t.modelCalls.kind));
+}
+
+/** The five accounts, for one provider and one model. See `modelSpendByModel`. */
+export interface ModelSpendRow extends ModelSpend {
+  provider: string;
+  model: string;
+}
+
+/**
+ * What was spent in a window, model by model.
+ *
+ * It exists because a price is a rate **per provider and model**, not per kind: a look through
+ * Anthropic and a look through OpenAI are the same organ and cost different money. The spend
+ * screen multiplies each row by the rate the owner wrote for that pair and sums the result; the
+ * rate lives in the web, not here, because the database does not know what a token costs and
+ * should not pretend to.
+ *
+ * Ordered by provider and then model so that the screen reads like a receipt and does not reorder
+ * itself between two refreshes.
+ */
+export async function modelSpendByModel(
+  db: Database,
+  since: Date = startOfDay(),
+  until?: Date,
+): Promise<ModelSpendRow[]> {
+  return db
+    .select({ provider: t.modelCalls.provider, model: t.modelCalls.model, ...SPEND })
+    .from(t.modelCalls)
+    .where(inWindow(since, until))
+    .groupBy(t.modelCalls.provider, t.modelCalls.model)
+    .orderBy(asc(t.modelCalls.provider), asc(t.modelCalls.model));
+}
+
+/** One line of the ledger, as `listModelCalls` returns it. Null tokens stay null: unknown, not zero. */
+export interface ModelCallRow {
+  kind: string;
+  provider: string;
+  model: string;
+  identity: string | null;
+  input: number | null;
+  output: number | null;
+  images: number;
+  createdAt: Date;
+}
+
+/**
+ * The raw lines of the ledger in a window, oldest first.
+ *
+ * ── It is grouped by day in JavaScript, and it is not laziness ────────────────────────────────
+ *
+ * The spend screen paints one bar per local day, and `date_trunc('day', created_at)` would cut
+ * at midnight in London: PGlite starts in UTC and nobody tells it otherwise, which is exactly the
+ * failure that froze the day's counter and that the header of `startOfDay` records. `beliefChurn`
+ * met the same wall one step higher, at the month, and solved it the same way: bring the rows and
+ * group them here, where it is known in which time zone this machine is. So this returns lines,
+ * not buckets, and the caller does the calendar.
+ *
+ * The default limit of 20,000 is a ceiling and not a page: a thirty-day window at every factory
+ * cap of `apps/web/lib/spend-settings.ts` is under 15,000 rows, so a person who never raised a
+ * quota never hits it. Anyone who did raise them gets the oldest rows of the window and a chart
+ * that stops early, which is a visible truncation and not a wrong total. Ordered by `createdAt`
+ * and then `id`, so two calls in the same millisecond keep a stable order.
+ */
+export async function listModelCalls(
+  db: Database,
+  options: { since: Date; until?: Date; limit?: number },
+): Promise<ModelCallRow[]> {
+  const rows = await db
+    .select({
+      kind: t.modelCalls.kind,
+      provider: t.modelCalls.provider,
+      model: t.modelCalls.model,
+      identity: t.modelCalls.identity,
+      input: t.modelCalls.inputTokens,
+      output: t.modelCalls.outputTokens,
+      images: t.modelCalls.images,
+      createdAt: t.modelCalls.createdAt,
+    })
+    .from(t.modelCalls)
+    .where(inWindow(options.since, options.until))
+    .orderBy(asc(t.modelCalls.createdAt), asc(t.modelCalls.id))
+    .limit(options.limit ?? 20_000);
+  return rows;
+}
+
+/** `since <= created_at < until`, with the upper bound optional. The cutoffs come from JavaScript. */
+function inWindow(since: Date, until?: Date): SQL | undefined {
+  return until
+    ? and(gte(t.modelCalls.createdAt, since), lt(t.modelCalls.createdAt, until))
+    : gte(t.modelCalls.createdAt, since);
 }
 
 /* ── The movement of the portrait ─────────────────────────────────────────────────── */
@@ -3648,6 +3764,17 @@ export interface SynthesisPass {
   proposed: number;
   /** How much evidence the subject had in front. See the table. */
   observations: number;
+  /** Start of the evidence read, so material arriving during the model call stays pending. */
+  at?: Date;
+}
+
+/** Successful topic reads, independent of later signatures and edits to the portrait. */
+export async function latestSynthesisByTopic(db: Database): Promise<Map<string, number>> {
+  const rows = await db.select({
+    topic: t.synthesisPasses.topic,
+    at: sql<number>`extract(epoch from max(${t.synthesisPasses.at}))::double precision`,
+  }).from(t.synthesisPasses).groupBy(t.synthesisPasses.topic);
+  return new Map(rows.map((row) => [row.topic, row.at * 1000]));
 }
 
 /**
@@ -3915,7 +4042,17 @@ export async function tasteReach(db: Database): Promise<TasteReach> {
  * deserves another pass.
  */
 export interface CorpusProgress {
-  /** Veredictos guardados en total. */
+  /**
+   * What a distillation pass can still reach, not every verdict stored.
+   *
+   * Two kinds of verdict stay in the catalog and out of this figure: the rejected ones nobody read
+   * before rejecting, and the *thin* ones — a project's only unread quote, which no batch can send
+   * because a belief needs {@link MIN_DISTILL_CITATIONS} quotes from the same project to stand.
+   * Counting them made the corpus line say "1 left" forever, and the two loops that chain passes
+   * —`twin distill --all` and the button— stop on `total - read <= 0`, so each pass paid a call
+   * for a batch that could answer nothing. The screen and the receipt take this figure from the
+   * same place so they cannot disagree about what is left.
+   */
   total: number;
   /**
    * Those who have already read: sent to a model, or quoted for some phrase.
@@ -3943,19 +4080,42 @@ export async function corpusProgress(db: Database): Promise<CorpusProgress> {
     What is limited is this recount, which is the one that is depicted.
    */
   const leidos = await readVerdictIds(db);
-  if (leidos.size === 0) return { total, read: 0 };
 
   /*
     The intersection is done here and not with a `in (…)` of two thousand six hundred parameters:
-    the identifiers are already in memory, and fetching the entire column is a read of an indexed
-    column against a list that would have to be serialized anyway.
+    the identifiers are already in memory, and fetching three light columns is a read of an
+    indexed table against a list that would have to be serialized anyway. The same walk groups
+    the unread by project, which is what decides whether a quote can ever be sent.
    */
-  const vivos = await db.select({ id: t.verdicts.id }).from(t.verdicts);
+  const vivos = await db
+    .select({ id: t.verdicts.id, identity: t.verdicts.identity, accepted: t.verdicts.accepted })
+    .from(t.verdicts);
   let read = 0;
-  for (const row of vivos) if (leidos.has(row.id)) read += 1;
+  let rejected = 0;
+  const unreadByProject = new Map<string, number>();
+  for (const row of vivos) {
+    if (leidos.has(row.id)) {
+      read += 1;
+    } else if (row.accepted === false) {
+      rejected += 1;
+    } else {
+      unreadByProject.set(row.identity, (unreadByProject.get(row.identity) ?? 0) + 1);
+    }
+  }
+  let thin = 0;
+  for (const count of unreadByProject.values()) if (count < MIN_DISTILL_CITATIONS) thin += count;
 
-  return { total, read };
+  // Never below `read`: what is taken out is unread by definition, so the subtraction cannot
+  // cross it — and a figure of "read 12 of 10" is the broken counter this exists to prevent.
+  return { total: Math.max(total - thin - rejected, read), read };
 }
+
+/**
+ * How many quotes of one project a belief must cite to stand. The distiller's `MIN_CITATIONS`
+ * in `apps/web/lib/distill.ts` is the same number, and its test compares the two: a project with
+ * fewer unread quotes than this is *thin* and no pass can send it.
+ */
+export const MIN_DISTILL_CITATIONS = 2;
 
 /**
  * Reposition the evidence when its citations have changed project.
@@ -4375,4 +4535,77 @@ function storedFindings(value: unknown): StoredFinding[] {
     findings.push({ what, where, fix, cites });
   }
   return findings;
+}
+
+/**
+ * What "open everything" needs to know about a project, by id.
+ *
+ * By id and not by slug because the button sits next to the open menu, which already speaks in
+ * ids, and because a plan is stored and run against the same handle: the id the browser holds is
+ * the one the run route resolves, never a path. It brings the two halves the plan is built from
+ * —the links the scan resolved and the accounts the owner wrote— plus the runbook, so the
+ * configurator can offer the project's own start command, and the plan itself.
+ */
+export async function getOpenContext(db: Database, id: string) {
+  const [project] = await db
+    .select({
+      id: t.projects.id,
+      name: t.projects.name,
+      slug: t.projects.slug,
+      root: t.projects.root,
+      identity: t.projects.identity,
+      gitRemoteUrl: t.projects.gitRemoteUrl,
+      runbook: t.projects.runbook,
+    })
+    .from(t.projects)
+    .where(eq(t.projects.id, id))
+    .limit(1);
+  if (!project) return undefined;
+
+  const [decision] = project.identity
+    ? await db
+        .select({ accounts: t.decisions.accounts, openPlan: t.decisions.openPlan })
+        .from(t.decisions)
+        .where(eq(t.decisions.identity, project.identity))
+        .limit(1)
+    : [];
+
+  const [links, distributions] = await Promise.all([
+    db
+      .select()
+      .from(t.projectLinks)
+      .where(eq(t.projectLinks.projectId, project.id))
+      .orderBy(t.projectLinks.kind, t.projectLinks.service),
+    db.select().from(t.distributions).where(eq(t.distributions.projectId, project.id)),
+  ]);
+
+  return { project, decision: decision ?? null, links, distributions };
+}
+
+/**
+ * Save the plan of "open everything", or remove it with `null`.
+ *
+ * It hangs from the identity like the accounts, and like them it stays silent without one — but
+ * here the silence is returned, because the route has to say it: a plan that was not stored will
+ * not be there on the next click, and the button must not pretend otherwise. The value is stored
+ * as it arrives; the route has already normalized it.
+ */
+export async function saveOpenPlan(
+  db: Database,
+  id: string,
+  plan: unknown | null,
+): Promise<boolean> {
+  const [project] = await db
+    .select({ identity: t.projects.identity, name: t.projects.name })
+    .from(t.projects)
+    .where(eq(t.projects.id, id))
+    .limit(1);
+  if (!project?.identity) return false;
+
+  const value = { openPlan: plan, lastName: project.name };
+  await db
+    .insert(t.decisions)
+    .values({ identity: project.identity, ...value })
+    .onConflictDoUpdate({ target: t.decisions.identity, set: { ...value, updatedAt: new Date() } });
+  return true;
 }

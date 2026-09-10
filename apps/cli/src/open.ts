@@ -24,14 +24,17 @@ interface CatalogProject {
   name: string;
   slug: string;
   root: string;
+  identity?: string | null;
   copyOf?: string | null;
 }
 
-export async function openCommand(
-  api: string,
-  query: string,
-  tool: OpenTool,
-  ): Promise<number> {
+/**
+ * The one project the query names, or the exit code that says why there is none.
+ *
+ * Shared by `open` and `open --all`: the search, the "several matches" list and the "no match"
+ * hint are the same conversation, and having it twice would let one of the two drift.
+ */
+export async function resolve(api: string, query: string): Promise<CatalogProject | number> {
   let reply: Response;
   try {
     reply = await catalogFetch(new URL("/api/catalog", api));
@@ -76,7 +79,16 @@ export async function openCommand(
     return 1;
   }
 
-  const chosen = candidates[0]!;
+  return candidates[0]!;
+}
+
+export async function openCommand(
+  api: string,
+  query: string,
+  tool: OpenTool,
+  ): Promise<number> {
+  const chosen = await resolve(api, query);
+  if (typeof chosen === "number") return chosen;
 
   let opening: Response;
   try {
@@ -111,6 +123,73 @@ export async function openCommand(
       `      ${pc.dim(result.root ?? chosen.root)}\n\n`,
   );
   return 0;
+}
+
+/**
+ * `panoma open <project> --all` — the whole desk in one go.
+ *
+ * Same resolution as above, same door on the other side: `/api/open/all` runs the plan the owner
+ * saved on the project's page —links, terminal, editor, agent, in that order— and answers step by
+ * step. The terminal prints that answer as it is: what opened, what did not and why, and whether
+ * the plan was the saved one or the suggestion, because "the suggested set" is the line that
+ * tells someone the plan is still theirs to write.
+ */
+export async function openAllCommand(api: string, query: string): Promise<number> {
+  const chosen = await resolve(api, query);
+  if (typeof chosen === "number") return chosen;
+
+  let opening: Response;
+  try {
+    opening = await catalogFetch(new URL("/api/open/all", api), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: chosen.id, action: "run" }),
+    });
+  } catch {
+    return unreachable(api);
+  }
+
+  const result = (await opening.json().catch(() => ({}))) as {
+    ok?: boolean;
+    name?: string;
+    root?: string;
+    source?: "saved" | "picked" | "suggested";
+    opened?: number;
+    total?: number;
+    outcomes?: { key: string; name: string; ok: boolean; error?: string }[];
+    error?: string;
+    hint?: string;
+  };
+
+  if (!opening.ok || !result.ok) {
+    process.stderr.write(pc.red(`${result.error ?? opening.statusText}\n`));
+    if (result.hint) process.stderr.write(pc.dim(`${result.hint}\n`));
+    return 1;
+  }
+
+  const name = result.name ?? chosen.name;
+  const opened = result.opened ?? 0;
+  const total = result.total ?? 0;
+  const headline =
+    opened === 0
+      ? pc.red(say("open.allNothing", { name }))
+      : opened === total
+        ? pc.green(say("open.allOpened", { name }))
+        : pc.yellow(say("open.allPartial", { name, done: opened, n: total }));
+  process.stdout.write(`\n  ${headline}\n`);
+  process.stdout.write(`      ${pc.dim(result.root ?? chosen.root)}\n`);
+  for (const outcome of result.outcomes ?? []) {
+    process.stdout.write(
+      outcome.ok
+        ? `      ${pc.green("✓")} ${outcome.name}\n`
+        : `      ${pc.red("✗")} ${say("open.allStepFailed", { name: outcome.name, error: outcome.error ?? "" })}\n`,
+    );
+  }
+  if (result.source === "suggested") {
+    process.stdout.write(`\n  ${pc.dim(say("open.allSuggested"))}\n`);
+  }
+  process.stdout.write("\n");
+  return opened === 0 ? 1 : 0;
 }
 
 /**

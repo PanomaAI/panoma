@@ -55,7 +55,7 @@ este repositorio lleva el producto, no la hoja de cálculo.
 despacho de propuestas.
 
 - [x] Motor de detección: npm, pub/Flutter, PyPI, Go, Cargo, RubyGems, Composer
-- [x] ~70 reglas de identificación de tecnologías con rastro de evidencia
+- [x] 83 reglas de identificación de tecnologías con rastro de evidencia
 - [x] Estadísticas de lenguajes, detección de icono, objetivos de distribución
 - [x] Puntuación de salud
 - [x] Atribución de agentes de IA vía trailers de git
@@ -84,7 +84,12 @@ despacho de propuestas.
 - [x] El canal de agentes, endurecido: toda puerta con su guarda, la clave en 0600 y el texto ajeno que no puede salirse de su bloque (docs/mcp-security.md)
 - [x] El .md de los agentes: linter contra el disco real, bloque que se cuida solo, quién tocó el fichero, los heredados de arriba y la opinión del modelo (docs/agents-md.md)
 - [x] Memoria curada por proyecto: los agentes proponen hechos durables, tú apruebas, y lo aprobado llega al primer turno de todos — con presupuesto que se niega a compactar (docs/memory.md)
-- [ ] Ejecución en contenedor efímero o CI (hoy: git worktree local)
+- [x] Apps oficiales opcionales, con su propia pantalla: manifiesto validado, versiones que se activan y se revierten, y cada trabajo en un proceso aparte (docs/apps.md)
+- [x] panoma video, la primera app: añade una pantalla de producción a cada proyecto y un botón «Crear vídeo» en la cabecera; su paquete todavía no está en npm, así que hoy no hay nada que esa pantalla pueda instalar
+- [x] Pantalla de gasto: cada llamada al modelo queda anotada, con un tope diario para cada una de las ocho familias, que puedes subir, bajar, poner a cero para apagar esa familia o dejar como viene de fábrica (docs/budgets.md)
+- [x] El puente: los cuatro pasos de la puesta en marcha —catálogo, modelo, agente y registro automático—, uno cada vez, separados de lo que los agentes ya han anotado
+- [x] Ejecución en contenedor efímero: el nivel `container`, con docker, podman, nerdctl o finch, que baja a `hardened` y dice por qué cuando no hay ninguno (docs/run-and-isolation.md)
+- [ ] Ejecución en CI
 - [ ] Notificaciones
 - [ ] Maven/Gradle y NuGet (vía Syft)
 
@@ -107,7 +112,8 @@ npx panoma scan ~/Desktop
 ## Montarlo desde el código
 
 Hacen falta **Node 22 o superior** y **pnpm**. El suelo es la 22 porque es lo que el CI
-mide de verdad: la matriz corre la 22 y la última en los tres sistemas.
+mide de verdad: en cada push corre sobre Linux con las versiones 22 y 26; Windows entra una
+vez por semana y cuando se pide a mano, y macOS solo si se pide.
 
 ```bash
 pnpm install
@@ -194,8 +200,10 @@ pnpm exec tsx apps/cli/src/index.ts agent-key "Claude Code"
 
 Imprime la clave y el bloque MCP listo para pegar; con `--install` lo escribe él, en el
 fichero que ese agente lee de verdad —`.mcp.json` del proyecto para Claude Code,
-`.cursor/mcp.json` para Cursor— y cuando el formato no es fusionable, como el TOML de
-Codex, lo dice y no toca nada. Desde la aplicación es un botón: **Agentes → Conectar**.
+`.cursor/mcp.json` para Cursor, `~/.gemini/settings.json` para Gemini CLI. Para Codex
+fusiona la tabla `[mcp_servers.panoma]` dentro de `~/.codex/config.toml`, en su sitio y sin
+tocar el resto; y cuando no puede prometer que deja ese fichero como estaba, lo dice y no
+escribe nada. Desde la aplicación es un botón: **Agentes → Conectar**.
 
 Ese fichero lleva la clave en claro, así que se escribe en 0600 y panoma avisa si git se
 lo llevaría. Qué protege cada puerta del canal —y qué no protege ninguna— está en
@@ -205,10 +213,10 @@ Hay que reiniciar el agente después. A partir de ahí dispone de nueve herramie
 
 | Herramienta | Para qué |
 |---|---|
-| `panoma_context` | el parte: pila, dependencias atrasadas, vulnerabilidades, tareas y qué hicieron otros agentes |
+| `panoma_context` | el parte: pila, dependencias atrasadas, vulnerabilidades, tareas y qué hicieron otros agentes. Con `files`, las reglas fijadas a esas rutas; con `task`, las reglas y decisiones cuyas palabras se solapan con lo que vas a hacer |
 | `panoma_log` | registrar un cambio, una decisión o un bloqueo |
 | `panoma_remember` | **proponer** un hecho durable para la memoria del proyecto. No se sirve a nadie hasta que lo apruebas tú |
-| `panoma_recall` | buscar en la bitácora entera, no solo en la ventana reciente |
+| `panoma_recall` | buscar en la bitácora entera, página a página, y abrir cualquier entrada completa |
 | `panoma_ask` | dejarle una pregunta de criterio a tu doble en vez de interrumpirte |
 | `panoma_tasks` | ver la cola del proyecto, abierta y cerrada |
 | `panoma_create_task` | anotar deuda técnica sin salirse de lo que está haciendo |
@@ -296,6 +304,15 @@ packages/mcp/      servidor MCP — el puente con los agentes
   format.ts        respuestas en texto legible para un modelo
   index.ts         definición de las nueve herramientas
 
+packages/apps/     gestor de las apps oficiales opcionales
+  manifest.ts      el manifiesto de una app, validado antes de activarla
+  official.ts      las apps que esta versión puede instalar
+  registry.ts      la versión publicada en npm, cacheada un día
+  manager.ts       instalar, activar, revertir, desinstalar y sondear requisitos
+  process.ts       encuentra npm y lo ejecuta sin shell, descendientes incluidos
+  layout.ts        dónde vive cada app y su trabajo bajo ~/.panoma
+  environment.ts   las variables que hereda una app, y ninguna más
+
 apps/cli/          CLI: scan, enrich, disk, search, secrets, run, ai
 apps/web/          catálogo web (Next.js 15) — solo local, nunca se despliega
 apps/site/         el sitio público: la landing y /docs (Next.js 15)
@@ -366,10 +383,12 @@ lanza. Por eso hay tres niveles, y cada ejecución guarda con cuál corrió:
 | nivel | protege | coste |
 |---|---|---|
 | `local` | nada más que los cambios | ninguno |
-| `hardened` *(por defecto)* | credenciales y el resto de tu disco | instalaciones más lentas |
-| `container` | además red, procesos y recursos | necesita Docker o Podman |
+| `hardened` | credenciales y, en macOS, tu carpeta personal | instalaciones más lentas |
+| `container` *(por defecto cuando hay runtime)* | además la red, el resto del disco, los procesos y los recursos | necesita docker, podman, nerdctl o finch |
 
-Medido con un script que imita a un `postinstall` hostil, no supuesto:
+Medido en macOS con un script que imita a un `postinstall` hostil, no supuesto. `hardened`
+cierra tu carpeta personal con `sandbox-exec`, que solo existe ahí: en Linux y en Windows se
+queda en limpiar el entorno, y lo dice en vez de prometer lo mismo en todas partes:
 
 | | secretos en el entorno | lee `~/.ssh` | ve el resto de tu disco | red en los tests |
 |---|---|---|---|---|

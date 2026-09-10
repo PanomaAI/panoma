@@ -15,13 +15,13 @@ import { expandTilde,
   type ProjectFamily,
 } from "@panoma/core";
 import { parseArgs } from "./args";
-import { openCommand, type OpenTool } from "./open";
+import { openAllCommand, openCommand, type OpenTool } from "./open";
 import { hooksCommand } from "./hooks";
 import { signalCommand } from "./signal";
 import { entryCommand, todayCommand } from "./today";
 import { helpText } from "./lang";
 import { plural, say, type MessageKey } from "./messages";
-import { mcpEntry, installFor } from "./mcp";
+import { mcpEntry, mcpServerPath, installFor } from "./mcp";
 import { panomaCommand } from "./environment";
 import { installSafeOutput } from "./safe-output";
 import { renderFamilies, renderGrid, renderProject } from "./render";
@@ -97,6 +97,14 @@ async function main(): Promise<number> {
   if (command === undefined) return conAviso(await entryCommand(parsed.api));
 
   if (command === "today") return todayCommand(parsed.api);
+  if (command === "apps") {
+    const { appsCommand } = await import("./apps");
+    return appsCommand(parsed);
+  }
+  if (command === "video") {
+    const { videoCommand } = await import("./video");
+    return videoCommand(parsed);
+  }
 
   /*
     `next` is attached to `today` because they are the same morning split in two: one tells what
@@ -132,6 +140,7 @@ async function main(): Promise<number> {
       process.stderr.write(pc.red(`${say("usage.open")}\n`));
       return 1;
     }
+    if (parsed.all) return openAllCommand(parsed.api, query);
     const tool: OpenTool = parsed.folder
       ? "folder"
       : parsed.terminal
@@ -205,7 +214,7 @@ async function main(): Promise<number> {
       expandTilde(parsed.positionals[2] ?? "."),
     );
     const { mdCommand } = await import("./md-command");
-    return mdCommand(parsed.positionals[1], target, parsed.api);
+    return mdCommand(parsed.positionals[1], target, parsed.api, { force: parsed.force });
   }
 
   if (command === "disk") return reportDisk(parsed.api);
@@ -218,7 +227,7 @@ async function main(): Promise<number> {
       process.stderr.write(pc.red(`${say("usage.describe")}\n`));
       return 1;
     }
-    return describeProject(parsed.api, slug);
+    return describeProject(parsed.api, slug, parsed.force);
   }
 
   if (command === "search") {
@@ -261,6 +270,27 @@ async function main(): Promise<number> {
   if (command === "twin") {
     const { twinCommand } = await import("./twin-command");
     return twinCommand(parsed);
+  }
+
+  /*
+    `memory` sits next to `md` and `twin` and, for now, has one subcommand: `export <project>`,
+    the memory of a project carried out of the catalog as one versioned JSON file. Loaded lazily
+    like them: whoever types `panoma` in the morning does not pay for a module they will not use.
+    Only the English name, for the same reason as `twin`. See the header of `memory-command.ts`.
+   */
+  if (command === "memory") {
+    const { memoryCommand } = await import("./memory-command");
+    return memoryCommand(parsed);
+  }
+
+  /*
+    `spend` reads what the models cost and who holds each organ back, and decides nothing: the
+    caps and the rates are written on the `/spend` screen, which the last line names. Lazy for the
+    same reason as `twin` and `memory`, and read-only through HTTP like `north` and `disk`.
+   */
+  if (command === "spend") {
+    const { spendCommand } = await import("./spend-command");
+    return spendCommand(parsed);
   }
 
   /*
@@ -806,21 +836,33 @@ async function reportSecrets(api: string): Promise<number> {
  * without being based on a verifiable fact, and mixing it with the rest without saying so would be
  * exactly what this tool promises not to do.
  */
-async function describeProject(api: string, slug: string): Promise<number> {
+async function describeProject(api: string, slug: string, force: boolean): Promise<number> {
   process.stderr.write(pc.dim(`${say("describe.reading", { slug })}\n`));
 
+  /*
+    Without `--force` the route answers an unchanged project from the saved paragraph and pays
+    nothing; `--force` asks the model again even then. The paragraph is the same either way — what
+    differs is the receipt, and the terminal says which one it got.
+   */
   let response: Response;
   try {
     response = await catalogFetch(new URL("/api/describe", api), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ slug }),
+      body: JSON.stringify(force ? { slug, force: true } : { slug }),
     });
   } catch {
     return unreachable(api);
   }
 
-  const result = (await response.json()) as { text?: string; model?: string; error?: string; hint?: string };
+  const result = (await response.json()) as {
+    text?: string;
+    model?: string;
+    cached?: boolean;
+    saved?: boolean;
+    error?: string;
+    hint?: string;
+  };
   if (!response.ok || !result.text) {
     process.stderr.write(pc.red(`${result.error ?? response.statusText}\n`));
     if (result.hint) process.stderr.write(pc.dim(`${result.hint}\n`));
@@ -832,6 +874,8 @@ async function describeProject(api: string, slug: string): Promise<number> {
     ? `\n${pc.dim(`  ${say("describe.writtenBy", { model: result.model })}`)}\n`
     : "";
   process.stdout.write(`\n${wrap(result.text, 78, "  ")}\n${signature}\n`);
+  if (result.cached) process.stderr.write(pc.dim(`  ${say("describe.cached")}\n`));
+  if (result.saved === false) process.stderr.write(pc.dim(`  ${say("describe.unsaved")}\n`));
   return 0;
 }
 
@@ -939,6 +983,18 @@ async function createAgentKey(api: string, name: string, install: boolean): Prom
     }
   }
 
+  /*
+    And the same order, for the same reason, when this copy carries no server at all.
+    There is no third road to offer: `@panoma/mcp` is private and never published, so there is no
+    configuration this command could write or print that would start anything. Issuing the key
+    anyway would leave exactly the row the paragraph above exists to prevent — an agent the bridge
+    counts as connected, with nothing on the other end.
+   */
+  if (!mcpServerPath()) {
+    process.stderr.write(`\n  ${pc.yellow(say("mcp.noServer"))}\n\n`);
+    return 1;
+  }
+
   let response: Response;
   try {
     response = await catalogFetch(new URL("/api/agent/keys", api), {
@@ -970,7 +1026,7 @@ async function createAgentKey(api: string, name: string, install: boolean): Prom
 
   const kind = guessAgentKind(name);
 
-  if (install) {
+  if (entry && install) {
     const done = await installFor(kind, entry, process.cwd());
 
     if (done.wrote) {
@@ -1014,7 +1070,7 @@ async function createAgentKey(api: string, name: string, install: boolean): Prom
     }
     lines.push("");
     lines.push(`  ${pc.dim(say("mcp.restart", { name }))}`);
-  } else {
+  } else if (entry) {
     const config = JSON.stringify({ mcpServers: { panoma: entry } }, null, 2);
     lines.push(`  ${pc.bold(say("mcp.configTitle"))}`);
     lines.push(

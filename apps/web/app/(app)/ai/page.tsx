@@ -1,5 +1,6 @@
 import { getLocale, t } from "@/lib/i18n";
 import { AiPanel } from "@/components/ai-panel";
+import { PageShell } from "@/components/page-shell";
 
 export const dynamic = "force-dynamic";
 
@@ -36,18 +37,19 @@ export default async function AiPage() {
   const locale = await getLocale();
 
   return (
-    <main id="app-main" tabIndex={-1} className="app-main legacy-page">
-      <section className="pt-12">
-        <p className="eyebrow">{t(locale, "nav.ai")}</p>
-        <h1 className="mt-2 font-display text-4xl font-semibold tracking-tight">
-          {t(locale, "ai.title")}
-        </h1>
-        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-smoke">
-          {t(locale, "ai.intro")}
-        </p>
-      </section>
-
+    <PageShell
+      eyebrow={t(locale, "nav.ai")}
+      title={t(locale, "ai.title")}
+      lead={t(locale, "ai.intro")}
+    >
+      {/*
+         The panel keeps the gap it already declared, and there is no `PageSection` around it.
+         It is a client component with five mutually exclusive branches —loading, load failed,
+         remote catalog, unreadable file, and the real panel— and all five open with the same
+         `mt-10`. The space above it is the panel's; a section here would put a second one on top
+         of it and only on this screen.
+        */}
       <AiPanel />
-    </main>
+    </PageShell>
   );
 }

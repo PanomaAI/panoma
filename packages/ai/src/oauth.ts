@@ -162,11 +162,31 @@ export function awaitCallback(provider: Provider, challenge: Challenge): Promise
   });
 }
 
+/*
+  The one page this package paints, and the one color literal the repository allows outside its
+  stylesheet.
+
+  It cannot be imported from anywhere. `docs/architecture.md` is explicit that nothing depends on
+  `apps/web` — the arrow towards the server is always HTTP, never an `import` — and this package
+  depends on `@panoma/core` alone. Moving a color into the engine to share it would put a piece of
+  the interface in the one package whose definition is that it only reads the disk, which is a
+  worse trade than the copy.
+
+  So the copy stays, and what changed is that it is now WATCHED. `apps/web/lib/theme-values.test.ts`
+  reads this file as text, pulls the hex out of the `style` attribute below, and fails when it stops
+  equalling `--color-chalk` in `apps/web/app/styles/theme.css`. Reading across the border is not
+  importing across it: `apps/web` already depends on this package, so the direction holds.
+
+  That guard is not hypothetical. This value was `#141722` — chalk as it was before the palette went
+  neutral on 8-Sep-2026 — and it stayed that way after the token moved to `#171717`, because a
+  hand-copied color has no way of finding out. It was the only stale color in the product, and it
+  was stale in the page a person sees at the end of signing in.
+ */
 function respond(response: import("node:http").ServerResponse, status: number, text: string) {
   response.writeHead(status, { "content-type": "text/html; charset=utf-8" });
   response.end(
     `<!doctype html><meta charset="utf-8"><title>Panoma</title>` +
-      `<body style="font:15px system-ui;padding:3rem;color:#141722">${text}</body>`,
+      `<body style="font:15px system-ui;padding:3rem;color:#171717">${text}</body>`,
   );
 }
 

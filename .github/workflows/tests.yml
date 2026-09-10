@@ -5,11 +5,18 @@ name: Tests
 # That leaves ten code branches never executed —`platform() !== "darwin"` in five web routes, the
 # disk calculation without `du` of Windows, the macOS sandbox of the executor— and leaves them
 # unexecuted until someone installs Panoma on another system and writes to report it. An array of
-# three systems costs nothing and runs on every push.
+# three systems answers that, and it does not run on every push any more.
+#
+# It did, and the sentence that used to stand here said it "costs nothing". That is not true of a
+# private repository, where Actions minutes are metered and a monthly allowance is finite — and it
+# is least true of macOS. The split below is by what each system is actually for; the note in the
+# matrix has the arithmetic.
 #
 # `windows-latest` is here on purpose even though the product is developed on macOS: it is the
 # system where the most things are taken for granted —paths with slashes, `du`, the binaries of
-# PATH— and where no one here is going to test by hand.
+# PATH— and where no one here is going to test by hand. That is also why it is the one that still
+# runs weekly, while macOS waits to be asked: this is written on a Mac, so a Mac is already tested
+# every time somebody types `pnpm test`.
 #
 # And for the same reason, there are two versions of Node and not just one. The `engines` from the
 # root says `">=22"`, and these two are its two extremes: **22 is the promised floor** and the last
@@ -27,6 +34,17 @@ on:
   push:
     branches: [main, master]
   pull_request:
+  # The other two systems, when you ask for them. See the note above `plataformas`.
+  workflow_dispatch:
+    inputs:
+      macos:
+        description: "Also run on macOS. It bills at ten times Linux, and Panoma is developed on one, so every local `pnpm test` is already a macOS run."
+        type: boolean
+        default: false
+  # And once a week without asking: a platform bug found on Monday is cheaper than the
+  # same one found the day a release goes out.
+  schedule:
+    - cron: "0 6 * * 1"
 
 permissions:
   contents: read
@@ -45,7 +63,22 @@ jobs:
       # With the default cut, the first red hides the rest and you have to guess.
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # Linux on every push; the other two on a schedule and on demand, in `plataformas`
+        # below. This used to be all three here, and it is what the minutes went on.
+        #
+        # GitHub's published rates: Linux 2-core $0.006 a minute, Windows $0.010, macOS
+        # $0.062 — macOS is ten times Linux. A plan's included Actions minutes are quoted at
+        # the Linux rate, so an allowance of 3,000 minutes is about 290 macOS minutes and no
+        # more. Six jobs per push, four of them the expensive kind, empties that inside a
+        # month of ordinary work, and the message a runner then gives talks about spending
+        # limits without saying a word about what spent them.
+        #
+        # The three-system matrix is right; running it on every commit was not. Windows and
+        # Linux is where the platform bugs have actually been found — the four Windows-only
+        # failures this project's own history records, and every one of the fourteen a
+        # sibling project found the first time it ran there. macOS has found none, and
+        # cannot find many: it is the machine this is written on.
+        os: [ubuntu-latest]
         node: [22, 26]
 
     # Bash on all three, also on Windows: the runners come with it, and that way a quotation mark
@@ -80,6 +113,38 @@ jobs:
 
       - run: pnpm -r typecheck
 
+      - run: pnpm test
+
+  # ── The other two systems: weekly, or when you ask ───────────────────────────────────
+  #
+  # Same steps as `pruebas`, on the systems nobody here develops on. Windows by default,
+  # macOS only when the dispatch input asks for it.
+  plataformas:
+    name: ${{ matrix.os }} · node ${{ matrix.node }}
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ github.event.inputs.macos == 'true' && fromJSON('["windows-latest", "macos-latest"]') || fromJSON('["windows-latest"]') }}
+        node: [22, 26]
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter "./packages/*" build
+      - run: pnpm lint
+      - run: pnpm -r typecheck
       - run: pnpm test
 
   # ── And compile the website, which is the product ────────────────────────────────────

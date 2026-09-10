@@ -6,40 +6,86 @@
   deleting this block would leave half a page without color.
  */
 /*
-  The project catalog.
-  Ink on paper. The purple of the brand was removed from this entire screen —selection, buttons,
-  links, badges— and the color that remains is the one that means something: the health of each
-  project, the status dot, and the brand icons of each technology, which is how you recognize a
-  stack without reading it. Everything else is four shades of gray and a line.
-  The shadows are one pixel of drop and two of blur, and there are none wider. A card that hovers
-  over a twenty-pixel halo draws attention to itself; here what has to stand out is the row you
-  have chosen, and for that a background is enough.
+  The interface uses ink, paper and neutral grays. Semantic color is reserved for health,
+  activity and notices; project and technology assets retain their brand colors. Scores and
+  accessible labels preserve the meaning without relying on color alone. Secondary text uses
+  the existing readable sheet tokens without changing the palettes of other screens.
+ */
+/*
+  Eleven declarations lived here and ten of them said what `:root` now says. What is left is the
+  one thing this screen genuinely means differently, and the band it paints.
+  `--paper` is the difference, and it is worth the two lines. Everywhere else in the application
+  `--paper` is the ground a screen sits on; here it is the card that lifts off it, and the ground
+  is painted separately below. Thirty rules read that name and they do not all mean the same
+  thing by it — which is why `--page` and `--card` exist now and say it without ambiguity. This
+  alias stays until those thirty have been read one at a time; see `docs/theme.md`, D5.
  */
 .catalog-screen {
-  --ink: var(--color-ink-catalog);
-  --ink-2: var(--color-ink-muted-catalog);
-  --ink-3: var(--color-ink-faint-catalog);
-  --paper: var(--color-surface);
-  --line: var(--color-line-catalog);
-  --line-strong: var(--color-line-strong-catalog);
-  --wash: var(--color-wash-catalog);
-  --select: var(--color-selected);
-  --good: var(--color-success);
-  --warn: var(--color-warn);
-  --bad: var(--color-danger-ink-deep);
-  background: var(--color-paper-catalog);
+  --paper: var(--card);
+  background: var(--page);
 }
 
 /* The same width as the part of the day, so that the two bands align. */
 .catalog-screen__inner {
   width: min(100% - 64px, 1240px);
   margin: 0 auto;
-  padding: 30px 0 88px;
+  padding: var(--space-14) 0 var(--page-foot);
 }
 
 /* The purple focus stripe goes out here: on this screen the emphasis is the ink. */
 .catalog-screen :focus-visible {
   outline-color: var(--ink);
+}
+
+/* A compact catalog breakdown keeps the side rail dedicated to navigation. */
+.catalog-overview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-6) var(--space-10);
+  margin: calc(var(--space-2) * -1) 0 var(--space-10);
+  color: var(--ink-2);
+  font-size: var(--type-xs);
+  line-height: var(--lead-snug);
+}
+
+.catalog-overview dl {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-10);
+  margin: 0;
+}
+
+.catalog-overview__item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.catalog-overview dt::first-letter {
+  text-transform: uppercase;
+}
+
+.catalog-overview dd {
+  margin: 0;
+  color: var(--ink);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.catalog-overview [data-tone="live"] dd {
+  color: var(--color-success-ink);
+}
+
+.catalog-overview [data-tone="paused"] dd {
+  color: var(--color-warn-ink);
+}
+
+/* These figures are excluded from the four states and the catalog total. */
+.catalog-overview__aside {
+  padding-left: var(--space-10);
+  border-left: 1px solid var(--line-strong);
 }
 
 /*
@@ -51,21 +97,27 @@
   line, and who and what with one click.
  */
 .brief {
-  margin-bottom: 14px;
+  margin-bottom: var(--space-7);
 }
 
+/*
+  The report line and its drawer round at `--corner`. They were 9px while the toolbar below them
+  was 10px and the dashed empty frame 11px: three panels in one viewport, three corners, and a
+  child rounder than the surface it sits in. One step now; the split-corner forms keep their
+  shape and take a token per corner. See `docs/theme.md`, D8.
+ */
 .brief__line {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-5);
   width: 100%;
   min-height: 38px;
-  padding: 0 10px 0 12px;
+  padding: 0 var(--space-5) 0 var(--space-6);
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--corner);
   background: var(--paper);
   color: var(--ink-2);
-  font-size: 0.76rem;
+  font-size: var(--type-xs);
   text-align: left;
   cursor: pointer;
   transition: background-color var(--duration-fast) ease, border-color var(--duration-fast) ease;
@@ -86,22 +138,21 @@
 .brief__line strong {
   flex: none;
   color: var(--ink);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 
 .brief__facts {
   display: flex;
   align-items: center;
-  gap: 8px;
-  overflow: hidden;
+  gap: var(--space-4);
+  flex-wrap: wrap;
   min-width: 0;
   flex: 1;
-  white-space: nowrap;
 }
 
 .brief__facts > span + span::before {
   content: "·";
-  margin-right: 8px;
+  margin-right: var(--space-4);
   color: var(--ink-3);
 }
 
@@ -111,13 +162,13 @@
  */
 .brief__decision {
   color: var(--ink);
-  font-weight: 570;
+  font-weight: var(--weight-strong);
 }
 
 .brief__when {
   flex: none;
   color: var(--ink-3);
-  font-size: 0.71rem;
+  font-size: var(--type-2xs);
 }
 
 .brief__arrow {
@@ -133,50 +184,28 @@
 }
 
 .brief__line[aria-expanded="true"] {
-  border-radius: 9px 9px 0 0;
+  border-radius: var(--corner) var(--corner) 0 0;
   border-bottom-color: transparent;
   background: var(--wash);
 }
 
 .brief__detail {
-  padding: 13px 14px;
+  padding: var(--space-7);
   border: 1px solid var(--line);
   border-top: 0;
-  border-radius: 0 0 9px 9px;
+  border-radius: 0 0 var(--corner) var(--corner);
   background: var(--paper);
 }
 
-/* No news: a line without a box. An empty stripe every morning teaches to ignore it. */
-.brief--quiet {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 14px;
-  padding: 0 2px;
-  color: var(--ink-3);
-  font-size: 0.74rem;
-}
-
-.brief--quiet svg {
-  width: 14px;
-  height: 14px;
-  flex: none;
-}
-
-/*
-  The watcher's notice: the same anatomy as 'no news' —a line, an icon, no box— but in the color
-  of what is going wrong. It comes out just below the report because it is the report that stops
-  being reliable when the watcher is not there.
- */
 /* The way back from what has just been set aside: it is read, it does not alarm. */
 .brief--dismissed {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 14px;
-  padding: 0 2px;
+  gap: var(--space-4);
+  margin-bottom: var(--space-7);
+  padding: 0 var(--space-1);
   color: var(--color-smoke);
-  font-size: 0.74rem;
+  font-size: var(--type-xs);
 }
 
 .brief--dismissed svg {
@@ -188,7 +217,7 @@
 .brief--dismissed button,
 .brief--dismissed a {
   color: var(--color-accent);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -198,55 +227,39 @@
   text-decoration: none;
 }
 
-.brief--alert {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 14px;
-  padding: 0 2px;
-  color: var(--bad);
-  font-size: 0.74rem;
-}
-
-.brief--alert svg {
-  width: 14px;
-  height: 14px;
-  flex: none;
-}
-
 .brief__decisions {
-  margin-bottom: 12px;
-  padding: 10px 12px;
+  margin-bottom: var(--space-6);
+  padding: var(--space-5) var(--space-6);
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--color-paper-sheet);
+  border-radius: var(--corner);
+  background: var(--color-ground);
 }
 
 .brief__label {
-  margin-bottom: 7px;
+  margin-bottom: var(--space-4);
   color: var(--ink);
-  font-size: 0.63rem;
-  font-weight: 620;
-  letter-spacing: 0.08em;
+  font-size: var(--type-3xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--track-caps);
   text-transform: uppercase;
 }
 
 .brief__decisions ul {
   display: grid;
-  gap: 6px;
+  gap: var(--space-3);
 }
 
 .brief__decisions li {
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
-  gap: 7px;
-  font-size: 0.78rem;
+  gap: var(--space-4);
+  font-size: var(--type-xs);
 }
 
 .brief__decisions li > a {
   color: var(--ink);
-  font-weight: 570;
+  font-weight: var(--weight-strong);
 }
 
 .brief__decisions li > a:hover {
@@ -259,18 +272,18 @@
 
 /* How many attempts are there of the same package. It only appears when there is more than one. */
 .brief__attempts {
-  padding: 1px 6px;
-  border-radius: 999px;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--corner-pill);
   background: var(--select);
   color: var(--ink-2);
-  font-size: 0.65rem;
-  font-weight: 560;
+  font-size: var(--type-3xs);
+  font-weight: var(--weight-strong);
   font-variant-numeric: tabular-nums;
 }
 
 .brief__meta {
   color: var(--ink-3);
-  font-size: 0.71rem;
+  font-size: var(--type-2xs);
 }
 
 .brief__projects {
@@ -281,8 +294,8 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
-  padding: 9px 0;
+  gap: var(--space-8);
+  padding: var(--space-5) 0;
 }
 
 .brief__projects li + li {
@@ -295,8 +308,8 @@
 
 .brief__projects li a {
   color: var(--ink);
-  font-size: 0.8rem;
-  font-weight: 570;
+  font-size: var(--type-xs);
+  font-weight: var(--weight-strong);
 }
 
 .brief__projects li a:hover {
@@ -305,26 +318,26 @@
 
 .brief__subject {
   overflow: hidden;
-  margin-top: 2px;
+  margin-top: var(--space-1);
   color: var(--ink-2);
-  font-size: 0.76rem;
+  font-size: var(--type-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .brief__agent {
-  margin-left: 6px;
-  padding: 1px 6px;
-  border-radius: 4px;
+  margin-left: var(--space-3);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--corner-xs);
   background: var(--select);
-  font-size: 0.66rem;
-  font-weight: 550;
+  font-size: var(--type-2xs);
+  font-weight: var(--weight-strong);
 }
 
 .brief__born {
-  margin-top: 11px;
+  margin-top: var(--space-6);
   color: var(--ink-3);
-  font-size: 0.72rem;
+  font-size: var(--type-xs);
 }
 
 .brief__born a {
@@ -335,49 +348,52 @@
   text-decoration: underline;
 }
 
-/*
-  The header.
-  It was a 2.3rem headline with a subtitle —«Discover what you have built»— above everything else.
-  A catalog that opens every morning doesn’t need to be told what each morning is: the name in
-  interface size and the number of projects say the same thing in one line, and what was gained
-  are two hundred pixels of list above the fold.
- */
+/* The heading owns catalog management; the toolbar below owns the current view. */
 .catalog-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 24px;
-  padding-bottom: 14px;
+  flex-wrap: wrap;
+  gap: var(--space-9) var(--space-12);
+  padding: var(--space-4) 0 var(--space-12);
+}
+
+.catalog-bar__heading {
+  min-width: 0;
+}
+
+.catalog-bar__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-6);
 }
 
 .catalog-bar h1 {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
   color: var(--ink);
-  font-size: 1.02rem;
-  font-weight: 660;
-  letter-spacing: -0.022em;
+  font-size: var(--type-title);
+  font-weight: var(--weight-title);
+  line-height: var(--lead-tight);
+  letter-spacing: var(--track-hero);
 }
 
-.catalog-bar h1 span {
-  color: var(--ink-3);
-  font-size: 0.78rem;
-  font-weight: 450;
+.catalog-count {
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--corner);
+  background: var(--paper);
+  color: var(--ink-2);
+  font-size: var(--type-xs);
+  font-weight: var(--weight-medium);
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0;
+  letter-spacing: var(--track-flat);
 }
 
 .catalog-bar__tools {
   display: flex;
   align-items: center;
-  gap: 12px;
-}
-
-/* Double click is not discovered by itself on a website: it is said, in small and once. */
-.catalog-hint {
-  color: var(--ink-3);
-  font-size: 0.7rem;
+  flex-wrap: nowrap;
+  gap: var(--space-4);
 }
 
 /*
@@ -386,13 +402,14 @@
   global `:focus-visible`, and on this screen it appears in ink (19.18:1 on paper).
  */
 .catalog-sort select {
-  height: 32px;
-  padding: 0 26px 0 10px;
+  height: 38px;
+  max-width: 100%;
+  padding: 0 26px 0 var(--space-6);
   border: 1px solid var(--line-strong);
-  border-radius: 7px;
+  border-radius: var(--corner);
   background: var(--paper);
   color: var(--ink-2);
-  font-size: 0.73rem;
+  font-size: var(--type-xs);
   cursor: pointer;
   transition: border-color var(--duration-fast) ease;
 }
@@ -403,23 +420,28 @@
 
 .view-switch {
   display: flex;
-  gap: 2px;
-  padding: 2px;
+  gap: var(--space-1);
+  padding: var(--space-1);
   border: 1px solid var(--line-strong);
-  border-radius: 7px;
+  border-radius: var(--corner);
   background: var(--paper);
 }
 
 .view-switch button {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  min-width: 34px;
+  height: 32px;
+  padding: 0 var(--space-5);
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--corner-xs);
   background: transparent;
   color: var(--ink-3);
   cursor: pointer;
+  font-size: var(--type-xs);
+  font-weight: var(--weight-medium);
   transition: background-color var(--duration-fast) ease, color var(--duration-fast) ease;
 }
 
@@ -437,34 +459,64 @@
   height: 15px;
 }
 
-/*
-  The filters lose the box.
-  Ten pills with borders and backgrounds are ten rectangles competing for the same attention as
-  the list below. Without a border, they are ten words, and the chosen one is seen because it is
-  the only one in negative. The counter only appears where it counts something: attention and
-  favorites.
- */
+/* Filtering and view controls share one clearly labelled toolbar. */
+.catalog-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-7) var(--space-10);
+  padding: var(--space-7);
+  border: 1px solid var(--line);
+  border-radius: var(--corner);
+  background: var(--paper);
+}
+
+.catalog-toolbar__heading {
+  grid-column: 1;
+  grid-row: 1;
+  color: var(--ink);
+  font-size: var(--type-xs);
+  font-weight: var(--weight-semibold);
+}
+
+.catalog-toolbar__heading p {
+  margin-top: var(--space-2);
+  color: var(--ink-2);
+  font-size: var(--type-xs);
+  font-weight: var(--weight-regular);
+  line-height: var(--lead-snug);
+}
+
 .catalog-filters {
+  grid-column: 1 / -1;
+  grid-row: 2;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 2px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--line);
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.catalog-view-tools {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
 }
 
 .catalog-filters button {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  min-height: 28px;
-  padding: 0 10px;
+  gap: var(--space-3);
+  min-height: 36px;
+  padding: 0 var(--space-6);
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--corner);
   background: transparent;
   color: var(--ink-2);
-  font-size: 0.74rem;
-  font-weight: 510;
+  font-size: var(--type-xs);
+  font-weight: var(--weight-medium);
   cursor: pointer;
   transition: background-color var(--duration-fast) ease, color var(--duration-fast) ease;
 }
@@ -481,79 +533,179 @@
 
 .catalog-filters button span {
   color: var(--ink-3);
-  font-size: 0.68rem;
+  font-size: var(--type-2xs);
   font-variant-numeric: tabular-nums;
 }
 
 .catalog-filters button.is-active span {
-  color: var(--color-on-ink-muted);
+  color: var(--color-on-ink);
 }
 
-/*
-  Resume, in one line.
-  Before this was a 316 px card with the icon at showcase size, five metrics, and two buttons, and
-  it said one thing: yesterday you were here. Now it says it in 52 px and without losing anything
-  — the name, the phrase from the last commit, and the button that returns to the editor.
- */
-.resume-strip {
+.catalog-filter-state {
   display: flex;
   align-items: center;
-  gap: 12px;
-  min-height: 52px;
-  margin-top: 16px;
-  padding: 8px 10px 8px 14px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--paper);
-  box-shadow: var(--shadow-lift);
+  justify-content: space-between;
+  gap: var(--space-6);
+  padding-top: var(--space-6);
+  color: var(--ink-2);
+  font-size: var(--type-xs);
 }
 
-.resume-strip > svg {
+.catalog-filter-state p {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.catalog-filter-state button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: none;
+  min-height: 32px;
+  padding: 0 var(--space-4);
+  border-radius: var(--corner);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.catalog-filter-state button:hover {
+  background: var(--wash);
+}
+
+.catalog-filter-state svg {
+  width: 14px;
+  height: 14px;
+}
+
+.catalog-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.catalog-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  min-height: 38px;
+  padding: var(--space-4) var(--space-6);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--corner);
+  background: var(--paper);
+  color: var(--ink-2);
+  font-size: var(--type-xs);
+  cursor: pointer;
+}
+
+.catalog-actions button:hover,
+.catalog-actions button[aria-pressed="true"] {
+  border-color: var(--ink-3);
+  background: var(--wash);
+  color: var(--ink);
+}
+
+.catalog-actions svg {
   width: 16px;
   height: 16px;
   flex: none;
-  color: var(--ink-3);
 }
 
-.resume-strip p {
+.catalog-sort {
   display: flex;
-  align-items: baseline;
-  gap: 10px;
-  min-width: 0;
-  flex: 1;
-}
-
-/*
-  The name is truncated before the commit message is consumed.
-  With `flex: none` not yielding a single pixel, a long name pushed the subject of the last commit
-  down to nothing — and the subject is exactly what answers 'what was I doing?'. Now neither of
-  them goes past its halfway point and both end with dots.
- */
-.resume-strip strong {
-  flex: 0 1 auto;
-  overflow: hidden;
-  min-width: 0;
-  max-width: 42%;
-  color: var(--ink);
-  font-size: 0.83rem;
-  font-weight: 620;
-  letter-spacing: -0.015em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.resume-strip p span {
-  overflow: hidden;
+  align-items: center;
+  gap: var(--space-4);
   color: var(--ink-2);
-  font-size: 0.76rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: var(--type-xs);
 }
 
-.resume-strip__when {
-  flex: none;
+/* Activity and the latest commit remain readable without opening a menu. */
+.catalog-activity {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-8);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--line);
+}
+
+.catalog-activity > .brief {
+  margin: 0;
+}
+
+.catalog-activity > .brief:only-child {
+  grid-column: 1 / -1;
+}
+
+.brief--quiet,
+.catalog-latest {
+  min-width: 0;
+  font-size: var(--type-xs);
+  line-height: var(--lead-snug);
+}
+
+.brief--quiet {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-3) var(--space-4);
+  color: var(--ink-2);
+}
+
+.brief--quiet svg {
+  width: 15px;
+  height: 15px;
+  margin-top: var(--space-1);
+}
+
+.brief--quiet strong {
+  color: var(--ink);
+  font-weight: var(--weight-semibold);
+}
+
+.brief--quiet span {
+  grid-column: 2;
+}
+
+.catalog-latest__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-6);
+  margin-bottom: var(--space-3);
+}
+
+.catalog-latest h2 {
+  color: var(--ink);
+  font-size: var(--type-xs);
+  font-weight: var(--weight-semibold);
+}
+
+.catalog-latest__heading > span {
   color: var(--ink-3);
-  font-size: 0.72rem;
-  font-variant-numeric: tabular-nums;
+  font-size: var(--type-2xs);
 }
 
+.catalog-latest > a {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: fit-content;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-weight: var(--weight-strong);
+}
+
+.catalog-latest > a:hover { text-decoration: underline; }
+.catalog-latest > a svg { width: 13px; height: 13px; flex: none; }
+
+.catalog-latest > p {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  margin-top: var(--space-2);
+  color: var(--ink-2);
+  font-size: var(--type-xs);
+}

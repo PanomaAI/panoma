@@ -5,6 +5,7 @@ import {
   challengeNote,
   listSentinels,
   setSentinels,
+  validMemoryPath,
   type Challenge,
   type Database,
   type Sentinel,
@@ -25,10 +26,8 @@ import {
   — asking the person (or the model) to draft formal defeaters is asking that there be no
   defeaters. The extraction is deliberately conservative: one extra anchor challenges healthy
   notes, and a scale nearby is measuring how much each interruption of the person costs.
-  ── The patrolman runs with the watcher, not apart ──────────────────────────────────
-  Rethinking sentinels is reading a few files. It is mounted on the reanalysis of the
-  project—which already triggers when the disk changes—instead of having its own cycle: a new
-  watchdog would be more state than watching, and the signal is the same ('this tree changed').
+  The watcher checks during reanalysis, and memory delivery checks again before serving. Nested
+  changes may fall outside the watcher subscription, so its last pass is not a freshness promise.
  */
 
 /** Anchors by note, at most. More than this and the note would be challenged for anything. */
@@ -45,7 +44,7 @@ const MAX_READ_BYTES = 1_000_000;
  * is `apps/web/lib/guard.ts`, `ops/migrar-base-pglite5.mjs`, `.panoma/shots` — the way a note of
  * this product names its fundamentals.
  */
-const PATHISH = /(?<![\w:/])\.?[\w.@-]+(?:\/[\w.@-]+)+/g;
+const PATHISH = /(?<![\p{L}\p{N}:/])\.?[\p{L}\p{N}_.@()[\]-]+(?:\/[\p{L}\p{N}_.@()[\]-]+)+/gu;
 
 /**
  * The anchors that the body of a note offers on its own: its routes that exist today.
@@ -60,12 +59,21 @@ export async function extractAnchors(body: string, root: string): Promise<Sentin
   const anchors: Sentinel[] = [];
   const seen = new Set<string>();
 
-  for (const match of body.matchAll(PATHISH)) {
+  // Quoted paths preserve spaces. Unquoted mentions retain the conservative slash requirement.
+  const quoted = [...body.matchAll(/[`"]([^`"\r\n]+)[`"]/gu)].map((match) => match[1]!);
+  const mentions = [...body.matchAll(PATHISH)].map((match) => match[0].replace(/[.,;:»”]+$/, ""));
+  for (const candidate of [...quoted, ...mentions]) {
+    let raw = candidate;
+    // Remove unmatched prose parentheses without changing literal route groups.
+    if (!quoted.includes(candidate)) {
+      while (raw.startsWith("(") && raw.split("(").length > raw.split(")").length) raw = raw.slice(1);
+      while (raw.endsWith(")") && raw.split(")").length > raw.split("(").length) raw = raw.slice(0, -1);
+      if (raw.startsWith("(") && raw.indexOf(")") === raw.length - 1) raw = raw.slice(1, -1);
+    }
     if (anchors.length >= MAX_ANCHORS) break;
 
     // Without the closing punctuation of the prose: «…in apps/web/lib/guard.ts.» or «(ops/x.mjs)».
-    const raw = match[0].replace(/[.,;:)»”]+$/, "");
-    if (raw.length < 4 || seen.has(raw)) continue;
+    if (raw.length < 4 || !validMemoryPath(raw) || seen.has(raw)) continue;
     seen.add(raw);
 
     const absolute = resolve(root, raw);
@@ -149,16 +157,39 @@ export async function evaluateSentinel(root: string, sentinel: Sentinel): Promis
   return { holds: found, observed: found ? "present" : "absent" };
 }
 
-/** What a patrol reports so the watcher can record it in the logbook. */
+/**
+ * What a patrol reports so the watcher can record it in the logbook and the context route can
+ * say what it did not look at. The two optional fields appear only when the patrol could not
+ * verify: `unverified` counts the anchored notes it left as they were, and `skipped` says why —
+ * the root is not on this disk (`root-missing`) or the catalog is remote and the root is not
+ * here (`remote`). Without them, every anchored note was compared against the disk.
+ */
 export interface PatrolResult {
   checked: number;
   challenged: { noteId: string; body: string; observed: string }[];
+  unverified?: number;
+  skipped?: "remote" | "root-missing";
+}
+
+/** Whether the root is a directory on this disk. Anything else is "cannot look", not "empty". */
+async function rootOnThisDisk(root: string): Promise<boolean> {
+  try {
+    return (await stat(root)).isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 /**
  * The patrol: reevaluates the sentinels of the approved notes of a project and challenges those
  * whose basis is contradictory. A single fallen sentinel is enough—a note with two anchors and one
  * broken is speaking, at least in part, of a world that no longer exists.
+ *
+ * Unless the root itself is not here. An unmounted volume, a folder moved without a rescan or a
+ * catalog served from another machine make every `path_exists` read as `missing`, and the first
+ * version of this patrol challenged every anchored note of the project in one pass on that
+ * evidence. A root that cannot be looked at is not a world that no longer exists: it is a world
+ * nobody can see from here, so the notes are reported as unverified and left as they were.
  */
 export async function patrolSentinels(
   database: Database,
@@ -166,6 +197,9 @@ export async function patrolSentinels(
 ): Promise<PatrolResult> {
   const guarded = await listSentinels(database, project.id);
   const challenged: PatrolResult["challenged"] = [];
+  if (!(await rootOnThisDisk(project.root))) {
+    return { checked: 0, challenged, unverified: guarded.length, skipped: "root-missing" };
+  }
 
   for (const note of guarded) {
     for (const sentinel of note.sentinels) {
@@ -173,7 +207,7 @@ export async function patrolSentinels(
       if (reading.holds) continue;
 
       const evidence: Challenge = { at: new Date().toISOString(), sentinel, observed: reading.observed };
-      if (await challengeNote(database, note.id, evidence)) {
+      if (await challengeNote(database, note.id, evidence, note.decidedAt)) {
         challenged.push({ noteId: note.id, body: note.body, observed: reading.observed });
       }
       break;
@@ -198,6 +232,13 @@ export async function anchorNote(
   database: Database,
   input: { noteId: string; body: string; root: string; trigger?: string | null },
 ): Promise<void> {
+  await setSentinels(database, input.noteId, await extractNoteAnchors(input));
+}
+
+/** Build the complete replacement set before the atomic approval write. */
+export async function extractNoteAnchors(
+  input: { body: string; root: string; trigger?: string | null },
+): Promise<Sentinel[]> {
   const anchors = await extractAnchors(input.body, input.root);
 
   if (input.trigger) {
@@ -214,5 +255,23 @@ export async function anchorNote(
     }
   }
 
-  if (anchors.length > 0) await setSentinels(database, input.noteId, anchors);
+  return anchors;
+}
+
+/**
+ * Recheck the anchors at delivery time; the catalog watcher does not observe every nested path.
+ *
+ * Remote or not: what decides whether the patrol can look is whether the project root is on the
+ * serving machine's disk, not which driver opened the catalog. A server with `DATABASE_URL` that
+ * also has the folder —the usual case for one person with a shared database— verifies exactly as
+ * a local one does. When the root is not here, the patrol reports the notes as unverified and the
+ * reason names the more likely cause: `remote` when the catalog is remote, `root-missing` when it
+ * is local and the volume or the folder is simply gone. Only the watcher stays off remotely: a
+ * patrol is one look at the moment of serving, a watcher is a standing subscription to a disk
+ * that, with a remote catalog, is usually somewhere else.
+ */
+export async function refreshProjectMemory(database: Database, project: { id: string; root: string }): Promise<PatrolResult> {
+  const result = await patrolSentinels(database, project);
+  if (result.skipped === "root-missing" && process.env["DATABASE_URL"]) return { ...result, skipped: "remote" };
+  return result;
 }

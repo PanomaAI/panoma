@@ -66,9 +66,8 @@ export function planBatches<T>(rows: T[], size = CLASSIFY_BATCH): T[][] {
  * if a model from this same house wrote them: they came from the person's quotes and the channel
  * they go through is the same one that ends in `claude -p` with its disk in front.
  *
- * No language. What comes out of here are identifiers in English —`design`, `backend` — which are
- * never translated: they are the headers of `TASTE.md` and the keys of the grouping. The
- * assignment is indeed in Spanish, which is the company's voice, like that of `describe`.
+ * Instructions and output identifiers are English. Input statements remain in their original
+ * language: classification assigns a topic without rewriting the stored evidence.
  */
 export function buildClassifyPrompt(rows: { id: string; statement: string }[]): BuiltClassify {
   const labelled: LabelledStatement[] = rows.map((row, index) => ({
@@ -84,23 +83,23 @@ export function buildClassifyPrompt(rows: { id: string; statement: string }[]): 
   );
 
   const prompt = [
-    "Abajo van frases sobre cómo le gusta a una persona que quede su trabajo, numeradas",
-    "—[s1], [s2], …—. Dile a cada una de qué materia es.",
+    "Below are statements about how one person wants their work to turn out, labelled",
+    "[s1], [s2], and so on. Assign a topic to each statement.",
     "",
-    "Las materias son estas:",
+    "The topics are:",
     ...TOPICS.map((one) => `- ${one.name}: ${one.hint}.`),
     "",
-    "Reglas:",
-    "- Una materia por frase, y todas las frases llevan la suya.",
-    "- Elige por lo que la frase pide, no por dónde se vería. «Quieres que el listado cargue",
-    "  antes de pintar nada» es `backend` si habla de la consulta y `frontend` si habla del",
-    "  esqueleto que se enseña mientras tanto; lee la frase, no la palabra.",
-    "- `other` solo cuando de verdad no encaje en ninguna. Es el cajón, no el desempate.",
-    "- Puedes escribir una materia que no esté en la lista: una sola palabra, en minúsculas",
-    "  y en inglés. Hazlo solo si varias frases la comparten y ninguna de arriba les vale.",
+    "Rules:",
+    "- One topic per statement, and every statement must receive one.",
+    "- Choose based on what the statement asks for, not where it would be visible. A",
+    "  statement about loading a list is `backend` if it concerns the query and `frontend`",
+    "  if it concerns the loading skeleton. Read the meaning, not an isolated word.",
+    "- Use `other` only when no other topic fits. It is a fallback, not a tiebreaker.",
+    "- You may introduce a topic not in the list: a single lowercase word in English.",
+    "  Do this only if several statements share it and none of the existing topics fits.",
+    "- Preserve input statements and source quotations in their original language.",
     "",
-    "Contesta con un array JSON y nada más: sin vallas de código, sin explicación delante",
-    "ni detrás.",
+    "Return only a JSON array: no code fences and no explanation before or after it.",
     `[{"item":"s1","topic":"design"},{"item":"s2","topic":"backend"}]`,
     "",
     list,
@@ -110,8 +109,8 @@ export function buildClassifyPrompt(rows: { id: string; statement: string }[]): 
 }
 
 const SYSTEM = [
-  "Clasificas frases por materia y no haces nada más: no las reescribes, no las juzgas,",
-  "no las resumes y no opinas sobre ellas. Contestas solo con el JSON que se te pide.",
+  "Classify statements by topic. Do not rewrite, translate, judge, summarize or comment",
+  "on them. Return only the requested JSON with topic identifiers in English.",
 ].join(" ");
 
 /** A sentence with its subject, already solved at the `id` of its row. */

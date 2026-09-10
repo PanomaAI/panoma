@@ -1,12 +1,15 @@
 import { workRisks } from "@panoma/core";
+import Link from "next/link";
 import { cliName } from "@/lib/cli-name";
 import { getDailyReport, getStats, listProjects, stateOf } from "@panoma/db";
 import { db } from "@/lib/db";
 import { getLocale, t, type Locale } from "@/lib/i18n";
 import { visitWindow } from "@/lib/visit";
 import { ensureWatcher } from "@/lib/watch";
+import { ensureAppSupervisor } from "@/lib/app-jobs";
 import { type ReportView } from "@/components/today";
 import { ProjectStore, type StoreProject } from "@/components/project-store";
+import { CatalogSummary, type CatalogSummaryStats } from "@/components/catalog-summary";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +27,7 @@ export default async function Home() {
     the call costs nothing. Without `await`: the report doesn't wait for the monitoring.
    */
   void ensureWatcher();
+  void ensureAppSupervisor().catch(() => {});
 
   const { db: database } = await db();
   const since = await visitWindow();
@@ -34,7 +38,7 @@ export default async function Home() {
   ]);
   const visible = projects.filter((project) => !project.copyOf);
 
-  if (visible.length === 0) return <EmptyState locale={await getLocale()} />;
+  if (visible.length === 0) return <EmptyState locale={await getLocale()} stats={stats} />;
 
   const serialized: StoreProject[] = visible.map((project) => ({
     id: project.id,
@@ -105,6 +109,7 @@ export default async function Home() {
         dormant: stats.dormant,
         noGit: stats.noGit,
         copies: stats.copies,
+        hidden: stats.hidden,
         unsaved: stats.unsaved,
         noRemote: stats.noRemote,
         notMine: stats.notMine,
@@ -113,13 +118,32 @@ export default async function Home() {
   );
 }
 
-function EmptyState({ locale }: { locale: Locale }) {
+/*
+  The catalog with nothing in it yet, and the one screen of the eighteen-page conversion that does
+  NOT move onto `<PageShell>`.
+  Two things stop it, and both are recorded decisions rather than obstacles. Its `<main>` carries
+  `catalog-screen`, which `docs/theme.md` D13 keeps as one of the three doors a dark theme would
+  come through, and the shell takes no `className` on purpose. And its title is `--type-display`,
+  the largest role in the scale, which D2 assigns to the first-run screen by name — the shell
+  writes `--type-title`, so converting it would halve the first thing a new user ever reads.
+  What it does stop doing is measuring itself differently from the screen it is the cover of.
+  `.content-page` centred 1080 inside a 48px gutter and started 48px below the bar; the catalog
+  underneath centres 1240 inside 64 and starts 28 below. Two shells for one screen, and the
+  difference was nobody's decision — `.catalog-screen__inner` is the catalog's own, `print.css`
+  and `responsive.css` already narrow and reset it by name, and with this swap `.content-page` has
+  no writer left in the markup.
+ */
+function EmptyState({ locale, stats }: { locale: Locale; stats: CatalogSummaryStats }) {
   return (
-    <main id="app-main" tabIndex={-1} className="app-main">
-      <section className="content-page empty-catalog-page">
+    <main id="app-main" tabIndex={-1} className="app-main catalog-screen">
+      <section className="catalog-screen__inner empty-catalog-page">
         <p className="eyebrow">{t(locale, "home.emptyKicker")}</p>
         <h1>{t(locale, "home.emptyTitle")}</h1>
         <p>{t(locale, "home.emptyBody")}</p>
+        {(stats.hidden > 0 || stats.copies > 0) && <CatalogSummary stats={stats} />}
+        {stats.hidden > 0 && (
+          <Link href="/hidden" className="apps-button">{t(locale, "store.seeHidden")}</Link>
+        )}
         {/*
            The command is not translated: it is what you have to type, not a phrase.
            It used to carry `npx` written in, and that was right about the problem and wrong

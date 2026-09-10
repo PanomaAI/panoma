@@ -22,6 +22,25 @@ const BASE: BootInput = {
   panomaHome: "/home/ana/.panoma",
 };
 
+describe("las tres traen la marca de que nadie mira", () => {
+  it("dice que este arranque no lo pidió nadie, en los tres sistemas", () => {
+    /*
+      Without it, the login run printed the new-version notice into a log nobody reads and spent the
+      machine's one question of the day doing it, usually before the Wi-Fi was up — which silenced
+      every command typed afterwards. It is a mark and not a guess at the terminal: asking
+      `isTTY` would have taken the notice away from a real person in Git Bash on Windows.
+     */
+    expect(bootPlan({ ...BASE, platform: "darwin" })!.content).toContain(
+      "<key>PANOMA_ON_BOOT</key><string>1</string>",
+    );
+    // Quoted, like the PATH beside it: that is what `Environment=` takes in a unit.
+    expect(bootPlan({ ...BASE, platform: "linux" })!.content).toContain(
+      'Environment="PANOMA_ON_BOOT=1"',
+    );
+    expect(bootPlan({ ...BASE, platform: "win32" })!.content).toContain('set "PANOMA_ON_BOOT=1"');
+  });
+});
+
 describe("donde no está escrito, no se inventa", () => {
   it("devuelve nada en un sistema que no conoce", () => {
     // The fact that there is no plan is what allows one to say 'it's not ready for FreeBSD yet'

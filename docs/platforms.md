@@ -21,8 +21,12 @@ them, the matrix in `.github/workflows/tests.yml`.
 
 The tests used to run in a single place — the laptop of whoever wrote them, and on macOS —
 which left the `platform() !== "darwin"` branches, the disk math without `du` and the
-runner's sandbox never executed at all. Today they run in **six combinations**:
-`ubuntu-latest`, `macos-latest` and `windows-latest`, each with Node 22 and with Node 26.
+runner's sandbox never executed at all. Today the matrix covers **three systems and two Node
+versions**: `ubuntu-latest` on every push, `windows-latest` every Monday and whenever it is
+asked for, and `macos-latest` only when a dispatch says so. All six combinations used to run on
+every commit, and that is what emptied a month's Actions minutes: macOS bills at ten times
+Linux, and it is the machine this is written on, so every local `pnpm test` is already a run
+of it.
 
 The two Node versions are the two ends of the root `engines`: **22 is the promised floor**
 and the latest is the ceiling a new machine comes with. That way CI measures the whole
@@ -46,6 +50,17 @@ Next to it lives a second workflow, `apps-probe.yml`, launched **by hand only**:
 Windows machine it installs the Claude and ChatGPT desktop applications and compares a
 snapshot of the registry and of the folders before and after. It doesn't run on every push
 because it downloads and installs third-party software. What it answered is told further down.
+
+And a third, `apps.yml`, for the manager of the optional apps. That half runs `npm install`
+through a guardian process, kills process trees, finds `npm` without trusting `PATH` and builds
+a child's environment by name — four places where Windows differs, and the ones this project has
+already been bitten by. The weekly matrix runs those tests too, inside the whole suite; this
+workflow runs them **alone**, in about three minutes instead of fifteen, on every pull request
+that touches `packages/apps`, the server's app modules or the two terminal verbs. It is the
+difference between an answer on the pull request and an answer the following Monday. What it
+does not run is the end-to-end release lab: that one installs a real `@panoma/video` tarball and
+films a project, so it needs an artifact from the other repository and a product to film, and
+[open-questions.md](open-questions.md) records who decides it.
 
 ## PowerShell 5.1 has no `&&`
 

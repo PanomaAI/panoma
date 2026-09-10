@@ -357,10 +357,22 @@ async function forget(parsed: Flags): Promise<number> {
     return 1;
   }
 
-  const { forgotten } = (await response.json()) as { forgotten: number };
+  const { forgotten, narrativesForgotten = 0, episodesForgotten = 0 } = (await response.json()) as {
+    forgotten: number;
+    narrativesForgotten?: number;
+    episodesForgotten?: number;
+  };
+  /*
+    The catalog deletes three things in one transaction and this used to print one. The other two
+    are the ones that cost paid extraction calls to produce, so a terminal that reported "12
+    verdicts" over 45 rows gone was under-reporting exactly the expensive part. Optional in the
+    response because an older server does not send them.
+   */
   const lines = [
     "",
     `  ${pc.green("✓")} ${say("twin.forgotten", { n: forgotten, s: plural(forgotten) })}`,
+    ...(narrativesForgotten > 0 ? [`    ${pc.dim(say("twin.forgottenNarratives", { n: narrativesForgotten }))}`] : []),
+    ...(episodesForgotten > 0 ? [`    ${pc.dim(say("twin.forgottenEpisodes", { n: episodesForgotten }))}`] : []),
     "",
   ];
   process.stdout.write(`${lines.join("\n")}\n`);
@@ -1376,6 +1388,8 @@ export interface DistillEstimate {
   provider: string;
   model: string;
   corpus?: CorpusProgress;
+  /** What no pass can send: a project's lone unread quote. Optional: an older catalog does not say. */
+  thin?: number;
 }
 
 /** And what the past really answers. */
@@ -1392,6 +1406,10 @@ export interface DistillOutcome {
   model: string;
   usage?: { input: number; output: number };
   corpus?: CorpusProgress;
+  /** See `DistillEstimate.thin`. A state of the corpus, the same on every pass: it is not added up. */
+  thin?: number;
+  /** Answers the output limit cut and the route asked again with double room. Each was a call. */
+  truncated?: number;
 }
 
 /**
@@ -1429,7 +1447,12 @@ async function distill(parsed: Flags): Promise<number> {
    */
   if (!(estimate.verdicts > 0)) {
     lines.push(`  ${pc.yellow(say("twin.distillNothing"))}`);
-    lines.push(`  ${pc.dim(say("twin.distillNothingHint"))}`, "", "");
+    lines.push(`  ${pc.dim(say("twin.distillNothingHint"))}`);
+    // The one case where "nothing to distil" and "unread quotes" are both true, said out loud.
+    if ((estimate.thin ?? 0) > 0) {
+      lines.push(`  ${pc.dim(say("twin.distilledThin", { n: estimate.thin ?? 0 }))}`);
+    }
+    lines.push("", "");
     process.stdout.write(lines.join("\n"));
     return 0;
   }
@@ -1450,7 +1473,13 @@ async function distill(parsed: Flags): Promise<number> {
   process.stderr.write(pc.dim(`${say("twin.distillRunning")}\n`));
 
   let last: DistillOutcome | undefined;
-  const totals = { verdicts: 0, observed: 0, saved: 0, passes: 0 };
+  const totals = { verdicts: 0, observed: 0, saved: 0, truncated: 0, passes: 0 };
+  /*
+    The tokens, added up across passes as well. They were not: the receipt spread the last pass
+    over the sweep's totals, so a `--all` of fourteen passes printed the fourteenth's tokens as if
+    they were the whole sweep's. Silent when no pass published them, as with a single one.
+   */
+  let usage: { input: number; output: number } | undefined;
 
   /*
     One pass, or all. `--all` chains until there is no history left to read, and it exists because
@@ -1476,6 +1505,13 @@ async function distill(parsed: Flags): Promise<number> {
     totals.verdicts += last.verdicts;
     totals.observed += last.observed ?? 0;
     totals.saved += last.saved;
+    totals.truncated += last.truncated ?? 0;
+    if (last.usage !== undefined) {
+      usage = {
+        input: (usage?.input ?? 0) + last.usage.input,
+        output: (usage?.output ?? 0) + last.usage.output,
+      };
+    }
 
     if (!parsed.all || last.verdicts === 0) break;
     const left = last.corpus === undefined ? 0 : last.corpus.total - last.corpus.read;
@@ -1491,7 +1527,12 @@ async function distill(parsed: Flags): Promise<number> {
     which is the sum. Showing only the last one would say '12 quotes read' after twenty minutes.
    */
   process.stdout.write(
-    distilledLines({ ...last, ...totals, model: last.model }).join("\n"),
+    distilledLines({
+      ...last,
+      ...totals,
+      model: last.model,
+      ...(usage === undefined ? {} : { usage }),
+    }).join("\n"),
   );
   if (totals.passes > 1) {
     process.stdout.write(
@@ -1560,7 +1601,8 @@ export function corpusLines(corpus: CorpusProgress | undefined): string[] {
 export function distilledLines(outcome: DistillOutcome): string[] {
   const lines = [""];
   if (!((outcome.observed ?? 0) > 0)) {
-    lines.push(`  ${pc.yellow(say("twin.distilledNone"))}`, "", "");
+    lines.push(`  ${pc.yellow(say("twin.distilledNone"))}`);
+    lines.push(...leftOutLines(outcome), "", "");
     return lines;
   }
 
@@ -1584,7 +1626,26 @@ export function distilledLines(outcome: DistillOutcome): string[] {
     )}`,
   );
   lines.push(...corpusLines(outcome.corpus));
+  lines.push(...leftOutLines(outcome));
   lines.push("", `  ${pc.dim(say("twin.distilledNext"))}`, "", "");
+  return lines;
+}
+
+/**
+ * What the pass paid for twice, and what it left out on purpose. Only when there is something.
+ *
+ * Both in the receipt and in the empty one: a pass that read nothing is exactly where "alone in
+ * their project" explains the corpus line, and a cut answer is a call whether or not it was
+ * understood in the end.
+ */
+function leftOutLines(outcome: Pick<DistillOutcome, "thin" | "truncated">): string[] {
+  const lines: string[] = [];
+  if ((outcome.truncated ?? 0) > 0) {
+    lines.push(`    ${pc.dim(say("twin.distilledTruncated", { n: outcome.truncated ?? 0 }))}`);
+  }
+  if ((outcome.thin ?? 0) > 0) {
+    lines.push(`    ${pc.dim(say("twin.distilledThin", { n: outcome.thin ?? 0 }))}`);
+  }
   return lines;
 }
 
@@ -1683,6 +1744,8 @@ export interface SynthesizeReply {
   estimatedTokens?: number;
   provider?: string;
   model?: string;
+  /** Answers the output limit cut and the route asked again with double room. Each was a call. */
+  truncated?: number;
 }
 
 /** What `POST /api/twin/classify` answers. */
@@ -1691,6 +1754,8 @@ export interface ClassifyReply {
   classified?: number;
   minted?: number;
   left?: number;
+  /** See `SynthesizeReply.truncated`: the sorting call can be cut as well. */
+  truncated?: number;
 }
 
 /**
@@ -1745,7 +1810,12 @@ async function synthesize(parsed: Flags): Promise<number> {
   if (response === undefined) return unreachable(parsed.api);
   if (!response.ok) return distillRefused(await refusalOf(response));
 
-  process.stdout.write(synthLines((await response.json()) as SynthesizeReply).join("\n"));
+  const reply = (await response.json()) as SynthesizeReply;
+  // The cut answers of both calls in one figure: for whoever pressed, it was one gesture.
+  const truncated = (reply.truncated ?? 0) + (reparto.truncated ?? 0);
+  process.stdout.write(
+    synthLines({ ...reply, ...(truncated > 0 ? { truncated } : {}) }).join("\n"),
+  );
   return 0;
 }
 
@@ -1805,10 +1875,13 @@ export function synthLines(reply: SynthesizeReply): string[] {
   const refined = reply.refined ?? 0;
   const retired = reply.retired ?? 0;
   const proposed = reply.proposed ?? 0;
+  const truncated = reply.truncated ?? 0;
   const lines: string[] = [];
+  /* A cut answer is a call whether or not it moved anything: it goes on both receipts. */
+  const cut = truncated > 0 ? [`    ${pc.dim(say("twin.synthTruncated", { n: truncated }))}`] : [];
 
   if (created + refined + retired + proposed === 0) {
-    lines.push(`  ${pc.dim(say("twin.synthSame"))}`, "", "");
+    lines.push(`  ${pc.dim(say("twin.synthSame"))}`, ...cut, "", "");
     return lines;
   }
 
@@ -1826,6 +1899,7 @@ export function synthLines(reply: SynthesizeReply): string[] {
       `  ${pc.yellow("!")} ${say("twin.synthProposed", { n: proposed, s: plural(proposed) })}`,
     );
   }
+  lines.push(...cut);
   lines.push("", `  ${pc.dim(say("twin.synthNext"))}`, "", "");
   return lines;
 }
@@ -2419,7 +2493,7 @@ async function look(parsed: Flags): Promise<number> {
     return 1;
   }
 
-  const { MAX_SCREENSHOT_BYTES, SMALL_SCREENSHOT_WIDTH, ScreenshotError, readScreenshot } =
+  const { MAX_FITTABLE_BYTES, SMALL_SCREENSHOT_WIDTH, ScreenshotError, readScreenshot } =
     await import("@panoma/core");
 
   /*
@@ -2440,12 +2514,21 @@ async function look(parsed: Flags): Promise<number> {
     from = picked;
   }
 
+  /*
+    Read with the generous ceiling, and the server decides.
+    The provider's 3.5 MB is a limit on what travels, and what travels is not decided here: the
+    choice between the capture as it is and one reduced to its long edge lives on the Spend screen,
+    on the other side of this call. Refusing a six-megabyte capture on this disk —where reading it
+    costs milliseconds— would be this terminal answering a question that is not its own, and
+    answering it wrong for anyone who chose `fit`. What comes back if it does not fit is a refusal
+    from the route with the size and the reason in it. See `MAX_FITTABLE_BYTES`.
+   */
   let shot;
   try {
-    shot = await readScreenshot(chosen);
+    shot = await readScreenshot(chosen, { maxBytes: MAX_FITTABLE_BYTES });
   } catch (error) {
     if (!(error instanceof ScreenshotError)) throw error;
-    return unreadable(error, MAX_SCREENSHOT_BYTES);
+    return unreadable(error, MAX_FITTABLE_BYTES);
   }
 
   const lines = ["", `  ${pc.bold(say("twin.lookTitle"))}`, ""];
@@ -2608,10 +2691,56 @@ export interface LookBudget {
   unmetered: number;
 }
 
+/**
+ * What the critic is going to be shown, or was shown. See `ShotSent` in `apps/web/lib/look.ts`.
+ *
+ * The owner chooses on the Spend screen between the capture as it is and one reduced to its long
+ * edge, and this is how the terminal learns which of the two happened. It arrives twice —in the
+ * rehearsal and on the receipt— because that is the promise: panoma reduces a capture only when
+ * it is asked to, and never without saying so.
+ */
+export interface LookSent {
+  policy: "full" | "fit";
+  maxEdge: number;
+  /** Absent in a rehearsal, which travels without the image and so has nothing to measure. */
+  fitted?: boolean;
+  width?: number;
+  height?: number;
+  from?: { width: number; height: number };
+  why?: "format" | "variant" | "already" | "broken";
+}
+
+/** The four refusals, each with its sentence. See `FitRefusal` in the engine. */
+const WHY_WHOLE: Record<NonNullable<LookSent["why"]>, MessageKey> = {
+  format: "twin.lookWhyFormat",
+  variant: "twin.lookWhyVariant",
+  already: "twin.lookWhyAlready",
+  broken: "twin.lookWhyBroken",
+};
+
+/**
+ * The reduction in one line, or nothing when the capture travels as it is.
+ *
+ * Nothing with `full`, which is what panoma has always done and needs no warning. The line that
+ * cannot be missing is the other one, the refusal included: whoever chose to spend less and is
+ * being charged for every pixel is owed the reason.
+ */
+export function sentLine(sent: LookSent | undefined): string | undefined {
+  if (sent === undefined || sent.policy !== "fit") return undefined;
+  if (sent.fitted === undefined) return say("twin.lookFitAsked", { edge: sent.maxEdge });
+  if (!sent.fitted) return say("twin.lookFitWhole", { why: say(WHY_WHOLE[sent.why ?? "broken"]) });
+  return say("twin.lookFitSent", {
+    size: `${sent.width}×${sent.height}`,
+    from: `${sent.from?.width}×${sent.from?.height}`,
+  });
+}
+
 export interface LookEstimate {
   statements: number;
   estimatedTokens: number;
   imageBytes: number;
+  /** What is going to be shown to the critic, before a single cent is spent. */
+  sent?: LookSent;
   provider: string;
   model: string;
   budget: LookBudget;
@@ -2629,6 +2758,8 @@ export interface LookReply {
   dropped: number;
   unreadable?: boolean;
   statements: number;
+  /** And what it was actually shown, which is the same field said in the past tense. */
+  sent?: LookSent;
   model: string;
   usage?: { input: number; output: number };
   budget: LookBudget;
@@ -2642,6 +2773,13 @@ export interface LookReply {
  * being the same, the one that must be shown is the one from the file that is going to be sent.
  */
 export function lookEstimateLines(estimate: LookEstimate, bytes: number): string[] {
+  /*
+    And what is going to be shown, which is the other half of the price: an image is charged by
+    its pixels, so a capture that travels reduced costs a different amount from the one this line
+    weighs in bytes. The rehearsal travels without the image, so here the sentence normally says
+    what was asked for and the receipt says what happened.
+   */
+  const fit = sentLine(estimate.sent);
   return [
     `  ${pc.bold(
       say("twin.lookEstimate", {
@@ -2653,6 +2791,7 @@ export function lookEstimateLines(estimate: LookEstimate, bytes: number): string
         model: estimate.model,
       }),
     )}`,
+    ...(fit === undefined ? [] : [`  ${pc.dim(fit)}`]),
     `  ${pc.dim(say("twin.lookCost"))}`,
   ];
 }
@@ -2722,6 +2861,14 @@ export function lookLines(reply: LookReply): string[] {
       }),
     )}`,
   );
+
+  /*
+    And what the critic was shown, which is the same sentence the rehearsal printed, now in the
+    past tense. It goes on the receipt and not only before, because the rehearsal promised a size
+    and this is the one that was paid for.
+   */
+  const fit = sentLine(reply.sent);
+  if (fit !== undefined) lines.push(`  ${pc.dim(fit)}`);
 
   /*
     The expense of the day, and only when someone has posted it.

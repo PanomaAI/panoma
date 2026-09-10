@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { postJson } from "@/lib/api";
 import { useT } from "./i18n-provider";
-import { ActionError } from "./primitives";
+import { ActionButton, ActionError } from "./primitives";
 
 /**
  * Fix the obvious with a click and count the result in numbers: how many fixes were applied and
@@ -57,16 +57,21 @@ export function MdRepair({
 
   return (
     <span className="project-md-repair">
-      <button
+      {/*
+         `size="sm"` and not the default: this button sits inline in a sentence of the .md section,
+         where the type is 11px. That is the one axis twelve of the sixteen near-clones of the
+         primitive differed by, and it is now asked for by name.
+        */}
+      <ActionButton
+        tone="accent"
+        size="sm"
         type="button"
         onClick={repair}
-        disabled={state === "working"}
-        className="inline-flex items-center rounded border border-accent bg-accent px-2.5 py-1 font-mono text-[11px] text-white transition-opacity hover:opacity-85 disabled:opacity-50"
+        busy={state === "working"}
+        busyLabel={translate("project.mdRepairWorking")}
       >
-        {state === "working"
-          ? translate("project.mdRepairWorking")
-          : translate("project.mdRepairButton", { n: fixable })}
-      </button>
+        {translate("project.mdRepairButton", { n: fixable })}
+      </ActionButton>
       {message && <span className="ml-2 text-xs text-live">{message}</span>}
       {error && <ActionError as="span" text={error} className="ml-2" />}
     </span>

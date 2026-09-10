@@ -169,7 +169,11 @@ protocol's JSON, or nothing. No prose and no colors, because the reader is Claud
 And the price of rule one is accepted and stated: in a harness that does not understand
 `additionalContext` in `PreToolUse`, the extra JSON is ignored without harm. Delivery is
 opportunistic by design, and the backstop that does not depend on anybody's version is the
-day's report, which announces how many notes are sleeping.
+briefing, which announces how many notes are sleeping and tells the agent to ask for them
+with `files` in `panoma_context` — a road that needs no hook and works in every client.
+The hook carries no task either: it knows the path about to be edited and nothing about
+why. The client-independent way to get the rules for what you are about to do is
+`panoma_context` with `task`, one sentence, matched by its words.
 
 ### `portablePath`, or why on Windows none of them ever woke up
 
@@ -249,7 +253,8 @@ command that does not exist is worse than no hook at all.**
 
 - **The `Stop` and `PreToolUse` events are Claude Code's, and only its.** The other agents
   are covered by `post-commit`, which does not care who commits, and by nothing else. There
-  is no equivalent installed for Cursor, Codex or Aider.
+  is no equivalent installed for Cursor, Codex or Aider. Their sleeping notes reach them all
+  the same through `files` in `panoma_context`, which needs no hook.
 - **No test guards `CONTEXT_LIMIT`.** It is a constant copied by hand from `@panoma/db` and
   nothing goes red if `NOTE_MAX` or `NOTE_SLEEPING_MAX` leave it short. It is noted in
   [architecture.md](architecture.md) too, where the border was decided.

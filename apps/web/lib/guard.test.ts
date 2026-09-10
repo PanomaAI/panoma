@@ -236,11 +236,23 @@ describe("las puertas que ejecutan llevan todas la misma guarda", () => {
   const API = new URL("../app/api/", import.meta.url);
 
   const EJECUTAN = [
+    "apps/[id]/[operation]/route.ts",
+    "apps/[id]/settings/route.ts",
+    "apps/[id]/credentials/route.ts",
+    "apps/[id]/jobs/route.ts",
+    "apps/jobs/[jobId]/cancel/route.ts",
+    "apps/route.ts",
+    "apps/[id]/route.ts",
+    "apps/[id]/legal/route.ts",
+    "apps/jobs/[jobId]/route.ts",
+    "apps/jobs/[jobId]/artifact/route.ts",
     "check/route.ts",
     "runs/route.ts",
     "runs/[id]/route.ts",
     "assignments/launch/route.ts",
     "open/route.ts",
+    /* The same launchers, several at a time: the plan of "open everything". */
+    "open/all/route.ts",
     /* They decide on the person's history: grant permission and open the files. */
     "twin/sources/route.ts",
     "twin/mine/route.ts",
@@ -269,8 +281,16 @@ describe("las puertas que ejecutan llevan todas la misma guarda", () => {
     obeying.
    */
   const HANDLERS_EXENTOS: Record<string, string> = {
+    "apps/route.ts GET": "Reads official app metadata, a previously authorized job, or its contained output. It creates no new operation and still requires sameOrigin.",
+    "apps/[id]/route.ts GET": "Reads official app metadata, a previously authorized job, or its contained output. It creates no new operation and still requires sameOrigin.",
+    "apps/[id]/legal/route.ts GET": "Reads official app metadata, a previously authorized job, or its contained output. It creates no new operation and still requires sameOrigin.",
+    "apps/[id]/jobs/route.ts GET": "Reads official app metadata, a previously authorized job, or its contained output. It creates no new operation and still requires sameOrigin.",
+    "apps/jobs/[jobId]/route.ts GET": "Reads official app metadata, a previously authorized job, or its contained output. It creates no new operation and still requires sameOrigin.",
+    "apps/jobs/[jobId]/artifact/route.ts GET": "Reads official app metadata, a previously authorized job, or its contained output. It creates no new operation and still requires sameOrigin.",
     "open/route.ts GET":
       "Exento de localOperatorOnly, no de sameOrigin: lista qué editores hay instalados para que el menú pinte solo lo que existe. Es detectar, no obedecer, y no lleva nada del cliente.",
+    "open/all/route.ts GET":
+      "Exento de localOperatorOnly, no de sameOrigin: dice qué podría abrir un proyecto —herramientas instaladas y enlaces del catálogo— y el plan guardado. Es mirar, no obedecer: no arranca nada.",
     "twin/sources/route.ts GET":
       "El inventario del historial: tamaños y permisos, sin abrir un solo fichero. Mirar es lo que la clave de red sí da, y aun así lleva sameOrigin.",
     "twin/taste/route.ts GET":

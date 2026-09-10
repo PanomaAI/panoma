@@ -1,5 +1,116 @@
 import { Buffer } from "node:buffer";
 import type { MineStats } from "./claude-code";
+import { redactQuote } from "../quotes";
+
+/** A verified owner turn. Assistant context is background, never owner evidence. */
+export interface Narrative {
+  source: string;
+  sessionId: string;
+  at: string;
+  cwd?: string;
+  paths?: string[];
+  gitBranch?: string;
+  /** Structured material remains identifiable; its contents are not automatically endorsed. */
+  kind: "opening" | "reaction" | "brief";
+  text: string;
+  context: string | null;
+  truncated: boolean;
+}
+
+const NARRATIVE_CHARS = 6_000;
+const NARRATIVE_CONTEXT_CHARS = 2_000;
+const NARRATIVE_PATHS = 12;
+const NARRATIVE_SESSION_PATHS = 200;
+
+/**
+ * Independent from the legacy reaction funnel: opening goals and structured briefs survive,
+ * and only verified owner turns advance the attribution window. Readers select the same recent
+ * files as before; this ring keeps the latest eligible turns within each selected file.
+ */
+export class NarrativeCapture {
+  private sessionId = "";
+  private context: string | null = null;
+  private contextTruncated = false;
+  private window = new Set<string>();
+  private perSession = new Map<string, Map<string, number>>();
+  private entries: Narrative[] = [];
+  private next = 0;
+
+  constructor(private readonly limit: number, private readonly cwdPrefix?: string) {}
+
+  /** Explicit headers reset context even when a resumed session keeps its identifier. */
+  begin(sessionId: string): void {
+    this.sessionId = sessionId;
+    this.context = null;
+    this.contextTruncated = false;
+    this.window.clear();
+  }
+
+  session(sessionId: string): void {
+    if (sessionId !== this.sessionId) this.begin(sessionId);
+  }
+
+  assistant(text: string, paths: string[] = []): void {
+    this.paths(paths);
+    if (!text.trim()) return;
+    const redacted = narrativeText(text.trim());
+    this.context = cap(redacted, NARRATIVE_CONTEXT_CHARS);
+    this.contextTruncated = redacted.length > NARRATIVE_CONTEXT_CHARS;
+  }
+
+  paths(paths: string[]): void {
+    for (const path of paths) {
+      if (this.window.size < NARRATIVE_PATHS) this.window.add(path);
+      const counts = this.perSession.get(this.sessionId) ?? new Map<string, number>();
+      if (counts.size < NARRATIVE_SESSION_PATHS || counts.has(path)) {
+        counts.set(path, (counts.get(path) ?? 0) + 1);
+      }
+      this.perSession.set(this.sessionId, counts);
+    }
+  }
+
+  owner(
+    metadata: Pick<Narrative, "source" | "sessionId" | "at" | "cwd" | "gitBranch">,
+    text: string,
+  ): void {
+    this.session(metadata.sessionId);
+    const paths = [...this.window];
+    this.window.clear();
+    if (this.limit <= 0 || !underPrefix(metadata.cwd, this.cwdPrefix)) return;
+    const redacted = narrativeText(text);
+    const entry: Narrative = {
+      ...metadata,
+      kind: isBrief(text) ? "brief" : this.context === null ? "opening" : "reaction",
+      text: cap(redacted, NARRATIVE_CHARS),
+      context: this.context,
+      truncated: redacted.length > NARRATIVE_CHARS || this.contextTruncated,
+    };
+    if (paths.length > 0) entry.paths = paths;
+    if (this.entries.length < this.limit) this.entries.push(entry);
+    else {
+      this.entries[this.next] = entry;
+      this.next = (this.next + 1) % this.entries.length;
+    }
+  }
+
+  finish(): Narrative[] {
+    const entries = [...this.entries.slice(this.next), ...this.entries.slice(0, this.next)];
+    for (const entry of entries) {
+      if (entry.paths !== undefined) continue;
+      const counts = this.perSession.get(entry.sessionId);
+      if (counts === undefined || counts.size === 0) continue;
+      entry.paths = [...counts]
+        .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
+        .slice(0, NARRATIVE_PATHS)
+        .map(([path]) => path);
+    }
+    return entries;
+  }
+}
+
+function narrativeText(text: string): string {
+  return redactQuote(text).text.replaceAll("«credencial oculta»", "[redacted credential]");
+}
 
 /*
   What all history readers do the same, written once.

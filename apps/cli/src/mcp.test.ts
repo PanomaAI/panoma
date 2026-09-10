@@ -1,5 +1,5 @@
 import { execFile, execFileSync } from "node:child_process";
-import { chmodSync, mkdtempSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -188,5 +188,51 @@ describe("el fichero lleva una clave dentro, y se nota", () => {
         `${escritor.pathname} escribe sin nombrar MCP_FILE_MODE`,
       ).toBeGreaterThanOrEqual(llamadas.length);
     }
+  });
+});
+
+/**
+ * The road that led nowhere, and must not be paved again.
+ *
+ * `@panoma/mcp` is private and is never published: the server travels inside the `panoma` tarball
+ * with `@panoma/core` bundled into it, and published alone it would ask npm for that core, which
+ * is private too and would fail to install. So any configuration naming the package resolves to a
+ * 404 and leaves an entry that cannot start — silently, because that is how MCP fails.
+ *
+ * This is read as source rather than executed because what it guards is an absence, and because
+ * from inside the monorepo the server is always found: the branch that used to write `npx` cannot
+ * be reached by a test that runs here.
+ */
+describe("nadie ofrece un paquete que no se publica", () => {
+  function source(path: string): string {
+    return readFileSync(new URL(`../../../${path}`, import.meta.url), "utf8");
+  }
+
+  it("el paquete del servidor está marcado como privado", () => {
+    const manifest = JSON.parse(source("packages/mcp/package.json")) as { private?: boolean };
+    expect(
+      manifest.private,
+      "packages/mcp/package.json must stay private: published alone it cannot resolve @panoma/core",
+    ).toBe(true);
+  });
+
+  for (const path of ["apps/cli/src/mcp.ts", "apps/cli/src/index.ts", "apps/web/lib/mcp-entry.ts"]) {
+    it(`${path} no compone un bloque con npx -y @panoma/mcp`, () => {
+      /*
+        Comments argue about the road at length, so only code is read. And what is forbidden is the
+        npx SHAPE, not the name: `apps/web/lib/mcp-entry.ts` resolves `@panoma/mcp/dist/index.js`
+        on this disk, which is the road that works.
+      */
+      const code = source(path).replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+      expect(code, `${path} offers a package that npm answers 404 for`).not.toMatch(
+        /npx[\s\S]{0,80}@panoma\/mcp/,
+      );
+    });
+  }
+
+  it("el vigilante del paquete arranca el servidor, no solo comprueba que esté", () => {
+    const guard = source("apps/cli/scripts/check-package.mjs");
+    expect(guard, "prepack must spawn the packaged server").toMatch(/spawnSync\(process\.execPath, \[servidorMcp\]/);
+    expect(guard, "and read its answer to the protocol's first question").toMatch(/serverInfo/);
   });
 });

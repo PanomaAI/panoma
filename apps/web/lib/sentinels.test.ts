@@ -1,9 +1,9 @@
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Database } from "@panoma/db";
-import { anchorNote, evaluateSentinel, extractAnchors, patrolSentinels } from "./sentinels";
+import { anchorNote, evaluateSentinel, extractAnchors, patrolSentinels, refreshProjectMemory } from "./sentinels";
 
 /**
  * Against disk and real Postgres, because the sentinel IS the comparison with the disk: a double
@@ -47,6 +47,13 @@ beforeEach(async () => {
 });
 
 describe("la aduana: anclas extraídas del propio cuerpo", () => {
+  it("preserves literal route groups, dynamic segments and quoted spaces", async () => {
+    await mkdir(join(root, "apps", "(app)", "[slug]"), { recursive: true });
+    await writeFile(join(root, "apps", "(app)", "[slug]", "page.tsx"), "");
+    await writeFile(join(root, "ops", "local check.mjs"), "");
+    const anchors = await extractAnchors("Check apps/(app)/[slug]/page.tsx and `ops/local check.mjs`.", root);
+    expect(anchors.map((anchor) => anchor.target).sort()).toEqual(["apps/(app)/[slug]/page.tsx", "ops/local check.mjs"]);
+  });
   it("una ruta mencionada que existe se vuelve centinela; la que no existe es solo prosa", async () => {
     const anchors = await extractAnchors(
       "La base se rescata con ops/migrate.mjs, no con ops/inventado.sh.",
@@ -245,5 +252,83 @@ describe("la patrulla", () => {
         observed: "missing",
       }),
     ).toBe(false);
+  });
+});
+
+describe("the patrol when the root is not on this disk", () => {
+  /*
+    The episode: an unmounted volume made every `path_exists` read as `missing`, and one pass
+    challenged every anchored note of the project on that evidence. A root nobody can look at is
+    "cannot verify", never "the anchor fell" — and the same reading covers the catalog served from
+    another machine, which used to switch the delivery-time patrol off wholesale.
+   */
+  const originalUrl = process.env["DATABASE_URL"];
+
+  async function anchored(body: string, target: string): Promise<string> {
+    const { addHumanNote, setSentinels } = await import("@panoma/db");
+    const note = await addHumanNote(db, { projectId: PROJECT, body });
+    if (!("id" in note)) throw new Error("did not create the note");
+    await setSentinels(db, note.id, [{ kind: "path_exists", target, expected: true }]);
+    return note.id;
+  }
+
+  afterEach(() => {
+    if (originalUrl === undefined) delete process.env["DATABASE_URL"];
+    else process.env["DATABASE_URL"] = originalUrl;
+  });
+
+  it("a missing root challenges nothing and reports every anchored note as unverified", async () => {
+    const { listProjectNotes } = await import("@panoma/db");
+    const first = await anchored("The build lives in ops/migrate.mjs.", "ops/migrate.mjs");
+    const second = await anchored("Read package.json first.", "package.json");
+
+    const gone = join(root, "unmounted-volume");
+    const result = await patrolSentinels(db, { id: PROJECT, root: gone });
+
+    expect(result).toEqual({ checked: 0, challenged: [], unverified: 2, skipped: "root-missing" });
+    expect((await listProjectNotes(db, PROJECT)).map((n) => n.id).sort()).toEqual([first, second].sort());
+    expect(await listProjectNotes(db, PROJECT, ["challenged"])).toHaveLength(0);
+  });
+
+  it("a root that is a file, not a directory, cannot be looked at either", async () => {
+    await anchored("Count on ops/migrate.mjs.", "ops/migrate.mjs");
+    const result = await patrolSentinels(db, { id: PROJECT, root: join(root, "package.json") });
+    expect(result).toMatchObject({ checked: 0, challenged: [], unverified: 1, skipped: "root-missing" });
+  });
+
+  it("a root that is here keeps the old contract: checked, challenged, and no skip", async () => {
+    await anchored("Count on ops/migrate.mjs.", "ops/migrate.mjs");
+    const doomed = await anchored("Mind vanished.txt.", "vanished.txt");
+    const result = await patrolSentinels(db, { id: PROJECT, root });
+    expect(result.checked).toBe(2);
+    expect(result.challenged.map((c) => c.noteId)).toEqual([doomed]);
+    expect(result.unverified).toBeUndefined();
+    expect(result.skipped).toBeUndefined();
+  });
+
+  it("with DATABASE_URL and the root on this disk, delivery still patrols and can challenge", async () => {
+    const { listProjectNotes } = await import("@panoma/db");
+    const doomed = await anchored("Mind vanished.txt.", "vanished.txt");
+    process.env["DATABASE_URL"] = "postgres://catalog.invalid:5432/panoma";
+    const result = await refreshProjectMemory(db, { id: PROJECT, root });
+    expect(result.challenged.map((c) => c.noteId)).toEqual([doomed]);
+    expect(result.skipped).toBeUndefined();
+    expect((await listProjectNotes(db, PROJECT, ["challenged"])).map((n) => n.id)).toEqual([doomed]);
+  });
+
+  it("with DATABASE_URL and no root here, delivery reports the notes as unverified because the catalog is remote", async () => {
+    const { listProjectNotes } = await import("@panoma/db");
+    const kept = await anchored("Mind vanished.txt.", "vanished.txt");
+    process.env["DATABASE_URL"] = "postgres://catalog.invalid:5432/panoma";
+    const result = await refreshProjectMemory(db, { id: PROJECT, root: join(root, "elsewhere") });
+    expect(result).toEqual({ checked: 0, challenged: [], unverified: 1, skipped: "remote" });
+    expect((await listProjectNotes(db, PROJECT)).map((n) => n.id)).toEqual([kept]);
+  });
+
+  it("without DATABASE_URL and no root here, delivery names the local cause", async () => {
+    await anchored("Mind vanished.txt.", "vanished.txt");
+    const result = await refreshProjectMemory(db, { id: PROJECT, root: join(root, "elsewhere") });
+    expect(result.skipped).toBe("root-missing");
+    expect(result.unverified).toBe(1);
   });
 });
