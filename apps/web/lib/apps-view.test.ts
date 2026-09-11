@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { APP_FAULTS } from "@panoma/apps/faults";
 import { t } from "./i18n";
-import { appFaultText, appRequest, appStatusKey, requirementsOf, currentProduction, jobArtifacts, jobPercent, productionExport, productionInput, productionLanguages, productionStory, videoDestination, watchAppJob, type AppJob } from "./apps-view";
+import { activeOperation, appFaultText, appRequest, appStatusKey, requirementsOf, currentProduction, jobArtifacts, jobPercent, jobSeconds, nextStep, productionExport, productionInput, productionLanguages, productionStory, skippedGoals, stageReport, videoDestination, watchAppJob, VIDEO_STAGES, type AppJob, type AppSummary } from "./apps-view";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -54,6 +54,85 @@ describe("optional apps presentation", () => {
     expect(productionLanguages(production, story)).toEqual(["es"]);
     expect(productionLanguages({ ...production, input: {} }, story)).toEqual(["es"]);
   });
+  /*
+    The page used to leave this to be worked out from which buttons were grey, and the buttons
+    were in two columns the grid does not order. One step, in the order of the setup, and the
+    server's own «ready» wins over anything the page could infer.
+   */
+  it("names the one step to take next, in the order of the setup", () => {
+    const app: AppSummary = { id: "panoma-video", pkg: "@panoma/video", status: "absent" };
+    expect(nextStep(app)).toBe("install");
+    expect(nextStep({ ...app, version: "0.9.0", enabled: false })).toBe("enable");
+    expect(nextStep({ ...app, version: "0.9.0", enabled: true })).toBe("check");
+    expect(nextStep({ ...app, version: "0.9.0", enabled: true, requirements: { browser: { present: false }, ffmpeg: { present: true } } })).toBe("browser");
+    expect(nextStep({ ...app, version: "0.9.0", enabled: true, requirements: { browser: { present: true }, ffmpeg: { present: false } } })).toBe("ffmpeg");
+    // Both missing: the download this page can do comes before the install it can only describe.
+    expect(nextStep({ ...app, version: "0.9.0", enabled: true, requirements: { browser: { present: false }, ffmpeg: { present: false } } })).toBe("browser");
+    expect(nextStep({ ...app, version: "0.9.0", enabled: true, ready: true })).toBe("create");
+  });
+  it("finds the operation on the app itself and not a production", () => {
+    const job: AppJob = { id: "b", appId: "panoma-video", identity: "", tool: "browser", input: {}, status: "running" };
+    const app: AppSummary = { id: "panoma-video", pkg: "@panoma/video", status: "installed", jobs: [
+      { ...job, id: "auto", tool: "panoma_video_auto", identity: "i" }, { ...job, id: "old", status: "done" }, job,
+    ] };
+    expect(activeOperation(app)?.id).toBe("b");
+    expect(activeOperation({ ...app, jobs: [] })).toBeUndefined();
+    expect(activeOperation(null)).toBeUndefined();
+  });
+  it("counts the seconds a job has been at it, or took", () => {
+    const job: AppJob = { id: "j", appId: "panoma-video", identity: "i", tool: "panoma_video_auto", input: {}, status: "running", requestedAt: "2026-09-11T02:44:12.000Z" };
+    expect(jobSeconds(job, Date.parse("2026-09-11T02:45:00.000Z"))).toBe(48);
+    expect(jobSeconds({ ...job, status: "failed", finishedAt: "2026-09-11T02:54:01.000Z" }, 0)).toBe(589);
+    expect(jobSeconds({ ...job, requestedAt: undefined })).toBeUndefined();
+  });
+
+  /*
+    Two sources, one shape. While the run is on the only thing known is the stage the app last
+    named; once it is over, its report says what every stage did. The report is what turns «a
+    stage failed» into an answer, and this is what keeps the two readings from drifting apart.
+   */
+  it("reads the stages from the app's last word while running, and from its report after", () => {
+    const running: AppJob = { id: "j", appId: "panoma-video", identity: "i", tool: "panoma_video_auto", input: {}, status: "running",
+      progress: { stage: "record", message: "record: shooting take 2 of 2" } };
+    const rows = stageReport(running);
+    expect(rows.map((row) => row.name)).toEqual([...VIDEO_STAGES]);
+    expect(rows.slice(0, 5).every((row) => row.state === "done")).toBe(true);
+    expect(rows[5]).toEqual({ name: "record", state: "current", summary: "shooting take 2 of 2" });
+    expect(rows.slice(6).every((row) => row.state === "pending")).toBe(true);
+    // Before the first stage speaks, nothing is done and nothing is current.
+    expect(stageReport({ ...running, progress: { stage: "starting", message: "starting: App connected" } }).every((row) => row.state === "pending")).toBe(true);
+
+    const report = { stages: {
+      scout: { status: "done", summary: "panoma-monorepo · web-app" },
+      serve: { status: "done", summary: "could not start the product: `pnpm run dev` exited with code 1 — using the deployed address" },
+      score: { status: "skipped", summary: "no track" },
+      plan: { status: "failed", summary: "no brief could be planned: promo — needs a click" },
+      render: { status: "skipped", summary: "not run" },
+    } };
+    const failed = stageReport({ ...running, status: "failed", progress: { stage: "plan", message: "plan: failed: …" }, result: report });
+    expect(failed.find((row) => row.name === "serve")).toEqual({ name: "serve", state: "done", summary: report.stages.serve.summary });
+    expect(failed.find((row) => row.name === "score")?.state).toBe("skipped");
+    expect(failed.find((row) => row.name === "plan")?.state).toBe("failed");
+    expect(failed.find((row) => row.name === "brand")?.state).toBe("pending");
+    // A run that ended with no report — interrupted — is read like a running one, ended where it stood.
+    expect(stageReport({ ...running, status: "failed", result: undefined }).find((row) => row.name === "record")?.state).toBe("failed");
+    expect(stageReport(undefined)).toEqual([]);
+  });
+  it("puts the kind of video that was asked for first among the reasons nothing was planned", () => {
+    const skipped = [
+      { goal: "changelog", why: "no tagged CHANGELOG section" },
+      { goal: "trailer", why: "no reachable tag" },
+      { goal: "tutorial", why: "too few steps" },
+      { goal: "promo", why: "A promotion needs a real product click." },
+    ];
+    const job: AppJob = { id: "j", appId: "panoma-video", identity: "i", tool: "panoma_video_auto", input: { goal: "promo" }, status: "failed", result: { skipped } };
+    expect(skippedGoals(job)).toEqual({ asked: [skipped[3]], others: skipped.slice(0, 3) });
+    // A tutorial is planned from the facts too, under that other name.
+    expect(skippedGoals({ ...job, input: { goal: "tutorial" }, result: { skipped: [...skipped, { goal: "facts", why: "no facts" }] } }).asked.map((item) => item.goal)).toEqual(["tutorial", "facts"]);
+    expect(skippedGoals({ ...job, input: {} }).asked).toHaveLength(4);
+    expect(skippedGoals({ ...job, result: { skipped: "not a list" } })).toEqual({ asked: [], others: [] });
+    expect(skippedGoals(undefined)).toEqual({ asked: [], others: [] });
+  });
   it("observes a durable job until completion without sending a cancellation", async () => {
     const fetcher = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ id: "j", status: "running" })))
       .mockResolvedValueOnce(new Response(JSON.stringify({ id: "j", status: "done" })));
@@ -100,6 +179,15 @@ describe("every failure has a sentence, in both languages", () => {
       expect(sentence, `${code} in ${locale}: says nothing`).not.toBe("");
       expect(sentence, `${code} in ${locale}: a gap was left unfilled`).not.toMatch(/[{}]/);
     }
+  });
+
+  it("names the stage that failed in the reader's language, and quotes one it does not know", () => {
+    const said = appFaultText("stage-failed: plan");
+    expect(said).toEqual({ key: "apps.fault.stageFailedAt", stage: "plan" });
+    expect(t("es", said.key, { stage: t("es", "apps.jobs.stage.plan") })).toBe("La etapa «Planificar escenas» falló.");
+    expect(t("en", said.key, { stage: t("en", "apps.jobs.stage.plan") })).toBe("The “Plan scenes” stage failed.");
+    expect(appFaultText("stage-failed: kit")).toEqual({ key: "apps.fault.stageFailed", quote: "kit" });
+    expect(appFaultText("stage-failed")).toEqual({ key: "apps.fault.stageFailed" });
   });
 
   it("names both figures when an engine is too old, and neither when they will not parse", () => {

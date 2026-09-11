@@ -1,6 +1,9 @@
 import { FAULT_PART, faultOf, type AppFaultCode } from "@panoma/apps/faults";
 import type { Locale, MessageKey } from "./i18n";
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === "object" && !Array.isArray(value);
+
 export type AppText = { en: string; es: string };
 /** Credential presence only. Saved secrets never enter app details or a server render. */
 export type AppCredentialStatus = {
@@ -40,6 +43,43 @@ export type AppSummary = {
 export const ACTIVE_JOB_STATES = new Set(["pending", "running", "cancelling"]);
 export const VIDEO_ACTION_KEY = "app:panoma-video:create-video";
 export const VIDEO_STAGES = ["scout", "brand", "brain", "serve", "tour", "record", "score", "study", "plan", "narrate", "render", "review"] as const;
+export type VideoStage = (typeof VIDEO_STAGES)[number];
+
+/**
+ * The three shapes a video can have, with the box each one draws.
+ *
+ * `9:16` on its own is a ratio, and a ratio is arithmetic: whoever does not already know that the
+ * tall one is the phone has to work it out. The width and height are what the picker draws as a
+ * rectangle beside the word, so the shape says it before the number does.
+ */
+export const VIDEO_FORMATS = [
+  { value: "v", ratio: "9:16", key: "apps.jobs.formatVertical", width: 9, height: 16 },
+  { value: "h", ratio: "16:9", key: "apps.jobs.formatHorizontal", width: 16, height: 9 },
+  { value: "s", ratio: "1:1", key: "apps.jobs.formatSquare", width: 1, height: 1 },
+] as const satisfies readonly { value: string; ratio: string; key: MessageKey; width: number; height: number }[];
+export type VideoFormat = (typeof VIDEO_FORMATS)[number]["value"];
+export const isVideoFormat = (value: unknown): value is VideoFormat =>
+  VIDEO_FORMATS.some((format) => format.value === value);
+
+/**
+ * The one thing to do next on the app's page, so the page can say it in a sentence at the top
+ * instead of leaving a person to work it out from which buttons are grey.
+ *
+ * The order is the order of the setup: nothing can be checked before it is installed, nothing
+ * can be downloaded before it is checked, and nothing can be created before it all is there.
+ * `ready` is the server's own verdict and wins when it says yes; the rest of this only explains
+ * a no.
+ */
+export type SetupStep = "install" | "enable" | "check" | "browser" | "ffmpeg" | "create";
+export function nextStep(app: AppSummary): SetupStep {
+  if (!app.version) return "install";
+  if (app.enabled === false) return "enable";
+  if (app.ready) return "create";
+  const requirements = requirementsOf(app);
+  if (requirements.some((item) => item.present === undefined)) return "check";
+  const missing = requirements.find((item) => item.present === false);
+  return missing?.id === "ffmpeg" ? "ffmpeg" : missing ? "browser" : "create";
+}
 
 export function appStatusKey(app: AppSummary): MessageKey {
   if (app.enabled === false || app.status === "disabled") return "apps.status.disabled";
@@ -181,7 +221,11 @@ const FAULT_KEY = {
 /** The two faults whose sentence carries figures rather than quoting the machine underneath. */
 const FAULT_FIGURES: ReadonlySet<AppFaultCode> = new Set(["node-too-old", "npm-too-old"]);
 
-export type AppFaultText = { key: MessageKey; vars?: Record<string, string>; quote?: string };
+export type AppFaultText = {
+  key: MessageKey; vars?: Record<string, string>; quote?: string;
+  /** A stage of the production the sentence names; the screen translates it and fills `{stage}`. */
+  stage?: VideoStage;
+};
 
 /**
  * What to say about a failure, and what to quote under it.
@@ -194,6 +238,14 @@ export function appFaultText(value: string | null | undefined): AppFaultText {
   const { code, detail } = faultOf(value);
   if (!code) return { key: "apps.error", ...(value ? { quote: value } : {}) };
   const key = FAULT_KEY[code];
+  /*
+    «A stage failed» with `plan` quoted under it is a sentence and a word that only a reader of
+    the source could join. Named in the reader's language when the stage is one of the twelve;
+    a stage this catalog does not know keeps the quote.
+   */
+  if (code === "stage-failed" && detail && (VIDEO_STAGES as readonly string[]).includes(detail)) {
+    return { key: "apps.fault.stageFailedAt", stage: detail as VideoStage };
+  }
   if (!FAULT_FIGURES.has(code)) return { key, ...(detail ? { quote: detail } : {}) };
   const [needed, running, ...rest] = (detail ?? "").split(FAULT_PART);
   // Two figures through one text column. Anything but exactly two and the sentence names none.
@@ -205,6 +257,86 @@ export function jobPercent(job: AppJob): number | undefined {
   const { progress, total } = job.progress ?? {};
   if (typeof progress !== "number" || typeof total !== "number" || total <= 0) return undefined;
   return Math.min(100, Math.max(0, Math.round(progress / total * 100)));
+}
+
+/**
+ * The twelve stages of a production, each with where it stands.
+ *
+ * Two sources, one shape. While the job runs the only thing known is the stage the app last
+ * reported, so everything before it is done and everything after it is pending. Once it has
+ * finished, `result.stages` says what each one did in a sentence — which stage failed and why,
+ * and which was skipped — and that is what turns «a stage failed» into an answer. A job that
+ * ended without a report (interrupted, cancelled) falls back to the first shape with its last
+ * stage marked by how the job ended.
+ */
+export type StageState = "done" | "current" | "pending" | "skipped" | "failed";
+export type StageRow = { name: VideoStage; state: StageState; summary?: string };
+export function stageReport(job: AppJob | undefined): StageRow[] {
+  if (!job) return [];
+  const result = isRecord(job.result) ? job.result : undefined;
+  const stages = isRecord(result?.stages) ? result.stages : undefined;
+  if (stages && !ACTIVE_JOB_STATES.has(job.status)) {
+    return VIDEO_STAGES.map((name) => {
+      const stage = isRecord(stages[name]) ? stages[name] : undefined;
+      const status = stage?.status;
+      const state: StageState = status === "done" ? "done" : status === "failed" ? "failed"
+        : status === "skipped" ? "skipped" : "pending";
+      const summary = typeof stage?.summary === "string" ? stage.summary : undefined;
+      return { name, state, ...(summary ? { summary } : {}) };
+    });
+  }
+  const current = (VIDEO_STAGES as readonly string[]).indexOf(job.progress?.stage ?? "");
+  const message = job.progress?.message ?? "";
+  const said = message.startsWith(`${job.progress?.stage}: `) ? message.slice((job.progress?.stage?.length ?? 0) + 2) : message;
+  const ending: StageState = ACTIVE_JOB_STATES.has(job.status) ? "current" : job.status === "done" ? "done" : "failed";
+  return VIDEO_STAGES.map((name, index) => ({
+    name,
+    state: index < current ? "done" : index === current ? ending : "pending",
+    ...(index === current && said ? { summary: said } : {}),
+  }));
+}
+
+/**
+ * Why nothing could be planned, with the kind of video that was asked for first.
+ *
+ * The app plans every kind it knows and reports every one it set aside, so a person who asked
+ * for a promotion read four reasons in a row and had to find theirs in the middle. The one they
+ * asked for is what the screen answers with; the rest fold under it.
+ */
+export type SkippedGoal = { goal: string; why: string };
+export function skippedGoals(job: AppJob | undefined): { asked: SkippedGoal[]; others: SkippedGoal[] } {
+  const result = isRecord(job?.result) ? job.result : undefined;
+  const skipped = Array.isArray(result?.skipped) ? result.skipped.filter((item): item is SkippedGoal =>
+    isRecord(item) && typeof item.goal === "string" && typeof item.why === "string") : [];
+  const goal = typeof job?.input.goal === "string" ? job.input.goal : "all";
+  // A tutorial is planned from the facts too, and the app says so under that other name.
+  const wanted = (item: SkippedGoal) => goal === "all" || item.goal === goal || (goal === "tutorial" && item.goal === "facts");
+  return { asked: skipped.filter(wanted), others: skipped.filter((item) => !wanted(item)) };
+}
+
+/** The word for each kind of video the app can set aside. An unknown one is shown as it came. */
+export const GOAL_KEY: Readonly<Record<string, MessageKey>> = {
+  promo: "apps.jobs.promo", tutorial: "apps.jobs.tutorial", spotlight: "apps.jobs.spotlight",
+  trailer: "apps.jobs.goalTrailer", changelog: "apps.jobs.goalChangelog", sitetour: "apps.jobs.goalSitetour",
+  facts: "apps.jobs.tutorial",
+};
+
+/**
+ * What the app's page is doing right now on the app itself — installing, downloading the
+ * browser, checking — so the progress can be drawn next to the button that started it and not
+ * only in the list at the foot of the page, where nobody who just pressed «download» is looking.
+ */
+export function activeOperation(app: AppSummary | null): AppJob | undefined {
+  return app?.jobs?.find((job) => ACTIVE_JOB_STATES.has(job.status) && !job.tool.startsWith("panoma_video_"));
+}
+
+/** How long a job has been at it, or took, in whole seconds. */
+export function jobSeconds(job: AppJob, now = Date.now()): number | undefined {
+  if (!job.requestedAt) return undefined;
+  const start = Date.parse(job.requestedAt);
+  if (Number.isNaN(start)) return undefined;
+  const end = job.finishedAt ? Date.parse(job.finishedAt) : now;
+  return Math.max(0, Math.round(((Number.isNaN(end) ? now : end) - start) / 1000));
 }
 
 /** Result paths are displayed only through the host's containment-checked artifact endpoint. */

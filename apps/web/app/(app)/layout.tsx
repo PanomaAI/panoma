@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { getStats } from "@panoma/db";
 import { db } from "@/lib/db";
-import { versionNotice } from "@/lib/version-notice";
+import { runningVersion, versionNotice } from "@/lib/version-notice";
 import { refreshLatestIfDue } from "@/lib/version-refresh";
 import { bridgePending, bridgeReport, bridgeSteps } from "@/lib/bridge";
 import { cliName, isEphemeral } from "@/lib/cli-name";
@@ -59,7 +59,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     every failure and answers `undefined`, so a catalog that cannot say which version it is stays
     quiet instead of holding up the frame.
    */
-  const [stats, locale, notice] = await Promise.all([shellStats(), getLocale(), versionNotice()]);
+  const [stats, locale, notice, version] = await Promise.all([
+    shellStats(), getLocale(), versionNotice(), runningVersion(),
+  ]);
 
   /*
     And once a day the answer is refreshed, without anybody waiting for it — the same `void` the
@@ -93,7 +95,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
              share has to live above both of them.
             */}
           <SearchProvider>
-            <AppShell stats={stats} ephemeral={isEphemeral()} notice={notice} />
+            <AppShell stats={stats} ephemeral={isEphemeral()} notice={notice} version={version} />
             {children}
           </SearchProvider>
         </I18nProvider>

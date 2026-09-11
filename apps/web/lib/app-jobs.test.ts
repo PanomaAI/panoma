@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ensureApp, enqueueAppJobRow, getAppJob, claimAppJob, hasPendingAppJob, transitionAppJob, schema, MAX_APP_SPEND_CALLS, type AppJob, type Database } from "@panoma/db";
-import { appJobsChanged, appProgressSink, reconcileApps, runAppQueue, spendOf, stopAppSupervisor, whenAppJobsChange } from "./app-jobs";
+import { appJobsChanged, appProgressSink, browserProgress, reconcileApps, runAppQueue, spendOf, stopAppSupervisor, whenAppJobsChange } from "./app-jobs";
 import { MANAGER_TOOLS, appResultFailure, validateAppInput } from "./app-input";
 
 vi.mock("./db", () => ({ db: vi.fn() }));
@@ -96,6 +96,22 @@ describe("app supervision", () => {
     an operation are read here: eleven identical files could drift one at a time, one file plus one
     list cannot.
    */
+  /*
+    Captured from `playwright install chromium` with stdout piped, which is how the guardian runs
+    it: the basic printer, one line per ten per cent. The download was on the screen only as this
+    text quoted whole, and a person who had just pressed the button read a bar of block characters
+    at the foot of the page instead of seeing one.
+   */
+  it("reads the percentage out of the downloader's lines and starts over on each archive", () => {
+    const measure = browserProgress();
+    expect(measure("Downloading Chromium 141.0.7390.37 (playwright build v1194) from https://cdn.playwright.dev/x.zip")).toEqual({ progress: 0 });
+    expect(measure("|■■■■■■■■                                                                        |  10% of 143.3 MiB")).toEqual({ progress: 10, total: 100 });
+    expect(measure("|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 143.3 MiB")).toEqual({ progress: 100, total: 100 });
+    // A line with no figure keeps the last one: the bar must not vanish between two archives.
+    expect(measure("Chromium 141.0.7390.37 (playwright build v1194) downloaded to /x")).toEqual({ progress: 100, total: 100 });
+    expect(measure("Downloading FFmpeg playwright build v1011 from https://cdn.playwright.dev/y.zip")).toEqual({ progress: 0 });
+    expect(measure("|■■■■■■■■■■■■■■■■                                                                |  20% of 2.3 MiB")).toEqual({ progress: 20, total: 100 });
+  });
   it("accepts only the operations the supervisor dispatches, from either surface", async () => {
     const route = await readFile(new URL("../app/api/apps/[id]/[operation]/route.ts", import.meta.url), "utf8");
     expect(route).toContain("MANAGER_TOOLS.includes(operation");

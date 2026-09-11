@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useId, useState, useTransition } from "react";
+import { useId, useState, useTransition, type ReactNode } from "react";
 import { HiOutlineArrowRight } from "react-icons/hi2";
 import { useT } from "./i18n-provider";
 import { ActionButton, ActionError, Card, EmptyState, Select } from "./primitives";
@@ -11,11 +11,13 @@ import { ActionButton, ActionError, Card, EmptyState, Select } from "./primitive
 export type VideoLaunchProject = { slug: string; name: string };
 
 /** Selecting a catalog project opens its production screen; it never enqueues production work. */
-export function AppVideoLaunch({ ready, project, projects, loadError = false }: {
+export function AppVideoLaunch({ ready, project, projects, loadError = false, step }: {
   ready: boolean;
   project?: string;
   projects: VideoLaunchProject[];
   loadError?: boolean;
+  /** Where this card stands in the order of the setup, drawn above its title. */
+  step?: ReactNode;
 }) {
   const t = useT();
   const router = useRouter();
@@ -34,8 +36,9 @@ export function AppVideoLaunch({ ready, project, projects, loadError = false }: 
   }
 
   return (
-    <Card as="section" aria-labelledby={`${id}-title`} aria-busy={refreshing || undefined}>
-      <h2 id={`${id}-title`} className="text-base font-semibold text-chalk">{t("apps.launch.title")}</h2>
+    <Card as="section" id="app-launch" tabIndex={-1} aria-labelledby={`${id}-title`} aria-busy={refreshing || undefined} className="scroll-mt-[calc(var(--bar-height)+var(--space-4))]">
+      {step}
+      <h2 id={`${id}-title`} className="mt-1 text-base font-semibold text-chalk">{t("apps.launch.title")}</h2>
       <p className="mt-2 text-sm leading-relaxed text-smoke">{t("apps.launch.intro")}</p>
 
       {loadError ? (

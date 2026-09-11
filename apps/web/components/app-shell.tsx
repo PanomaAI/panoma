@@ -141,11 +141,18 @@ export function AppShell({
   stats,
   ephemeral,
   notice,
+  version,
 }: {
   stats?: ShellStats;
   ephemeral?: boolean;
   /** What this catalog has to say about its own version, when it has anything to say. */
   notice?: VersionNotice;
+  /**
+   * The version that is serving this page, when the seal in `~/.panoma/web.json` describes this
+   * very process. The notice above only speaks when there is news; the number itself was shown
+   * nowhere, so a person who wanted to say which panoma they were on had no place to read it.
+   */
+  version?: string;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -293,7 +300,7 @@ export function AppShell({
               EN
             </button>
           </div>
-          <AccountButton ephemeral={ephemeral} notice={notice} />
+          <AccountButton ephemeral={ephemeral} notice={notice} version={version} />
         </div>
       </header>
 
@@ -375,6 +382,7 @@ export function AppShell({
              that teaches you what your projects are made of is made of is consistent.
             */}
           <p className="sidebar-update">
+            {version && <span>{t("shell.version", { version })}</span>}
             <span>{t("shell.footerLocal")}</span>
             <span>{t("shell.footerPrivate")}</span>
             <a href={SOURCE_URL} target="_blank" rel="noreferrer">
@@ -412,7 +420,9 @@ export function AppShell({
  * longer called that, serving as the initial of an account that does not exist. A computer icon
  * says what the panel confirms — this is your machine, not your profile.
  */
-function AccountButton({ ephemeral, notice }: { ephemeral?: boolean; notice?: VersionNotice }) {
+function AccountButton({ ephemeral, notice, version }: {
+  ephemeral?: boolean; notice?: VersionNotice; version?: string;
+}) {
   const t = useT();
   /* `panoma` or `npx panoma`, so the commands the panel hands out are the ones that work here. */
   const cli = useCliName();
@@ -467,6 +477,7 @@ function AccountButton({ ephemeral, notice }: { ephemeral?: boolean; notice?: Ve
       {open && (
         <div className="account-card" role="dialog" aria-label={t("shell.localAccount")}>
           <strong>{t("shell.footerLocal")}</strong>
+          {version && <p>{t("shell.version", { version })}</p>}
           {/*
              What to do about the version, when there is something to do. Two pieces of news and
              never both: having already updated makes «update it» wrong, so the restart is the one

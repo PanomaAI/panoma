@@ -1,13 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { HiOutlineKey, HiOutlineMicrophone } from "react-icons/hi2";
 import { appRequest, type AppCredentialStatus, type AppSummary } from "@/lib/apps-view";
 import { useLocale, useT } from "./i18n-provider";
 import { ActionButton, ActionError, Card, Check, Field, Select, Tag } from "./primitives";
 
-const BRAINS = [
+export const BRAINS = [
   { value: "claude", label: "Claude Code" },
   { value: "codex", label: "Codex" },
   { value: "anthropic", label: "Anthropic API" },
@@ -15,10 +15,12 @@ const BRAINS = [
 ];
 
 /** Credential storage and provider consent are separate actions. Neither starts production. */
-export function AppProviders({ app, busy, onSave }: {
+export function AppProviders({ app, busy, onSave, step }: {
   app: AppSummary;
   busy: boolean;
   onSave: () => Promise<void>;
+  /** Where this card stands in the order of the setup, drawn above its title. */
+  step?: ReactNode;
 }) {
   const t = useT();
   const locale = useLocale();
@@ -90,7 +92,8 @@ export function AppProviders({ app, busy, onSave }: {
 
   return (
     <Card as="section" aria-labelledby="app-providers-title">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      {step}
+      <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
         <h2 id="app-providers-title" className="text-base font-semibold">{t("apps.providers")}</h2>
         <Tag size="md">{t("apps.optional")}</Tag>
       </div>

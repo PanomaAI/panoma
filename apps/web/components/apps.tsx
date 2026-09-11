@@ -6,6 +6,7 @@ import { useLocale, useT } from "./i18n-provider";
 import { Card, EmptyState, Tag, formatBytes } from "./primitives";
 import {
   ACTIVE_JOB_STATES,
+  activeOperation,
   appName,
   appRequest,
   appStatusKey,
@@ -13,12 +14,13 @@ import {
   requirementsOf,
   jobStatusKey,
   jobPercent,
+  nextStep,
   watchAppJob,
   type AppRequirement,
   type AppSummary,
   type AppJob,
 } from "@/lib/apps-view";
-import type { Locale, Translate } from "@/lib/i18n";
+import type { Locale, MessageKey, Translate } from "@/lib/i18n";
 import { AppProviders } from "./app-providers";
 import { AppVideoLaunch, type VideoLaunchProject } from "./app-video-launch";
 
@@ -87,12 +89,48 @@ export function AppError({ error }: { error: string | null | undefined }) {
   const t = useT();
   if (!error) return null;
   const said = appFaultText(error);
+  const vars = said.stage ? { ...said.vars, stage: t(`apps.jobs.stage.${said.stage}`) } : said.vars;
   return (
     <div className="mt-4 rounded border border-edge bg-raised p-3 text-sm" role="alert">
-      <p className="text-smoke">{t(said.key, said.vars)}</p>
+      <p className="text-smoke">{t(said.key, vars)}</p>
       {said.quote && <blockquote className="mt-1 break-words">{said.quote}</blockquote>}
     </div>
   );
+}
+
+/**
+ * What the app itself is doing right now, drawn where the button that started it is.
+ *
+ * The list at the foot of the page already showed it, and that was the problem: somebody who has
+ * just pressed «download» is looking at the button, sees nothing move, and concludes that nothing
+ * did. The sentence is the reader's; the figure is the one the supervisor read out of the
+ * downloader's own lines, and it is only drawn as a bar when there is one.
+ */
+const WORKING: Readonly<Record<string, MessageKey>> = {
+  install: "apps.working.install", update: "apps.working.update", browser: "apps.working.browser",
+  doctor: "apps.working.doctor",
+};
+export function OperationProgress({ job }: { job: AppJob | undefined }) {
+  const t = useT();
+  if (!job) return null;
+  const percent = jobPercent(job);
+  const sentence = job.tool === "browser" && percent !== undefined
+    ? t("apps.working.browserPercent", { n: percent })
+    : t(WORKING[job.tool] ?? "apps.working.other");
+  return (
+    <div className="mt-3" role="status" aria-live="polite">
+      <p className="text-sm text-smoke">{sentence}</p>
+      {percent !== undefined && (
+        <progress className="mt-2 w-full" max={100} value={percent} aria-label={t("apps.jobs.progress", { n: percent })} />
+      )}
+    </div>
+  );
+}
+
+/** The small word above a card that says where it stands in the order of the setup. */
+function Step({ n, total = 3 }: { n: number; total?: number }) {
+  const t = useT();
+  return <p className="eyebrow">{t("apps.stepOf", { n, total })}</p>;
 }
 
 /** The lifecycle buttons. Every name here is one the server's closed list also dispatches. */
@@ -136,12 +174,14 @@ function AppActions({ t, app, busy, onOperate }: {
   measured it. The browser is the one that costs a download of a proprietary product, so its size
   and Google's terms are shown before the button, and the click is the consent.
  */
-function RequirementRow({ t, locale, requirement, app, busy, onOperate }: {
+function RequirementRow({ t, locale, requirement, app, busy, working, onOperate }: {
   t: Translate;
   locale: Locale;
   requirement: AppRequirement;
   app: AppSummary;
   busy: boolean;
+  /** The operation the app is in the middle of, if it is this row's. */
+  working?: AppJob;
   onOperate: (operation: string) => void;
 }) {
   const presence = requirement.present === true
@@ -151,11 +191,17 @@ function RequirementRow({ t, locale, requirement, app, busy, onOperate }: {
     <div className="mt-5 border-t border-edge pt-4">
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-sm font-semibold">{t(requirement.id === "browser" ? "apps.browser" : "apps.ffmpeg")}</h3>
-        <Tag size="md" tone={requirement.present ? "strong" : "neutral"}>{t(presence)}</Tag>
+        <Tag size="md" tone={requirement.present ? "live" : requirement.present === false ? "idle" : "neutral"}>{t(presence)}</Tag>
       </div>
       <p className="mt-2 text-xs leading-relaxed text-smoke">{t(requirement.id === "browser" ? "apps.browserHint" : "apps.ffmpegHint")}</p>
       {requirement.id === "browser" ? (
         <>
+          {/*
+            Said before the download and not only after: the browser this needs is not looked for
+            on the system, on purpose, and a person who already has Chrome reads «missing» as a
+            check that was never made unless the page says why it is looking somewhere else.
+           */}
+          <p className="mt-2 text-xs leading-relaxed text-smoke">{t("apps.browserOwnCopy")}</p>
           {!requirement.present && <p className="mt-2 text-xs leading-relaxed text-smoke">
             {t("apps.browserConsent", { n: requirement.approxMB ?? 550 })}
           </p>}
@@ -178,6 +224,7 @@ function RequirementRow({ t, locale, requirement, app, busy, onOperate }: {
               </button>
             </div>
           )}
+          <OperationProgress job={working} />
         </>
       ) : (
         !requirement.present && (
@@ -190,16 +237,19 @@ function RequirementRow({ t, locale, requirement, app, busy, onOperate }: {
   );
 }
 
-function RequirementsSection({ t, locale, app, busy, onOperate }: {
+function RequirementsSection({ t, locale, app, busy, working, onOperate }: {
   t: Translate;
   locale: Locale;
   app: AppSummary;
   busy: boolean;
+  working?: AppJob;
   onOperate: (operation: string) => void;
 }) {
+  const installing = working && ["install", "update", "doctor"].includes(working.tool) ? working : undefined;
   return (
     <Card as="section" id="app-requirements" tabIndex={-1} aria-labelledby="app-requirements-title" className="scroll-mt-[calc(var(--bar-height)+var(--space-4))]">
-      <h2 id="app-requirements-title" className="text-base font-semibold">{t("apps.requirements")}</h2>
+      <Step n={1} />
+      <h2 id="app-requirements-title" className="mt-1 text-base font-semibold">{t("apps.requirements")}</h2>
       <p className="mt-2 text-sm leading-relaxed text-smoke">{t("apps.setupIntro")}</p>
       {!app.version && (
         <div className="mt-4">
@@ -215,6 +265,7 @@ function RequirementsSection({ t, locale, app, busy, onOperate }: {
           {t("apps.refreshRequirements")}
         </button>
       )}
+      <OperationProgress job={installing} />
       {app.requirementsAt && (
         <p className="mt-2 text-xs text-smoke">
           {t("apps.checkedAt", { date: new Date(app.requirementsAt).toLocaleString(locale) })}
@@ -228,6 +279,7 @@ function RequirementsSection({ t, locale, app, busy, onOperate }: {
           requirement={requirement}
           app={app}
           busy={busy}
+          working={working?.tool === requirement.id ? working : undefined}
           onOperate={onOperate}
         />
       ))}
@@ -355,6 +407,8 @@ export function AppDetail({ id, project, projects, projectsError }: {
     );
   }
   const working = busy || Boolean(app.jobs?.some((job) => ACTIVE_JOB_STATES.has(job.status)));
+  const operation = activeOperation(app);
+  const next = nextStep(app);
   const cancel = (job: AppJob) => {
     void appRequest(`/api/apps/jobs/${job.id}/cancel`, {})
       .then(reload)
@@ -369,23 +423,53 @@ export function AppDetail({ id, project, projects, projectsError }: {
             <p className="eyebrow">{t("apps.official")}</p>
             <h1 className="page-shell__title mt-1">{appName(app, locale)}</h1>
           </div>
-          <Tag size="md" tone="strong">{t(appStatusKey(app))}</Tag>
+          <Tag size="md" tone={app.ready && app.enabled !== false ? "live" : "strong"}>{t(appStatusKey(app))}</Tag>
         </div>
         <p className="mt-3 max-w-2xl text-sm leading-relaxed text-smoke">
           {app.manifest?.summary?.[locale] ?? t("apps.videoSummary")}
         </p>
+        {/*
+          The one sentence the page used to leave a person to work out from which buttons were
+          grey. It points at the card the step lives in: three cards in two columns are read in
+          an order the grid does not promise, and the number on each card is the other half of
+          the same answer.
+         */}
+        <p className="mt-3 text-sm font-semibold text-chalk">
+          <a className="underline underline-offset-4" href={next === "create" ? "#app-launch" : "#app-requirements"}>
+            {t(`apps.next.${next}`)}
+          </a>
+        </p>
       </header>
       <AppError error={error ?? app.error} />
       {app.npm?.present === false && <p className="mt-4 text-sm text-smoke">{t("apps.npmMissing")}</p>}
-      <div className="mt-6 grid items-start gap-4 lg:grid-cols-2">
-        <div className="space-y-4">
-          <AppVideoLaunch ready={Boolean(app.ready && app.enabled !== false)} project={project} projects={projects} loadError={projectsError} />
-          <RequirementsSection t={t} locale={locale} app={app} busy={working} onOperate={run} />
+      {/*
+        In the order of the setup: install and check, then the optional providers, then the
+        project. On a phone that is the order the four cards stack in, one under the other. On a
+        desk they are two columns that each stack on their own — the providers card is tall, and a
+        grid row would push the third step under a hand's width of nothing — so the wrappers turn
+        into `contents` on one side or the other: on the phone the stacks dissolve and `order`
+        lines the cards up; on the desk the cards dissolve into their stacks. The number on each
+        card says the same order whichever way it lands.
+       */}
+      <div className="mt-6 flex flex-col gap-4 lg:grid lg:grid-cols-2 lg:items-start">
+        <div className="contents lg:flex lg:flex-col lg:gap-4">
+          <div className="order-1 lg:contents">
+            <RequirementsSection t={t} locale={locale} app={app} busy={working} working={operation} onOperate={run} />
+          </div>
+          <div className="order-3 lg:contents">
+            <AppVideoLaunch ready={Boolean(app.ready && app.enabled !== false)} project={project} projects={projects} loadError={projectsError} step={<Step n={3} />} />
+          </div>
         </div>
-        <AppProviders app={app} busy={working} onSave={reload} />
+        <div className="contents lg:flex lg:flex-col lg:gap-4">
+          <div className="order-2 lg:contents">
+            <AppProviders app={app} busy={working} onSave={reload} step={<Step n={2} />} />
+          </div>
+          <div className="order-4 lg:contents">
+            <VersionsSection t={t} locale={locale} app={app} busy={working} onOperate={run} />
+          </div>
+        </div>
       </div>
       <div className="mt-4 grid items-start gap-4 lg:grid-cols-2">
-        <VersionsSection t={t} locale={locale} app={app} busy={working} onOperate={run} />
         <LegalSection t={t} app={app} />
       </div>
       <section className="mt-8">
@@ -398,18 +482,22 @@ export function AppDetail({ id, project, projects, projectsError }: {
 
 export function AppJobList({ jobs, onCancel }: { jobs: AppJob[]; onCancel?: (job: AppJob) => void }) {
   const t = useT();
+  const locale = useLocale();
   return (
     <div className="mt-4 space-y-3">
       {jobs.length === 0 && <EmptyState variant="note" title={t("apps.jobs.empty")} />}
       {jobs.map((job) => {
         const percent = jobPercent(job);
+        const active = ACTIVE_JOB_STATES.has(job.status);
+        const when = job.requestedAt ? new Date(job.requestedAt).toLocaleString(locale) : "";
         return (
           <div key={job.id} className="rounded border border-edge p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm" role="status">
                 <span className="font-mono">{job.tool}</span> · {t(jobStatusKey(job.status))}
+                {when && <span className="text-faint"> · {when}</span>}
               </p>
-              {onCancel && ACTIVE_JOB_STATES.has(job.status) && (
+              {onCancel && active && (
                 <button
                   className="apps-button"
                   disabled={job.status === "cancelling"}
@@ -419,10 +507,15 @@ export function AppJobList({ jobs, onCancel }: { jobs: AppJob[]; onCancel?: (job
                 </button>
               )}
             </div>
-            {job.progress?.message && (
+            {/*
+              The app's last line is the thing to watch while it runs, and a duplicate once it has
+              ended: a finished job says what happened through its error or its result, and the
+              line it last printed folds under it for whoever wants the machine's own words.
+             */}
+            {active && job.progress?.message && (
               <blockquote className="mt-2 text-sm text-smoke">{job.progress.message}</blockquote>
             )}
-            {percent !== undefined && (
+            {active && percent !== undefined && (
               <progress
                 className="mt-3 w-full"
                 max={100}
@@ -431,6 +524,12 @@ export function AppJobList({ jobs, onCancel }: { jobs: AppJob[]; onCancel?: (job
               />
             )}
             <AppError error={job.error} />
+            {!active && job.error && job.progress?.message && (
+              <details className="mt-2 text-sm">
+                <summary className="text-smoke">{t("apps.jobs.lastSaid")}</summary>
+                <blockquote className="mt-2 break-words text-smoke">{job.progress.message}</blockquote>
+              </details>
+            )}
           </div>
         );
       })}

@@ -175,6 +175,31 @@ maintenance. Its project selector opens the existing production screen without s
 only catalog projects with a stable identity are offered, with project copies kept distinct.
 The interface is bilingual and the mobile navigation exposes its overflow through More.
 
+The app's page is numbered, and it says the next step in one sentence under the title. The three
+cards — install and requirements, script and voice, create a video — carry «step n of 3» and
+stack in that order on a phone; on a desk they are two columns that stack on their own, so the
+tall providers card does not push the third step under a blank. `nextStep` in
+`apps/web/lib/apps-view.ts` picks the sentence, in the order of the setup, and the server's own
+`ready` wins over anything the page could infer. What the app is doing to itself — installing,
+checking, downloading the browser — is drawn beside the button that started it, not only in the
+job list at the foot; the download percentage is read out of Playwright's lines by
+`browserProgress` in `app-jobs.ts` and stored as a figure, which is what makes a `<progress>`
+possible at all. The browser row says that panoma keeps its own copy of the browser, apart from
+any on the system, because a person who already has Chrome reads «missing» as a check that was
+never made.
+
+The production screen says what it will use before the button that starts it — the app's
+version, the two requirements, the model, whether narration has a key, the project's identity —
+so a ten-minute run is not the way to find out that the voice was on with no key. The format is
+chosen from three drawn rectangles, vertical, landscape and square, with the ratio last. While a
+production runs the twelve stages are listed with the one in progress, the app's last line under
+it, and the time since it started; when it ends without a preview, the same list stays as the
+report, with each stage's own sentence quoted — which is where «could not start the product,
+using the deployed address» had been all along — and the stage that could not plan gets its
+verdict laid out by kind of video, the kind that was asked for first and the rest folded
+(`stageReport` and `skippedGoals`, both in `apps-view.ts`). Only a production that finished
+offers to export.
+
 Every Apps route checks same origin. Mutation handlers additionally check local operator
 authorization and refuse remote catalogs before reading the request body or opening the
 database. The eleven lifecycle operations share one handler and are validated against the same

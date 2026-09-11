@@ -85,7 +85,7 @@ despacho de propuestas.
 - [x] El .md de los agentes: linter contra el disco real, bloque que se cuida solo, quién tocó el fichero, los heredados de arriba y la opinión del modelo (docs/agents-md.md)
 - [x] Memoria curada por proyecto: los agentes proponen hechos durables, tú apruebas, y lo aprobado llega al primer turno de todos — con presupuesto que se niega a compactar (docs/memory.md)
 - [x] Apps oficiales opcionales, con su propia pantalla: manifiesto validado, versiones que se activan y se revierten, y cada trabajo en un proceso aparte (docs/apps.md)
-- [x] panoma video, la primera app: añade una pantalla de producción a cada proyecto y un botón «Crear vídeo» en la cabecera; su paquete todavía no está en npm, así que hoy no hay nada que esa pantalla pueda instalar
+- [x] panoma video, la primera app: añade una pantalla de producción a cada proyecto y un botón «Crear vídeo» en la cabecera, y se instala desde npm como [`@panoma/video`](https://www.npmjs.com/package/@panoma/video)
 - [x] Pantalla de gasto: cada llamada al modelo queda anotada, con un tope diario para cada una de las ocho familias, que puedes subir, bajar, poner a cero para apagar esa familia o dejar como viene de fábrica (docs/budgets.md)
 - [x] El puente: los cuatro pasos de la puesta en marcha —catálogo, modelo, agente y registro automático—, uno cada vez, separados de lo que los agentes ya han anotado
 - [x] Ejecución en contenedor efímero: el nivel `container`, con docker, podman, nerdctl o finch, que baja a `hardened` y dice por qué cuando no hay ninguno (docs/run-and-isolation.md)

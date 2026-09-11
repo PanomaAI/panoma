@@ -1,23 +1,36 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
+import { HiOutlineCheck, HiOutlineMinus, HiOutlineXMark } from "react-icons/hi2";
 import { useLocale, useT } from "./i18n-provider";
 import { AppError, AppJobList } from "./apps";
+import { BRAINS } from "./app-providers";
+import { Tag, type TagTone } from "./primitives";
 import {
   ACTIVE_JOB_STATES,
+  GOAL_KEY,
+  VIDEO_FORMATS,
   VIDEO_STAGES,
   appRequest,
   artifactUrl,
   currentProduction,
+  isVideoFormat,
   jobArtifacts,
+  jobSeconds,
   productionExport,
   productionInput,
   productionLanguages,
   productionStory,
+  requirementsOf,
+  skippedGoals,
+  stageReport,
   watchAppJob,
+  type AppCredentialStatus,
   type AppJob,
   type AppSummary,
+  type StageState,
+  type VideoFormat,
 } from "@/lib/apps-view";
 import type { Locale, Translate } from "@/lib/i18n";
 
@@ -56,30 +69,133 @@ type ReviewCheck = {
 type ReviewResult = { render_id?: string; status?: string; checks?: ReviewCheck[] };
 
 type Enqueue = (tool: string, input: Record<string, unknown>) => void;
-const FORMATS = [
-  { value: "v", label: "9:16" },
-  { value: "h", label: "16:9" },
-  { value: "s", label: "1:1" },
-];
-const FORMAT_LABEL: Record<string, string> = { v: "9:16", h: "16:9", s: "1:1" };
+const FORMAT_LABEL: Record<string, string> = Object.fromEntries(VIDEO_FORMATS.map((format) => [format.value, format.ratio]));
 const LANGUAGE_LABEL: Record<Locale, string> = { es: "Español", en: "English" };
 const SELECT = "mt-2 block w-full rounded border border-edge bg-surface p-2";
 const PANEL = "rounded-xl border border-edge p-5";
 
-function FormatSelect({ value, onChange, label }: {
-  value: string;
-  onChange: (value: string) => void;
-  label: string;
-}) {
+/** The rectangle a format is, drawn at the proportion it names. Twenty-two pixels on its long side. */
+function FormatShape({ width, height }: { width: number; height: number }) {
+  const long = 22;
+  const w = width >= height ? long : Math.round(long * width / height);
+  const h = height >= width ? long : Math.round(long * height / width);
   return (
-    <label className="text-sm">
-      {label}
-      <select className={SELECT} value={value} onChange={(event) => onChange(event.target.value)}>
-        {FORMATS.map((format) => (
-          <option key={format.value} value={format.value}>{format.label}</option>
+    <svg aria-hidden viewBox="0 0 24 24" className="size-6 shrink-0">
+      <rect x={(24 - w) / 2} y={(24 - h) / 2} width={w} height={h} rx="2" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+/*
+  Three radios drawn as cards: the shape, the word for it, and the ratio last. `9:16` was the whole
+  option before, and a ratio is arithmetic — a person who does not already know which one is the
+  phone had to work it out. Native radios keep the arrow keys and the group semantics for free; the
+  input is only hidden from the eye, and the card shows the ring when it holds the focus.
+ */
+function FormatPicker({ value, onChange, label, disabled = false }: {
+  value: VideoFormat;
+  onChange: (value: VideoFormat) => void;
+  label: string;
+  disabled?: boolean;
+}) {
+  const t = useT();
+  const name = useId();
+  return (
+    <fieldset className="min-w-0 text-sm" disabled={disabled}>
+      <legend>{label}</legend>
+      <div className="mt-2 grid grid-cols-3 gap-2">
+        {VIDEO_FORMATS.map((format) => {
+          const checked = value === format.value;
+          return (
+            <label
+              key={format.value}
+              className={`flex cursor-pointer flex-col items-center gap-1 rounded border px-2 py-2 text-center has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent ${
+                checked ? "border-accent bg-raised text-chalk" : "border-edge text-smoke hover:border-edge-bright"
+              }`}
+              title={t(`apps.jobs.formatFor${format.value.toUpperCase() as "V" | "H" | "S"}`)}
+            >
+              <input
+                type="radio"
+                name={name}
+                value={format.value}
+                checked={checked}
+                onChange={() => onChange(format.value)}
+                className="sr-only"
+              />
+              <FormatShape width={format.width} height={format.height} />
+              <span className="text-xs font-semibold">{t(format.key)}</span>
+              <span className="font-mono text-[10px] text-faint">{format.ratio}</span>
+              <span className="sr-only">{t(`apps.jobs.formatFor${format.value.toUpperCase() as "V" | "H" | "S"}`)}</span>
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
+
+/** Seconds as a person says them: under a minute, the seconds; over it, both. */
+function duration(t: Translate, seconds: number): string {
+  return seconds < 60 ? t("apps.jobs.seconds", { s: seconds })
+    : t("apps.jobs.minutes", { m: Math.floor(seconds / 60), s: seconds % 60 });
+}
+
+/*
+  Everything a production is about to use, on one line each, before the button that starts it.
+  Nothing here is measured on this page: it is what the app's page already knows — the version,
+  the two requirements, the model, the voice — read once and shown where it is about to matter,
+  because a person who starts a ten-minute run deserves to know beforehand that the narration
+  they enabled has no key.
+ */
+function Preflight({ t, app, identity, slug, credential }: {
+  t: Translate;
+  app: AppSummary;
+  identity: string | null;
+  slug: string;
+  credential: AppCredentialStatus | null;
+}) {
+  const requirements = requirementsOf(app);
+  const presence = (id: string): { tone: TagTone; text: string } => {
+    const item = requirements.find((requirement) => requirement.id === id);
+    return item?.present === true ? { tone: "live", text: t("apps.present") }
+      : item?.present === false ? { tone: "idle", text: t("apps.missing") } : { tone: "neutral", text: t("apps.unchecked") };
+  };
+  const brain = app.settings?.brain ?? "none";
+  const brainName = brain === "none" ? t("apps.none") : brain === "auto" ? t("apps.auto")
+    : BRAINS.find((item) => item.value === brain)?.label ?? brain;
+  const voiceOn = Boolean(app.settings?.voice);
+  const keyMissing = voiceOn && credential !== null && !credential.configured;
+  const voice = !voiceOn ? { tone: "neutral" as TagTone, text: t("apps.jobs.voiceOff") }
+    : keyMissing ? { tone: "idle" as TagTone, text: `${t("apps.jobs.voiceOn")} · ${t("apps.key.missing")}` }
+    : { tone: "live" as TagTone, text: credential?.configured ? `${t("apps.jobs.voiceOn")} · ${t("apps.key.configured")}` : t("apps.jobs.voiceOn") };
+  const rows: { label: string; tone: TagTone; text: string }[] = [
+    { label: t("apps.jobs.beforeApp"), tone: app.version ? "live" : "idle", text: app.version ? `panoma video ${app.version}` : t("apps.status.absent") },
+    { label: t("apps.browser"), ...presence("browser") },
+    { label: t("apps.ffmpeg"), ...presence("ffmpeg") },
+    { label: t("apps.jobs.beforeBrain"), tone: brain === "none" ? "neutral" : "live", text: brainName },
+    { label: t("apps.jobs.beforeVoice"), ...voice },
+    { label: t("apps.jobs.beforeProject"), tone: identity ? "live" : "idle", text: identity ? slug : t("apps.jobs.noIdentity") },
+  ];
+  const ready = Boolean(app.ready && app.enabled !== false && identity && !keyMissing);
+  return (
+    <section className={`mt-5 ${PANEL}`} aria-labelledby="video-preflight-title">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 id="video-preflight-title" className="font-display text-xl font-semibold">{t("apps.jobs.beforeTitle")}</h2>
+        <Tag size="md" tone={ready ? "live" : "idle"}>{t(ready ? "apps.jobs.beforeReady" : "apps.jobs.beforeNotReady")}</Tag>
+      </div>
+      <p className="mt-2 text-sm text-smoke">{t("apps.jobs.beforeIntro")}</p>
+      <dl className="mt-4 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
+        {rows.map((row) => (
+          <div key={row.label} className="flex items-center justify-between gap-3 border-t border-edge pt-2">
+            <dt className="text-smoke">{row.label}</dt>
+            <dd><Tag size="md" tone={row.tone}>{row.text}</Tag></dd>
+          </div>
         ))}
-      </select>
-    </label>
+      </dl>
+      <Link className="mt-4 inline-block text-sm underline underline-offset-4" href={`/apps/panoma-video?project=${encodeURIComponent(slug)}`}>
+        {t("apps.jobs.changeInApp")}
+      </Link>
+    </section>
   );
 }
 
@@ -113,7 +229,7 @@ function ProductionForm({ t, locked, onStart }: {
 }) {
   const locale = useLocale();
   const [goal, setGoal] = useState("promo");
-  const [format, setFormat] = useState("v");
+  const [format, setFormat] = useState<VideoFormat>("v");
   const [language, setLanguage] = useState<Locale>(locale);
   return (
     <form
@@ -123,7 +239,7 @@ function ProductionForm({ t, locked, onStart }: {
         onStart({ goal, format, language });
       }}
     >
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-[1fr_auto_1fr]">
         <label className="text-sm">
           {t("apps.jobs.goal")}
           <select className={SELECT} value={goal} onChange={(event) => setGoal(event.target.value)}>
@@ -132,7 +248,7 @@ function ProductionForm({ t, locked, onStart }: {
             <option value="spotlight">{t("apps.jobs.spotlight")}</option>
           </select>
         </label>
-        <FormatSelect value={format} onChange={setFormat} label={t("apps.jobs.format")} />
+        <FormatPicker value={format} onChange={setFormat} label={t("apps.jobs.format")} />
         <LanguageSelect
           value={language}
           tracks={["es", "en"]}
@@ -147,22 +263,132 @@ function ProductionForm({ t, locked, onStart }: {
   );
 }
 
-/** The twelve stages of `auto`, with the one the app last reported marked as the current step. */
-function StageStrip({ t, stage }: { t: Translate; stage?: string }) {
+/** The mark beside a stage: a tick, a cross, a dash, a filled point or a hollow one. */
+function StageMark({ state }: { state: StageState }) {
+  if (state === "done") return <HiOutlineCheck aria-hidden className="size-4 shrink-0 text-live" />;
+  if (state === "failed") return <HiOutlineXMark aria-hidden className="size-4 shrink-0 text-fail" />;
+  if (state === "skipped") return <HiOutlineMinus aria-hidden className="size-4 shrink-0 text-faint" />;
   return (
-    <ol className="mt-5 flex flex-wrap gap-2" aria-label={t("apps.jobs.production")}>
-      {VIDEO_STAGES.map((name) => (
-        <li
-          key={name}
-          className={`rounded border px-3 py-2 text-xs ${
-            stage === name ? "border-accent font-semibold" : "border-edge text-smoke"
-          }`}
-          aria-current={stage === name ? "step" : undefined}
-        >
-          {t(`apps.jobs.stage.${name}`)}
-        </li>
-      ))}
-    </ol>
+    <span aria-hidden className="flex size-4 shrink-0 items-center justify-center">
+      <span className={`size-2 rounded-full ${state === "current" ? "bg-accent animate-pulse" : "border border-edge-bright"}`} />
+    </span>
+  );
+}
+
+/*
+  Why nothing could be planned, with the kind of video that was asked for first and the rest
+  folded. The app sets every kind aside with a sentence each, and used to hand all of them over
+  in one paragraph; the one the person asked for is the answer, the others are context.
+ */
+function PlanVerdict({ t, job }: { t: Translate; job: AppJob }) {
+  const { asked, others } = skippedGoals(job);
+  if (!asked.length && !others.length) return null;
+  const goal = typeof job.input.goal === "string" ? job.input.goal : "all";
+  const named = (name: string) => { const key = GOAL_KEY[name]; return key ? t(key) : name; };
+  const first = asked.length ? asked : others;
+  const rest = asked.length ? others : [];
+  return (
+    <div className="mt-4 rounded border border-edge bg-raised p-3 text-sm">
+      <p className="text-smoke">
+        {goal === "all" || !asked.length ? t("apps.jobs.notPlannedAny") : t("apps.jobs.notPlanned", { goal: named(goal) })}
+      </p>
+      <ul className="mt-2 space-y-2">
+        {first.map((item) => (
+          <li key={item.goal}>
+            <p className="font-semibold">{named(item.goal)}</p>
+            <blockquote className="mt-1 break-words">{item.why}</blockquote>
+          </li>
+        ))}
+      </ul>
+      {rest.length > 0 && (
+        <details className="mt-3">
+          <summary className="text-smoke">{t("apps.jobs.otherGoals")}</summary>
+          <ul className="mt-2 space-y-2">
+            {rest.map((item) => (
+              <li key={item.goal}>
+                <p className="font-semibold">{named(item.goal)}</p>
+                <blockquote className="mt-1 break-words text-smoke">{item.why}</blockquote>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
+  );
+}
+
+/*
+  The twelve stages of a production, each with where it stands and what it said.
+
+  While the run is on it is the thing to watch: the stage in progress, the app's last line under
+  it, the clock since the start and the button that stops it. Once it has ended it is the report —
+  which stage failed and why, which were skipped — and it stays on the page, because «a stage
+  failed» with the word `plan` under it was the whole answer before and nobody could act on it.
+  The stage that could not plan gets its verdict laid out by kind of video instead of the raw
+  paragraph, and the app's own words for every other stage are quoted as they came.
+ */
+function StageList({ t, job, locked, onCancel }: {
+  t: Translate;
+  job: AppJob;
+  locked: boolean;
+  onCancel?: (job: AppJob) => void;
+}) {
+  const active = ACTIVE_JOB_STATES.has(job.status);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [active]);
+  const rows = stageReport(job);
+  const seconds = jobSeconds(job, now);
+  const starting = active && !(VIDEO_STAGES as readonly string[]).includes(job.progress?.stage ?? "");
+  const verdict = rows.find((row) => row.name === "plan" && row.state === "failed");
+  const { asked, others } = skippedGoals(job);
+  const explained = Boolean(verdict && (asked.length || others.length));
+  return (
+    <section className={`mt-7 ${PANEL}`} aria-labelledby="video-stages-title" aria-live={active ? "polite" : undefined}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 id="video-stages-title" className="font-display text-xl font-semibold">
+          {t(active ? "apps.jobs.stages" : "apps.jobs.report")}
+        </h2>
+        <div className="flex items-center gap-3">
+          {!active && <Tag size="md" tone={job.status === "done" ? "live" : job.status === "failed" ? "fail" : "neutral"}>{t(`apps.jobs.${job.status === "done" ? "done" : job.status === "failed" ? "failed" : "cancelled"}`)}</Tag>}
+          {active && onCancel && (
+            <button className="apps-button" disabled={locked && job.status === "cancelling"} onClick={() => onCancel(job)}>
+              {t("apps.jobs.cancel")}
+            </button>
+          )}
+        </div>
+      </div>
+      {seconds !== undefined && (
+        <p className="mt-2 text-sm text-smoke">{t(active ? "apps.jobs.elapsed" : "apps.jobs.took", { time: duration(t, seconds) })}</p>
+      )}
+      {starting && <p className="mt-2 text-sm text-smoke">{t("apps.jobs.starting")}</p>}
+      <ol className="mt-4 grid gap-x-6 gap-y-1 sm:grid-cols-2">
+        {rows.map((row) => (
+          <li
+            key={row.name}
+            className={`flex gap-2 py-1 text-sm ${row.state === "pending" || row.state === "skipped" ? "text-faint" : "text-chalk"}`}
+            aria-current={row.state === "current" ? "step" : undefined}
+          >
+            <span className="mt-0.5"><StageMark state={row.state} /></span>
+            <div className="min-w-0">
+              <p className={row.state === "current" ? "font-semibold" : ""}>
+                {t(`apps.jobs.stage.${row.name}`)}
+                <span className="sr-only"> · {t(`apps.jobs.stageState.${row.state}`)}</span>
+              </p>
+              {row.summary && !(row.name === "plan" && explained) && (
+                <blockquote className="mt-0.5 break-words text-xs text-smoke">{row.summary}</blockquote>
+              )}
+            </div>
+          </li>
+        ))}
+      </ol>
+      {!active && job.error && <AppError error={job.error} />}
+      {verdict && <PlanVerdict t={t} job={job} />}
+      {!active && job.status === "done" && <p className="mt-3 text-sm text-smoke">{t("apps.jobs.reportDone")}</p>}
+    </section>
   );
 }
 
@@ -240,10 +466,10 @@ function ExportSection({ t, production, brief, historical, current, languages, f
   historical: boolean;
   current?: AppJob;
   languages: Locale[];
-  format: string;
+  format: VideoFormat;
   language: Locale;
   locked: boolean;
-  onFormat: (value: string) => void;
+  onFormat: (value: VideoFormat) => void;
   onLanguage: (value: Locale) => void;
   onEnqueue: Enqueue;
   onOpenCurrent: (id: string) => void;
@@ -267,8 +493,8 @@ function ExportSection({ t, production, brief, historical, current, languages, f
     <section className={`mt-5 ${PANEL}`}>
       <p className="text-sm text-smoke">{t("apps.jobs.savedStory")}</p>
       {brief && (
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <FormatSelect value={format} onChange={onFormat} label={t("apps.jobs.format")} />
+        <div className="mt-4 grid gap-4 sm:grid-cols-[auto_1fr]">
+          <FormatPicker value={format} onChange={onFormat} label={t("apps.jobs.format")} disabled={locked} />
           <LanguageSelect
             value={language}
             tracks={languages}
@@ -308,7 +534,7 @@ function RevisionSection({ t, story, brief, language, format, locked, onEnqueue 
   story: Story;
   brief?: string;
   language: Locale;
-  format: string;
+  format: VideoFormat;
   locked: boolean;
   onEnqueue: Enqueue;
 }) {
@@ -469,7 +695,8 @@ export function VideoProduction({ projectId, identity, slug }: {
   const [busy, setBusy] = useState(false);
   const [productionId, setProductionId] = useState("");
   const [variantLanguage, setVariantLanguage] = useState<Locale | null>(null);
-  const [variantFormat, setVariantFormat] = useState<string | null>(null);
+  const [variantFormat, setVariantFormat] = useState<VideoFormat | null>(null);
+  const [credential, setCredential] = useState<AppCredentialStatus | null>(null);
 
   const reload = useCallback(async () => {
     try {
@@ -488,6 +715,20 @@ export function VideoProduction({ projectId, identity, slug }: {
   useEffect(() => {
     void reload();
   }, [reload]);
+  /*
+    Whether the narration has a key is only asked when the narration is on, and only the presence
+    travels: the route answers `configured` and never the value. A catalog that refuses the
+    question — a remote one — leaves the row saying «ElevenLabs» and nothing about a key.
+   */
+  const voiceOn = Boolean(app?.settings?.voice);
+  useEffect(() => {
+    if (!voiceOn) { setCredential(null); return; }
+    const controller = new AbortController();
+    appRequest<AppCredentialStatus>("/api/apps/panoma-video/credentials", undefined, "GET", controller.signal)
+      .then((status) => { if (!controller.signal.aborted) setCredential(status); })
+      .catch(() => { if (!controller.signal.aborted) setCredential(null); });
+    return () => controller.abort();
+  }, [voiceOn]);
 
   const active = jobs.find((job) => ACTIVE_JOB_STATES.has(job.status));
   const activeId = active?.id;
@@ -514,16 +755,22 @@ export function VideoProduction({ projectId, identity, slug }: {
       .finally(() => setBusy(false));
   }, [identity, projectId, reload]);
 
-  const productions = jobs.filter((job) => job.result && job.tool === "panoma_video_auto");
+  /*
+    Only a production that finished counts as one: a run that failed at `plan` still carries the
+    report it wrote, and offering to «export the final versions» of it put a button under a
+    failure with nothing behind it.
+   */
+  const productions = jobs.filter((job) => job.result && job.tool === "panoma_video_auto" && job.status === "done");
   const production = productions.find((job) => job.id === productionId) ?? productions[0];
+  const latestRun = jobs.find((job) => job.tool === "panoma_video_auto");
   const { brief, job: storyJob } = productionStory(jobs, production);
   const story = storyJob?.result as Story | undefined;
   const current = currentProduction(jobs, production);
   const historical = Boolean(production && current?.id !== production.id);
   const languages = productionLanguages(production, storyJob);
   const savedLanguage = variantLanguage && languages.includes(variantLanguage) ? variantLanguage : languages[0]!;
-  const declaredFormat = String(production?.input.format);
-  const savedFormat = variantFormat ?? (FORMAT_LABEL[declaredFormat] ? declaredFormat : "v");
+  const declaredFormat = production?.input.format;
+  const savedFormat: VideoFormat = variantFormat ?? (isVideoFormat(declaredFormat) ? declaredFormat : "v");
   useEffect(() => {
     setVariantLanguage(null);
     setVariantFormat(null);
@@ -535,6 +782,12 @@ export function VideoProduction({ projectId, identity, slug }: {
     jobArtifacts(job).length > 0 &&
     (!historical || job.id === production?.id) &&
     (job.tool !== "panoma_video_auto" || job.id === production?.id));
+
+  const cancel = (job: AppJob) => {
+    void appRequest(`/api/apps/jobs/${job.id}/cancel`, {})
+      .then(reload)
+      .catch((reason: Error) => setError(reason.message));
+  };
 
   return (
     <>
@@ -553,12 +806,20 @@ export function VideoProduction({ projectId, identity, slug }: {
           </Link>
         </div>
       )}
+      {app && <Preflight t={t} app={app} identity={identity} slug={slug} credential={credential} />}
       <ProductionForm
         t={t}
         locked={locked}
         onStart={(options) => enqueue("panoma_video_auto", productionInput(options))}
       />
-      {active?.tool === "panoma_video_auto" && <StageStrip t={t} stage={active.progress?.stage} />}
+      {/*
+        The run in progress, whichever tool it is; and when nothing runs, the report of the last
+        production if it did not end well — the one thing this page used to say nothing about.
+       */}
+      {active && <StageList t={t} job={active} locked={locked} onCancel={cancel} />}
+      {!active && latestRun && latestRun.status !== "done" && (
+        <StageList t={t} job={latestRun} locked={locked} />
+      )}
       {productions.length > 1 && (
         <label className="mt-6 block text-sm">
           {t("apps.jobs.chooseProduction")}
@@ -610,11 +871,7 @@ export function VideoProduction({ projectId, identity, slug }: {
         t={t}
         jobs={jobs}
         locked={locked}
-        onCancel={(job) => {
-          void appRequest(`/api/apps/jobs/${job.id}/cancel`, {})
-            .then(reload)
-            .catch((reason: Error) => setError(reason.message));
-        }}
+        onCancel={cancel}
         onEnqueue={enqueue}
       />
     </>

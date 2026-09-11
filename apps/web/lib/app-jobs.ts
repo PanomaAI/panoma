@@ -152,10 +152,29 @@ async function syncInstalled(database: Database, id: string) {
     ...(app ? { installedAt: row?.installedAt ?? new Date() } : { requirements: null, requirementsAt: null }),
   }));
 }
+/*
+  What Playwright's downloader prints when nobody is watching a terminal: one line per ten per
+  cent, `|■■■■    |  40% of 143.3 MiB`, and a `Downloading …` line before each of the two or three
+  archives a browser is. The percentage was already in the text; it was stored as text, so the
+  screen quoted a bar drawn in block characters and drew none of its own. Read here, at the one
+  place the line is seen, so the row carries a figure a `<progress>` can show — and reset on each
+  new archive, because a bar that jumps back from 100 to 10 is honest and one that sticks at 100
+  while the second file downloads is not.
+ */
+export function browserProgress(): (line: string) => { progress: number; total?: number } {
+  let percent: number | undefined;
+  return (line) => {
+    if (/^Downloading\b/i.test(line)) percent = undefined;
+    const match = /(\d{1,3})% of /.exec(line);
+    if (match) percent = Math.min(100, Number(match[1]));
+    return percent === undefined ? { progress: 0 } : { progress: percent, total: 100 };
+  };
+}
 async function executeManager(
   database: Database, job: AppJob, signal: AbortSignal, onProgress: (p: AppProgress) => void,
 ) {
-  const progress = (message: string) => onProgress({ progress: 0, message: job.tool + ": " + message });
+  const measure = job.tool === "browser" ? browserProgress() : () => ({ progress: 0 });
+  const progress = (message: string) => onProgress({ ...measure(message), message: job.tool + ": " + message });
   if (job.tool === "install" || job.tool === "update") {
     await queueWrite(() => updateApp(database, job.appId, { status: "installing", error: null }));
     const step = job.tool === "install" ? install : update;

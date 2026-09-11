@@ -85,7 +85,7 @@ dispatch.
 - [x] Agent instruction files: linting against the real disk, a self-managed block, attribution, inherited files, and model review ([docs/agents-md.md](docs/agents-md.md))
 - [x] Curated project memory: agents propose durable facts, you approve them, and approved memory reaches every agent's first turn under a budget that refuses silent compaction ([docs/memory.md](docs/memory.md))
 - [x] Optional official apps, with a screen of their own: a validated manifest, versions that activate and roll back, and each job in a separate process ([docs/apps.md](docs/apps.md))
-- [x] panoma video, the first app: it adds a production screen to every project and a "Create video" button to the project header; its package is not on npm yet, so there is nothing that screen can install today
+- [x] panoma video, the first app: it adds a production screen to every project and a "Create video" button to the project header, and installs from npm as [`@panoma/video`](https://www.npmjs.com/package/@panoma/video)
 - [x] A spend screen: every model call is recorded, with a daily cap for each of the eight budget families that you can raise, lower, set to zero to switch that family off, or leave at the factory value ([docs/budgets.md](docs/budgets.md))
 - [x] A bridge screen: the four setup steps between your projects and your agents—catalog, model, agent, and automatic logging—one at a time, kept apart from what the agents have already recorded
 - [x] Execution inside an ephemeral container through docker, podman, nerdctl, or finch, falling back to the hardened level and saying why when no runtime is installed ([docs/run-and-isolation.md](docs/run-and-isolation.md))

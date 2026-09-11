@@ -122,6 +122,13 @@ It is not a banner and not a modal. Both were considered and refused for this ex
 news when the temporary-copy notice was written, and the reasons are recorded there: nothing is
 broken, and a permanent warning over a healthy state is furniture by the second day.
 
+**The number itself is another matter, and since 10-Sep-2026 it is on the sidebar foot.** The
+notice only speaks when there is news, and until then the version was written nowhere on any
+screen: somebody who wanted to say which panoma they were on had no place to read it. One short
+line — `panoma 0.9.0` — fits where a two-sentence notice did not, above the local promise, and the
+same line opens the account panel. It is the running version from the seal, so it obeys the pid
+gate like everything else here: a development server shows no number rather than a wrong one.
+
 ## What it does not do / Known limits
 
 - **It cannot be dismissed, and it does not need to be** — it disappears on its own the moment you
