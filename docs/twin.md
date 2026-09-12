@@ -121,6 +121,23 @@ across their repos that there is nothing to read. And of the four only two have 
 text but a SQLite database per workspace, and `readableSources()` says so on both surfaces
 instead of offering a consent that buys nothing.
 
+**`mineCodex` reads three channels since 12-Sep-2026, and the order they arrive in is the
+rule.** The reader was written against Codex 0.108 on the `event_msg` pair — `user_message`,
+what you typed; `agent_message`, what you saw — and ignored the `response_item` messages on
+purpose: they carried the same turn escorted by six times its weight in injected blocks. Then
+the client moved: of the newest sixty rollouts on this disk, none writes `user_message` any
+more, seven carry the turn as an `item_completed` event with a `UserMessage` item, and
+fifty-three carry it only on the response channel — so for months the twin read nothing from
+a Codex written by the app, and `userTurns` for Codex was zero. Now the response item, which
+comes first in the file, is held and not counted; an event twin with the same words takes the
+turn and drops it, anything else — an answer, another turn, a header, the end of the file —
+makes the held one the turn; a held item that is nothing but the client's block is dropped
+without a count, so the old files keep their old figures; and the same answer seen twice in
+a row is one delivery. Measured the day it changed: 315 files, 1,811 turns where there had
+been none, 1,546 of them reactions, 7.1 s. The blocks the app injects in your name —the
+plugin list, an aborted turn, the instructions file pasted whole— joined the list rule 6 of
+the reader's header trims.
+
 **The two critics do not measure with the same yardstick, and that is on purpose.** The one
 with eyes compares a screen against your sentences: what it denounces depends on what you
 signed. The mechanical one compares the project **against itself**: a color that shows up

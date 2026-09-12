@@ -685,6 +685,110 @@ describe("mineCodex", () => {
     expect(stats.sidechain).toBe(0);
   });
 
+  /*
+    The client moved on 12-Sep-2026 (measured on the newest sixty rollouts of this disk): no
+    `user_message` event anywhere, the person's turn as an `item_completed` event with a
+    `UserMessage` item in seven files, and in the other fifty-three only as the response item
+    this reader ignored — so it read nothing. The three shapes below are the measured ones.
+   */
+  function said(text: string, role: "user" | "assistant" = "user"): Line {
+    const part = role === "user" ? "input_text" : "output_text";
+    return {
+      timestamp: AT,
+      type: "response_item",
+      payload: { type: "message", id: "msg_1", role, content: [{ type: part, text }] },
+    };
+  }
+  function item(type: "UserMessage" | "AgentMessage", text: string, phase?: string): Line {
+    return {
+      timestamp: AT,
+      type: "event_msg",
+      payload: {
+        type: "item_completed",
+        thread_id: "sesion-1",
+        turn_id: "turn-1",
+        item: { type, id: "item-1", content: [{ type: type === "UserMessage" ? "text" : "Text", text }], ...(phase ? { phase } : {}) },
+      },
+    };
+  }
+  function ran(command: string): Line {
+    return {
+      timestamp: AT,
+      type: "event_msg",
+      payload: { type: "item_completed", item: { type: "CommandExecution", id: "exec-1", command: ["/bin/zsh", "-lc", command], cwd: "file:///casa" } },
+    };
+  }
+
+  it("reads the app's rollout, where the turn is an item and its response twin comes first", async () => {
+    const home = makeHome({
+      [ROLLOUT]: [
+        meta({ originator: "Codex Desktop", cli_version: "0.153.4" }),
+        said("<recommended_plugins>\nHere is a list of plugins.\n</recommended_plugins>"),
+        said("mejora la portada"),
+        item("UserMessage", "mejora la portada"),
+        ran("cat README.md"),
+        item("AgentMessage", "Voy a mirar la portada.", "commentary"),
+        said("Voy a mirar la portada.", "assistant"),
+        item("AgentMessage", "Portada lista.", "final_answer"),
+        said("Portada lista.", "assistant"),
+        said("no me gusta"),
+        item("UserMessage", "no me gusta"),
+      ],
+    });
+
+    const { stats, reactions } = await mineCodex({ home });
+
+    expect(stats.userTurns).toBe(2);
+    expect(stats.commands).toBe(0);
+    expect(stats.spontaneous).toBe(1);
+    expect(reactions).toHaveLength(1);
+    expect(reactions[0]?.reaction).toBe("no me gusta");
+    expect(reactions[0]?.delivery).toBe("Portada lista.");
+  });
+
+  it("reads the rollout that carries the turn on the response channel alone, and trims the client's preamble there too", async () => {
+    const home = makeHome({
+      [ROLLOUT]: [
+        meta({ originator: "Codex Desktop", cli_version: "0.140.0" }),
+        said("<environment_context>\n  <cwd>/casa</cwd>\n</environment_context>"),
+        said("# Files mentioned by the user:\n- README.md\n\n## My request for Codex:\nmejora la portada"),
+        said("Portada lista.", "assistant"),
+        turnContext("/casa/apuntes"),
+        said("no me gusta"),
+      ],
+    });
+
+    const { stats, reactions } = await mineCodex({ home });
+
+    expect(stats.userTurns).toBe(2);
+    expect(stats.commands).toBe(0);
+    expect(reactions).toHaveLength(1);
+    expect(reactions[0]?.reaction).toBe("no me gusta");
+    expect(reactions[0]?.delivery).toBe("Portada lista.");
+    // The last turn was held until the file ended, and its cwd is the turn's.
+    expect(reactions[0]?.cwd).toBe("/casa/apuntes");
+  });
+
+  it("a held response turn belongs to its own session, and the same answer on two channels is one delivery", async () => {
+    const home = makeHome({
+      [ROLLOUT]: [
+        meta(),
+        said("Hecho.", "assistant"),
+        agent("Hecho."),
+        said("gracias"),
+        meta({ id: "sesion-2" }),
+        said("Otra sesión.", "assistant"),
+        said("gracias"),
+      ],
+    });
+
+    const { stats, reactions } = await mineCodex({ home, captureNarratives: true });
+
+    expect(stats.sessions).toBe(2);
+    expect(stats.userTurns).toBe(2);
+    expect(reactions.map((r) => `${r.sessionId}:${r.delivery}`)).toEqual(["sesion-1:Hecho.", "sesion-2:Otra sesión."]);
+  });
+
   it("skips the carried prefix of a copy panoma handed off, and reads what the person typed after resuming it", async () => {
     /*
       Same rule as the other reader. The file is a real product of `packages/handoff`'s

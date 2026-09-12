@@ -738,6 +738,12 @@ them. The description is the deliverable, not the interpretation.
   `starts_with` for both separators now. Known limit, unverified there: a transcript an agent
   wrote from an 8.3-spelled folder files under the alias's slug, and a caller asking with the
   long name does not find it by the cheap folder-name read.
+- **A Codex thread resumed from another folder is placed by the folder it started in.** The
+  cheap folder read of the channel's discovery takes `session_meta.cwd` from the first line and
+  never the `turn_context` that a later resume writes, so such a thread is answered under its
+  first folder and not the one it was resumed in; the full reader still lets the later folder
+  win once the file is opened. Reading the tail of every rollout to tell the two apart would
+  cost the sweep the very thing the cheap read buys.
 - **OpenCode on Windows is unverified**: `XDG_DATA_HOME` has no conventional value there and
   the default was not measured.
 - **A second config folder is a terminal-only case.** `--target-home` takes an absolute path
@@ -771,11 +777,12 @@ them. The description is the deliverable, not the interpretation.
   line is not known; the writer stamps the config's own values —`on-request` and
   `workspace-write` where the file says nothing— so a copy never says more than the person
   allowed, and that is the whole of what can be promised without the app's source.
-- **The twin's Codex reader may be reading a shape Codex no longer writes.** None of the
-  rollouts under `~/.codex/sessions` on this disk carries `event_msg/user_message` any more —a
-  `rollout-migrations` folder exists, and the person's turns live as `item_completed` events
-  with `item.type: "UserMessage"`— so the twin mines nothing from Codex here today; the row in
-  [open-questions.md](open-questions.md) says who decides.
+- **The twin's Codex reader read a shape Codex no longer writes, until the same day.** None
+  of the rollouts under `~/.codex/sessions` on this disk carries `event_msg/user_message` any
+  more; since 12-Sep-2026 `mineCodex` reads the `item_completed` items and the response
+  channel too, holding a response item until its event twin can claim it, so the old files
+  keep their figures and the new ones are read at all ([twin.md](twin.md)). The copies this
+  package writes still carry the event pair, and the reader still takes them.
 - **The counts on this page —four stores, two surfaces, three tiers, eight handlers, two
   tools of fifteen, ten origins— are of 12-Sep-2026** and no test ties them to the page; the
   tool count alone has two tests reading it off the source, named in the second paragraph.

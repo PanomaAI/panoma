@@ -50,8 +50,9 @@ const FIDELITY: Readonly<Record<AgentId, Fidelity>> = {
     /*
       No `testedWith`: the writer follows the CLI's source and was never run against a live
       store (open-questions.md keeps the row). The field is data — a version and a date — or
-      absent; the sentence for the absence is each surface's own, in its own language, so the
-      screen does not paint an English one from here. Changed 12-Sep-2026.
+      absent; the screen words the absence in the viewer's language (`handoff.neverRunLive`)
+      instead of painting an English sentence from here, and the terminal and the channel never
+      printed this field. Changed 12-Sep-2026.
      */
     resumeShape: "gemini --resume <id> from the project folder",
   },

@@ -140,7 +140,8 @@ describe.each<Source>(["claude-code", "codex"])("%s narrative capture", (source)
       turn(source, "assistant", "Unseen subagent answer.", { isSidechain: true }),
       turn(source, "assistant", "Unseen metadata answer.", { isMeta: true }),
     ] : [
-      { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "Injected duplicate." }] } },
+      // The response channel is read since 12-Sep-2026 where no event twin follows; what is nothing but the client's block is still not a turn.
+      { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "<environment_context>Injected duplicate.</environment_context>" }] } },
       ...header(source, "child", CWD, true),
       turn(source, "user", "Subagent copy."),
       turn(source, "assistant", "Unseen subagent answer."),

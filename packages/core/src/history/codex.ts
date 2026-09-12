@@ -35,15 +35,34 @@ import {
   `archived_sessions/` —, 3.63 GB and 234,123 lines.
   Each line is `{"timestamp": …, "type": …, "payload": {…}}` and the types that matter are four:
   `session_meta`, `turn_context`, `event_msg`, and `response_item`.
-  ── The decision that the module holds: `event_msg` is read and `response_item` is ignored ──
+  ── The decision that the module holds: the event channel is read, and `response_item` only
+  ── where it is the only one left ──
   Both channels contain the same conversation and do not say the same thing. Measured over the
   same stretch, `response_item/message` with `role:"user"` had 55 entries, whereas
   `event_msg/user_message` had 9: the extra 46 are blocks `<environment_context>` injected,
   summaries, and tool plumbing that the client inserts into the thread with your role in place.
   `event_msg/user_message` is what you **typed** and `event_msg/agent_message` is what you
   **saw**, which are exactly the two ends of the delivery → reaction pair. Reading the other
-  channel adds nothing: it multiplies the noise by six and on top of that labels it as yours. The
-  text lives in `payload.message`, with `payload.text` as backup.
+  channel added nothing: it multiplied the noise by six and on top of that labelled it as yours.
+  The text lives in `payload.message`, with `payload.text` as backup.
+  Then the client moved (12-Sep-2026, measured over the newest sixty rollouts here, 0.115 to
+  0.153.4): `event_msg/user_message` is written by none of them; seven carry the person's turn
+  as `event_msg/item_completed` with an `item` of type `UserMessage` (and the answer as
+  `AgentMessage`, in `content[].text`); fifty-three carry it only as `response_item/message`
+  with `role: "user"`, the channel this reader ignored — so for months it read nothing from a
+  Codex written by the app, and `userTurns` for Codex was zero on this disk. So three channels
+  are read now, and the rule that keeps the old figures is the order they arrive in: the
+  `response_item` comes first in the file and is **held**, not counted; when its twin arrives on
+  an event channel with the same words, the event is the turn and the held one is dropped; when
+  something else arrives first —an answer, another turn of yours, a header, the end of the
+  file— the held one is the turn, because nothing else was going to say it. A held
+  `response_item` that is nothing but injected context is dropped without a count: it is the
+  client's plumbing on every turn of the old files, and counting it as a `command` would inflate
+  a published figure by the size of the corpus. The answer works the same way: the same text
+  seen twice in a row is one delivery. Every text goes through the same trimming of what the
+  client injects (rule 6), whichever channel it came on. Measured the day it changed: 315 files,
+  311 sessions, 1,811 turns of yours where there had been none, 1,546 of them reactions, in
+  7.1 s with the disk hot — the four extra discriminators cost the sweep about three seconds.
   ── The rules, which once again are scars and not design ──
   1. `cwd` only appears in `session_meta` and in `turn_context`, in no shift. And a file can
   contain **several** headers inside: on this disk there are 639 `session_meta` in 246 files,
@@ -172,6 +191,18 @@ const SESSION_META = '"session_meta"';
 const TURN_CONTEXT = '"turn_context"';
 const USER_MESSAGE = '"user_message"';
 const AGENT_MESSAGE = '"agent_message"';
+/**
+ * The two shapes the client writes since it moved (see the header): an `item_completed` event
+ * whose item is a `UserMessage` or an `AgentMessage`, and a `response_item` message, told by
+ * the content type of its parts — `input_text` on your side, `output_text` on the assistant's.
+ * All four sit within the first 512 characters of their line on this disk; the window is 4 KB.
+ * `"input_text"` also opens the developer's blocks and the subagents' mail, and those are told
+ * apart after parsing by role and type, which costs a parse only for those lines.
+ */
+const USER_ITEM = '"UserMessage"';
+const AGENT_ITEM = '"AgentMessage"';
+const INPUT_TEXT = '"input_text"';
+const OUTPUT_TEXT = '"output_text"';
 const TOOL_CALL = '"function_call"';
 const TOOL_OUTPUT = '"function_call_output"';
 
@@ -322,7 +353,19 @@ const INJECTED_BLOCKS = [
   /<realtime_delegation>[\s\S]*?<\/realtime_delegation>/g,
   /<in-app-browser-context[\s\S]*?<\/in-app-browser-context>/g,
   /<environment_context>[\s\S]*?<\/environment_context>/g,
+  // The app's blocks, measured on 12-Sep-2026 over the user-role response items of the newest
+  // 120 rollouts here: the plugin list opens 71, an aborted turn 3, an internal goal 1. The
+  // `<send_user_message_question_reply>` block is not here: it is the person's own answer.
+  /<recommended_plugins>[\s\S]*?<\/recommended_plugins>/g,
+  /<turn_aborted>[\s\S]*?<\/turn_aborted>/g,
+  /<codex_internal_context[\s\S]*?<\/codex_internal_context>/g,
 ];
+
+/**
+ * A whole text the client wrote in your name and never closes with a marker: the instructions
+ * file, pasted as a user message (39 of the newest 120 rollouts here open one turn with it).
+ */
+const INJECTED_WHOLE = /^#[ \t]+AGENTS\.md instructions\b/;
 
 /**
  * The line through which the client says 'the response starts here.' See rule 6.
@@ -458,6 +501,104 @@ async function mineRollout(
     line is that same provenance line— vanished from the twin entirely.
    */
   let carried = false;
+  /** The last text the assistant showed, to fold the same answer arriving on two channels. */
+  let lastShown: string | undefined;
+  /** A `response_item` turn of yours waiting to learn whether an event twin follows. */
+  let held: { raw: string; at: string } | undefined;
+  /** The last turn taken, whichever channel said it, to fold a twin that arrives afterwards. */
+  let lastTurn: string | undefined;
+
+  const takeHeld = () => {
+    if (held === undefined) return;
+    const { raw, at } = held;
+    held = undefined;
+    userTurn(raw, at);
+  };
+
+  /*
+    One turn of yours, whichever channel said it. The rules below are the old ones, in the old
+    order: the carried prefix of a copy, the subagent, the empty line, the trimming of what the
+    client injected, the count, the pairing with the delivery, and the paths.
+   */
+  const userTurn = (raw: string, at: string) => {
+    lastTurn = raw;
+    // A carried user turn: the person said it at the source, where it was read.
+    if (carried) return;
+    // Rule 5, and first of all: if the session is from a sub-agent, this turn is a copy of
+    // something you already said in the parent thread.
+    if (subagent) {
+      stats.sidechain += 1;
+      return;
+    }
+    // There are nine of these on the disc: the line exists and the message is empty. It is not a
+    // turn, so it is not counted in any box.
+    if (raw.length === 0) return;
+    // Rule 6: what is injected is trimmed and what remains is judged, not the wrapper.
+    const text = stripInjected(raw);
+    if (text.length === 0) {
+      stats.commands += 1;
+      return;
+    }
+
+    stats.userTurns += 1;
+    // In case the file arrived without header: that shift still has a session, the one with the
+    // name.
+    sessions.add(sessionId);
+
+    capture?.owner({
+      source: "codex",
+      sessionId,
+      at,
+      cwd: turnCwd ?? sessionCwd,
+      gitBranch,
+    }, text);
+
+    if (delivery === undefined) {
+      stats.spontaneous += 1;
+      return;
+    }
+
+    const brief = isBrief(text);
+    // In a brief, signals are not sought: almost always it is the assistant's words returned, and
+    // we would end up learning their taste instead of yours.
+    const signals = brief ? [] : detectSignals(text);
+
+    stats.reactions += 1;
+    if (brief) stats.briefs += 1;
+    if (signals.length > 0) stats.withSignal += 1;
+
+    if (options.onlySignals === true && signals.length === 0) return;
+    // Rule 3: the one from the shift if there was one, the one from header if not.
+    const cwd = turnCwd ?? sessionCwd;
+    if (!underPrefix(cwd, options.cwdPrefix)) return;
+
+    const reaction: Reaction = {
+      source: "codex",
+      sessionId,
+      at,
+      delivery: excerpt(redactQuote(delivery).text, DELIVERY_CHARS),
+      reaction: cap(redactQuote(text).text, REACTION_CHARS),
+      chars: text.length,
+      brief,
+      signals,
+    };
+    if (cwd !== undefined) reaction.cwd = cwd;
+    /*
+      The routes take precedence over the `cwd` when they exist — `identityOf` decides this when
+      saving — and the window is cleared here and not when viewing a delivery: what is
+      attributed is 'what was worked on while you waited,' and that starts where you spoke the
+      last time.
+     */
+    if (window.size > 0) reaction.paths = [...window];
+    else orphans.push(reaction);
+    window.clear();
+    if (gitBranch !== undefined) reaction.gitBranch = gitBranch;
+
+    // `limit` cuts the SAMPLE, never the past: the funnel is advertised whole and it has to be.
+    // Cutting the reading when filling the sample left a count made on a file of two hundred
+    // forty-six, presented as if it were 3.63 GB.
+    if (out.length < limit) out.push(reaction);
+  };
 
   try {
     for await (const line of lines) {
@@ -469,6 +610,10 @@ async function mineRollout(
         !scan.includes(TURN_CONTEXT) &&
         !scan.includes(USER_MESSAGE) &&
         !scan.includes(AGENT_MESSAGE) &&
+        !scan.includes(USER_ITEM) &&
+        !scan.includes(AGENT_ITEM) &&
+        !scan.includes(INPUT_TEXT) &&
+        !scan.includes(OUTPUT_TEXT) &&
         !(carried && scan.includes(THREAD_SETTINGS))
       ) {
         // The fat ones are these, and they are counted without opening them. See the header: the
@@ -520,6 +665,9 @@ async function mineRollout(
       const type = parsed["type"];
 
       if (type === "session_meta") {
+        // A turn held from the previous session is that session's: taken before the header
+        // renames the session and resets what it would be paired with.
+        takeHeld();
         const id = readString(payload["id"]);
         if (id !== undefined) sessionId = id;
         sessionCwd = readString(payload["cwd"]);
@@ -533,6 +681,8 @@ async function mineRollout(
         subagent = isRecord(source) && source["subagent"] !== undefined;
         turnCwd = undefined;
         delivery = undefined;
+        lastShown = undefined;
+        lastTurn = undefined;
         // Rule 4, also for the routes: what was covered in the previous session is not from this
         // one.
         window.clear();
@@ -552,103 +702,51 @@ async function mineRollout(
         continue;
       }
 
-      if (type !== "event_msg") continue;
       const kind = payload["type"];
       // The writer's last line: what follows, Codex wrote for the person after the resume.
-      if (carried && kind === "thread_settings_applied") {
+      if (carried && type === "event_msg" && kind === "thread_settings_applied") {
         carried = false;
         continue;
       }
-      // Here also arrive `agent_reasoning` and `token_count`, which are from the good channel and
-      // are neither what you saw nor what you wrote.
-      if (kind !== "user_message" && kind !== "agent_message") continue;
-      const message = readString(payload["message"]) ?? readString(payload["text"]);
+      const spoken = spokenOf(type, kind, payload);
+      // Here also arrive `agent_reasoning`, `token_count`, the developer's blocks and the
+      // subagents' mail, which are neither what you saw nor what you wrote.
+      if (spoken === undefined) continue;
+      const at = readString(parsed["timestamp"]) ?? "";
 
-      if (kind === "agent_message") {
-        const shown = message?.trim() ?? "";
-        if (shown.length > 0) delivery = shown;
-        if (!subagent) capture?.assistant(shown);
+      if (spoken.role === "assistant") {
+        takeHeld();
+        const shown = spoken.text.trim();
+        // The same answer on two channels is one answer: the event repeats the response item.
+        if (shown.length > 0 && shown !== lastShown) {
+          delivery = shown;
+          lastShown = shown;
+          if (!subagent) capture?.assistant(shown);
+        }
         continue;
       }
 
-      // A carried user turn: the person said it at the source, where it was read.
-      if (carried) continue;
-      // Rule 5, and first of all: if the session is from a sub-agent, this turn is a copy of
-      // something you already said in the parent thread.
-      if (subagent) {
-        stats.sidechain += 1;
-        continue;
-      }
-      const raw = message?.trim() ?? "";
-      // There are nine of these on the disc: the line exists and the message is empty. It is not a
-      // turn, so it is not counted in any box.
-      if (raw.length === 0) continue;
-      // Rule 6: what is injected is trimmed and what remains is judged, not the wrapper.
-      const text = stripInjected(raw);
-      if (text.length === 0) {
-        stats.commands += 1;
+      if (spoken.channel === "response") {
+        // Held, not counted: an event twin may follow with the same words, and the event is the
+        // turn. What is nothing but the client's injected context is dropped here and never
+        // counted, as it never was.
+        takeHeld();
+        const raw = spoken.text.trim();
+        if (raw.length === 0 || stripInjected(raw).length === 0) continue;
+        // The older client wrote the event first and the response item after it: same twin,
+        // the other way round.
+        if (raw === lastTurn) continue;
+        held = { raw, at };
         continue;
       }
 
-      stats.userTurns += 1;
-      // In case the file arrived without header: that shift still has a session, the one with the
-      // name.
-      sessions.add(sessionId);
-
-      capture?.owner({
-        source: "codex",
-        sessionId,
-        at: readString(parsed["timestamp"]) ?? "",
-        cwd: turnCwd ?? sessionCwd,
-        gitBranch,
-      }, text);
-
-      if (delivery === undefined) {
-        stats.spontaneous += 1;
-        continue;
-      }
-
-      const brief = isBrief(text);
-      // In a brief, signals are not sought: almost always it is the assistant's words returned, and
-      // we would end up learning their taste instead of yours.
-      const signals = brief ? [] : detectSignals(text);
-
-      stats.reactions += 1;
-      if (brief) stats.briefs += 1;
-      if (signals.length > 0) stats.withSignal += 1;
-
-      if (options.onlySignals === true && signals.length === 0) continue;
-      // Rule 3: the one from the shift if there was one, the one from header if not.
-      const cwd = turnCwd ?? sessionCwd;
-      if (!underPrefix(cwd, options.cwdPrefix)) continue;
-
-      const reaction: Reaction = {
-        source: "codex",
-        sessionId,
-        at: readString(parsed["timestamp"]) ?? "",
-        delivery: excerpt(redactQuote(delivery).text, DELIVERY_CHARS),
-        reaction: cap(redactQuote(text).text, REACTION_CHARS),
-        chars: text.length,
-        brief,
-        signals,
-      };
-      if (cwd !== undefined) reaction.cwd = cwd;
-      /*
-        The routes take precedence over the `cwd` when they exist — `identityOf` decides this when
-        saving — and the window is cleared here and not when viewing a delivery: what is
-        attributed is 'what was worked on while you waited,' and that starts where you spoke the
-        last time.
-       */
-      if (window.size > 0) reaction.paths = [...window];
-      else orphans.push(reaction);
-      window.clear();
-      if (gitBranch !== undefined) reaction.gitBranch = gitBranch;
-
-      // `limit` cuts the SAMPLE, never the past: the funnel is advertised whole and it has to be.
-      // Cutting the reading when filling the sample left a count made on a file of two hundred
-      // forty-six, presented as if it were 3.63 GB.
-      if (out.length < limit) out.push(reaction);
+      // An event turn: its response-item twin, if held, is dropped; another held text is a turn.
+      if (held !== undefined && held.raw === spoken.text.trim()) held = undefined;
+      else takeHeld();
+      userTurn(spoken.text.trim(), at);
     }
+    // The end of the file: a turn still held was the last thing you typed.
+    takeHeld();
   } catch {
     // An unreadable file halfway through reading —deleted, permissions, disk— cannot take down what
     // had already been extracted from the other two hundred forty-five.
@@ -678,6 +776,46 @@ async function mineRollout(
 }
 
 /**
+ * What a line says in a person's voice or the assistant's, on whichever of the three channels
+ * it came, or nothing: the old `event_msg` pair, the `item_completed` items the app writes now,
+ * and the `response_item` message that every version writes. The developer's blocks, the
+ * subagents' mail (`agent_message` response items with an author) and the reasoning are none.
+ */
+function spokenOf(
+  type: unknown,
+  kind: unknown,
+  payload: Record<string, unknown>,
+): { role: "user" | "assistant"; channel: "event" | "response"; text: string } | undefined {
+  if (type === "event_msg") {
+    if (kind === "user_message" || kind === "agent_message") {
+      const text = readString(payload["message"]) ?? readString(payload["text"]) ?? "";
+      return { role: kind === "user_message" ? "user" : "assistant", channel: "event", text };
+    }
+    if (kind !== "item_completed") return undefined;
+    const item = payload["item"];
+    if (!isRecord(item)) return undefined;
+    if (item["type"] === "UserMessage") return { role: "user", channel: "event", text: partsText(item["content"]) };
+    if (item["type"] === "AgentMessage") return { role: "assistant", channel: "event", text: partsText(item["content"]) };
+    return undefined;
+  }
+  if (type === "response_item" && kind === "message") {
+    const role = payload["role"];
+    if (role !== "user" && role !== "assistant") return undefined;
+    return { role, channel: "response", text: partsText(payload["content"]) };
+  }
+  return undefined;
+}
+
+/** The text parts of a message joined, whatever the part's own type name is. */
+function partsText(content: unknown): string {
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part) => (isRecord(part) ? readString(part["text"]) ?? "" : ""))
+    .filter((text) => text.length > 0)
+    .join("\n");
+}
+
+/**
  * Remove what the client put in your shift and return what was left. See rule 6.
  *
  * An empty string means 'you didn't speak here': the turn was just the preamble of the tool.
@@ -686,6 +824,7 @@ async function mineRollout(
 function stripInjected(text: string): string {
   let out = text;
   for (const block of INJECTED_BLOCKS) out = out.replace(block, " ");
+  if (INJECTED_WHOLE.test(out.trimStart())) return "";
 
   const marker = REQUEST_MARKER.exec(out);
   if (marker !== null) out = out.slice(marker.index + marker[0].length);

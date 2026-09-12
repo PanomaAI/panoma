@@ -513,8 +513,8 @@ export function sizeText(bytes: number): string {
 
 /**
  * The six counts of `Dropped`, in the order the terminal prints them, each with the key that
- * names it. `FidelityTable` paints the last five as rows (thinking is «never travels», not a
- * count) and `leftBehind` lists the ones above zero. Until 12-Sep-2026 the screen knew four of
+ * names it. `FidelityTable` paints all six as rows (thinking as «never travels», the rest as
+ * a count) and `leftBehind` lists the ones above zero. Until 12-Sep-2026 the screen knew four of
  * the six: a Claude Code conversation whose tool results over 64 KiB stayed behind read as if
  * nothing but thinking, images, subagents and secrets had, while the CLI and the channel counted
  * all six.
