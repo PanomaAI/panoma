@@ -99,7 +99,9 @@ describe("POST /api/agent/video/jobs", () => {
     const mine = await enqueue("git:lemonade");
     await enqueue("git:other");
     await enqueue("", "install", {});
-    const response = await POST(call({ cwd: join(ROOT, "src") }));
+    // Spelled with the root's own separator: the catalog stores roots as the disk spells them, and
+    // a POSIX root joined by Windows' `join` would no longer start with itself.
+    const response = await POST(call({ cwd: `${ROOT}/src` }));
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.project).toBe("lemonade");

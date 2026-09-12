@@ -11,6 +11,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { exists, resolveStoreOptions, type ResolvedStoreOptions } from "./shared";
+import { sameFolder } from "../folders";
 import type { StoreOptions } from "../types";
 
 /** The relative globs this package may open under `~/.gemini`. Closed list. */
@@ -48,7 +49,12 @@ export function sha256Hex(text: string): string {
   return createHash("sha256").update(text).digest("hex");
 }
 
-/** The registry as a map from folder to slug, or nothing when there is no registry. */
+/**
+ * The registry as a map from folder to slug, or nothing when there is no registry. The folder
+ * is kept as the registry spells it, less a trailing separator: it is answered back as a
+ * conversation's `cwd`, and until 12-Sep-2026 it went in lower-cased on Windows, so a folder
+ * came back in a case the disk never gave it. The comparison folds the case; the value does not.
+ */
 export function readGeminiRegistry(store: GeminiStore): Map<string, string> | undefined {
   let raw: string;
   try {
@@ -69,21 +75,20 @@ export function readGeminiRegistry(store: GeminiStore): Map<string, string> | un
     : record;
   const map = new Map<string, string>();
   for (const [folder, slug] of Object.entries(projects)) {
-    if (typeof slug === "string" && slug.length > 0) map.set(normalizeFolder(folder, store), slug);
+    if (typeof slug === "string" && slug.length > 0) map.set(folder.replace(/[\\/]+$/, ""), slug);
   }
   return map;
-}
-
-function normalizeFolder(folder: string, store: GeminiStore): string {
-  const trimmed = folder.replace(/[\\/]+$/, "");
-  return store.resolved.platform === "win32" ? trimmed.toLowerCase() : trimmed;
 }
 
 /** The project id Gemini CLI uses for a working directory on this store. */
 export function geminiProjectId(store: GeminiStore, cwd: string): string {
   const registry = readGeminiRegistry(store);
-  const slug = registry?.get(normalizeFolder(cwd, store));
-  return slug ?? sha256Hex(cwd);
+  if (registry) {
+    for (const [folder, slug] of registry) {
+      if (sameFolder(folder, cwd, store.resolved.platform)) return slug;
+    }
+  }
+  return sha256Hex(cwd);
 }
 
 /**

@@ -2,9 +2,10 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, 
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { REDACTED } from "@panoma/core";
-import type { Random } from "@panoma/handoff";
+import { quoteForShell, type Random } from "@panoma/handoff";
 import { parseArgs, type Flags } from "./args";
 import { coverBundle, groupByProject, handoffCommand, labelOf, leftBehind, nearestWord, rowLines, type HandoffDeps } from "./handoff-command";
 
@@ -34,16 +35,17 @@ interface Fixtures {
   FIXED_NOW: Date;
   FIXTURE_CLAUDE_ID: string;
   FIXTURE_CODEX_ID: string;
-  FIXTURE_CWD: string;
   fixedRandom(seed?: number): Random;
   fixtureText(name: "claude.jsonl" | "codex.jsonl" | "opencode.json" | "gemini.jsonl"): string;
   layClaude(home: string, text?: string, id?: string): string;
   layCodex(home: string, text?: string, id?: string): string;
   layOpencodeStorage(home: string, text?: string): string;
+  withCwd(text: string, cwd: string): string;
 }
 
-const FIXTURES = new URL("../../../packages/handoff/src/fixtures/index.ts", import.meta.url).pathname;
-const { FIXED_NOW, FIXTURE_CLAUDE_ID, FIXTURE_CODEX_ID, FIXTURE_CWD, fixedRandom, fixtureText, layClaude, layCodex, layOpencodeStorage } =
+// A file path, not a URL's `pathname`: on Windows the latter is `/D:/…`, which is not a path.
+const FIXTURES = fileURLToPath(new URL("../../../packages/handoff/src/fixtures/index.ts", import.meta.url));
+const { FIXED_NOW, FIXTURE_CLAUDE_ID, FIXTURE_CODEX_ID, fixedRandom, fixtureText, layClaude, layCodex, layOpencodeStorage, withCwd } =
   (await import(FIXTURES)) as Fixtures;
 
 let root: string;
@@ -80,15 +82,20 @@ function home(): { home: string; project: string } {
   return { home: dir, project };
 }
 
-/** The fixture with its cwd pointed at a folder that exists on this disk. */
+/** The fixture with its cwd pointed at a folder that exists on this disk, spelled as a JSON string spells it. */
 function claudeText(project: string, shift = false): string {
-  const text = fixtureText("claude.jsonl").replaceAll(FIXTURE_CWD, project);
+  const text = withCwd(fixtureText("claude.jsonl"), project);
   // Shifted into the same hour as the Codex fixture (13:52), for the ambiguity case.
   return shift ? text.replaceAll("T10:0", "T13:5") : text;
 }
 
 function codexText(project: string): string {
-  return fixtureText("codex.jsonl").replaceAll(FIXTURE_CWD, project);
+  return withCwd(fixtureText("codex.jsonl"), project);
+}
+
+/** `cd '<folder>' && ` on POSIX, `Set-Location -LiteralPath '<folder>'; ` on Windows: what a resume line starts with from another folder. */
+function enter(folder: string): string {
+  return process.platform === "win32" ? `Set-Location -LiteralPath ${quoteForShell(folder)}; ` : `cd ${quoteForShell(folder)} && `;
 }
 
 /** A second Claude session of the same folder, for the case where the newest agent has a sibling. */
@@ -410,7 +417,7 @@ describe("the write", () => {
     expect(text).toContain("Written for Codex CLI");
     expect(text).toContain(join(h, ".codex", "sessions"));
     expect(text).toMatch(/Resume it:\n\s+codex resume [0-9a-f-]{36}/);
-    expect(text).not.toContain("cd '");
+    expect(text).not.toContain(enter(project));
     expect(text).toContain("Recorded in the catalog: hnd_0001");
     expect(ours(text)).not.toMatch(/\d [a-z]+s\b/);
 
@@ -434,7 +441,7 @@ describe("the write", () => {
     layClaude(h, claudeText(project));
     mkdirSync(join(h, ".codex"), { recursive: true });
     expect(await handoffCommand(flags(["handoff", FIXTURE_CLAUDE_ID.slice(0, 8), "--to", "codex"]), deps(h, join(h, "elsewhere")))).toBe(0);
-    expect(plain()).toContain(`cd '${project}' && codex resume`);
+    expect(plain()).toContain(`${enter(project)}codex resume`);
   });
 
   it("with the catalog down the file stays and a dim line says it was not recorded; exit 0", async () => {
@@ -965,7 +972,9 @@ describe("the desktop apps", () => {
     expect(await handoffCommand(flags(["handoff", FIXTURE_CLAUDE_ID.slice(0, 8), "--to", "codex-app"]), darwin(h, project))).toBe(0);
     const text = plain();
     expect(text).toContain("Written for Codex (app)");
-    expect(text).toContain(join(h, ".codex", "sessions"));
+    // The request is made as on a Mac (`darwin(h, project)`), so the writer joins the store's path with `/`
+    // below the home the test made — on Windows the two halves meet with different separators.
+    expect(text.replaceAll("\\", "/")).toContain(join(h, ".codex", "sessions").replaceAll("\\", "/"));
     expect(text).toMatch(/Open it in Codex \(app\):\n\s+open 'codex:\/\/threads\/[0-9a-f-]{36}'/);
     expect(text).toContain("If the link does not answer: Open the Codex app");
     expect(text).toMatch(/Or, in a terminal:\n\s+codex resume [0-9a-f-]{36}/);

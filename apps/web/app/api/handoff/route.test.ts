@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { findHandoff, listHandoffs, listModelCalls, schema, startOfDay, type Database } from "@panoma/db";
 import type { AgentAvailability } from "@panoma/ai";
-import { CLAUDE_ID, CODEX_ID, closeHarness, layStores, openHarness, request, type Harness } from "./harness";
+import { CLAUDE_ID, CODEX_ID, closeHarness, enter, layStores, opencodeHome, openHarness, request, type Harness } from "./harness";
 
 /**
  * The list and the write: what the screen paints, and the one action that puts a conversation
@@ -179,7 +179,7 @@ describe("POST /api/handoff", () => {
     expect(body.result.path.startsWith(join(harness.agentHome, ".codex", "sessions"))).toBe(true);
     expect(body.result.resume.command).toBe("codex");
     expect(body.result.resume.args).toEqual(["resume", body.result.sessionId]);
-    expect(body.result.resume.line).toContain(`cd '${harness.root}' && codex resume ${body.result.sessionId}`);
+    expect(body.result.resume.line).toContain(`${enter(harness.root)}codex resume ${body.result.sessionId}`);
     expect(body.result.steps).toEqual([]);
     expect(body.result.turns).toBeGreaterThan(0);
     expect(body.result.fidelity.agent).toBe("codex-cli");
@@ -278,8 +278,8 @@ describe("POST /api/handoff", () => {
   });
 
   it("runs `opencode import` on the envelope through the verified binary, from the project folder", async () => {
-    const opencodeHome = join(harness.agentHome, ".local", "share", "opencode");
-    await mkdir(opencodeHome, { recursive: true });
+    const store = opencodeHome(harness.agentHome);
+    await mkdir(store, { recursive: true });
     const log = join(harness.agentHome, "opencode-calls.txt");
     /*
       A fake OpenCode that logs where it ran and what it got. It is Node underneath on every
@@ -304,7 +304,7 @@ describe("POST /api/handoff", () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.result.steps).toEqual([]);
-    expect(body.result.path.startsWith(opencodeHome)).toBe(true);
+    expect(body.result.path.startsWith(store)).toBe(true);
     const calls = (await readFile(log, "utf8")).trim().split("\n");
     // The child prints the folder as the kernel names it: `/private/var` for macOS's `/var`.
     expect(calls).toEqual([await realpath(harness.root), "import", body.result.path]);
@@ -312,7 +312,7 @@ describe("POST /api/handoff", () => {
   });
 
   it("leaves the import step to the person when OpenCode is not installed here", async () => {
-    await mkdir(join(harness.agentHome, ".local", "share", "opencode"), { recursive: true });
+    await mkdir(opencodeHome(harness.agentHome), { recursive: true });
     agentsMock.mockResolvedValue([]);
     const body = await (await POST(request("/api/handoff", { id: CLAUDE_ID, target: "opencode", tier: "full" }))).json();
     expect(body.result.steps).toHaveLength(1);

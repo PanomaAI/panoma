@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, normalize } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { HANDOFF_CLAUDE_RECORD_VERSION, HANDOFF_CODEX_ORIGINATOR, HANDOFF_PROVENANCE_PREFIX, REDACTED } from "@panoma/core";
 import { compactConversation } from "../compact";
@@ -13,6 +13,7 @@ import {
   layCodex,
   layGemini,
   layOpencodeStorage,
+  opencodeRoot,
   FIXTURE_OPENCODE_ID,
 } from "../fixtures/index";
 import { readConversation } from "../readers/index";
@@ -77,10 +78,20 @@ function rootFor(target: AgentId, h: string): string {
     case "codex-cli":
       return join(h, ".codex");
     case "opencode":
-      return join(h, ".local", "share", "opencode");
+      return opencodeRoot(h);
     default:
       return join(h, ".gemini");
   }
+}
+
+/**
+ * The path a writer answers, read as the disk reads it. Every request below names `darwin`, so
+ * that the resume lines are the same on the three systems, and a writer spells its path with
+ * the platform it was asked for: `/` between the segments even on a Windows disk, whose own
+ * `join` answers `\`. The disk takes either, and `normalize` folds them the way it does.
+ */
+function onDisk(path: string): string {
+  return normalize(path);
 }
 
 function request(conversation: Conversation, target: AgentId, h: string, extra: Partial<WriteRequest> = {}): WriteRequest {
@@ -227,7 +238,7 @@ describe("Claude Code writer", () => {
     const h = home();
     const all = await sources(h);
     const result = await writeClaudeConversation(request(all["codex-cli"], "claude-cli", h, { title: "Day two" }));
-    expect(result.path).toBe(join(h, ".claude", "projects", "-Users-someone-dev-lemonade", `${result.sessionId}.jsonl`));
+    expect(onDisk(result.path)).toBe(join(h, ".claude", "projects", "-Users-someone-dev-lemonade", `${result.sessionId}.jsonl`));
     expect(result.resume?.line).toBe(`cd '${FIXTURE_CWD}' && claude --resume ${result.sessionId}`);
     expect(result.steps).toEqual([]);
     const records = readFileSync(result.path, "utf8").trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
@@ -472,7 +483,7 @@ describe("OpenCode writer", () => {
     const h = home();
     const all = await sources(h);
     const result = await writeOpencodeConversation(request(all["claude-cli"], "opencode", h, { title: "Lemonade" }));
-    expect(result.path).toBe(join(h, ".local", "share", "opencode", `panoma-import-${result.sessionId}.json`));
+    expect(onDisk(result.path)).toBe(join(opencodeRoot(h), `panoma-import-${result.sessionId}.json`));
     expect(result.sessionId).toMatch(/^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/);
     if (process.platform !== "win32") expect(statSync(result.path).mode & 0o777).toBe(0o600);
     expect(result.steps).toEqual([`opencode import '${result.path}'`]);
@@ -532,7 +543,7 @@ describe("Gemini CLI writer", () => {
     const h = home();
     const all = await sources(h);
     const result = await writeGeminiConversation(request(all["claude-cli"], "gemini-cli", h, { title: "Lemonade" }));
-    expect(result.path).toBe(join(h, ".gemini", "tmp", "ad6a8de343d58a1d60afd4a51f68d6829c3f5bcaefcb853dfa4e82aaf464a14f", "chats", `session-2026-09-11T15-00-${result.sessionId.slice(0, 8)}.jsonl`));
+    expect(onDisk(result.path)).toBe(join(h, ".gemini", "tmp", "ad6a8de343d58a1d60afd4a51f68d6829c3f5bcaefcb853dfa4e82aaf464a14f", "chats", `session-2026-09-11T15-00-${result.sessionId.slice(0, 8)}.jsonl`));
     expect(result.resume?.line).toBe(`cd '${FIXTURE_CWD}' && gemini --resume ${result.sessionId}`);
     const lines = readFileSync(result.path, "utf8").trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
     expect(lines[0]).toEqual({

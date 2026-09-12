@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { recordHandoff, schema, type Database } from "@panoma/db";
 import type { LaunchOutcome } from "@/lib/open-targets";
-import { CLAUDE_ID, CODEX_ID, closeHarness, openHarness, request, type Harness } from "../harness";
+import { CLAUDE_ID, CODEX_ID, closeHarness, enter, openHarness, request, type Harness } from "../harness";
 
 /**
  * The launch: a receipt in, a terminal with the target agent resuming the copy out — or the
@@ -99,7 +99,7 @@ describe("POST /api/handoff/launch", () => {
     expect(await response.json()).toEqual({
       ok: true,
       root: harness.root,
-      line: `cd '${harness.root}' && codex resume ${CODEX_SESSION}`,
+      line: `${enter(harness.root)}codex resume ${CODEX_SESSION}`,
       with: "Codex CLI",
     });
     expect(openAgentMock).toHaveBeenCalledTimes(1);

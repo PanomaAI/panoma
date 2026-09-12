@@ -6,8 +6,8 @@ import { REDACTED } from "@panoma/core";
 import { createAgent, listHandoffs, schema, type Database } from "@panoma/db";
 import type { AgentAvailability } from "@panoma/ai";
 import { DISCOVERY_LIMIT_DEFAULT } from "@panoma/handoff";
-import { FIXTURE_CLAUDE_ID, FIXTURE_CODEX_ID, FIXTURE_CWD, fixtureText, layCodex } from "../../../../../../packages/handoff/src/fixtures/index";
-import { CLAUDE_ID, CODEX_ID, closeHarness, layClaudeOf, layStores, openHarness, type Harness } from "../../handoff/harness";
+import { FIXTURE_CLAUDE_ID, FIXTURE_CODEX_ID, fixtureText, layCodex, withCwd } from "../../../../../../packages/handoff/src/fixtures/index";
+import { CLAUDE_ID, CODEX_ID, closeHarness, enter, layClaudeOf, layStores, opencodeHome, openHarness, type Harness } from "../../handoff/harness";
 
 /**
  * The channel's write: what `panoma_handoff` does, refuses, and never does.
@@ -151,15 +151,15 @@ describe("POST /api/agent/handoff — which conversation", () => {
     const old = new Date(Date.now() - 3_600_000);
     for (const own of [
       join(harness.agentHome, ".codex", "sessions", "2026", "09", "11", `rollout-2026-09-11T13-51-53-${FIXTURE_CODEX_ID}.jsonl`),
-      await layClaudeOf(harness.agentHome, harness.root, fixtureText("claude.jsonl").replaceAll(FIXTURE_CWD, harness.root)),
+      await layClaudeOf(harness.agentHome, harness.root, withCwd(fixtureText("claude.jsonl"), harness.root)),
     ]) {
       await utimes(own, old, old);
     }
     const laid: string[] = [];
     for (let i = 0; i < DISCOVERY_LIMIT_DEFAULT + 5; i += 1) {
       const id = `${String(i).padStart(8, "0")}-0000-4000-8000-000000000000`;
-      laid.push(layCodex(harness.agentHome, fixtureText("codex.jsonl").replaceAll(FIXTURE_CWD, elsewhere).replaceAll(FIXTURE_CODEX_ID, id), id));
-      laid.push(await layClaudeOf(harness.agentHome, elsewhere, fixtureText("claude.jsonl").replaceAll(FIXTURE_CWD, elsewhere).replaceAll(FIXTURE_CLAUDE_ID, id), id));
+      laid.push(layCodex(harness.agentHome, withCwd(fixtureText("codex.jsonl"), elsewhere).replaceAll(FIXTURE_CODEX_ID, id), id));
+      laid.push(await layClaudeOf(harness.agentHome, elsewhere, withCwd(fixtureText("claude.jsonl"), elsewhere).replaceAll(FIXTURE_CLAUDE_ID, id), id));
     }
     forgetDiscovery();
     try {
@@ -206,7 +206,7 @@ describe("POST /api/agent/handoff — which conversation", () => {
     const elsewhere = join(await mkdtemp(join(tmpdir(), "panoma-elsewhere-")), "other");
     await mkdir(elsewhere);
     const strayId = "9c1e2c3d-4a5f-4b6c-8d9e-0f1a2b3c4d5e";
-    await layClaudeOf(harness.agentHome, elsewhere, fixtureText("claude.jsonl").replaceAll(FIXTURE_CWD, elsewhere).replaceAll(FIXTURE_CLAUDE_ID, strayId), strayId);
+    await layClaudeOf(harness.agentHome, elsewhere, withCwd(fixtureText("claude.jsonl"), elsewhere).replaceAll(FIXTURE_CLAUDE_ID, strayId), strayId);
     forgetDiscovery();
     try {
       const stray = await POST(call({ cwd: harness.root, target: "codex", id: `claude-cli:${strayId}`, dryRun: true }));
@@ -349,7 +349,7 @@ describe("POST /api/agent/handoff — the write", () => {
     expect(body.result.agent).toBe("codex-cli");
     expect(body.result.surface).toBe("cli");
     expect(body.result.path.startsWith(join(harness.agentHome, ".codex", "sessions"))).toBe(true);
-    expect(body.result.resume.line).toContain(`cd '${harness.root}' && codex resume ${body.result.sessionId}`);
+    expect(body.result.resume.line).toContain(`${enter(harness.root)}codex resume ${body.result.sessionId}`);
     expect(body.result.steps).toEqual([]);
     expect(body.result.fidelity.agent).toBe("codex-cli");
     expect(body.result.turns).toBeGreaterThan(0);
@@ -404,7 +404,7 @@ describe("POST /api/agent/handoff — the write", () => {
   });
 
   it("leaves the OpenCode import step to the person and starts nothing, even with OpenCode installed", async () => {
-    await mkdir(join(harness.agentHome, ".local", "share", "opencode"), { recursive: true });
+    await mkdir(opencodeHome(harness.agentHome), { recursive: true });
     const log = join(harness.agentHome, "opencode-calls.txt");
     const script = join(harness.agentHome, "fake-opencode.js");
     await writeFile(script, `require("node:fs").appendFileSync(${JSON.stringify(log)}, process.argv.slice(2).join(" ") + "\\n");\n`);

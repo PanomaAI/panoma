@@ -14,6 +14,8 @@ import {
   layCodex,
   layGemini,
   layOpencodeStorage,
+  opencodeRoot,
+  withCwd,
 } from "./fixtures/index";
 import type { SqliteOpener } from "./readers/opencode";
 import { claudeSlug } from "./stores/claude";
@@ -50,7 +52,12 @@ let root = "";
 let n = 0;
 
 beforeAll(() => {
-  root = realpathSync(mkdtempSync(join(tmpdir(), "panoma-handoff-discover-")));
+  /*
+    `.native` is libuv's realpath, the one the engine resolves folders with: on Windows it
+    answers the long name where `TEMP` spells an 8.3 alias (`RUNNER~1`), and the symbolic-link
+    test below compares a folder the engine resolved with one this file built.
+   */
+  root = realpathSync.native(mkdtempSync(join(tmpdir(), "panoma-handoff-discover-")));
 });
 
 afterAll(() => {
@@ -85,7 +92,7 @@ describe("discoverConversations", () => {
     expect(found.stores.map((s) => s.path)).toEqual([
       join(h, ".claude", "projects"),
       join(h, ".codex", "sessions"),
-      join(h, ".local", "share", "opencode", "opencode.db"),
+      join(opencodeRoot(h), "opencode.db"),
       join(h, ".gemini", "tmp"),
     ]);
     expect(found.conversations.map((c) => c.agent)).toEqual(["gemini-cli", "opencode", "codex-cli", "claude-cli"]);
@@ -136,11 +143,11 @@ describe("discoverConversations", () => {
     const elsewhere = join(h, "elsewhere");
     layClaude(elsewhere);
     layCodex(elsewhere);
-    layOpencodeStorage(elsewhere);
     const env = {
       CLAUDE_CONFIG_DIR: join(elsewhere, ".claude"),
       CODEX_HOME: join(elsewhere, ".codex"),
-      XDG_DATA_HOME: join(elsewhere, ".local", "share"),
+      // The data home is the folder above the store, wherever this platform lays it.
+      XDG_DATA_HOME: dirname(layOpencodeStorage(elsewhere)),
     };
     const found = await discoverConversations({ home: h, env });
     expect(found.conversations.map((c) => c.agent).sort()).toEqual(["claude-cli", "codex-cli", "opencode"]);
@@ -333,7 +340,7 @@ describe("discoverConversations with a cwd: the folder before the cap", () => {
         at(i),
       );
       const info = { id: `ses_other${String(i).padStart(4, "0")}`, projectID: "global", directory: OTHER_CWD, title: "Elsewhere", time: { created: at(i) * 1000, updated: at(i) * 1000 } };
-      put(join(h, ".local", "share", "opencode", "storage", "session", "global", `${info.id}.json`), JSON.stringify(info), at(i));
+      put(join(opencodeRoot(h), "storage", "session", "global", `${info.id}.json`), JSON.stringify(info), at(i));
     }
   }
 
@@ -399,7 +406,7 @@ describe("discoverConversations with a cwd: the folder before the cap", () => {
     mkdirSync(real);
     symlinkSync(real, link);
     // The agent wrote the physical path; the caller asks with the link.
-    put(join(h, ".claude", "projects", claudeSlug(real), `${idOf(3)}.jsonl`), claudeText.replaceAll(FIXTURE_CWD, real), OLD);
+    put(join(h, ".claude", "projects", claudeSlug(real), `${idOf(3)}.jsonl`), withCwd(claudeText, real), OLD);
     const found = await discoverConversations({ home: h, env: {}, cwd: link });
     expect(found.conversations.map((c) => c.cwd)).toEqual([real]);
   });
@@ -416,8 +423,8 @@ describe("discoverConversations with a cwd: the folder before the cap", () => {
 
   it("filters OpenCode's rows by their directory before the cap, in the database as in the legacy store", async () => {
     const h = home();
-    mkdirSync(join(h, ".local", "share", "opencode"), { recursive: true });
-    writeFileSync(join(h, ".local", "share", "opencode", "opencode.db"), "");
+    mkdirSync(opencodeRoot(h), { recursive: true });
+    writeFileSync(join(opencodeRoot(h), "opencode.db"), "");
     const at = (i: number) => 1_789_000_000_000 + i * 1000;
     const rows = [
       { id: FIXTURE_OPENCODE_ID, directory: FIXTURE_CWD, title: "Ours", time_created: at(0), time_updated: at(0) },

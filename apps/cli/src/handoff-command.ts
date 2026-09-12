@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { readFile, realpath, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
 import pc from "picocolors";
@@ -26,9 +26,11 @@ import {
   isNativeTarget,
   newestOfFolder,
   readConversation,
+  realFolder,
   resolveConversation,
   resumeInApp,
   resumeOf,
+  sameFolder,
   toBundle,
   type AgentId,
   type Conversation,
@@ -687,14 +689,14 @@ async function sameAgent(parsed: Flags, conversation: Conversation, cwd: string,
   };
   for (const line of accountLines(agent)) step(line);
   if (resume) {
-    step(say("handoff.sameAgentResume", { line: pc.cyan(await lineFor(resume, conversation.cwd, cwd)) }));
+    step(say("handoff.sameAgentResume", { line: pc.cyan(await lineFor(resume, conversation.cwd, cwd, platform)) }));
     if (app) {
       const name = app.app.name;
       lines.push(`     ${say("handoff.sameAgentAppDoor", { app: name, line: pc.cyan(app.line) })}`);
       lines.push(`     ${pc.dim(say(agent === "claude-cli" ? "handoff.sameAgentAppClaude" : "handoff.sameAgentAppCodex", { app: name }))}`);
     }
   }
-  if (fork) step(say("handoff.sameAgentFork", { line: pc.cyan(await lineFor(fork, conversation.cwd, cwd)) }));
+  if (fork) step(say("handoff.sameAgentFork", { line: pc.cyan(await lineFor(fork, conversation.cwd, cwd, platform)) }));
   step(say("handoff.sameAgentBundle", { handle: conversation.handle }));
   lines.push("", `  ${pc.dim(say("handoff.sameAgentHome", { handle: conversation.handle, target: wordOf(agent) }))}`, "");
   process.stdout.write(lines.join("\n"));
@@ -797,7 +799,7 @@ async function write({ parsed, deps, conversation, digest, target, surface, name
   }
 
   const recorded = named ? await record(parsed, conversation, result, target, surface, tier) : "";
-  const resume = result.resume ? await lineFor(result.resume, conversation.cwd, cwd) : undefined;
+  const resume = result.resume ? await lineFor(result.resume, conversation.cwd, cwd, store.platform) : undefined;
   /* The shorter copy for the same agent: the person signs out and in before resuming it, so those two lines come first. */
   const account = target === conversation.agent && parsed.targetHome === undefined && tier !== "brief";
 
@@ -899,19 +901,18 @@ async function record(parsed: Flags, conversation: Conversation, result: WriteRe
 // ── Small helpers ──────────────────────────────────────────────────────────
 
 /** The resume line, without its `cd` when the person is already in the conversation's folder. */
-async function lineFor(resume: Resume, conversationCwd: string, cwd: string): Promise<string> {
-  return (await realFolder(conversationCwd)) === cwd ? [resume.command, ...resume.args].join(" ") : resume.line;
+async function lineFor(resume: Resume, conversationCwd: string, cwd: string, platform?: NodeJS.Platform): Promise<string> {
+  return sameFolder(await realFolder(conversationCwd), cwd, platform) ? [resume.command, ...resume.args].join(" ") : resume.line;
 }
 
 /*
-  Folders are compared by what they resolve to, not by how they were typed. On macOS the
-  temporary tree is `/var/…` for the agent that wrote the transcript and `/private/var/…` for
-  `process.cwd()`, and a person standing in the conversation's folder was told to `cd` into it.
-  A folder that no longer exists keeps its spelling, so the comparison still says something.
+  Folders are compared by what they resolve to, not by how they were typed — the engine's
+  `realFolder`, then its textual `insideFolder` and `sameFolder`. On macOS the temporary tree is
+  `/var/…` for the agent that wrote the transcript and `/private/var/…` for `process.cwd()`, and
+  a person standing in the conversation's folder was told to `cd` into it; on Windows the two
+  sides may differ by the case of a drive letter or by an 8.3 alias. A folder that no longer
+  exists keeps its spelling, so the comparison still says something.
  */
-async function realFolder(path: string): Promise<string> {
-  return realpath(path).catch(() => path);
-}
 
 /** The conversations whose folder is this one or lies inside it, resolved on both sides. */
 async function inFolder(refs: ConversationRef[], cwd: string, platform?: NodeJS.Platform): Promise<ConversationRef[]> {

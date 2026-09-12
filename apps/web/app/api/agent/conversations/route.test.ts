@@ -5,7 +5,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { REDACTED } from "@panoma/core";
 import { createAgent, forgetProjectsUnder, recordHandoff, schema, type Database } from "@panoma/db";
 import { DISCOVERY_LIMIT_DEFAULT } from "@panoma/handoff";
-import { FIXTURE_CLAUDE_ID, FIXTURE_CWD, fixtureText } from "../../../../../../packages/handoff/src/fixtures/index";
+import { FIXTURE_CLAUDE_ID, fixtureText, withCwd } from "../../../../../../packages/handoff/src/fixtures/index";
 import { CLAUDE_ID, CODEX_ID, closeHarness, layClaudeOf, layStores, openHarness, type Harness } from "../../handoff/harness";
 
 /**
@@ -126,7 +126,7 @@ describe("POST /api/agent/conversations", () => {
     const elsewhere = join(await mkdtemp(join(tmpdir(), "panoma-elsewhere-")), "other");
     await mkdir(elsewhere);
     const strayId = "9c1e2c3d-4a5f-4b6c-8d9e-0f1a2b3c4d5e";
-    await layClaudeOf(harness.agentHome, elsewhere, fixtureText("claude.jsonl").replaceAll(FIXTURE_CWD, elsewhere).replaceAll(FIXTURE_CLAUDE_ID, strayId), strayId);
+    await layClaudeOf(harness.agentHome, elsewhere, withCwd(fixtureText("claude.jsonl"), elsewhere).replaceAll(FIXTURE_CLAUDE_ID, strayId), strayId);
     forgetDiscovery();
     try {
       // From a subfolder of the project, the way an agent stands in `packages/core`.
@@ -165,12 +165,12 @@ describe("POST /api/agent/conversations", () => {
      */
     const sibling = `${harness.root}-2`;
     const old = new Date(Date.now() - 3_600_000);
-    const own = await layClaudeOf(harness.agentHome, harness.root, fixtureText("claude.jsonl").replaceAll(FIXTURE_CWD, harness.root));
+    const own = await layClaudeOf(harness.agentHome, harness.root, withCwd(fixtureText("claude.jsonl"), harness.root));
     await utimes(own, old, old);
     let folder = "";
     for (let i = 0; i < DISCOVERY_LIMIT_DEFAULT + 5; i += 1) {
       const id = `${String(i).padStart(8, "0")}-0000-4000-8000-000000000000`;
-      folder = join(await layClaudeOf(harness.agentHome, sibling, fixtureText("claude.jsonl").replaceAll(FIXTURE_CWD, sibling).replaceAll(FIXTURE_CLAUDE_ID, id), id), "..");
+      folder = join(await layClaudeOf(harness.agentHome, sibling, withCwd(fixtureText("claude.jsonl"), sibling).replaceAll(FIXTURE_CLAUDE_ID, id), id), "..");
     }
     forgetDiscovery();
     try {

@@ -10,9 +10,17 @@
  * one message appended three times under its id, as the recorder writes it, and
  * `codex-compacted.jsonl` is a rollout cut by a `compacted` record whose `message` is empty
  * and whose replacement history closes with the encrypted `compaction` item.
+ *
+ * The first Windows run (12-Sep-2026) added two rules. A test that points a fixture at a folder
+ * of this disk goes through `withCwd`, which spells the folder the way a JSON string does: a
+ * bare `replaceAll` put `C:\Users\…` into the records and every line with a `cwd` stopped
+ * parsing, so the conversation read back with no folder at all. And the OpenCode store is laid
+ * where the engine looks for it on the platform that runs the test —`%LOCALAPPDATA%\opencode`
+ * on Windows, `~/.local/share/opencode` elsewhere— which `opencodeRoot` answers.
  */
 import { mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { opencodeStore } from "../stores/opencode";
 import type { Random } from "../types";
 
 export const FIXTURE_CWD = "/Users/someone/dev/lemonade";
@@ -25,6 +33,22 @@ export const FIXTURE_GEMINI_PROJECT = "ad6a8de343d58a1d60afd4a51f68d6829c3f5bcae
 
 export function fixtureText(name: "claude.jsonl" | "codex.jsonl" | "codex-compacted.jsonl" | "opencode.json" | "gemini.jsonl"): string {
   return readFileSync(new URL(name, import.meta.url), "utf8");
+}
+
+/**
+ * The fixture with `FIXTURE_CWD` replaced by `cwd` as a JSON string spells it. Every
+ * occurrence in the five fixtures sits inside one JSON string, so a backslash of a Windows
+ * folder must arrive doubled, and a bare `replaceAll` is the bug this helper exists for.
+ */
+export function withCwd(text: string, cwd: string): string {
+  return text.replaceAll(FIXTURE_CWD, JSON.stringify(cwd).slice(1, -1));
+}
+
+/** Where the engine looks for OpenCode's data under `home` on the platform running the test. */
+export function opencodeRoot(home: string): string {
+  // An empty environment, cast because the web's route tests compile this module under Next's
+  // global typing, where `NODE_ENV` is a required key of `ProcessEnv`.
+  return opencodeStore({ home, env: {} as NodeJS.ProcessEnv }).root;
 }
 
 function put(path: string, text: string, stampSeconds?: number): string {
@@ -54,10 +78,10 @@ interface Envelope {
   messages: { info: Record<string, unknown>; parts: Record<string, unknown>[] }[];
 }
 
-/** The legacy JSON store under `<home>/.local/share/opencode/storage/**`, from the envelope fixture. */
+/** The legacy JSON store under `<opencodeRoot(home)>/storage/**`, from the envelope fixture. */
 export function layOpencodeStorage(home: string, text = fixtureText("opencode.json")): string {
   const envelope = JSON.parse(text) as Envelope;
-  const root = join(home, ".local", "share", "opencode");
+  const root = opencodeRoot(home);
   const storage = join(root, "storage");
   const id = envelope.info["id"] as string;
   const project = (envelope.info["projectID"] as string) ?? "global";

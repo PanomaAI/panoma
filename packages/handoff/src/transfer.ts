@@ -21,12 +21,13 @@
  * engine would refuse costs nothing. Both run `prepare()`, which is what keeps them from ever
  * disagreeing about what is refused. Since 12-Sep-2026.
  */
-import { realpath, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import { panomaPath } from "@panoma/core";
 import { compactConversation } from "./compact";
 import { digestConversation } from "./digest";
 import { HandoffFault } from "./faults";
 import { fidelityOf, isNativeTarget } from "./fidelity";
+import { realFolder, sameFolder } from "./folders";
 import { cryptoRandom } from "./ids";
 import { claudeStore, claudeStoreAt, claudeStoreExists } from "./stores/claude";
 import { codexStore, codexStoreAt, codexStoreExists } from "./stores/codex";
@@ -155,8 +156,8 @@ async function resolveRoot(
     if (!store.exists) throw new HandoffFault("target-store-missing", targetHome);
     if (target === conversation.agent && tier === "full") {
       const own = defaultRoot(target, options);
-      const [a, b] = await Promise.all([realpath(targetHome).catch(() => targetHome), realpath(own).catch(() => own)]);
-      if (a === b) throw new HandoffFault("same-store", targetHome);
+      const [a, b] = await Promise.all([realFolder(targetHome), realFolder(own)]);
+      if (sameFolder(a, b, resolved.platform)) throw new HandoffFault("same-store", targetHome);
     }
     return targetHome;
   }

@@ -1,5 +1,4 @@
-import { realpath } from "node:fs/promises";
-import { insideFolder, isAgentId, isNativeTarget, resumeInApp, resumeOf, type Surface } from "@panoma/handoff";
+import { insideFolder, isAgentId, isNativeTarget, realFolder, resumeInApp, resumeOf, type Surface } from "@panoma/handoff";
 import { asHandoffFault, faultOf, type HandoffFaultCode } from "@panoma/handoff/faults";
 import { publicAppValue } from "./apps";
 
@@ -97,14 +96,14 @@ export function projectFor<T extends { root: string }>(
 }
 
 /**
- * The same question with the disk in hand: both sides realpath-normalized where the folder
- * exists, so a `/tmp` conversation matches a `/private/tmp` root, and the entry comes back as
- * the catalog stores it — the receipt's `cwd` is the root the person sees, not its alias.
+ * The same question with the disk in hand: both sides resolved by the engine's `realFolder`
+ * where the folder exists, so a `/tmp` conversation matches a `/private/tmp` root and an 8.3
+ * alias its long name, and the entry comes back as the catalog stores it — the receipt's
+ * `cwd` is the root the person sees, not its alias.
  */
 export async function projectOnDisk<T extends CatalogRoot>(cwd: string, roots: readonly T[]): Promise<T | undefined> {
-  const real = async (folder: string) => realpath(folder).catch(() => folder);
-  const normalized = await Promise.all(roots.map(async (entry) => ({ entry, root: await real(entry.root) })));
-  return projectFor(await real(cwd), normalized)?.entry;
+  const normalized = await Promise.all(roots.map(async (entry) => ({ entry, root: await realFolder(entry.root) })));
+  return projectFor(await realFolder(cwd), normalized)?.entry;
 }
 
 /**

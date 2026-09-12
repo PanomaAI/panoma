@@ -712,6 +712,32 @@ them. The description is the deliverable, not the interpretation.
 - **A document-only target gets a document.** Cursor, Copilot and the rest cannot resume a file
   panoma wrote, and this version reads none of their stores either: in v1 they are targets,
   never sources.
+- **Windows ran the suite for the first time on 12-Sep-2026, and seventy tests failed** —
+  almost all for one of two reasons: a folder has more than one spelling there, and the
+  fixtures had stopped being JSON. The engine now resolves and compares folders in one place,
+  `packages/handoff/src/folders.ts`: `realFolder` is libuv's realpath, which follows symbolic
+  links and answers the long name where the runner's `TEMP` spells an 8.3 alias
+  (`C:\Users\RUNNER~1` for `runneradmin`), and `insideFolder` and `sameFolder` flatten `\`
+  to `/`, drop a trailing separator and ignore case on win32 — the rule `@panoma/core` reads
+  its history with. Discovery's scope, the same-store check, `projectOnDisk`, `inProject` and
+  the CLI's «without cd» line take the two halves from there in the same order: resolve on the
+  disk where the folder exists, then compare the text; a folder that no longer exists keeps its
+  typed spelling. Two Windows-only bugs were in the engine itself: the Codex listing cut a
+  rollout's name at the last `/`, which a Windows path does not have, so a reverted thread
+  listed twice; and the Gemini registry answered a folder lower-cased, so a conversation's
+  `cwd` came back in a case the disk never gave it — the comparison folds the case, the value
+  does not. The rest was the tests: a fixture pointed at a folder of this disk with a bare
+  `replaceAll` put `C:\Users\…` into JSON strings and every record with a `cwd` stopped
+  parsing, so the conversations read back with no folder at all (`withCwd` in the fixtures
+  spells the folder as JSON does); the OpenCode store is laid where the engine looks on the
+  running platform (`%LOCALAPPDATA%\opencode`); a resume line's first half is `cd '…' &&` on
+  POSIX and `Set-Location -LiteralPath '…';` on Windows; and a URL's `pathname` is not a file
+  path. A catalog-wide twin came out with it: `resolveProject`'s prefix match was a `like`
+  pattern, and a backslash is `like`'s escape character, so a Windows root never matched a
+  subfolder of itself and an agent there resolved its project only through the remote; it is
+  `starts_with` for both separators now. Known limit, unverified there: a transcript an agent
+  wrote from an 8.3-spelled folder files under the alias's slug, and a caller asking with the
+  long name does not find it by the cheap folder-name read.
 - **OpenCode on Windows is unverified**: `XDG_DATA_HOME` has no conventional value there and
   the default was not measured.
 - **A second config folder is a terminal-only case.** `--target-home` takes an absolute path

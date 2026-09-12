@@ -154,11 +154,15 @@ export async function resolveProject(
     if (exact) return exact;
 
     // The agent can be inside the project: `…/panoma/packages/core`. We keep the deepest root that
-    // is a prefix, which is the most specific.
+    // is a prefix, which is the most specific. `starts_with` and not `like`: a Windows root is
+    // spelled with backslashes, and in a `like` pattern a backslash is the escape character, so
+    // `C:\x` never matched anything there — an agent in a subfolder resolved its project only
+    // through the remote (12-Sep-2026). Both separators, because a Windows catalog stores the
+    // root as the disk spells it and the agent's cwd may come either way.
     const [ancestor] = await db
       .select()
       .from(t.projects)
-      .where(sql`${hint.cwd} like ${t.projects.root} || '/%'`)
+      .where(sql`starts_with(${hint.cwd}, ${t.projects.root} || '/') or starts_with(${hint.cwd}, ${t.projects.root} || '\\')`)
       .orderBy(sql`length(root) desc`)
       .limit(1);
     if (ancestor) return ancestor;

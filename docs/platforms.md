@@ -188,6 +188,23 @@ typed by the user ends up creating a folder called `~` in the current directory.
 folder comes out of `homedir()` and not out of `process.env.HOME`, which doesn't exist on
 Windows: there the variable is called `USERPROFILE` and `homedir()` already knows it.
 
+## Folders with more than one name
+
+On Windows one folder answers to several spellings at once: `C:\x` and `c:/x` are the same
+folder, and so are `C:\Users\RUNNER~1\…` and `C:\Users\runneradmin\…` — the 8.3 alias
+GitHub's runner puts in `TEMP` and the long name the disk resolves it to. Node's two realpaths
+disagree here: `fs.realpathSync` walks the components in JavaScript and keeps `RUNNER~1`, while
+`fs.promises.realpath` and `realpathSync.native` ask the OS and answer the long name. The handoff
+met all three on 12-Sep-2026, the first day its suite ran there, and seventy tests failed on
+folders that were the same folder: the answer is `packages/handoff/src/folders.ts`, one place
+that resolves (`realFolder`, libuv's) and one that compares (`insideFolder`, `sameFolder`:
+separators flattened, case folded on win32), and the rule that a value is never answered in a
+case or a spelling the disk did not give — the fold lives in the comparison alone. The catalog's
+own `resolveProject` had the other half of the same bug: its prefix match was a `like` pattern,
+and in a `like` pattern a backslash escapes the next character, so a Windows root never matched
+a subfolder of itself; `starts_with` for both separators replaced it. [handoff.md](handoff.md)
+has the list.
+
 ## Line endings, and `estimateTokens`
 
 Git checks files out with CRLF on Windows. That made **the same `AGENTS.md` claim to cost 438

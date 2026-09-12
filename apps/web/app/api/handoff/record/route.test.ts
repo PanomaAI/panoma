@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { listHandoffs, schema, type Database } from "@panoma/db";
-import { CLAUDE_ID, CODEX_ID, closeHarness, openHarness, request, type Harness } from "../harness";
+import { CLAUDE_ID, CODEX_ID, closeHarness, enter, openHarness, request, type Harness } from "../harness";
 
 /**
  * The CLI's receipt: ten fields in, one row out, and nothing in the row that the client could
@@ -77,7 +77,7 @@ describe("POST /api/handoff/record", () => {
       turns: 4,
       bytes: 2048,
       dropped: { ...NOTHING, thinking: 2 },
-      resumeCommand: `cd '${harness.root}' && codex resume ${TARGET_SESSION}`,
+      resumeCommand: `${enter(harness.root)}codex resume ${TARGET_SESSION}`,
     });
     expect(row!.sourcePath.endsWith(".jsonl")).toBe(true);
   });
@@ -89,7 +89,7 @@ describe("POST /api/handoff/record", () => {
     expect(body.receipt.resumeCommand).toBe(
       process.platform === "darwin"
         ? `open 'codex://threads/${TARGET_SESSION}'`
-        : `cd '${harness.root}' && codex resume ${TARGET_SESSION}`,
+        : `${enter(harness.root)}codex resume ${TARGET_SESSION}`,
     );
   });
 

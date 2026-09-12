@@ -2,7 +2,7 @@ import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { recordHandoff, schema, type Database } from "@panoma/db";
-import { CLAUDE_ID, CODEX_ID, closeHarness, layStores, openHarness, request, type Harness } from "../harness";
+import { CLAUDE_ID, CODEX_ID, closeHarness, enter, layStores, openHarness, request, type Harness } from "../harness";
 
 /**
  * The preview: what the panel paints before anything is written. The transcript is read whole
@@ -68,7 +68,7 @@ describe("GET /api/handoff/[id]", () => {
     // The doors of the same agent on the original: the terminal always, the app on a Mac.
     const sessionId = CLAUDE_ID.split(":")[1]!;
     expect(body.sameSurfaceDoor).toEqual({
-      cli: `cd '${harness.root}' && claude --resume ${sessionId}`,
+      cli: `${enter(harness.root)}claude --resume ${sessionId}`,
       app: process.platform === "darwin" ? `open 'claude://resume?session=${sessionId}'` : null,
     });
   });

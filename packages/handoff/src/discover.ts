@@ -23,7 +23,8 @@
  * answered per store, so a huge folder still answers bounded. A file whose folder cannot be
  * told that cheaply is kept for the full read to decide.
  */
-import { open, readdir, realpath, stat } from "node:fs/promises";
+import { open, readdir, stat } from "node:fs/promises";
+import { insideFolder, realFolder } from "./folders";
 import { conversationId, shortHandle } from "./ids";
 import { parseClaudeTranscript } from "./readers/claude";
 import { parseCodexRollout, readSessionIndex } from "./readers/codex";
@@ -69,9 +70,10 @@ interface Candidate {
 
 /**
  * The folder a discovery is asked for, in the spellings a transcript may state: as given and as
- * the disk resolves it. An agent writes `process.cwd()`, which is the physical path, while a
- * catalog may hold `/tmp/x` for `/private/tmp/x`; the caller's own filter resolves both sides
- * again on what comes back, and this one only has to let nothing of the folder's slip past.
+ * the disk resolves it (`realFolder`: through links, and on Windows the long name in place of
+ * an 8.3 alias). An agent writes `process.cwd()`, which is the physical path, while a catalog
+ * may hold `/tmp/x` for `/private/tmp/x`; the caller's own filter resolves both sides again on
+ * what comes back, and this one only has to let nothing of the folder's slip past.
  */
 interface Scope {
   folders: readonly string[];
@@ -82,7 +84,7 @@ async function scopeOf(cwd: string | undefined, platform: NodeJS.Platform): Prom
   if (!cwd) return undefined;
   // A trailing separator is not part of a folder's name, and no agent states one.
   const given = cwd.replace(/[\\/]+$/, "") || cwd;
-  const real = await realpath(given).catch(() => given);
+  const real = await realFolder(given);
   return { folders: [...new Set([given, real])], platform };
 }
 
@@ -122,17 +124,8 @@ export async function stores(options: StoreOptions = {}): Promise<StoreReport[]>
   return reports;
 }
 
-/** `cwd` equals or is inside `folder`; case-insensitive on Windows, separators normalized. */
-export function insideFolder(cwd: string, folder: string, platform: NodeJS.Platform = process.platform): boolean {
-  if (!cwd) return false;
-  const flat = (p: string) => {
-    const f = p.replace(/\\/g, "/").replace(/\/+$/, "");
-    return platform === "win32" ? f.toLowerCase() : f;
-  };
-  const a = flat(cwd);
-  const b = flat(folder);
-  return a === b || a.startsWith(`${b}/`);
-}
+/** The comparison the filters here make, from `./folders`; re-exported because the callers took it from this module. */
+export { insideFolder } from "./folders";
 
 async function listStore(
   agent: AgentId,
@@ -375,9 +368,13 @@ async function listCodex(options: DiscoverOptions, limit: number, scope: Scope |
   // After a `thread/revert` Codex writes a second file for the same thread, named
   // `rollout-<stamp>-<thread>_<rollout>.jsonl`; its own resolver takes the newest of the two, and
   // so does this list, or the same conversation would appear twice under one id.
+  // The name is the file's, by the platform's own `basename`: until 12-Sep-2026 it was cut at
+  // the last `/`, which a Windows path does not have, so every thread's id was its whole path
+  // and the reverted rollout listed beside the original.
   const perThread = new Map<string, Candidate>();
+  const local = nativePath();
   for (const candidate of candidates) {
-    const id = codexIdFromName(candidate.path.slice(candidate.path.lastIndexOf("/") + 1)) ?? candidate.path;
+    const id = codexIdFromName(local.basename(candidate.path)) ?? candidate.path;
     const seen = perThread.get(id);
     if (!seen || seen.mtimeMs < candidate.mtimeMs) perThread.set(id, candidate);
   }

@@ -1,8 +1,12 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import { HANDOFF_FAULTS, HandoffFault, isHandoffFaultCode } from "@panoma/handoff/faults";
 import { describe, expect, it } from "vitest";
 import { HANDOFF_STATUS, handoffHttpError, isAppLink, projectFor, resumeLineOf } from "./handoff-http";
+
+/** The first half of a resume line from another folder, as the running platform spells it: `cd` on POSIX, `Set-Location` on Windows. */
+const enter = (folder: string) => (process.platform === "win32" ? `Set-Location -LiteralPath '${folder}'; ` : `cd '${folder}' && `);
 
 /*
   The status of each handoff failure, written down, and the sweep that keeps every thrown code
@@ -107,7 +111,7 @@ describe("which project a conversation belongs to", () => {
 describe("the display line of a receipt", () => {
   it("is derived from the agent and the id, and refuses an id that does not fit the agent", () => {
     expect(resumeLineOf("codex-cli", "01a08fab-9c49-7bcd-9bf1-ffc0d78795a5", "/x")).toBe(
-      "cd '/x' && codex resume 01a08fab-9c49-7bcd-9bf1-ffc0d78795a5",
+      `${enter("/x")}codex resume 01a08fab-9c49-7bcd-9bf1-ffc0d78795a5`,
     );
     expect(resumeLineOf("codex-cli", "01a08fab; rm -rf ~", "/x")).toBeNull();
     expect(resumeLineOf("cursor-agent", "01a08fab-9c49-7bcd-9bf1-ffc0d78795a5", "/x")).toBeNull();
@@ -118,9 +122,9 @@ describe("the display line of a receipt", () => {
     const id = "01a08fab-9c49-7bcd-9bf1-ffc0d78795a5";
     const app = resumeLineOf("codex-cli", id, "/x", "app");
     if (process.platform === "darwin") expect(app).toBe(`open 'codex://threads/${id}'`);
-    else expect(app).toBe(`cd '/x' && codex resume ${id}`);
+    else expect(app).toBe(`${enter("/x")}codex resume ${id}`);
     // An agent without an app keeps its command on either surface.
-    expect(resumeLineOf("opencode", "ses_0123456789abcdefghij", "/x", "app")).toBe("cd '/x' && opencode -s ses_0123456789abcdefghij");
+    expect(resumeLineOf("opencode", "ses_0123456789abcdefghij", "/x", "app")).toBe(`${enter("/x")}opencode -s ses_0123456789abcdefghij`);
     expect(resumeLineOf("codex-cli", "01a08fab; rm -rf ~", "/x", "app")).toBeNull();
   });
 });
@@ -163,7 +167,8 @@ describe("what may reach `open`", () => {
   is fine; what is not fine is a file that throws a word nobody named.
  */
 describe("every failure a person can be shown is in the vocabulary", () => {
-  const ROOT = new URL("../", import.meta.url).pathname;
+  // A file path, not a URL's `pathname`: on Windows the latter is `/D:/…`, which `join` reads as `D:\D:\…`.
+  const ROOT = fileURLToPath(new URL("../", import.meta.url));
   const files: string[] = [];
   const walk = (dir: string) => {
     for (const name of readdirSync(dir)) {
@@ -178,16 +183,19 @@ describe("every failure a person can be shown is in the vocabulary", () => {
   for (const name of readdirSync(join(ROOT, "lib"))) {
     if (name.startsWith("handoff-") && name.endsWith(".ts") && !name.endsWith(".test.ts")) files.push(join(ROOT, "lib", name));
   }
+  /** The file's path under `ROOT`, spelled with `/` on every platform, so the names below read the same everywhere. */
+  const under = (file: string) => relative(ROOT, file).split(sep).join("/");
+  const swept = files.map(under);
 
   it("sweeps the routes and the helpers", () => {
-    expect(files.some((file) => file.endsWith("/handoff/route.ts"))).toBe(true);
-    expect(files.some((file) => file.endsWith("/agent/handoff/route.ts"))).toBe(true);
-    expect(files.some((file) => file.endsWith("/agent/conversations/route.ts"))).toBe(true);
-    expect(files.some((file) => file.endsWith("/lib/handoff-http.ts"))).toBe(true);
-    expect(files.some((file) => file.endsWith("/lib/handoff-write.ts"))).toBe(true);
+    expect(swept).toContain("app/api/handoff/route.ts");
+    expect(swept).toContain("app/api/agent/handoff/route.ts");
+    expect(swept).toContain("app/api/agent/conversations/route.ts");
+    expect(swept).toContain("lib/handoff-http.ts");
+    expect(swept).toContain("lib/handoff-write.ts");
   });
 
-  it.each(files.map((file) => file.slice(ROOT.length)))("%s", (file) => {
+  it.each(swept)("%s", (file) => {
     const source = readFileSync(join(ROOT, file), "utf8");
     const thrown = [...source.matchAll(/new HandoffFault\("([a-z0-9_-]+)"/g)].map((match) => match[1]!);
     for (const code of thrown) {

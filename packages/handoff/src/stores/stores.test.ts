@@ -185,8 +185,8 @@ describe("Codex CLI", () => {
     expect(await codexModelSettings(store)).toEqual({ ...fallback, reasoningEffort: "high" });
     writeFileSync(store.config, 'sandbox_mode = "read-only"\n');
     expect(await codexModelSettings(store)).toEqual({ ...fallback, sandboxMode: "read-only" });
-    // A named root reads its own file.
-    expect(codexStoreAt("/srv/codex", { home, env: {} }).config).toBe("/srv/codex/config.toml");
+    // A named root reads its own file, joined the way this platform joins.
+    expect(codexStoreAt("/srv/codex", { home, env: {} }).config).toBe(join("/srv/codex", "config.toml"));
   });
 
   it("reads the thread id out of a rollout name, also after a revert suffix, and not out of a .zst", () => {
@@ -275,6 +275,19 @@ describe("Gemini CLI", () => {
     expect(geminiStoreExists(store)).toBe(false);
     mkdirSync(store.tmp, { recursive: true });
     expect(geminiStoreExists(store)).toBe(true);
+  });
+
+  it("matches a registered folder on Windows whatever its case, and answers it as the registry spells it", () => {
+    const home = join(root, "gemini-home-windows");
+    // Laid with this disk's own paths; read with the platform under test, which decides the comparison alone.
+    const native = geminiStore({ home, env: {} });
+    mkdirSync(native.root, { recursive: true });
+    writeFileSync(native.registry, JSON.stringify({ version: 1, projects: { "C:\\Users\\Someone\\dev\\Lemonade": "lemonade" } }));
+    const store = { ...native, resolved: { ...native.resolved, platform: "win32" as const } };
+    expect(geminiProjectId(store, "c:\\users\\someone\\dev\\lemonade")).toBe("lemonade");
+    expect(geminiProjectId(store, "C:/Users/Someone/dev/Lemonade/")).toBe("lemonade");
+    // The folder comes back in the case the registry gave it, never lower-cased (12-Sep-2026).
+    expect(geminiProjectFolders(store, []).get("lemonade")).toBe("C:\\Users\\Someone\\dev\\Lemonade");
   });
 });
 

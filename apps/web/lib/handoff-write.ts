@@ -1,4 +1,4 @@
-import { readFile, realpath } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { redactSecrets } from "@panoma/core";
 import { listProjectRoots, recordHandoff, type Database, type HandoffRow } from "@panoma/db";
 import { NO_PROJECT } from "./agent-channel";
@@ -13,6 +13,7 @@ import {
   isSurface,
   newestOfFolder,
   readConversation,
+  realFolder,
   splitConversationId,
   type AgentId,
   type Conversation,
@@ -171,19 +172,19 @@ export async function openConversation(catalog: Catalog, ref: ConversationRef): 
 
 /**
  * The conversations kept for one project: those whose folder is the root or lies inside it,
- * both sides resolved on disk — the agent that wrote the transcript and the catalog may spell
- * `/var` and `/private/var` differently — and one row per id. Discovery already lists one row
- * per id (Codex's listing keeps the newest of a thread's two rollouts); this keeps it so if a
- * store ever answers twice, the first row winning. Discovery lists newest first, and that order
- * is kept.
+ * both sides resolved on disk by the engine's `realFolder` — the agent that wrote the
+ * transcript and the catalog may spell `/var` and `/private/var` differently, or on Windows an
+ * 8.3 alias and the long name — and one row per id. Discovery already lists one row per id
+ * (Codex's listing keeps the newest of a thread's two rollouts); this keeps it so if a store
+ * ever answers twice, the first row winning. Discovery lists newest first, and that order is
+ * kept.
  */
 export async function inProject(refs: readonly ConversationRef[], root: string): Promise<ConversationRef[]> {
-  const real = async (folder: string) => realpath(folder).catch(() => folder);
-  const folder = await real(root);
+  const folder = await realFolder(root);
   const kept = new Map<string, ConversationRef>();
   for (const ref of refs) {
     if (!ref.cwd || kept.has(ref.id)) continue;
-    if (insideFolder(await real(ref.cwd), folder)) kept.set(ref.id, ref);
+    if (insideFolder(await realFolder(ref.cwd), folder)) kept.set(ref.id, ref);
   }
   return [...kept.values()];
 }

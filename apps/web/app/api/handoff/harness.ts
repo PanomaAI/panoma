@@ -1,14 +1,15 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { schema, type Database } from "@panoma/db";
-import { claudeSlug } from "@panoma/handoff";
+import { claudeSlug, quoteForShell } from "@panoma/handoff";
 import {
   FIXTURE_CLAUDE_ID,
   FIXTURE_CODEX_ID,
-  FIXTURE_CWD,
   fixtureText,
   layCodex,
+  opencodeRoot,
+  withCwd,
 } from "../../../../../packages/handoff/src/fixtures/index";
 
 /*
@@ -23,6 +24,15 @@ import {
   The routes read `{ home, env }` from `globalThis.__panomaHandoffStores` (see
   `lib/handoff-cache.ts`): under `NODE_ENV=test` the engine refuses to guess either, which is
   what keeps a route test from ever reading or writing the developer's own `~/.claude`.
+
+  Three rules came from the first Windows run (12-Sep-2026). The rewrite goes through the
+  fixtures' `withCwd`, which spells the folder as a JSON string does: a bare `replaceAll` put
+  `C:\Users\…` into every record and each one stopped parsing, so the conversations read back
+  with no folder. The folders are the disk's own spelling, `realpath` of what `mkdtemp` gave:
+  the runner's `TEMP` is an 8.3 alias (`RUNNER~1`), and a child started in the folder prints
+  the name it was given while the engine resolves the long one. And a test that expects a
+  resume line asks `enter()` for its first half, because that half is `cd '…' &&` on POSIX
+  and `Set-Location -LiteralPath '…';` on Windows.
 
   Not a test file (vitest runs `*.test.ts` only) and not a route (Next mounts `route.ts` only).
  */
@@ -59,14 +69,29 @@ export async function layClaudeOf(agentHome: string, cwd: string, text: string, 
 export async function layStores(agentHome: string, root: string, mutate: (text: string) => string = (text) => text): Promise<void> {
   await rm(join(agentHome, ".claude"), { recursive: true, force: true });
   await rm(join(agentHome, ".codex"), { recursive: true, force: true });
-  await layClaudeOf(agentHome, root, mutate(fixtureText("claude.jsonl").replaceAll(FIXTURE_CWD, root)));
-  layCodex(agentHome, mutate(fixtureText("codex.jsonl").replaceAll(FIXTURE_CWD, root)));
+  await layClaudeOf(agentHome, root, mutate(withCwd(fixtureText("claude.jsonl"), root)));
+  layCodex(agentHome, mutate(withCwd(fixtureText("codex.jsonl"), root)));
+}
+
+/** Where the engine looks for OpenCode's data under the agent home on this platform. */
+export function opencodeHome(agentHome: string): string {
+  return opencodeRoot(agentHome);
+}
+
+/** The first half of a resume line from another folder: `cd '…' && ` on POSIX, `Set-Location -LiteralPath '…'; ` on Windows. */
+export function enter(folder: string): string {
+  return process.platform === "win32" ? `Set-Location -LiteralPath ${quoteForShell(folder)}; ` : `cd ${quoteForShell(folder)} && `;
+}
+
+/** A fresh temporary folder, as the disk spells it. */
+async function temp(prefix: string): Promise<string> {
+  return realpath(await mkdtemp(join(tmpdir(), prefix)));
 }
 
 export async function openHarness(name: string): Promise<Harness> {
-  const home = await mkdtemp(join(tmpdir(), `panoma-${name}-home-`));
-  const agentHome = await mkdtemp(join(tmpdir(), `panoma-${name}-agents-`));
-  const root = join(await mkdtemp(join(tmpdir(), `panoma-${name}-project-`)), "lemonade");
+  const home = await temp(`panoma-${name}-home-`);
+  const agentHome = await temp(`panoma-${name}-agents-`);
+  const root = join(await temp(`panoma-${name}-project-`), "lemonade");
   await mkdir(root);
   await layStores(agentHome, root);
   // An empty environment for the engine (no `CLAUDE_CONFIG_DIR`, no `CODEX_HOME`); Next's
