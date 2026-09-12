@@ -1,0 +1,143 @@
+{
+  "info": {
+    "id": "ses_3e45b2e7cffeLy7v1L0qDKNyMU",
+    "slug": "glowing-nebula",
+    "version": "1.2.6",
+    "projectID": "global",
+    "directory": "/Users/someone/dev/lemonade",
+    "title": "Lemonade ledger: price change",
+    "time": {
+      "created": 1789134800000,
+      "updated": 1789134900000
+    }
+  },
+  "messages": [
+    {
+      "info": {
+        "id": "msg_c1e864067001vnVCqGKzPyxbhd",
+        "sessionID": "ses_3e45b2e7cffeLy7v1L0qDKNyMU",
+        "role": "user",
+        "time": {
+          "created": 1789134800000
+        },
+        "agent": "build",
+        "model": {
+          "providerID": "opencode",
+          "modelID": "kimi-k2.5-free"
+        }
+      },
+      "parts": [
+        {
+          "id": "prt_c1e864067002vnVCqGKzPyxbh1",
+          "sessionID": "ses_3e45b2e7cffeLy7v1L0qDKNyMU",
+          "messageID": "msg_c1e864067001vnVCqGKzPyxbhd",
+          "type": "text",
+          "text": "Raise the price to $3 per cup in the ledger."
+        }
+      ]
+    },
+    {
+      "info": {
+        "id": "msg_c1e864067003vnVCqGKzPyxbhe",
+        "sessionID": "ses_3e45b2e7cffeLy7v1L0qDKNyMU",
+        "role": "assistant",
+        "time": {
+          "created": 1789134810000,
+          "completed": 1789134820000
+        },
+        "parentID": "msg_c1e864067001vnVCqGKzPyxbhd",
+        "modelID": "kimi-k2.5-free",
+        "providerID": "opencode",
+        "mode": "build",
+        "agent": "build",
+        "path": {
+          "cwd": "/Users/someone/dev/lemonade",
+          "root": "/Users/someone/dev/lemonade"
+        },
+        "cost": 0,
+        "tokens": {
+          "input": 100,
+          "output": 20,
+          "reasoning": 0,
+          "cache": {
+            "read": 0,
+            "write": 0
+          }
+        },
+        "finish": "stop"
+      },
+      "parts": [
+        {
+          "id": "prt_c1e864067004vnVCqGKzPyxbh2",
+          "sessionID": "ses_3e45b2e7cffeLy7v1L0qDKNyMU",
+          "messageID": "msg_c1e864067003vnVCqGKzPyxbhe",
+          "type": "step-start",
+          "snapshot": "abc123"
+        },
+        {
+          "id": "prt_c1e864067005vnVCqGKzPyxbh3",
+          "sessionID": "ses_3e45b2e7cffeLy7v1L0qDKNyMU",
+          "messageID": "msg_c1e864067003vnVCqGKzPyxbhe",
+          "type": "reasoning",
+          "text": "The user wants $3.",
+          "time": {
+            "start": 1789134811000,
+            "end": 1789134812000
+          }
+        },
+        {
+          "id": "prt_c1e864067006vnVCqGKzPyxbh4",
+          "sessionID": "ses_3e45b2e7cffeLy7v1L0qDKNyMU",
+          "messageID": "msg_c1e864067003vnVCqGKzPyxbhe",
+          "type": "tool",
+          "callID": "call_oc_1",
+          "tool": "edit",
+          "state": {
+            "status": "completed",
+            "input": {
+              "filePath": "/Users/someone/dev/lemonade/ledger.md",
+              "oldString": "14 x $2",
+              "newString": "14 x $3"
+            },
+            "output": "Edited ledger.md",
+            "title": "ledger.md",
+            "metadata": {},
+            "time": {
+              "start": 1789134813000,
+              "end": 1789134814000
+            }
+          }
+        },
+        {
+          "id": "prt_c1e864067007vnVCqGKzPyxbh5",
+          "sessionID": "ses_3e45b2e7cffeLy7v1L0qDKNyMU",
+          "messageID": "msg_c1e864067003vnVCqGKzPyxbhe",
+          "type": "text",
+          "text": "Price raised to $3: sales are now $42.",
+          "time": {
+            "start": 1789134815000,
+            "end": 1789134816000
+          }
+        },
+        {
+          "id": "prt_c1e864067008vnVCqGKzPyxbh6",
+          "sessionID": "ses_3e45b2e7cffeLy7v1L0qDKNyMU",
+          "messageID": "msg_c1e864067003vnVCqGKzPyxbhe",
+          "type": "step-finish",
+          "reason": "stop",
+          "snapshot": "def456",
+          "cost": 0,
+          "tokens": {
+            "input": 100,
+            "output": 20,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

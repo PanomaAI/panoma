@@ -135,10 +135,10 @@ What is inside:
 
 | list | what it holds |
 | --- | --- |
-| `EJECUTAN` | the eight routes that execute, or decide, over the person's disk; every handler carries `sameOrigin` **and** `localOperatorOnly` |
+| `EJECUTAN` | the twenty-seven routes that execute, or decide, over the person's disk — the ten of the official apps, six that install, run or open, three of the twin, the two operator doors of the handoff and its two doors on the agent channel (`agent/conversations`, `agent/handoff`), and the video four on that channel (`agent/video`, `agent/video/cancel`, `agent/apps`, `agent/video/jobs`); every handler carries `sameOrigin` **and** `localOperatorOnly`, or is named below with its reason |
 | `EXENTAS` | the two that start processes and still carry no operator key: `environment` and `search` |
-| `HANDLERS_EXENTOS` | three specific handlers inside guarded routes: `open GET`, `twin/sources GET`, `twin/taste GET` |
-| `SIN_SAMEORIGIN` | the seven `/api/agent/*` handlers that carry no browser guard because the MCP server is what calls them |
+| `HANDLERS_EXENTOS` | twelve specific handlers inside guarded routes: the six read-only GETs of the apps family and their two twins on the agent channel (`agent/apps POST`, `agent/video/jobs POST`, which read and carry the agent key), `open GET`, `open/all GET`, `twin/sources GET`, `twin/taste GET` |
+| `SIN_SAMEORIGIN` | the eight `/api/agent/*` handlers that carry no browser guard because the MCP server is what calls them. The two handoff doors on that channel are **not** here: they carry every guard, the agent key last |
 
 The written reason is neither optional nor decorative: the test demands it run past **forty
 characters**. An exception you cannot explain in a whole sentence is not an exception, it is
@@ -146,10 +146,22 @@ an oversight with permission.
 
 And the lists chase themselves. Three checks look for new doors by what they **call**, not by
 what they are called: `/\b(spawn|spawnSync|execFile|execFileSync|exec|run)\s*\(/` for whatever
-starts processes, `/\b(mineHistory|setConsent|setInferredConsent)\s*\(/` for whatever opens
-the history or grants permission over it, and `/\breadScreenshot\s*\(/` for whatever opens a
-file on this disk and sends it to a provider. A route that calls any of those and has not been
-decided on turns the test red.
+starts processes; `/\breadScreenshot\s*\(/` for whatever opens a file on this disk and sends
+it to a provider; and, for whatever opens the person's private history or grants permission
+over it, `mineHistory`, `setConsent` and `setInferredConsent` (the twin's captured history),
+`discoverConversations`, `discoverCached` and `readConversation` (the conversations the agents
+keep) **and** the three entry points of `apps/web/lib/handoff-write.ts` — `discoverForCatalog`,
+`openConversation`, `writeHandoff` — through which the handoff's routes reach those since the
+agent channel got its doors. The last three are in the sweep because a route that calls the
+library instead of the engine reads the same history; the library's header says the sweep
+names it, so a rename there does not blind the test in silence. A route that calls any of
+those and has not been decided on turns the test red.
+
+The process sweep is also why `opencode import` is run inside `app/api/handoff/route.ts` and
+not in that library: the sweep reads route files, and a route that starts a process has to be
+on a list. The agent channel's door contains no process-starting word at all — the import step
+stays in its answer for the person — and `agent/handoff/route.test.ts` plants a fake OpenCode
+binary to prove it was never called.
 
 There is a fifth that closes the door the other way round: every entry in `SIN_SAMEORIGIN` has
 to still exist **and** call `requireAgent`. An exception that outlives its reason is a hole

@@ -261,6 +261,7 @@ export {
   sessionMemoryWindow,
 } from "./memory-jobs";
 export type { MemoryJobClaim, MemoryJobCounts, SessionMemoryActivity } from "./memory-jobs";
+export * from "./handoffs";
 export { MEMORY_EXPORT_VERSION, exportProjectMemory } from "./memory-export";
 export type { ExportedDecision, ExportedMemoryJob, ExportedNote, MemoryExport } from "./memory-export";
 export {

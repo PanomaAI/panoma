@@ -106,6 +106,7 @@ const STATS: MineStats = {
   userTurns: 6551,
   toolResults: 29110,
   sidechain: 842,
+  handedOff: 0,
   commands: 611,
   reactions: 6240,
   briefs: 1902,

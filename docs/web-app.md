@@ -10,9 +10,9 @@ describes the local product only.
 
 Five tests watch over it: `apps/web/app/styles/styles.test.ts` (the list and the order of the
 `@import`s), `apps/web/components/project-views.test.ts` (the ten views of the card and their
-anchors), `apps/web/components/modal-keyboard.test.ts` (the four modal dialogs),
+anchors), `apps/web/components/modal-keyboard.test.ts` (the six modal dialogs),
 `apps/web/lib/locale-required.test.ts` (no component assumes the language) and
-`apps/web/app/(app)/skip-target.test.ts` (the target of the skip link). **The table of seventeen
+`apps/web/app/(app)/skip-target.test.ts` (the target of the skip link). **The table of eighteen
 screens on this page is watched by no test**: it was checked by hand against the file tree and
 against each component's `fetch` calls.
 
@@ -49,7 +49,7 @@ group and there is no `app/layout.tsx`. The day somebody moves it up, that test 
 The 404 carries all its styles inline and is bilingual by hand, without going through `t`, for
 the same reason: it cannot count on anything the envelope mounts.
 
-## The shell mounts once, not seventeen times
+## The shell mounts once, not eighteen times
 
 `AppShell` mounts in the `(app)` layout, not on every page. Before, each screen painted its own
 bar, and the ones that passed it no stats —all of them but the front page— left the catalog
@@ -68,22 +68,24 @@ about its own version; it costs no network and answers `undefined` for anything 
 establish, so a server that does not know which panoma it is stays quiet
 ([update-notice.md](update-notice.md)).
 
-The layout and the seventeen pages declare `export const dynamic = "force-dynamic"`: the shell
+The layout and the eighteen pages declare `export const dynamic = "force-dynamic"`: the shell
 reads the catalog on every request, so there is nothing to prerender.
 
-The sidebar is fourteen sections (`SIDEBAR_ITEMS`, `app-shell.tsx`), in this order: `/`
+The sidebar is fifteen sections (`SIDEBAR_ITEMS`, `app-shell.tsx`), in this order: `/`
 Projects (the only one with `exact: true`, or it would be a prefix of everything), `/bridge`,
-`/spend`, `/runs`, `/unsaved`, `/agents`, `/apps`, `/twin`, `/ai`, `/packages`, `/search`,
-`/credentials`, `/copies`, `/disk`. At the top what gets looked at every day, at the bottom the diagnostics.
+`/spend`, `/runs`, `/unsaved`, `/agents`, `/handoff`, `/apps`, `/twin`, `/ai`, `/packages`,
+`/search`, `/credentials`, `/copies`, `/disk`. At the top what gets looked at every day, at the
+bottom the diagnostics. `/handoff` sits right after `/agents` on purpose: a handoff is what you
+reach for the minute an agent stops, and the phone dock of four is untouched by it.
 `/hidden` is not on the list on purpose: it is a wastebasket you can trust, reached from
 wherever you set something aside, not a place you go to.
 
-## The seventeen screens
+## The eighteen screens
 
 They are all server components that read the catalog and delegate the interaction to the
 sixty-two routes of `app/api`. The right-hand column is the routes the components of that
 screen call; **to every one of them you have to add `/api/catalog` and `/api/open`, which belong
-to the ⌘K palette and are therefore in all seventeen**. Where a row repeats `/api/open` it is
+to the ⌘K palette and are therefore in all eighteen**. Where a row repeats `/api/open` it is
 because the screen itself calls it too, from its own open buttons.
 
 | route | what it answers | which API it calls |
@@ -95,6 +97,7 @@ because the screen itself calls it too, from its own open buttons.
 | `/runs/[id]` | one proposal with its steps and its patch | `runs/{id}` (PATCH) |
 | `/unsaved` | what work can be lost, and the command that saves it | `open` |
 | `/agents` | which agents there are and what they did | `agent/mcp` · `agent/keys` · `open` |
+| `/handoff` | which conversations the coding agents kept on this disk, grouped by project, and how to continue one in another agent — or in the same one with another account, after signing out and back in; the receipts of what was handed on so far. The two desktop apps are targets and labelled sources too: a row reads «Claude (app)» when the app kept the conversation, and an app target gets the same file with a link as its door and the terminal line as the fallback | `handoff` (GET the list, POST the write) · `handoff/{id}` (the preview) · `handoff/launch`; the page itself reads `listHandoffs` and `stat`s each target file ([handoff.md](handoff.md)) |
 | `/twin` | the portrait: beliefs, corpus and spend | nine `twin/*` routes, below |
 | `/twin/look` | screenshots and findings | `twin/{shot,look,assign}` · `assignments/launch` |
 | `/ai` | which model Panoma thinks with and where the credential comes from | `ai` |
@@ -112,6 +115,14 @@ The twenty-one of the card, which is the screen that concentrates almost everyth
 `notes`, `open`, `open/all`, `project`, `rescan`, `runs`, `tasks` and `twin/critique`. And the nine of the
 portrait: `twin/sources`, `twin/mine`, `twin/distill`, `twin/classify`, `twin/synthesize`,
 `twin/taste`, `twin/episodes`, `twin/episodes/learn` and `twin/rehearse`.
+
+The card's «pick it up again» view also carries a block the twenty-one do not serve: the newest
+five conversations Claude Code, Codex, OpenCode and Gemini CLI kept in that folder, read in
+process by `discoverConversations` from `@panoma/handoff` (skipped under `DATABASE_URL`, and an
+empty list on any failure) and filtered through `inProject`, which resolves the root and each
+folder on disk so a symlinked root lists what `/handoff` lists, each linking to
+`/handoff?project=<slug>`. It is not what the agents
+reported through the channel — that stays under Agents — and the sub-line says so.
 
 Three screens call no API of their own —`/runs`, `/packages` and `/copies`—, and that is not a
 shortcoming: **they are reads of the catalog and they offer not one button that writes**.
@@ -185,7 +196,7 @@ Three decisions inside the palette that do not show:
 
 - **While the catalog is loading, the keyboard does nothing.** `if (projects === null) return;`
   at the top of `onKeyDown`. The results slot says "loading" and there is no list in sight, but
-  `commands` already carries the sixteen destinations of `DESTINATIONS` —the fourteen sections of
+  `commands` already carries the seventeen destinations of `DESTINATIONS` —the fifteen sections of
   the bar plus `/twin/look` and `/hidden`—: a ↵ right after opening with ⌘K —the natural gesture
   of whoever is about to type a name— navigated to the first of them. An action whoever fired it
   had not seen.
@@ -334,7 +345,7 @@ them, so the line numbers it reports are still the file's.
 
 ## What it does not do / known limits
 
-- **The table of seventeen screens is watched by nothing.** A new screen, or one that starts
+- **The table of eighteen screens is watched by nothing.** A new screen, or one that starts
   calling another route, leaves this page out of date in silence. The ten views of the card are
   defended (`project-views.test.ts`), and so is the order of the stylesheet (`styles.test.ts`);
   the inventory of screens is not.

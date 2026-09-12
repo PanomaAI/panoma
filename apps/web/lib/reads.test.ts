@@ -6,7 +6,7 @@ import { READING_KINDS, readsLeft } from "./reads";
 
 /*
   The parser that read `PANOMA_READ_BUDGET` lived here until 6-Sep-2026, with its own tests. It
-  moved to `spend-settings.ts` —`capFrom`, one body for the seven caps— and `spend-settings.test.ts`
+  moved to `spend-settings.ts` —`capFrom`, one body for the nine caps— and `spend-settings.test.ts`
   keeps its contract: the empty value, the unreadable one, the zero. What remains here is what is
   still this file's: the arithmetic of what is left, and the kinds against the routes that write
   them.

@@ -54,6 +54,7 @@ const requisitos = [
   ["app/node_modules/@panoma/db/migrations", "las migraciones", "pnpm --filter panoma run build:app"],
   ["app/node_modules/@panoma/mcp/dist/index.js", "el servidor MCP", "pnpm --filter panoma run build:app"],
   ["app/node_modules/@panoma/apps/dist/index.js", "the app manager", "pnpm --filter @panoma/apps build && pnpm --filter panoma run build:app"],
+  ["app/node_modules/@panoma/handoff/dist/index.js", "the handoff engine", "pnpm --filter @panoma/handoff build && pnpm --filter panoma run build:app"],
   ["app/apps/web/.next-bundle/server/app/api/apps/route.js", "the apps API", "pnpm --filter panoma run build:app"],
   ["app/node_modules/@electric-sql/pglite/dist", "la base de datos", "pnpm --filter panoma run build:app"],
   ["THIRD-PARTY-NOTICES.md", "los avisos de licencia de terceros", "pnpm --filter panoma run build:app"],

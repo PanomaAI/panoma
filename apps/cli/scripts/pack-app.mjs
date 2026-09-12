@@ -721,6 +721,7 @@ const imprescindibles = [
   ["node_modules/@panoma/db/migrations", "las migraciones"],
   ["node_modules/@panoma/mcp/dist/index.js", "el servidor MCP"],
   ["node_modules/@panoma/apps/dist/index.js", "the app manager"],
+  ["node_modules/@panoma/handoff/dist/index.js", "the handoff engine"],
   [`apps/web/${dist}/server/app/api/apps/route.js`, "the apps API and its MCP client"],
   ["node_modules/@electric-sql/pglite", "la base de datos"],
   ["node_modules/drizzle-orm", "el acceso a la base"],

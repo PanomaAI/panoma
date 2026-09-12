@@ -265,6 +265,7 @@ export function emptyStats(): MineStats {
     userTurns: 0,
     toolResults: 0,
     sidechain: 0,
+    handedOff: 0,
     commands: 0,
     reactions: 0,
     briefs: 0,

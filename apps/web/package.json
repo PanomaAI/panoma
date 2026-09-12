@@ -17,6 +17,7 @@
     "@panoma/core": "workspace:*",
     "@panoma/db": "workspace:*",
     "@panoma/enrich": "workspace:*",
+    "@panoma/handoff": "workspace:*",
     "@panoma/mcp": "workspace:*",
     "@panoma/runner": "workspace:*",
     "next": "15.5.25",

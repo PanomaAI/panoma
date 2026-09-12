@@ -85,10 +85,11 @@ despacho de propuestas.
 - [x] El .md de los agentes: linter contra el disco real, bloque que se cuida solo, quién tocó el fichero, los heredados de arriba y la opinión del modelo (docs/agents-md.md)
 - [x] Memoria curada por proyecto: los agentes proponen hechos durables, tú apruebas, y lo aprobado llega al primer turno de todos — con presupuesto que se niega a compactar (docs/memory.md)
 - [x] Apps oficiales opcionales, con su propia pantalla: manifiesto validado, versiones que se activan y se revierten, y cada trabajo en un proceso aparte (docs/apps.md)
-- [x] panoma video, la primera app: añade una pantalla de producción a cada proyecto y un botón «Crear vídeo» en la cabecera, y se instala desde npm como [`@panoma/video`](https://www.npmjs.com/package/@panoma/video)
-- [x] Pantalla de gasto: cada llamada al modelo queda anotada, con un tope diario para cada una de las ocho familias, que puedes subir, bajar, poner a cero para apagar esa familia o dejar como viene de fábrica (docs/budgets.md)
+- [x] panoma video, la primera app: añade una pantalla de producción a cada proyecto y un botón «Crear vídeo» en la cabecera, se instala desde npm como [`@panoma/video`](https://www.npmjs.com/package/@panoma/video), y un agente con clave puede pedir una producción del proyecto en el que está con las herramientas MCP `panoma_video` — con el modelo y la voz que tú activaste, nunca los que él elija
+- [x] Pantalla de gasto: cada llamada al modelo queda anotada, con un tope diario para cada una de las nueve familias, que puedes subir, bajar, poner a cero para apagar esa familia o dejar como viene de fábrica (docs/budgets.md)
 - [x] El puente: los cuatro pasos de la puesta en marcha —catálogo, modelo, agente y registro automático—, uno cada vez, separados de lo que los agentes ya han anotado
 - [x] Ejecución en contenedor efímero: el nivel `container`, con docker, podman, nerdctl o finch, que baja a `hardened` y dice por qué cuando no hay ninguno (docs/run-and-isolation.md)
+- [x] Relevo: seguir una conversación en otro agente, o en el mismo tras iniciar sesión, con `panoma handoff`, la pantalla `/handoff` o —cuando tú se lo pides— el propio agente, con las herramientas MCP `panoma_conversations` y `panoma_handoff`; panoma escribe una conversación nueva en el historial propio del agente de destino para que su reanudación normal la encuentre, el original no se toca, y el recibo dice qué viajó, qué se quedó y quién lo pidió (docs/handoff.md)
 - [ ] Ejecución en CI
 - [ ] Notificaciones
 - [ ] Maven/Gradle y NuGet (vía Syft)
@@ -209,7 +210,7 @@ Ese fichero lleva la clave en claro, así que se escribe en 0600 y panoma avisa 
 lo llevaría. Qué protege cada puerta del canal —y qué no protege ninguna— está en
 [docs/mcp-security.md](../docs/mcp-security.md).
 
-Hay que reiniciar el agente después. A partir de ahí dispone de nueve herramientas:
+Hay que reiniciar el agente después. A partir de ahí dispone de quince herramientas:
 
 | Herramienta | Para qué |
 |---|---|
@@ -222,8 +223,63 @@ Hay que reiniciar el agente después. A partir de ahí dispone de nueve herramie
 | `panoma_create_task` | anotar deuda técnica sin salirse de lo que está haciendo |
 | `panoma_claim_task` | coger una tarea sin pisarse con otro agente |
 | `panoma_complete_task` | cerrarla explicando cómo |
+| `panoma_conversations` | las conversaciones guardadas para este proyecto, de la más reciente a la más antigua, y los recibos de lo que ya se relevó. Se leen de los almacenes propios de los agentes, en esta máquina; mirar no ingiere nada |
+| `panoma_handoff` | seguir esta conversación en otro agente, cuando tú lo pides. La copia va al historial propio de ese agente con el resumen mecánico; `dryRun` enseña qué viajaría y no escribe nada. El mismo agente no es destino por este canal |
+| `panoma_apps` | las apps opcionales de esta máquina: versión instalada, si está lista, cada requisito, el modelo y la voz que activaste, y tu siguiente paso cuando alguna no lo está |
+| `panoma_video` | hacer un vídeo de este proyecto con panoma video, cuando tú lo pides: un trabajo durable a nombre del agente, con los ajustes que confirmaste en la página de la app. Instalar, activar y encender un proveedor siguen siendo tuyos |
+| `panoma_video_jobs` | las producciones del proyecto, o una entera: sus doce etapas, los cortes con sus ficheros en esta máquina, los tipos de vídeo descartados y por qué, lo que gastó; `wait` espera a que se mueva |
+| `panoma_video_cancel` | parar una producción de este proyecto |
 
 El contrato de cada una está en [docs/agent-channel.md](../docs/agent-channel.md).
+
+### Relevar una conversación
+
+Llega el límite de uso, o el siguiente paso pide otra herramienta, y la conversación tiene que
+seguir en otro sitio. Listar lo que tus agentes guardaron en este disco, lo más reciente
+primero:
+
+```bash
+pnpm exec tsx apps/cli/src/index.ts handoff
+```
+
+Seguir en Codex la conversación más reciente de esta carpeta. Panoma la escribe en el
+historial propio de Codex con un id nuevo, para que `codex resume` la encuentre como una suya;
+el original no se toca:
+
+```bash
+pnpm exec tsx apps/cli/src/index.ts handoff --to codex
+```
+
+Mandar el resumen y los últimos turnos en vez de todos, cuando la conversación es grande:
+
+```bash
+pnpm exec tsx apps/cli/src/index.ts handoff --to claude --tier compact
+```
+
+Ver qué viajaría y qué se quedaría, con las cifras, sin escribir nada:
+
+```bash
+pnpm exec tsx apps/cli/src/index.ts handoff --to opencode --dry-run
+```
+
+Llevársela a otra máquina como fichero portátil, fuera del almacén de cualquier agente:
+
+```bash
+pnpm exec tsx apps/cli/src/index.ts handoff --to bundle --out conversation.json
+```
+
+Claude Code, Codex CLI, OpenCode y Gemini CLI reanudan la copia ellos mismos; Claude (app) y
+Codex (app) la abren por un enlace en macOS; Cursor, Copilot, Aider, Amp y Goose reciben un
+documento para pegar. Los bloques de razonamiento, las imágenes y las ejecuciones de subagentes
+no viajan nunca, los secretos se enmascaran, y cada cifra se enseña antes de escribir nada. La
+pantalla `/handoff` hace lo mismo detrás de la clave de operador, y un agente con clave puede
+hacerlo para el proyecto en el que está con `panoma_conversations` y `panoma_handoff`, solo
+con el resumen mecánico y nunca hacia el mismo agente. El mismo agente, con la cuenta con la
+que quieres continuar, no escribe nada en `full`: cada almacén es por máquina y por carpeta,
+nunca por cuenta, así que panoma imprime tus propios pasos —cerrar sesión, iniciarla, reanudar—
+y no ejecuta ninguno; en `compact` escribe una copia más corta en el mismo almacén.
+[docs/handoff.md](../docs/handoff.md) tiene la decisión, las versiones contra las que se
+verificó cada almacén y qué no cruza nunca la raya.
 
 Analizar un proyecto:
 
@@ -302,7 +358,19 @@ packages/ai/       conexión con los modelos
 packages/mcp/      servidor MCP — el puente con los agentes
   client.ts        cliente HTTP del catálogo + detección de proyecto
   format.ts        respuestas en texto legible para un modelo
-  index.ts         definición de las nueve herramientas
+  index.ts         definición de las quince herramientas
+
+packages/handoff/  releva una conversación a otro agente, sin tocar nunca el original
+  stores/          los cuatro almacenes, y la lista cerrada de lo que se puede abrir en cada uno
+  discover.ts      lista las conversaciones de los almacenes propios de los agentes; un fichero grande, por cabeza y cola
+  readers/         uno por almacén nativo: Claude Code, Codex CLI, OpenCode, Gemini CLI
+  writers/         uno por destino nativo, más el documento Markdown para el resto
+  transfer.ts      handoff(): una conversación, un destino, un nivel, un fichero nuevo
+  digest.ts        el resumen mecánico: título, meta, decisiones, ficheros, comandos, pendientes
+  compact.ts       el nivel compact: el resumen más los últimos turnos enteros
+  fidelity.ts      qué conserva y qué deja cada destino, su línea de reanudación y los enlaces de las apps
+  bundle.ts        el fichero portátil para otra máquina
+  faults.ts        la lista cerrada de negativas; el estado HTTP de cada una vive en apps/web
 
 packages/apps/     gestor de las apps oficiales opcionales
   manifest.ts      el manifiesto de una app, validado antes de activarla
@@ -313,7 +381,7 @@ packages/apps/     gestor de las apps oficiales opcionales
   layout.ts        dónde vive cada app y su trabajo bajo ~/.panoma
   environment.ts   las variables que hereda una app, y ninguna más
 
-apps/cli/          CLI: scan, enrich, disk, search, secrets, run, ai
+apps/cli/          CLI: scan, enrich, disk, search, secrets, run, ai, handoff
 apps/web/          catálogo web (Next.js 15) — solo local, nunca se despliega
 apps/site/         el sitio público: la landing y /docs (Next.js 15)
 ```

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -44,7 +44,11 @@ createInterface({input:process.stdin}).on('line', line => {
  const spend={calls:1,provider:'fixture',model:'fixture'};
  process.stderr.write(JSON.stringify({event:'panoma-app-spend',job:process.env.PANOMA_APP_JOB,spend})+'\\n');
  process.stderr.write('diagnostic '+(process.env.OPENAI_API_KEY||'')+'\\n');
- result({content:[],structuredContent:{ok:true,spend,env:{db:process.env.DATABASE_URL||null,nodeOptions:process.env.NODE_OPTIONS||null,brain:process.env.PANOMA_VIDEO_BRAIN}}});
+ // A real app reports progress while it works and answers later. Written back to back, the
+ // progress and the result can share one chunk of the pipe, and the SDK then drops the
+ // progress: it removes the request's progress handler on the result before the deferred
+ // notification reaches it. Linux coalesces those writes far more often than macOS did.
+ setTimeout(()=>result({content:[],structuredContent:{ok:true,spend,env:{db:process.env.DATABASE_URL||null,nodeOptions:process.env.NODE_OPTIONS||null,brain:process.env.PANOMA_VIDEO_BRAIN}}}),30);
 });
 `);
   return { id: "panoma-video", pkg: "@panoma/video", version: "0.2.0", root, packageRoot: root, entry,
@@ -74,7 +78,9 @@ describe("app MCP transport", () => {
       const result = await session.call("work", {}, { token: "transport-test", onProgress: p => progress.push(p.progress) });
       expect(result.ok).toBe(true);
       expect(result.env).toMatchObject({ db: null, nodeOptions: null, brain: "none" });
-      expect(progress).toEqual([1]);
+      // Progress is forwarded; the fixture answers a beat after sending it (see there why). On
+      // Linux the bare assertion failed three runs out of four on 11-Sep-2026.
+      await vi.waitFor(() => expect(progress).toEqual([1]), { timeout: 2_000 });
       await new Promise(resolve => setTimeout(resolve, 50));
       expect(session.spend).toMatchObject({ calls: 1, provider: "fixture" });
       await expect(session.call("fail", {})).rejects.toThrow("Provider refused [redacted]");

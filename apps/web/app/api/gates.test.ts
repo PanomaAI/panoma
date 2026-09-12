@@ -516,6 +516,63 @@ describe("desde la pestaña de al lado, estas puertas tampoco se abren", () => {
 });
 
 
+/**
+ * The handoff: five doors that write, and three that read private conversations.
+ *
+ * The four operator POSTs write into an agent's own history, run `opencode import`, open a
+ * terminal with an agent resuming a conversation, or send a transcript to a provider: every one
+ * of them is refused from the network without the operator key and from the tab next door, with
+ * the body unread and the catalog untouched. The two GETs list the titles and folders of private
+ * conversations and read one whole for the preview — the same history the twin puts behind the
+ * operator key — so they refuse both callers too.
+ *
+ * And the two doors of the agent channel, `agent/conversations` and `agent/handoff`, which list
+ * and write the same history for an MCP client: the agent key there comes AFTER both guards,
+ * so a request that carries no operator key is refused before anyone asks who is calling — the
+ * catalog is not even opened to look the key up (`requireAgent` would, and `databaseGate`
+ * throws if it does).
+ */
+describe("the handoff stops at the door, before the body and before the catalog", () => {
+  type Door = { path: string; method: string; load: () => Promise<(request: Request) => Promise<Response>> };
+  const doors: Door[] = [
+    { path: "/api/handoff", method: "POST", load: async () => (await import("./handoff/route")).POST },
+    { path: "/api/handoff/launch", method: "POST", load: async () => (await import("./handoff/launch/route")).POST },
+    { path: "/api/handoff/digest", method: "POST", load: async () => (await import("./handoff/digest/route")).POST },
+    { path: "/api/handoff/record", method: "POST", load: async () => (await import("./handoff/record/route")).POST },
+    { path: "/api/agent/conversations", method: "POST", load: async () => (await import("./agent/conversations/route")).POST },
+    { path: "/api/agent/handoff", method: "POST", load: async () => (await import("./agent/handoff/route")).POST },
+    /* The video four's two doors that move something: the same order, the same unread body. */
+    { path: "/api/agent/video", method: "POST", load: async () => (await import("./agent/video/route")).POST },
+    { path: "/api/agent/video/cancel", method: "POST", load: async () => (await import("./agent/video/cancel/route")).POST },
+    { path: "/api/handoff", method: "GET", load: async () => (await import("./handoff/route")).GET },
+    { path: "/api/handoff/claude-cli:7b1e2c3d-4a5f-4b6c-8d9e-0f1a2b3c4d5e", method: "GET", load: async () => {
+      const { GET } = await import("./handoff/[id]/route");
+      return (request) => GET(request, { params: Promise.resolve({ id: "claude-cli:7b1e2c3d-4a5f-4b6c-8d9e-0f1a2b3c4d5e" }) });
+    } },
+  ];
+  const body = { id: "claude-cli:7b1e2c3d-4a5f-4b6c-8d9e-0f1a2b3c4d5e", target: "codex-cli", tier: "full", receipt: "hnd_x" };
+  for (const door of doors) {
+    it(`${door.method} ${door.path}`, async () => {
+      const handler = await door.load();
+      const requests = door.method === "GET"
+        ? [
+            new Request(`http://0.0.0.0:4173${door.path}`, {
+              headers: { host: DE_LA_RED, origin: `http://${DE_LA_RED}`, "sec-fetch-site": "same-origin" },
+            }),
+            desdeOtraPestana(door.path),
+          ]
+        : [comoEnProduccion(door.path, door.method, body), desdeOtraPestana(door.path, door.method)];
+      for (const request of requests) {
+        databaseGate.mockClear();
+        const readBody = vi.spyOn(request, "json");
+        expect((await handler(request)).status).toBe(403);
+        expect(readBody).not.toHaveBeenCalled();
+        expect(databaseGate).not.toHaveBeenCalled();
+      }
+    });
+  }
+});
+
 describe("official app routes stop before input or the database", () => {
   type Door = { path: string; method: string; load: () => Promise<(request: Request) => Promise<Response>> };
   const operations = ["install", "browser", "update", "rollback", "enable", "disable",
@@ -573,6 +630,17 @@ describe("official app routes stop before input or the database", () => {
       artifact.GET(desdeOtraPestana("/api/apps/jobs/job-1/artifact"), byJob), legal.GET(desdeOtraPestana("/api/apps/panoma-video/legal"), byApp),
     ]);
     expect(responses.map(response => response.status)).toEqual([403, 403, 403, 403, 403, 403]);
+    expect(databaseGate).not.toHaveBeenCalled();
+  });
+
+  it("the two agent doors that read apps reject a foreign tab before the catalog is opened", async () => {
+    const [apps, jobs] = await Promise.all([import("./agent/apps/route"), import("./agent/video/jobs/route")]);
+    databaseGate.mockClear();
+    const responses = await Promise.all([
+      apps.POST(desdeOtraPestana("/api/agent/apps", "POST")),
+      jobs.POST(desdeOtraPestana("/api/agent/video/jobs", "POST")),
+    ]);
+    expect(responses.map(response => response.status)).toEqual([403, 403]);
     expect(databaseGate).not.toHaveBeenCalled();
   });
 });

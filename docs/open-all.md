@@ -179,5 +179,12 @@ of a security decision is the one that forgets a check.
 - **The command is not sandboxed and is not meant to be.** It is the owner's line, run as
   typed. `panoma run` and `panoma check` are where isolation lives.
 - **The button is not in the ⌘K palette.** ↵ on a project there still opens the editor.
+- **The desktop family's `open -a Claude <folder>` opens Cowork on current builds.** Seen on
+  11-Sep-2026 on Claude.app 1.52386.3: the app routes a folder it is handed to its Cowork tab
+  and opens no Code session, so the Claude step of a plan lands somewhere other than where the
+  key promises. `openApp()` refuses any scheme on purpose and this page leaves it that way; the
+  handoff opens a conversation with the app's own deep link instead, with `open -a` only as
+  its fallback ([handoff.md](handoff.md)). Whether the desktop row moves to a link is the
+  user's call, in [open-questions.md](open-questions.md).
 - **Nothing measures whether the plan was worth it.** There is no count of runs, no record of
   which steps fail most, and no signal when a saved plan has been missing a step for weeks.

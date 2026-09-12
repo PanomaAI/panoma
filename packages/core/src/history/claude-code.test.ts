@@ -636,6 +636,77 @@ describe("mineClaudeCode", () => {
     expect(stats.reactions).toBe(2);
   });
 
+  it("skips the carried prefix of a copy panoma handed off, and reads what the person typed after resuming it", async () => {
+    /*
+      `packages/handoff` writes a Claude Code transcript from a Codex conversation; the file is
+      a real product of `writers/claude.ts` (fixed ids and clock, checked in under `fixtures/`)
+      and every record it wrote carries `version: "panoma-handoff"`. Those turns were already
+      mined from the source file, so mining them again would count the same reactions twice:
+      the copy goes to `handedOff` once and its prefix contributes nothing else. Then
+      `claude --resume <id>` appends the person's own records to the same file, with Claude
+      Code's own version number, and those are the continuation the handoff exists for: the
+      first one reacts to the last thing the copy showed. A copy nobody resumed is no session.
+     */
+    const handedOff = readFileSync(new URL("fixtures/handed-off-claude.jsonl", import.meta.url), "utf8")
+      .split("\n")
+      .filter((line) => line.length > 0);
+    const copyId = (JSON.parse(handedOff[1]!) as { sessionId: string }).sessionId;
+    const resumed = { sessionId: copyId, version: "2.1.258", cwd: "/Users/someone/dev/lemonade" };
+    const home = makeHome({
+      "-Users-someone-dev-lemonade/untouched.jsonl": handedOff,
+      [`-Users-someone-dev-lemonade/${copyId}.jsonl`]: [
+        ...handedOff,
+        user("no, the ice was $4", resumed),
+        assistant("Fixed: $14 of profit, $36 in total.", resumed),
+        user("perfecto", resumed),
+      ],
+      "-casa-apuntes/sesion-1.jsonl": [assistant("Portada lista."), user("no me gusta")],
+    });
+
+    const { stats, reactions } = await mineClaudeCode({ home });
+
+    expect(stats.files).toBe(3);
+    expect(stats.handedOff).toBe(2);
+    // The untouched copy is no session; the resumed one and the person's own file are.
+    expect(stats.sessions).toBe(2);
+    expect(stats.userTurns).toBe(3);
+    expect(stats.reactions).toBe(3);
+    expect(reactions.map((r) => r.reaction)).toEqual(["no me gusta", "no, the ice was $4", "perfecto"]);
+    // The first reaction after the resume answers the copy's last delivery, not nothing.
+    const first = reactions.find((r) => r.reaction === "no, the ice was $4")!;
+    expect(first.sessionId).toBe(copyId);
+    expect(first.delivery).toContain("Day 2 added");
+    // And nothing carried leaks out as the person's words.
+    expect(JSON.stringify(reactions)).not.toContain("Continued from");
+    expect(reactions.some((r) => r.reaction.includes("Lemonade ledger: add Day 2"))).toBe(false);
+  });
+
+  it("keeps a conversation whose first prompt is a pasted brief: the provenance line is text, the stamp is the mark", async () => {
+    /*
+      The `brief` tier is a Markdown document made to be pasted as a first message, and its
+      first line is the same provenance line the copies start with. Until 12-Sep-2026 the
+      reader keyed the skip on the first two words of that line and this whole conversation
+      —the person's own, with Claude Code's own version on every record— vanished from the twin.
+     */
+    const brief = "Continued from Codex CLI conversation 01a08fab by panoma on 2026-09-11 · tier brief\n\n# Lemonade ledger\n\n## Goal\nKeep the ledger in Markdown.";
+    const home = makeHome({
+      "-casa-apuntes/sesion-1.jsonl": [
+        user(brief, { version: "2.1.258" }),
+        assistant("Read the brief. Day 2 is in.", { version: "2.1.258" }),
+        user("no me gusta", { version: "2.1.258" }),
+      ],
+    });
+
+    const { stats, reactions } = await mineClaudeCode({ home });
+
+    expect(stats.handedOff).toBe(0);
+    expect(stats.sessions).toBe(1);
+    expect(stats.userTurns).toBe(2);
+    expect(stats.briefs).toBe(0);
+    expect(stats.spontaneous).toBe(1);
+    expect(reactions.map((r) => r.reaction)).toEqual(["no me gusta"]);
+  });
+
   it("no lanza cuando no hay historial ninguno", async () => {
     const casa = join(root, "casa-que-no-existe");
     const { stats, reactions } = await mineClaudeCode({ home: casa });

@@ -1,6 +1,6 @@
 # What puts the brakes on model spending
 
-Eight daily budgets hold back what panoma can ask a model for. They exist because three of
+Nine daily budgets hold back what panoma can ask a model for. They exist because three of
 the organs that call do it **with nobody sitting there** —the watcher's look, the memory
 distiller and the double— and the rest are pressed by the owner, and a button that spends
 still needs a ceiling. This page tells you which they are, with what number out of the box,
@@ -30,7 +30,7 @@ failed batch behind the rest instead of paying for it again), `apps/web/lib/cons
 `packages/db/src/spend.test.ts` (the spend ledger, the kinds added up, the unmetered calls
 and the two queries the screen reads).
 
-## The eight budgets of the day
+## The nine budgets of the day
 
 | Family | Variable | Out of the box | What it holds back | Kinds in the ledger | Who asks for it |
 |---|---|---|---|---|---|
@@ -43,8 +43,9 @@ and the two queries the screen reads).
 | `episodes` | `PANOMA_EPISODE_BUDGET` | 20 calls, at most two per request | decision-memory extraction: turning captured narratives into episodes | `episodes` | `lib/episode-learning.ts` |
 | `card` | `PANOMA_CARD_BUDGET` | 100 calls | the two buttons of the project card: the description, and the opinion on `AGENTS.md` | `describe` · `review` | `app/api/describe/route.ts` and `app/api/md/review/route.ts` |
 | `app` | `PANOMA_APP_BUDGET` | 20 attempts | explicitly enabled model and voice providers in official apps | `app` | `lib/app-jobs.ts`, reserved atomically before enqueue and rechecked before launch |
+| `handoff` | `PANOMA_HANDOFF_BUDGET` | 10 calls | the model-written digest of one conversation about to be handed off: one action, by the person, on one transcript; two calls when the first answer was cut | `handoff` | `writeDigestWithModel` in `lib/handoff-digest.ts`, asked by `app/api/handoff/route.ts` (`digestBy: "model"`) and `app/api/handoff/digest/route.ts` |
 
-The eight numbers, the variable of each family and the kinds it counts live in one file,
+The nine numbers, the variable of each family and the kinds it counts live in one file,
 `apps/web/lib/spend-settings.ts` (`FACTORY_CAPS`, `BUDGET_ENV`, `FAMILY_KINDS`), and every
 organ asks it at request time with `capFor(family)`. One kind is written down and held back
 by nothing: `probe`, the one-word question `POST /api/ai` asks to prove a credential works
@@ -56,7 +57,7 @@ the caps is described further down. The organs behind the reads and the looks ar
 in [twin.md](twin.md); the memory distiller and the double, in [memory.md](memory.md); the
 rehearsal and the extractor, in [decision-memory.md](decision-memory.md).
 
-Five things the table doesn't say.
+Six things the table doesn't say.
 
 **The day is this machine's own calendar day, not a sliding window.** `startOfDay` works it
 out in JavaScript and sends it as a parameter, because PGlite starts in UTC and nobody tells
@@ -93,6 +94,20 @@ described once is the legitimate ceiling of a day, and an order of magnitude und
 loop does. Until 6-Sep-2026 these two had no cap and no row at all, on the argument that a
 person pressing a button is not a loop; it is the same argument that held for the reads until
 `twin distill --all` proved it didn't.
+
+**And the handoff's digest has the smallest cap of the nine, with ten behind it.** It is one
+action by the person on one conversation, and it is the one call in panoma that sends a whole
+private transcript to a provider — redacted and wrapped, but whole. Ten covers a bad day of
+usage limits, which is the day the feature exists for, and stops the one loop that could form:
+a screen refreshed with the box ticked. It is off by default on the screen and on the terminal
+(`--digest panoma` is the default); the mechanical digest costs nothing and is what travels
+when nobody asks for more. The row is written before the answer is read, as everywhere else,
+and a cut answer buys one retry only while the cap still has a slot for it. And the family
+stays the person's on purpose: the agent channel's `panoma_handoff` has no `digestBy` and
+`POST /api/agent/handoff` refuses a body that carries one, so a handoff an agent orders never
+spends here —an agent calling a tool is exactly the loop this cap exists to brake— and «one
+action, by the person» is still what every row of this family is
+([handoff.md](handoff.md)).
 
 ## Where the number comes from: pause, variable, file, factory
 

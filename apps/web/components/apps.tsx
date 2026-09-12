@@ -496,6 +496,7 @@ export function AppJobList({ jobs, onCancel }: { jobs: AppJob[]; onCancel?: (job
               <p className="text-sm" role="status">
                 <span className="font-mono">{job.tool}</span> · {t(jobStatusKey(job.status))}
                 {when && <span className="text-faint"> · {when}</span>}
+                {job.requestedBy && <span className="text-faint"> · {t("apps.jobs.requestedBy", { name: job.requestedBy })}</span>}
               </p>
               {onCancel && active && (
                 <button

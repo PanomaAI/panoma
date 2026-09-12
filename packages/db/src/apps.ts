@@ -56,6 +56,8 @@ export async function listAppJobs(db: Database, options: {
 export async function enqueueAppJobRow(db: Database, input: {
   appId: string; identity: string; workspaceId?: string; tool: string;
   input: Record<string, unknown>; appVersion: string; paid?: boolean; cap?: number;
+  /** The agent that asked, when one did; the dedupe key ignores it, the same work is the same work. */
+  requestedBy?: string;
 }): Promise<{ job: AppJob; duplicate: boolean }> {
   const dedupeKey = appDedupeKey(input.appId, input.identity, input.tool, input.input);
   return db.transaction(async tx => {
@@ -78,7 +80,7 @@ export async function enqueueAppJobRow(db: Database, input: {
     const [job] = await tx.insert(appJobs).values({
       id: randomUUID(), appId: input.appId, identity: input.identity,
       workspaceId: input.workspaceId, tool: input.tool, input: input.input,
-      appVersion: input.appVersion, dedupeKey, reservedCalls,
+      appVersion: input.appVersion, dedupeKey, reservedCalls, requestedBy: input.requestedBy ?? null,
     }).returning();
     return { job: job!, duplicate: false };
   });

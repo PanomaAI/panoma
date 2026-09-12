@@ -5,6 +5,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { createPortal } from "react-dom";
 import {
   HiOutlineArchiveBox,
+  HiOutlineArrowsRightLeft,
   HiOutlineArrowTopRightOnSquare,
   HiOutlineBanknotes,
   HiOutlineCircleStack,
@@ -84,6 +85,7 @@ const DESTINATIONS: { href: string; label: MessageKey; icon: IconType }[] = [
   { href: "/search", label: "dest.searchCode", icon: HiOutlineMagnifyingGlass },
   { href: "/credentials", label: "dest.credentials", icon: HiOutlineKey },
   { href: "/agents", label: "dest.agents", icon: HiOutlineLink },
+  { href: "/handoff", label: "dest.handoff", icon: HiOutlineArrowsRightLeft },
   { href: "/twin", label: "dest.twin", icon: HiOutlineFingerPrint },
   { href: "/twin/look", label: "dest.look", icon: HiOutlineEye },
   { href: "/ai", label: "dest.ai", icon: HiOutlineCpuChip },

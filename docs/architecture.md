@@ -1,6 +1,6 @@
 # The pieces of panoma, and who talks to whom
 
-panoma is a pnpm monorepo with seven packages, a CLI, a local web app and an independent
+panoma is a pnpm monorepo with eight packages, a CLI, a local web app and an independent
 public site. The CLI, local server and MCP channel use separate processes; optional app
 jobs add their own child process. This page says what each piece is, who may
 call whom and through which door, and walks the whole round trip of the two operations that
@@ -11,7 +11,7 @@ documentation never teaches dead commands, but its list is fixed —`README.md`,
 `CONTRIBUTING.md`, `apps/cli/README.md` and five from `docs/`: `README.md`, `agents-md.md`,
 `build-check.md`, `mcp-security.md` and `network-access.md`— and this file is not on it.
 
-## Seven packages and the local applications
+## Eight packages and the local applications
 
 | package | what it is | depends on |
 | --- | --- | --- |
@@ -20,17 +20,20 @@ documentation never teaches dead commands, but its list is fixed —`README.md`,
 | `@panoma/enrich` | Seven public registries and OSV.dev. | core, db |
 | `@panoma/runner` | `run` and `check`: worktree, isolation, proposals. | core, db, enrich |
 | `@panoma/ai` | The 27 model providers and `~/.panoma/ai.json`. | core |
-| `@panoma/mcp` | The MCP server: 9 tools over stdio. | core |
+| `@panoma/mcp` | The MCP server: 15 tools over stdio. | core |
 | `@panoma/apps` | Official app packages, versioned installation and restricted child environments. | core |
-| `apps/cli` (`panoma`) | The binary: 21 verbs and the no-command case. | core, ai |
-| `apps/web` (`@panoma/web`) | The catalog, watcher and durable app supervisor. | all seven |
+| `@panoma/handoff` | Handoff: reads the four agents' own stores and writes one new conversation the target's resume finds. No network, no model, no child process. | core |
+| `apps/cli` (`panoma`) | The binary: 26 verbs and the no-command case. | core, ai, handoff |
+| `apps/web` (`@panoma/web`) | The catalog, watcher and durable app supervisor. | all eight |
 
-The numbers in the table, with their sources: `packages/db/migrations` holds 50 files
-(`0000`–`0049`) and `packages/db/src/schema.ts` declares 32 tables;
-`packages/ai/src/providers.ts` lists 27 providers; `packages/mcp/src/index.ts` registers 9
-tools; the dispatcher in `apps/cli/src/index.ts` recognizes 21 verbs; and under
-`apps/web/app/api` there are 55 route files with 67 exported handlers. `@panoma/core` is also
-the only one that does no networking, calls no model and writes into nobody's folders.
+The numbers in the table, with their sources: `packages/db/migrations` holds 63 files
+(`0000`–`0062`) and `packages/db/src/schema.ts` declares 39 tables;
+`packages/ai/src/providers.ts` lists 27 providers; `packages/mcp/src/index.ts` registers 11
+tools; the dispatcher in `apps/cli/src/index.ts` recognizes 26 verbs; and under
+`apps/web/app/api` there are 79 route files with 98 exported handlers. `@panoma/core` does no
+networking, calls no model and writes into nobody's folders; `@panoma/handoff` shares the
+first two rules and adds a third, no child process, and it does write —one new file, into the
+folder an agent keeps its own conversations in, never into a project.
 
 The table says two things without saying them. The first: **nothing depends on `apps/web`**, so
 the arrow towards the server is never an `import` — it is HTTP, always. The second: **the CLI
@@ -217,16 +220,17 @@ Who may call what is decided in four independent places, and the detail is in
 ## What it does not do / known limits
 
 - **It is not a map of the interface or of the schema.** The screens and the ten views of a
-  project's page are in [web-app.md](web-app.md); the 32 tables, one by one, in
+  project's page are in [web-app.md](web-app.md); the 39 tables, one by one, in
   [database.md](database.md); the contract of every verb in [cli.md](cli.md) and that of every
   route in [http-api.md](http-api.md).
-- **The counts are today's, and no test ties them to this page.** The 55 route files and their
-  67 handlers are the ones under `apps/web/app/api`; outside that there is one more `route.ts`,
-  the icon's. That count and the rest —9 MCP tools, 21 verbs, 32 tables, 50 migrations, 27
-  providers— were checked with `grep` on 25-Aug-2026. `twin.md` does have a test watching it;
+- **The counts are today's, and no test ties them to this page.** The 79 route files and their
+  98 handlers are the ones under `apps/web/app/api`; outside that there is one more `route.ts`,
+  the icon's. That count and the rest —11 MCP tools, 26 verbs, 39 tables, 63 migrations, 27
+  providers— were checked with `grep` on 12-Sep-2026. `twin.md` does have a test watching it;
   this one does not.
 - **The drawing lies by omission in one case: `DATABASE_URL`.** With the catalog on another
-  machine, eighteen guards spread across fifteen route files refuse to do the local work, and
+  machine, the handlers that need this disk refuse to do the local work —by grep on
+  12-Sep-2026 the variable is consulted in route files to the number of twenty-three— and
   the watcher does not exist ("the server cannot see the user's disk"). That mode has a
   different shape, and it is not drawn here.
 - **`@panoma/mcp` is not published on npm.** The configuration points at a local path

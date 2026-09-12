@@ -1,0 +1,1 @@
+ALTER TABLE "handoffs" ADD COLUMN "target_surface" text DEFAULT 'cli' NOT NULL;

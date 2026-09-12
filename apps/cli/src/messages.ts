@@ -15,6 +15,7 @@
 
 import type { RiskCode } from "@panoma/core";
 import { FAULT_PART, faultOf, type AppFaultCode } from "@panoma/apps/faults";
+import { faultOf as handoffFaultOf, type HandoffFaultCode } from "@panoma/handoff/faults";
 
 const MESSAGES = {
   "apps.help": "  panoma apps                  manage optional official apps (install, doctor, update, remove)",
@@ -546,6 +547,11 @@ const MESSAGES = {
   "error.folderAndTerminal": "--folder and --terminal ask for two different things. Pick one.",
   "error.allAndOne": "--all opens everything the plan lists; --folder and --terminal open one thing. Pick one.",
   "error.installAndRemove": "--install and --remove ask for two different things. Pick one.",
+  "error.unknownTier": "Unknown tier: {value}",
+  "error.tierLevels": "Tiers: {list}",
+  "error.unknownDigest": "Unknown digest author: {value}",
+  "error.digestKinds": "The ones there are: {list}",
+  "error.badKeep": "--keep needs a whole number greater than zero.",
   // ── The agents' .md ───────────────────────────────────────────────────────
   "md.usage": "panoma md [check|fix|init|sync|review] [path]",
   "md.unknownSub": "Unknown subcommand: {sub}",
@@ -728,6 +734,7 @@ const MESSAGES = {
   "twin.funnelUserTurns": "turns of yours, with none of the above still in",
   "twin.funnelToolResults": "tool results, which you did not write",
   "twin.funnelSidechain": "subagent turns, which you did not either",
+  "twin.funnelHandedOff": "handed-off copies, whose turns were already read at their source",
   "twin.funnelCommands": "slash commands: instructions, not reactions",
   "twin.funnelReactions": "reactions to something you had been handed",
   "twin.funnelBriefs": "one line or shorter",
@@ -1105,6 +1112,119 @@ const MESSAGES = {
   "spend.broken": "spend.json exists and cannot be read: the factory values apply.",
   "spend.screen": "The caps and your rates, at {url}",
   "spend.rejected": "The catalog could not report the spend ({status}). {detail}",
+
+  // ── The handoff: a conversation continues in another agent ───────────────
+  /*
+    The same vocabulary as the `/handoff` screen: conversation, handoff, tier, digest, receipt.
+    One grammar and no sub-verbs, so every sentence names the flags and not a second verb. The
+    fault sentences are dispatched by `handoffFaultText` below, closed over `HandoffFaultCode`
+    the way the app faults are.
+   */
+  "handoff.usage":
+    "Usage: panoma handoff [source] [--to <agent>] [--tier full|compact|brief] [--digest panoma|model] [--keep <n>] [--target-home <dir>] [--out <file>] [--dry-run] [--json]",
+  "handoff.usageHint":
+    "The source is a handle from the list (bare panoma handoff prints it) or a bundle file. Without --to, the list; with --tier brief and no --to, the document.",
+  "handoff.extraArgument": "One source at a time; this was not expected: {extra}",
+  "handoff.unknownTarget": "Unknown target: {target}",
+  "handoff.targets": "Targets: {list}",
+  "handoff.noneHere": "No conversation was kept for this folder: {cwd}",
+  "handoff.noneHereHint": "Bare panoma handoff lists every conversation on this disk; name one by its handle.",
+  "handoff.tookNewest": "Taken: the newest conversation in this folder, {agent} {handle}, {when}",
+  "handoff.twoRecent": "Two agents talked in this folder within the same hour. Name the one to hand off:",
+  "handoff.candidate": "panoma handoff {handle} --to {target}    {agent} · {when}",
+  "handoff.inFolder": "In this folder",
+  "handoff.elsewhere": "Elsewhere on this disk",
+  "handoff.notInCatalog": "Not in the catalog",
+  "handoff.rowTurns": "{when} · turns: {n}",
+  "handoff.rowSize": "{when} · {size}",
+  "handoff.rowSummary": "carries its own summary",
+  "handoff.rowLimit": "ended on a usage limit",
+  "handoff.rowLimitBack": "ended on a usage limit · back {when}",
+  "handoff.rowLimitLifted": "limit lifted {when}",
+  "handoff.inMinutes": "in {n} min",
+  "handoff.inHours": "in {n} h",
+  "handoff.readyLine": "panoma handoff {handle} --to {target}",
+  "handoff.emptyAll": "No conversations found on this disk.",
+  "handoff.storeFound": "{agent} · {path} · conversations: {n}",
+  "handoff.storeMissing": "{agent} · {path} · not found",
+  "handoff.storesHint":
+    "panoma reads the agents' own histories; it writes nothing until you ask. CLAUDE_CONFIG_DIR, CODEX_HOME and XDG_DATA_HOME are honoured.",
+  "handoff.catalogDown": "The catalog is not up, so the list is not grouped by project.",
+  "handoff.needsCatalog":
+    "A model digest is the catalog's: it talks to the model and counts the spend. Or leave --digest out for the mechanical one.",
+  "handoff.digestRejected": "The catalog would not write the digest ({status}). {detail}",
+  "handoff.digestUnreadable": "The catalog answered something that is not a digest.",
+  "handoff.preview": "Preview — nothing is written",
+  "handoff.dryRunDigest": "--dry-run spends nothing: this preview carries the mechanical digest; the real command asks the model.",
+  "handoff.dryRunSameAgent": "--dry-run changes nothing here: the same agent writes nothing, and these are the steps the real command prints.",
+  "handoff.bundleWouldWrite": "The bundle would be written: {path}",
+  "handoff.bundleWouldPrint": "The bundle would be printed on stdout; --out <file> writes it instead.",
+  "handoff.source": "{agent} {handle} · {title}",
+  "handoff.digestBy": "digest by {by} · tier {tier}",
+  "handoff.goal": "Goal: {goal}",
+  "handoff.sourceSummary": "The source carries a summary of its own, and it travels.",
+  "handoff.counts": "decisions: {decisions} · files touched: {files} · commands run: {commands} · open items: {open}",
+  "handoff.travels": "Travels to {agent}:",
+  "handoff.stays": "Stays behind:",
+  "handoff.sizeLine": "turns: {n} · ≈ {k}k tokens · {size}",
+  "handoff.written": "Written for {agent}: {path}",
+  "handoff.documentWritten": "Document written: {path}",
+  "handoff.bundleWritten": "Bundle written: {path}",
+  "handoff.documentOnly": "{agent} cannot resume a written conversation, so it gets a document to paste as the first message.",
+  "handoff.resume": "Resume it:",
+  "handoff.then": "Then:",
+  "handoff.stepRan": "ran: {step}",
+  "handoff.stepPending": "run it yourself: {step}",
+  "handoff.claudeContinue": "In that folder, claude --continue now resumes the copy; claude --resume <id> picks either one by id.",
+  "handoff.leftBehind": "Left behind: {list}",
+  "handoff.left.thinking": "thinking: {n}",
+  "handoff.left.images": "images: {n}",
+  "handoff.left.subagents": "subagent runs: {n}",
+  "handoff.left.offloaded": "offloaded tool outputs: {n}",
+  "handoff.left.secrets": "secrets masked: {n}",
+  "handoff.left.other": "other: {n}",
+  "handoff.recorded": "Recorded in the catalog: {id}",
+  "handoff.notRecorded": "The catalog did not record this handoff; the file is written all the same.",
+  "handoff.sameAgent": "Nothing is written: the conversation stays on this disk.",
+  "handoff.sameAgentSignOut": "Sign out of {agent}: {command}",
+  "handoff.sameAgentSignIn": "Sign in with the account you want to continue with: {command}",
+  "handoff.sameAgentOrInside": "{command} (or {slash} inside {binary})",
+  "handoff.sameAgentResume": "Resume it: {line}",
+  "handoff.sameAgentAppDoor": "Or in {app}: {line}",
+  "handoff.sameAgentAppClaude": "{app} lists conversations per account; the link adopts this one into the account you signed in with, and marks the folder as trusted.",
+  "handoff.sameAgentAppCodex": "{app} lists threads from the shared database; the link opens this one, and registers it if the list lacks it.",
+  "handoff.sameAgentFork": "Optional, fork so the original stays as it is: {line}",
+  "handoff.sameAgentBundle": "Optional, keep a copy outside the agent: panoma handoff {handle} --to bundle --out <file>",
+  "handoff.sameAgentHome": "A second home of the same agent takes a folder: panoma handoff {handle} --to {target} --target-home <folder>",
+  "handoff.forkLine": "Optional, keeping the original untouched: {line}",
+  "handoff.openInApp": "Open it in {app}:",
+  "handoff.appFallback": "If the link does not answer: {sentence}.",
+  "handoff.claudeTrust": "The link also marks that folder as trusted in Claude's own settings.",
+  "handoff.orTerminal": "Or, in a terminal:",
+  "handoff.appMacOnly": "{app} exists only on macOS; in a terminal:",
+  "handoff.hint": "Hand it: panoma handoff {handle} --to <agent>   (--dry-run shows what would travel)",
+  "handoff.fault.storeMissing": "That agent's history was not found on this disk.",
+  "handoff.fault.conversationNotFound": "No conversation matches that handle.",
+  "handoff.fault.ambiguousId": "More than one conversation matches that handle. Type more of it; the candidates:",
+  "handoff.fault.invalidId": "That is not a conversation handle: at least four characters of the id, or agent:id.",
+  "handoff.fault.unreadableTranscript": "The transcript could not be read.",
+  "handoff.fault.unsupportedTarget": "That agent is not a handoff target.",
+  "handoff.fault.targetStoreMissing":
+    "The target agent has no history folder here, so there is nowhere to write. Open that agent once, or name its folder with --target-home.",
+  "handoff.fault.cwdMissing": "The conversation's folder no longer exists, so the target would not find the copy.",
+  "handoff.fault.writeFailed": "The file could not be written.",
+  "handoff.fault.importCommandMissing": "OpenCode is not installed here, so the import step did not run.",
+  "handoff.fault.importCommandFailed": "opencode import ended with an error.",
+  "handoff.fault.bundleInvalid": "That file is not a panoma conversation bundle.",
+  "handoff.fault.tooLarge": "The conversation is over 64 MiB, which is more than a handoff carries.",
+  "handoff.fault.nothingToCarry": "The conversation has no message to carry.",
+  "handoff.fault.sameStore":
+    "The target is the agent this conversation already lives in. Sign in and resume it, write a shorter copy with --tier compact, or name a second home with --target-home.",
+  "handoff.fault.noSpaceLeft": "There is no space left on the disk.",
+  "handoff.fault.permissionDenied": "panoma is not allowed to write in the target agent's folder.",
+  "handoff.fault.readOnlyDisk": "The disk is read-only.",
+  "handoff.fault.diskError": "A disk operation failed.",
+  "handoff.failed": "The handoff did not happen: {detail}",
 } as const;
 
 export type MessageKey = keyof typeof MESSAGES;
@@ -1266,6 +1386,43 @@ export function appFaultText(value: string | null | undefined, unknown: MessageK
   }
   if (code === "app-error") return say("apps.fault.appError", { detail: detail ?? "" });
   const said = say(FAULT_KEY[code]);
+  return detail ? `${said} ${detail}` : said;
+}
+
+/**
+ * What went wrong with a handoff, as one line for the terminal.
+ *
+ * The same closure as `FAULT_KEY` above: `satisfies Record<HandoffFaultCode, MessageKey>` makes a
+ * code added to `packages/handoff/src/faults.ts` without a sentence here a compile error. The
+ * detail the engine attached —the candidates of an ambiguous handle, the folder that is missing,
+ * the errno— is quoted after the sentence, because it is the part the person acts on.
+ */
+const HANDOFF_FAULT_KEY = {
+  "store-missing": "handoff.fault.storeMissing",
+  "conversation-not-found": "handoff.fault.conversationNotFound",
+  "ambiguous-id": "handoff.fault.ambiguousId",
+  "invalid-id": "handoff.fault.invalidId",
+  "unreadable-transcript": "handoff.fault.unreadableTranscript",
+  "unsupported-target": "handoff.fault.unsupportedTarget",
+  "target-store-missing": "handoff.fault.targetStoreMissing",
+  "cwd-missing": "handoff.fault.cwdMissing",
+  "write-failed": "handoff.fault.writeFailed",
+  "import-command-missing": "handoff.fault.importCommandMissing",
+  "import-command-failed": "handoff.fault.importCommandFailed",
+  "bundle-invalid": "handoff.fault.bundleInvalid",
+  "too-large": "handoff.fault.tooLarge",
+  "nothing-to-carry": "handoff.fault.nothingToCarry",
+  "same-store": "handoff.fault.sameStore",
+  "no-space-left": "handoff.fault.noSpaceLeft",
+  "permission-denied": "handoff.fault.permissionDenied",
+  "read-only-disk": "handoff.fault.readOnlyDisk",
+  "disk-error": "handoff.fault.diskError",
+} satisfies Record<HandoffFaultCode, MessageKey>;
+
+export function handoffFaultText(value: unknown): string {
+  const { code, detail } = handoffFaultOf(value);
+  if (!code) return say("handoff.failed", { detail: detail ?? "" });
+  const said = say(HANDOFF_FAULT_KEY[code]);
   return detail ? `${said} ${detail}` : said;
 }
 

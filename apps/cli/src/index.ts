@@ -294,6 +294,19 @@ async function main(): Promise<number> {
   }
 
   /*
+    `handoff` runs in this process, like `md` and `hooks`, because what it writes is the person's
+    own files —one new transcript in the target agent's history, from the person's process and
+    with the person's permissions— and no API writes a user's files at a client's request. The
+    catalog is asked only for what it alone has: the project roots that group the list, the model
+    that writes a digest with `--digest model`, and the receipt afterwards. Lazy like `twin`: the
+    engine is not paid for by whoever types `panoma` in the morning. See `handoff-command.ts`.
+   */
+  if (command === "handoff") {
+    const { handoffCommand } = await import("./handoff-command");
+    return handoffCommand(parsed);
+  }
+
+  /*
     `review` goes loose and not inside `md`, even though `panoma md review` exists.
     That one asks a model what it thinks about the instruction file and gets paid; this one
     doesn't call anyone: it looks at the project against its own design footprint and returns

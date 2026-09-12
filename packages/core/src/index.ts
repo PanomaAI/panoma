@@ -78,6 +78,7 @@ export type { IdentityCandidate } from "./identity";
 export { neutralizeInline, wrapUntrusted } from "./untrusted";
 export type { UntrustedOrigin, UntrustedOptions } from "./untrusted";
 export { redactSecrets, REDACTED } from "./redact";
+export { HANDOFF_CLAUDE_RECORD_VERSION, HANDOFF_CODEX_ORIGINATOR, HANDOFF_PROVENANCE_PREFIX } from "./handoff-marker";
 export {
   HOOKS_BRAND,
   asShellLine,

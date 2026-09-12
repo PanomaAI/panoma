@@ -398,6 +398,8 @@ async function executeJob(database: Database, job: AppJob, signal: AbortSignal) 
 }
 export async function enqueueAppJob(request: {
   appId: string; identity: string; projectId?: string; tool: string; input: Record<string, unknown>;
+  /** The agent that asked over the MCP channel, by its key's name; absent when a person did. */
+  requestedBy?: string;
 }) {
   if (process.env["DATABASE_URL"]) throw new AppFault("local-catalog-required");
   officialApp(request.appId);
@@ -428,6 +430,7 @@ export async function enqueueAppJob(request: {
   const response = await queueWrite(() => enqueueAppJobRow(database, {
     appId: request.appId, identity: manager ? "" : request.identity, tool: request.tool,
     input, appVersion: app.version ?? "uninstalled", paid, cap: Math.min(cap, 1000),
+    ...(request.requestedBy !== undefined ? { requestedBy: request.requestedBy } : {}),
   }));
   appJobsChanged();
   void runAppQueue(database).catch(() => {});

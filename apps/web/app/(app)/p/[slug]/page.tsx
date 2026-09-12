@@ -11,6 +11,7 @@ import {
   listProjectLaunches,
   listProjectConsultations,
   listProjectNotes,
+  listProjectRoots,
   memoryJobCounts,
   latestProjectMemoryJob,
   NOTE_PENDING_MAX,
@@ -20,6 +21,9 @@ import {
   stateOf,
 } from "@panoma/db";
 import { isOutdated } from "@panoma/enrich";
+import type { ConversationRef } from "@panoma/handoff";
+import { discoverCached } from "@/lib/handoff-cache";
+import { inProject } from "@/lib/handoff-write";
 import { hookInstalledAt } from "@/lib/bridge";
 import { commitsPerDay, critiqueKey, workRisks } from "@panoma/core";
 import type { AgentsMdReport, Runbook } from "@panoma/core";
@@ -195,6 +199,27 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
   }
 
   const hooksInstalled = await hookInstalledAt(data.project.root);
+
+  /*
+    What Claude Code, Codex, OpenCode and Gemini CLI kept in this folder, for the «pick it up
+    again» view. Read from their own stores on this machine, so under `DATABASE_URL` — a remote
+    catalog — nobody looks, and `null` keeps the block off the card rather than claiming an
+    absence. It goes through the same thirty-second cache the handoff screen fills, asked with
+    the same folders so the two share one answer instead of evicting each other; the folder
+    filter is applied here, on the cached list, through `inProject`, which resolves both sides
+    on disk as the screen and the agent channel do — an agent records the physical folder, and
+    a root the catalog stores through a link (or as `/var` for `/private/var`) matched nothing
+    here until 12-Sep-2026 while `/handoff` listed the same conversations under this project.
+    A store that is not there, or a folder it cannot open, is an empty list and never a broken
+    card.
+   */
+  const conversations: ConversationRef[] | null = process.env["DATABASE_URL"]
+    ? null
+    : await listProjectRoots(database)
+        .then((roots) => discoverCached({ cwds: [...roots.map((entry) => entry.root), process.cwd()] }))
+        .then((found) => inProject(found.conversations, data.project.root))
+        .then((kept) => kept.sort((a, b) => (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0)).slice(0, 5))
+        .catch(() => []);
 
   const { project, technologies, dependencies, distributions, links, agents, advisories } = data;
   const runbook: Runbook = (project.runbook as Runbook | null) ?? {
@@ -859,6 +884,8 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
               recentCommits={recentCommits}
               root={project.root}
               shell={shell}
+              conversations={conversations}
+              slug={project.slug}
             />
             {/*
                Without manifest to read, there are no commands to teach, and a blank space under a

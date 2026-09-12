@@ -9,7 +9,7 @@ it.
 **No test anchors this document.** If a term changes meaning, nobody here finds out: when you
 rename something, this page goes into the same change.
 
-## Two words that need a surname
+## Three words that need a surname
 
 **"The critic" is two things, and they do not measure with the same yardstick.** The
 **mechanical critic** (`reviewProject` in the engine, table `reviews`) calls no model: it
@@ -27,6 +27,13 @@ resurrection of retired projects, the guard on the Spanish aliases
 (`apps/cli/src/commands.test.ts`), the guards `panoma up` clears before it starts. When you
 name one you say which; otherwise nobody knows what is being talked about.
 
+**"Session" is two files and two owners.** In the agent channel a session is a row of
+`agent_sessions`: one stretch of work an agent **reported** to panoma through `panoma_log`,
+which the catalog owns. In a handoff a session is what the agent itself keeps on disk for one
+chat —its own id, its own file, never received by panoma— and the house word for that one is
+**conversation**, so that "session" alone keeps meaning the logbook. `sessionId` inside
+`packages/handoff` is the agent's id for its file; it never names a catalog row.
+
 ## The words
 
 **app** — An optional program that panoma installs, drives and shows. The first is panoma
@@ -35,7 +42,9 @@ third-party app. Desktop applications use `desktop:` keys in Open everything; an
 neither an individual MCP tool nor an agent plugin. → [apps.md](apps.md)
 
 **app job** — One operation panoma asks an app to perform, with its input, progress, result
-and state. It outlives the tab that asked for it. → [apps.md](apps.md)
+and state. It outlives the tab that asked for it. Since 12-Sep-2026 an agent can ask for one
+production through `panoma_video`, and the row keeps its name as `requested_by`; the model and
+the voice it spends are the person's settings whoever asked. → [apps.md](apps.md)
 
 **app workspace** — What an app keeps for one project on disk under panoma's home, mapped
 to the project by identity rather than path. → [apps.md](apps.md)
@@ -44,8 +53,11 @@ to the project by identity rather than path. → [apps.md](apps.md)
 The only kind this version installs. → [apps.md](apps.md)
 
 **agent key** — `panoma_` plus 24 bytes in base64url, stored hashed only and shown exactly
-once. It opens all of `/api/agent/*` through `Authorization: Bearer`. It has no per-project
-scope, and that is said out loud. → [guards.md](guards.md)
+once. It opens all of `/api/agent/*` through `Authorization: Bearer`, with one family that
+asks the operator's gate first: the two handoff routes and the two video doors that move
+something, where the key comes after `sameOrigin` and `localOperatorOnly` and buys the name on
+the receipt, not the door. It has no per-project scope, and that is said out loud.
+→ [guards.md](guards.md) · [handoff.md](handoff.md) · [apps.md](apps.md)
 
 **anchor** — Every path the body of a memory note mentions and that exists on the disk today.
 The sentinels that watch the note come out of its anchors, and they are re-extracted against
@@ -85,12 +97,18 @@ twice beats deleting it unread. → [doctrine.md](doctrine.md)
 a neutral path, with a `prepack` that refuses in the face of a dirty tree or a stale artifact.
 → [release.md](release.md)
 
+**conversation** — The transcript an agent keeps on disk for one chat: Claude Code's
+`.jsonl` under `~/.claude/projects`, a Codex rollout, an OpenCode session row, a Gemini chat
+file. panoma reads it where it is and never receives it. Not a *session*: `agent_sessions`
+are the logbook sessions of the agent channel, the fifth homonym above.
+→ [handoff.md](handoff.md)
+
 **coverage** — How many of an episode's nine dimensions were recorded: context, goal,
 constraints, alternatives, decision, rationale, outcome, conditions and exceptions. It counts
 what is there and is not confidence; the screen names the recorded ones instead of scoring
 them. → [decision-memory.md](decision-memory.md)
 
-**the critic** — Two different things; see "Two words that need a surname" up above.
+**the critic** — Two different things; see "Three words that need a surname" up above.
 → [review.md](review.md)
 
 **curated memory** — A project's lasting facts, approved by the person and served to all of
@@ -117,6 +135,13 @@ criterion. It pays from `PANOMA_REHEARSE_BUDGET`, never from the agents' `ask`.
 **design fingerprint** — The LOOK of a project read out of the code: typefaces, palette,
 radii, shadows, dark mode and animation. Not the technology fingerprint in `fingerprint.ts`,
 which identifies the stack. → [review.md](review.md)
+
+**digest** — The summary panoma composes from a conversation for a handoff: title, goal,
+decisions, files touched, commands run, open items, the last exchange, plus any summary the
+source agent already made. `by: "panoma"` when a function wrote it —mechanical, free, the
+default— or `by: "model"` when a model wrote the summary section, under the `handoff` family.
+There is no "model brief": one word, with an author. It is derived and regenerable, so it is
+not memory: nothing proposes it, approves it or serves it. → [handoff.md](handoff.md)
 
 **dispute** — The challenge a sentinel opens when it fires: the note moves to `challenged`,
 stops being served and waits for the person's yes or no. Falling under suspicion asks no
@@ -181,6 +206,18 @@ in the agent channel, not even with a key. → [memory.md](memory.md)
 
 **the guard** — Not one piece: it is the house word for anything that says no. See above.
 → [guards.md](guards.md)
+
+**handoff** (es: **relevo**) — Passing a conversation to another agent, or resuming it in
+the same agent after signing in —the same file, or a shorter copy—, so that it continues
+there: panoma writes a new file into the target's own history and the target's normal resume
+finds it; the original is never touched.
+The target is an agent on a *surface*: the terminal, or since 11-Sep-2026 the vendor's
+desktop app, which opens the same file through its own link. Screen `/handoff`, verb
+`panoma handoff`, table `handoffs`; and since 12-Sep-2026 a machine door, the MCP tools
+`panoma_conversations` and `panoma_handoff` over `POST /api/agent/conversations` and
+`POST /api/agent/handoff`, behind the same operator gate with the agent key after it, which
+refuse the same agent at any tier, the model digest and any launch. Never "switch account",
+never "bypass": the wording is "continue your work elsewhere". → [handoff.md](handoff.md)
 
 **heir** — The one project with the same stable identity that whatever a person or an agent
 wrote moves to, before the doomed row is pruned. If there is none, that memory goes with the
@@ -270,9 +307,20 @@ spend screen from their own bill and kept in `~/.panoma/spend.json`. There is no
 the repository and there must not be one: a shipped price goes stale, and a stale price is
 worse than none. Without a rate the screen shows tokens and no money. → [budgets.md](budgets.md)
 
-**receipt** — What a memory job leaves behind: counts and coverage — records total, selected,
-omitted and clipped — and a bounded reason code. Never the source text, never the model's
-answer. The Memory tab paints the latest one. → [memory.md](memory.md)
+**receipt** — What an act leaves behind so it can be found again, and never the text. For a
+memory job: counts and coverage — records total, selected, omitted and clipped — and a
+bounded reason code, never the source text nor the model's answer; the Memory tab paints the
+latest one. For a handoff: a row of `handoffs` saying which conversation became which, when, at which
+tier, on which surface, what was left behind, the command that resumes it and —since
+12-Sep-2026— who asked for it (*requested by*); the panel reads it to say "already handed to
+that agent" before writing a second copy, and so does the dry run of `panoma_handoff`.
+→ [memory.md](memory.md) · [handoff.md](handoff.md)
+
+**requested by** — `handoffs.requested_by`: the name of the agent whose key ordered a handoff
+through the agent channel, as `requireAgent` resolved it, or null when a person ordered it on
+the screen or in the terminal. The name and nothing else: not the agent's session, not the
+conversation it was in. It is what the agent key buys on that route, attribution, since the
+gate in front of it is the operator's. → [handoff.md](handoff.md)
 
 **revision family** — Every version of one decision, linked by `supersedes_id` in either
 direction, siblings included. One member may be active at a time, and the database enforces
@@ -315,6 +363,13 @@ inside the repository when the project is not the root. It survives moving and r
 folder, unlike `projects.id`, which is the sha1 of the path. Everything the person decided
 hangs off it. → [database.md](database.md)
 
+**surface** — Where a conversation is read or continued: the terminal (`cli`) or the vendor's
+desktop app (`app`). The same store either way —Claude.app's Code tab writes the very
+`~/.claude/projects` file that `claude` writes, the Codex app shares `~/.codex` with `codex`—
+so a surface is a marker on the file and a different door, not an agent: `claude-app` is a
+`DesktopApp` id in `APP_OF`, never an `AgentId`, and an app row filters under its agent.
+Receipts keep it as `handoffs.target_surface`. → [handoff.md](handoff.md)
+
 **tasting** — A `panoma scan` without `--save`: it reads, it prints and there it ends. The
 catalog never finds out. → [cli.md](cli.md)
 
@@ -327,6 +382,11 @@ proof that it applies. → [agent-channel.md](agent-channel.md)
 observation needs two distinct citations from the same batch. It is not sent, not marked and
 not paid; the distill receipt counts it apart, and the corpus line leaves it out of what is
 left. → [budgets.md](budgets.md) · [twin.md](twin.md)
+
+**tier** — How much of a conversation travels in a handoff: `full` (every turn, for a
+native target), `compact` (the digest plus the newest turns whole, native) or `brief` (a
+document only, for any agent). Thinking, images and subagent runs travel at no tier.
+→ [handoff.md](handoff.md)
 
 **trigger** — A note's `where`: an exact path (`docs/memory.md`) or a zone (`apps/web/**`). It
 takes only `/` as a separator. A note with a trigger is a sleeping note.
@@ -375,10 +435,11 @@ jumping to an anchor. → [web-app.md](web-app.md)
 - **No test checks that these definitions are still true.** `twin.md` is watched by
   `apps/web/lib/twin-wiring.test.ts`; this one is not, and that is why the entries steer clear
   of numbers that age and stay on the meaning.
-- **Four homonyms are known and all four are said out loud**: "the critic" (mechanical and
-  with eyes), "the guard" (which is not one piece), "verdict" (the twin's and the build's) and
-  "family" (the copies of one project, and the kinds one cap holds back). If a fifth turns up,
-  the place to note it is this page, not a comment.
+- **Five homonyms are known and all five are said out loud**: "the critic" (mechanical and
+  with eyes), "the guard" (which is not one piece), "verdict" (the twin's and the build's),
+  "family" (the copies of one project, and the kinds one cap holds back) and "session" (the
+  logbook's, and the agent's own file, which the house calls a conversation). If a sixth turns
+  up, the place to note it is this page, not a comment.
 - **The links point at the agreed map of `docs/`.** The documents marked as new are written in
   the same batch as this one; if one of them is not there yet, the link is dead and that is
   the sign that it is missing.

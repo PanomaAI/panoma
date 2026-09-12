@@ -685,6 +685,72 @@ describe("mineCodex", () => {
     expect(stats.sidechain).toBe(0);
   });
 
+  it("skips the carried prefix of a copy panoma handed off, and reads what the person typed after resuming it", async () => {
+    /*
+      Same rule as the other reader. The file is a real product of `packages/handoff`'s
+      `writers/codex.ts` (fixed ids and clock, checked in under `fixtures/`): a rollout whose
+      `session_meta` says `originator: "panoma"` and whose last line is the writer's
+      `thread_settings_applied`. Its turns came from a Claude Code file that is mined on its
+      own, so the prefix only counts in `handedOff`. Then `codex resume <id>` appends the
+      person's turns to the same file, and those are read: the first reacts to the last thing
+      the copy showed. A copy nobody resumed is no session.
+     */
+    const handedOff = readFileSync(new URL("fixtures/handed-off-codex.jsonl", import.meta.url), "utf8")
+      .split("\n")
+      .filter((line) => line.length > 0);
+    const copyId = (JSON.parse(handedOff[0]!) as { payload: { id: string } }).payload.id;
+    const home = makeHome({
+      "sessions/2026/09/11/rollout-2026-09-11T15-00-00-untouched.jsonl": handedOff,
+      [`sessions/2026/09/11/rollout-2026-09-11T15-00-00-${copyId}.jsonl`]: [
+        ...handedOff,
+        turnContext(CWD),
+        human("no, PAPAYA is taken"),
+        agent("Code word: GUAVA."),
+        human("perfecto"),
+      ],
+      [ROLLOUT]: [meta(), agent("Portada lista."), human("no me gusta")],
+    });
+
+    const { stats, reactions } = await mineCodex({ home });
+
+    expect(stats.files).toBe(3);
+    expect(stats.handedOff).toBe(2);
+    // The untouched copy is no session; the resumed one and the person's own rollout are.
+    expect(stats.sessions).toBe(2);
+    expect(stats.userTurns).toBe(3);
+    expect(stats.reactions).toBe(3);
+    expect(reactions.map((r) => r.reaction)).toEqual(["no me gusta", "no, PAPAYA is taken", "perfecto"]);
+    // The first reaction after the resume answers the copy's last delivery, not nothing.
+    const first = reactions.find((r) => r.reaction === "no, PAPAYA is taken")!;
+    expect(first.sessionId).toBe(copyId);
+    expect(first.delivery).toContain("Code word: PAPAYA");
+    expect(first.cwd).toBe(CWD);
+    // And nothing carried leaks out as the person's words.
+    expect(JSON.stringify(reactions)).not.toContain("Continued from");
+    expect(reactions.some((r) => r.reaction.includes("Decision: keep it as a Markdown file"))).toBe(false);
+  });
+
+  it("keeps a conversation whose first prompt is a pasted brief: the provenance line is text, the originator is the mark", async () => {
+    /*
+      The `brief` tier is a Markdown document made to be pasted as a first message, and its
+      first line is the same provenance line the copies start with. Until 12-Sep-2026 the
+      reader keyed the skip on the first two words of that line and this whole rollout —the
+      person's own, `originator: "codex_cli_rs"`— vanished from the twin.
+     */
+    const brief = "Continued from Claude Code conversation 7b1e2c3d by panoma on 2026-09-11 · tier brief\n\n# Lemonade ledger\n\n## Goal\nKeep the ledger in Markdown.";
+    const home = makeHome({
+      [ROLLOUT]: [meta(), human(brief), agent("Read the brief. Day 2 is in."), human("no me gusta")],
+    });
+
+    const { stats, reactions } = await mineCodex({ home });
+
+    expect(stats.handedOff).toBe(0);
+    expect(stats.sessions).toBe(1);
+    expect(stats.userTurns).toBe(2);
+    expect(stats.spontaneous).toBe(1);
+    expect(reactions.map((r) => r.reaction)).toEqual(["no me gusta"]);
+  });
+
   it("no lanza cuando no hay historial de Codex", async () => {
     const casa = join(root, "casa-que-no-existe");
     const { stats, reactions } = await mineCodex({ home: casa });

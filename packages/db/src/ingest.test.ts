@@ -47,6 +47,8 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await db.delete(t.snapshots);
+  // Receipts survive their project (`set null`), so the cascade below does not clear them.
+  await db.delete(t.handoffs);
   await db.delete(t.projects);
   await db.delete(t.technologies);
 });
@@ -513,6 +515,21 @@ describe("mover la carpeta no mata la memoria", () => {
     });
     await db.insert(t.tasks).values({ id: "tarea-mudanza", projectId, title: "cerrar el ciclo" });
     await db.insert(t.launches).values({ id: "lanz-mudanza", projectId, agent: "Claude Code" });
+    await db.insert(t.handoffs).values({
+      id: "hnd-mudanza",
+      projectId,
+      cwd: "/tmp/mudanza-origen",
+      sourceAgent: "claude-cli",
+      sourceSessionId: "a3f19c2e-0000-4000-8000-000000000001",
+      sourcePath: "/tmp/claude/projects/x/a3f19c2e.jsonl",
+      sourceHash: "b".repeat(64),
+      targetAgent: "codex-cli",
+      targetSessionId: "0d5c7a1e-0000-4000-8000-000000000002",
+      targetPath: "/tmp/codex/sessions/2026/09/11/rollout.jsonl",
+      tier: "full",
+      turns: 4,
+      bytes: 2048,
+    });
   }
 
   it("la memoria entera se muda al heredero de la identidad", async () => {
@@ -546,6 +563,7 @@ describe("mover la carpeta no mata la memoria", () => {
     expect((await db.select().from(t.servings))[0]?.projectId).toBe(heredero);
     expect((await db.select().from(t.tasks))[0]?.projectId).toBe(heredero);
     expect((await db.select().from(t.launches))[0]?.projectId).toBe(heredero);
+    expect((await db.select().from(t.handoffs))[0]?.projectId, "the receipt follows the heir too").toBe(heredero);
   });
 
   it("sin identidad estable no hay heredero: la memoria se va con la carpeta, como antes", async () => {

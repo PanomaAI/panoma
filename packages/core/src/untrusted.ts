@@ -33,7 +33,20 @@ export type UntrustedOrigin =
    * read someone else's text — the approval filters intention, not origin, and origin is what this
    * vocabulary classifies.
    */
-  | "notes";
+  | "notes"
+  /**
+   * The turns of a conversation an agent kept on disk: the person's own words, and every tool
+   * output the agent read, which includes other people's READMEs and pages. Wrapped before a
+   * model writes the digest of a handoff (`packages/handoff`).
+   */
+  | "conversation"
+  /**
+   * What an optional app reported about a job it ran: the sentence each stage ended on, the
+   * reason a kind of video was set aside, what a review measured. Written by a program that
+   * read the project's README and pages, and by a model when the person wired one — so what it
+   * says about the product is that program's reading, and what it quotes is the product's.
+   */
+  | "app";
 
 /*
   The delimiter goes in English, like everything that is sent to a model.

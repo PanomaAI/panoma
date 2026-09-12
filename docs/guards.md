@@ -9,7 +9,7 @@ of **exceptions** and never the list of cases.
 **What tests anchor this.** Three, and they cover different things:
 `apps/web/middleware.test.ts` checks the front door with sixteen cases;
 `apps/web/lib/guard.test.ts` checks that `sameOrigin` and `localOperatorOnly` decide right
-**and** walks the source of all 62 routes demanding the doctrine handler by handler;
+**and** walks the source of all 79 routes demanding the doctrine handler by handler;
 `apps/web/app/api/gates.test.ts` calls the real handlers and checks that they **answer 403 and
 do nothing** — a guard placed after the first query would pass the first test and leave the
 door open all the same. The figures on this page are recovered with `grep`, and the commands
@@ -39,7 +39,7 @@ if (blocked) return blocked;
 
 ## The middleware decides whether you get in, and no longer asks where you came from
 
-Its `matcher` covers **everything** —all 62 API routes and every page— except Next's static
+Its `matcher` covers **everything** —all 79 API routes and every page— except Next's static
 assets (`_next/static`, `_next/image`) and `favicon.ico`, which are let through so that the
 "you need the key" page itself can be seen. `/icon/[id]` is **not** exempt, on purpose: it
 comes out of the catalog, and a project's name is already information.
@@ -116,13 +116,13 @@ detail: with `-H 0.0.0.0` the server thought it was called `http://0.0.0.0:4173`
 its own interface, which arrives from `http://localhost:4173`. The open, rescan, hide and
 launch buttons returned 403, accusing the browser of coming from somewhere else.
 
-**The figures.** `sameOrigin` shows up in 65 of the 72 `route.ts`, with **82 calls** —there
-are files with several handlers—, and those 82 calls cover 82 of the 90 handlers. The other
-eight are the agent channel:
+**The figures.** `sameOrigin` shows up in 72 of the 79 `route.ts`, with **90 calls** —there
+are files with several handlers—, and those 90 calls cover 90 of the 98 handlers. The other
+eight are the agent channel (counted 12-Sep-2026):
 
 ```bash
-grep -rl 'sameOrigin(' --include=route.ts apps/web/app/api | wc -l    # 65
-grep -rho 'sameOrigin(' --include=route.ts apps/web/app/api | wc -l   # 82
+grep -rl 'sameOrigin(' --include=route.ts apps/web/app/api | wc -l    # 72
+grep -rho 'sameOrigin(' --include=route.ts apps/web/app/api | wc -l   # 90
 ```
 
 ## `localOperatorOnly` separates looking from ordering
@@ -147,7 +147,7 @@ When there is a key, the client's is looked for in two places, in this order: th
 browser— and failing that, the `panoma-operator` cookie, pulled out of the `cookie` header by
 hand because a route handler receives a bare `Request`, without `NextRequest`'s `cookies`.
 
-**The thirty handlers that carry it**, across twenty-four files:
+**The thirty-eight handlers that carry it**, across thirty-one files:
 
 | route · method | why it carries it |
 | --- | --- |
@@ -181,14 +181,24 @@ hand because a route handler receives a bare `Request`, without `NextRequest`'s 
 | `GET /api/spend` | the receipt names the models the owner pays for and how much they use them: the same inventory `GET /api/ai` keeps behind its guard |
 | `POST /api/spend` | raising the number of calls this machine will pay for is giving an order, not looking |
 | `POST /api/twin/look` | **only if** a screenshot of the inbox is asked for by name |
+| `GET /api/handoff` | lists the titles and folders of the conversations the agents keep on this disk: the same private history `twin/sources` puts behind this key |
+| `POST /api/handoff` | writes a new conversation into another agent's own store, and runs `opencode import` on it |
+| `GET /api/handoff/[id]` | reads one conversation whole for the preview and its digest |
+| `POST /api/handoff/launch` | opens a terminal with the target agent resuming the copy |
+| `POST /api/handoff/digest` | sends a private conversation to a provider and spends a credential on the owner's behalf |
+| `POST /api/handoff/record` | writes a receipt that names files in the agents' stores and puts a command line on a screen |
+| `POST /api/agent/conversations` | the handoff's list on the agent channel: the same titles and folders, for an MCP client — the operator's gate first, the agent key after it, because the key says who asked and does not open the door |
+| `POST /api/agent/handoff` | the handoff's write on the agent channel: reads one conversation whole and puts a copy into another agent's own store; same order of guards, and the receipt keeps the agent's name |
+| `POST /api/agent/video` | a production of panoma video asked for by an agent: it starts the project's own development server as this user and films it, and the family's gate is the operator's — first, the agent key after it, and the row keeps the agent's name |
+| `POST /api/agent/video/cancel` | ends a production's process tree at an agent's request; same order of guards |
 
 ```bash
-grep -rl 'localOperatorOnly(' --include=route.ts apps/web/app/api | wc -l   # 24
-grep -rho 'localOperatorOnly(' --include=route.ts apps/web/app/api | wc -l  # 30
-grep -rl 'localOperatorOnly'  --include=route.ts apps/web/app/api | wc -l   # 30
+grep -rl 'localOperatorOnly(' --include=route.ts apps/web/app/api | wc -l   # 31
+grep -rho 'localOperatorOnly(' --include=route.ts apps/web/app/api | wc -l  # 38
+grep -rl 'localOperatorOnly'  --include=route.ts apps/web/app/api | wc -l   # 37
 ```
 
-The third figure is the interesting one: **25 files name the guard and only 19 call it**. The
+The third figure is the interesting one: **37 files name the guard and only 31 call it**. The
 remaining six name it in a comment to leave written down why they do **not** carry it
 —`north`, `search`, `md/apply`, `md/repair`, `environment` and `twin/assign`—, and those
 reasons are in [http-api.md](http-api.md). It is not decoration: it is how "decided" gets told
@@ -245,8 +255,12 @@ nobody was looking at them:
 With the list inverted, a new route arrives watched by default and whoever wants to leave it
 out has to write the reason. The six tests it runs today:
 
-1. The nine files in `EJECUTAN` carry **both** guards in every handler, except four
-   exempted with a written reason longer than 40 characters: `open GET`, `open/all GET`,
+1. The twenty-seven files in `EJECUTAN` —ten of the official apps, six that install, run
+   or open, three of the twin, the two operator doors of the handoff and its two doors on
+   the agent channel, and the video four on that channel— carry **both** guards in every
+   handler, except twelve handlers exempted with a written reason longer than 40
+   characters: the six read-only GETs of the apps family and their two twins on the agent
+   channel (`agent/apps`, `agent/video/jobs`), `open GET`, `open/all GET`,
    `twin/sources GET` and `twin/taste GET`.
 2. Any route whose code matches
    `/\b(spawn|spawnSync|execFile|execFileSync|exec|run)\s*\(/` is in `EJECUTAN` or in
@@ -255,8 +269,13 @@ out has to write the reason. The six tests it runs today:
 4. **Every** door carries `sameOrigin` or is in `SIN_SAMEORIGIN` with its reason.
 5. And the eight that get out of `sameOrigin` call `requireAgent`; if one of them stops
    existing, the test says it is surplus on the list instead of keeping quiet.
-6. Anything that calls `mineHistory`, `setConsent` or `setInferredConsent` calls
-   `localOperatorOnly` **and** `sameOrigin` too.
+6. Anything that opens the person's private history calls `localOperatorOnly` **and**
+   `sameOrigin` too: `mineHistory`, `setConsent` or `setInferredConsent` for the twin's
+   captured history; `discoverConversations`, `discoverCached` or `readConversation` for the
+   conversations the agents keep; and, since the handoff's routes reach those three through
+   `apps/web/lib/handoff-write.ts`, the library's own entry points `discoverForCatalog`,
+   `openConversation` and `writeHandoff`. The library's header names the sweep, so a rename
+   there is a rename here, not a blind spot.
 
 The two enumerated lists —`EJECUTAN` and `SIN_SAMEORIGIN`— are checked **handler by handler
 and not file by file**, and that distinction cost months of a hole: the first version did a
@@ -280,6 +299,19 @@ the catalog's address.
 One handler under `/api/agent/*` goes the other way round: `GET /api/agent/notes`
 serves the `panoma signal` hook, which runs right before an agent edits a file and **has no
 key at all**, so it carries `sameOrigin` and not `requireAgent`.
+
+And two carry everything: `POST /api/agent/conversations` and `POST /api/agent/handoff`, the
+handoff's doors for an MCP client (12-Sep-2026). The order there is the finding, not a detail:
+`sameOrigin ?? localOperatorOnly` first, `requireAgent` after. The four stores the handoff reads
+are private history — the same the twin puts behind the operator key — so the gate is the
+operator's, and the agent key is attribution: it says which project the agent stands in and
+which name the receipt keeps as `requested_by`. Put the other way round, a stolen agent key on
+the wifi would list a person's conversations before anyone asked for the second key.
+`gates.test.ts` calls both doors from the network without the operator key and from the tab
+next door and checks that they answer 403 **before reading the body and before opening the
+catalog** — `requireAgent` would open it to look the key up, and the mock throws if it does.
+The MCP client only ever sends the operator key to the loopback, read from the 0600 file the
+way `apps/cli/src/catalog-fetch.ts` does, so a remote catalog never hands off.
 
 ## The `Host` header no longer decides anything about security
 

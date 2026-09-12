@@ -751,6 +751,7 @@ export function funnelLines(stats: MineStats): string[] {
     ["  ", stats.sessions, "twin.funnelSessions", pc.dim],
     ["· ", stats.toolResults, "twin.funnelToolResults", pc.dim],
     ["· ", stats.sidechain, "twin.funnelSidechain", pc.dim],
+    ["· ", stats.handedOff, "twin.funnelHandedOff", pc.dim],
     ["· ", stats.commands, "twin.funnelCommands", pc.dim],
     ["  ", stats.userTurns, "twin.funnelUserTurns", plain],
     ["− ", stats.spontaneous, "twin.funnelSpontaneous", pc.dim],

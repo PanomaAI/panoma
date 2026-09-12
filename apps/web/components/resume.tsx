@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import type { RunCommand, Runbook } from "@panoma/core";
+import type { ConversationRef } from "@panoma/handoff";
 import { CopyCommand } from "./copy-button";
+import { HandoffConversations } from "./handoff-conversations";
 import { inFolder, type Shell } from "./command";
 import { useLocale, useT } from "./i18n-provider";
 import { Card, Tag } from "./primitives";
@@ -86,11 +88,20 @@ export function Resume({
   recentCommits,
   root,
   shell,
+  conversations,
+  slug,
 }: {
   runbook: Runbook;
   recentCommits: CommitLine[];
   /** The project folder. Travels ahead of each command; see `CopyCommand` below. */
   root: string;
+  /**
+   * What the coding agents kept in this folder on this disk, newest first, read by the page.
+   * `null` when nobody looked — a remote catalog — and then the block is not drawn at all: an
+   * empty frame there would claim an absence the server never checked.
+   */
+  conversations: ConversationRef[] | null;
+  slug: string;
   /*
     The shell comes via prop and it cannot be guessed here: this is a client component and the
     browser does not know which system the server is running on. Guessing wrong is giving someone
@@ -220,6 +231,13 @@ export function Resume({
           </ul>
         </Block>
       )}
+
+      {/*
+         The agents' own histories, which is a different fact from the agents' reports under
+         «Agents»: the frame stays mounted even when it is empty, so a folder nobody has talked in
+         yet says so instead of leaving a gap where the block sometimes is.
+        */}
+      {conversations !== null && <HandoffConversations conversations={conversations} slug={slug} />}
 
       {runbook.missingEnv.length > 0 && (
         <Block title={translate("project.missingEnv", { n: runbook.missingEnv.length })}>

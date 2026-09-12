@@ -99,6 +99,26 @@ somebody's leaked keys creates a second place they can leak from. All of it in
 discipline: it is proven by running it with `http`, `https`, `dns`, `net` and `fetch` sabotaged
 (`packages/core/src/no-network.test.ts`).
 
+**From a handoff that touches what is not its own.** Moving a conversation to another agent
+reads that agent's history folder and writes one new file into the target's. What it never
+does is written as tests, not as intent: `packages/handoff` runs with the network **and**
+`node:child_process` sabotaged, its source is swept for the name of any credential file
+—`auth.json`, `.credentials`, `oauth_creds`, `keychain`— and the same-agent flow at `full`
+writes nothing at all: it prints the sign-in command and the resume line, and the person runs
+both; at `compact` it writes a shorter copy in the same store, at the person's request, and
+still runs none of their commands.
+The original is never modified; the copy is a fresh id written through a temporary file; every
+text in it goes through `redactSecrets` —the portable bundle included since 12-Sep-2026, which
+until then left the machine unredacted and world-readable, the one artifact meant for another
+machine—; a Codex copy's settings line says what the person's own `config.toml` allows and
+never the loosest policy; and the line that resumes it is re-derived from the
+agent and the session id on every press, so nothing stored in the catalog is ever executed as
+stored. Since 12-Sep-2026 an agent can order one through MCP, and the two routes behind that
+—`POST /api/agent/conversations` and `POST /api/agent/handoff`— stand behind the family's own
+gate, `sameOrigin` and then `localOperatorOnly`, **before** the agent key is looked at: the
+four stores are private history, and the key buys the name on the receipt and the project of
+the call, never the right to read the disk. All of it in [handoff.md](handoff.md).
+
 ## What it does not protect against, and that is decided
 
 This is the half that has to be said out loud.
@@ -125,6 +145,34 @@ approving and discarding a note live in `/api/notes`, behind `sameOrigin` and wi
 agent-key variant, and that is deliberate —what gets approved is injected into every agent on
 the project—. All of it in [mcp-security.md](mcp-security.md).
 
+Since 12-Sep-2026 the key reaches one more thing, and the line around it is worth a sentence
+each. With an agent key, from this machine, an agent **can** list the conversations kept for
+the project its call names —titles, agents, sizes, whether each ended on a limit, never the
+file's path nor its folder— and hand one of them, the newest or one from that list, into
+another agent's store on this disk, at any tier, and get the resume line back as text. It
+**cannot** read a transcript back: the transcript-derived text the channel carries is the
+mechanical digest —in the dry run and in the write's answer— and the rows' titles, every
+string of both through `redactSecrets`, and never the document a `brief` writes, which the
+person reads at its path. It cannot launch anything: there is no tool behind
+`/api/handoff/launch`, and the OpenCode import stays a step for the person. It cannot sign
+anyone in or out: the same agent is refused at every tier, with the person sent to their own
+surface. It cannot name a conversation by path, nor reach one outside the project the call
+names: an id outside that project's list is a 404, and another project is reached the way
+`panoma_context` reaches it, by naming its path. And it cannot pay for a digest: `digestBy`
+is not a field of that route, and a body carrying one is refused whole. The project the call
+resolves to is still whatever location the caller sends, the same lack of scope the paragraph
+above says out loud; what the two routes add is that one call reaches one project and one
+conversation, and that the receipt names who asked.
+
+**From the agent key on the wifi, with the port open.** Under `--network` those two routes
+still carry `localOperatorOnly`, so they ask for three credentials at once: the network key in
+the link, the agent key in the `Bearer`, and the operator key in `x-panoma-operator`. The MCP
+client reads the last one out of `access.json` and sends it **to the loopback only**, the same
+rule the CLI's `catalogFetch` follows, so a phone on the LAN holding a leaked agent key and the
+network key gets a 403 from both routes, and an agent on the laptop next door, whose catalog
+is on the desktop, cannot hand off either: the stores are on the catalog's disk, and the key
+that orders a write there never leaves it.
+
 **From the agent key that gets committed to git.** It lives in the clear inside the agent's MCP
 configuration file, and `--install` can leave it in the `.mcp.json` at the root of the
 repository you work in. Panoma does not touch anybody's `.gitignore`; what it does is look at
@@ -145,6 +193,17 @@ That is why asking for a screenshot from the inbox demands the operator key —u
 own from the phone is sending bytes you already had; asking for one from the inbox is ordering
 this machine to open a file of its own and send it outside— and that is why the warning is
 written on all three surfaces.
+
+**From a transcript that is now in two places.** A handoff at tier `full` is a second copy of
+the conversation, in the clear, in another folder of your home directory, exactly as readable
+as the first. It carries what the first carried: paths, code, whatever a tool printed. What
+`redactSecrets` masks is the eleven shapes it knows; a password with no known shape travels,
+and there is no entropy net, on purpose, here as everywhere in the house. And with «Let a
+model write the digest» the conversation leaves the disk for a provider once, wrapped as
+untrusted material and counted in the `handoff` family, which is the one place in the feature
+where a transcript goes anywhere; the agent channel has no such box, so a handoff an agent
+orders never sends the transcript off the disk. The screen says both things before the
+button. All of it in [handoff.md](handoff.md).
 
 **From anyone listening on your network.** This is not HTTPS. The key and everything you see
 travel in the clear over the local network. A tunnel or a certificate is needed, and neither of
@@ -174,11 +233,17 @@ no command. It is not a half-started job that somebody could finish by reading t
 - **This document does not enumerate routes or count guards.** Those figures age on their own
   and have already aged three times in this repository; they live in [guards.md](guards.md),
   which does count them, and not even there does a test watch them.
-- **There is no threat model for hosted mode.** With `DATABASE_URL`, eighteen handlers spread
-  over fifteen routes refuse to work, and the rest serve a catalog that is on another machine;
-  nobody has written down what "one person" means there.
+- **There is no threat model for hosted mode.** With `DATABASE_URL`, the handlers that need
+  this disk refuse to work —by grep on 12-Sep-2026 the variable is consulted in route files to
+  the number of twenty-three, the two agent-channel doors of the handoff among them— and the
+  rest serve a catalog that is on another machine; nobody has written down what "one person"
+  means there.
 - **There is no audit log.** Nothing writes down who called what or from where: the agent
-  journal tells what an agent did, not what a visitor did.
+  journal tells what an agent did, not what a visitor did. The one line that comes close is
+  the handoff receipt: since 12-Sep-2026 `handoffs.requested_by` carries the agent's name when
+  the agent channel ordered the write and null when a person did, so the one act an agent can
+  order into another agent's store says who ordered it. It is a receipt and not a log: the
+  name, not the session, and nothing at all for a call that was refused.
 - **There is no spending limit in money.** The brakes count calls per day and not euros,
   because there is no price table anywhere; it is told in [budgets.md](budgets.md).
 - **What already came in does not leave on its own.** Revoking a source's permission closes the

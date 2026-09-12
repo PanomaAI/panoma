@@ -220,6 +220,64 @@ export function DocsExperience() {
             </ul>
           </section>
 
+          <section className={styles.section} id="handoff">
+            <p className={styles.kicker}>{text.handoff.kicker}</p>
+            <h2>{text.handoff.title}</h2>
+            <p className={styles.lead}>{text.handoff.lead}</p>
+            <p className={styles.note}>{text.handoff.leadBody}</p>
+
+            <h3 className={styles.subhead}>{text.handoff.targetsTitle}</h3>
+            <p className={styles.note}>{text.handoff.targetsLead}</p>
+            <div className={styles.rules}>
+              {text.handoff.targets.map((card) => (
+                <article key={card.title}>
+                  <h3>{card.title}</h3>
+                  <p>{card.body}</p>
+                </article>
+              ))}
+            </div>
+
+            <h3 className={styles.subhead}>{text.handoff.tiersTitle}</h3>
+            <p className={styles.note}>{text.handoff.tiersLead}</p>
+            <div className={styles.rules}>
+              {text.handoff.tiers.map((tier) => (
+                <article key={tier.level}>
+                  <h3>{tier.level}</h3>
+                  <p>{tier.body}</p>
+                </article>
+              ))}
+            </div>
+
+            <h3 className={styles.subhead}>{text.handoff.staysTitle}</h3>
+            <ol className={styles.door}>
+              {text.handoff.stays.map((rule) => (
+                <li key={rule}>{rule}</li>
+              ))}
+            </ol>
+            <p className={styles.note}>{text.handoff.staysNote}</p>
+
+            <h3 className={styles.subhead}>{text.handoff.doorsTitle}</h3>
+            <p className={styles.note}>{text.handoff.doorsLead}</p>
+            <ul className={styles.extraList}>
+              {text.handoff.commands.map((row) => (
+                <li key={row.command}>
+                  <CommandBlock command={row.command} note={row.note} quiet />
+                </li>
+              ))}
+            </ul>
+            <p className={styles.note}>{text.handoff.commandsNote}</p>
+
+            <h3 className={styles.subhead}>{text.handoff.mcpTitle}</h3>
+            <p className={styles.note}>{text.handoff.mcpBody}</p>
+            <p className={styles.note}>{text.handoff.mcpGate}</p>
+
+            <h3 className={styles.subhead}>{text.handoff.sameTitle}</h3>
+            <p className={styles.note}>{text.handoff.sameBody}</p>
+
+            <h3 className={styles.subhead}>{text.handoff.receiptTitle}</h3>
+            <p className={styles.note}>{text.handoff.receiptBody}</p>
+          </section>
+
           <section className={styles.section} id="memory">
             <p className={styles.kicker}>{text.memory.kicker}</p>
             <h2>{text.memory.title}</h2>

@@ -2,15 +2,19 @@
 
 A coding agent arrives at a project with no memory and no context. This document covers the
 channel panoma uses to hand it both, and through which the agent reports back what it did:
-the nine MCP tools and their contracts, the briefing that comes out of them, and how each
+the fifteen MCP tools and their contracts, the briefing that comes out of them, and how each
 agent gets plugged in. Who each door protects against is covered separately, in
 [mcp-security.md](mcp-security.md).
 
-**What anchors it.** The briefing and its caps are guarded by
-`packages/mcp/src/format.test.ts`; where the key may travel, the shape of a task id and the
-redirects, by `packages/mcp/src/client.test.ts`; where each agent's file goes, by
-`packages/core/src/mcp-targets.test.ts`; the permissions of the file written and the git
-warning, by `apps/cli/src/mcp.test.ts`; and that the `/api/agent/*` handlers without
+**What anchors it.** The briefing and its caps, the two handoff answers, the video four's
+answers and the sentence each refusal turns into are guarded by `packages/mcp/src/format.test.ts`;
+the video routes, with a real catalog beside them, by the four `route.test.ts` under
+`apps/web/app/api/agent/apps` and `agent/video`, and their readers and views by
+`apps/web/lib/agent-video.test.ts`; where the agent key may
+travel, where the two keys of this machine may travel, the shape of a task id and of a
+conversation id, and the redirects, by `packages/mcp/src/client.test.ts`; where each agent's
+file goes, by `packages/core/src/mcp-targets.test.ts`; the permissions of the file written and
+the git warning, by `apps/cli/src/mcp.test.ts`; and that the `/api/agent/*` handlers without
 `sameOrigin` call `requireAgent`, by `apps/web/lib/guard.test.ts`. **What none of them
 guards is this page**: the tool count and the handler list are checked by reading the code.
 `apps/cli/src/commands.test.ts` does compare the documentation against the commands that
@@ -28,7 +32,7 @@ What does listen on a port is the catalog, which sits **behind** it. The MCP ser
 touches the database: it talks to it over HTTP just like the CLI, and for the same reason —
 PGlite takes one writer and only one, and here there can be several agents at once.
 
-## The nine tools, and which route each one goes to
+## The fifteen tools, and which route each one goes to
 
 The descriptions registered in `packages/mcp/src/index.ts` are this program's real
 interface: they are the only thing the model reads to decide when to call. They are in
@@ -45,8 +49,14 @@ English, like everything headed for a machine (`AGENT_LANGUAGE`).
 | `panoma_create_task` | `POST /api/agent/tasks` | creates a task (same route, with `title`) |
 | `panoma_claim_task` | `PATCH /api/agent/tasks/{id}` | `action: "claim"` |
 | `panoma_complete_task` | `PATCH /api/agent/tasks/{id}` | `action: "complete"` |
+| `panoma_conversations` | `POST /api/agent/conversations` | the conversations the agents kept for this project, and the handoffs already recorded from it |
+| `panoma_handoff` | `POST /api/agent/handoff` | **writes** a conversation into another agent's history, or answers what would travel with `dryRun` |
+| `panoma_apps` | `POST /api/agent/apps` | the optional apps on this machine: version, readiness, requirements, the providers the person switched on, the person's next step |
+| `panoma_video` | `POST /api/agent/video` | **starts** a production of panoma video for this project, in the agent's name |
+| `panoma_video_jobs` | `POST /api/agent/video/jobs` | the project's productions, or one whole with its stages, cuts and files; `wait` holds until it moves |
+| `panoma_video_cancel` | `POST /api/agent/video/cancel` | **stops** a production of this project |
 
-All but the two `{id}` ones take an optional `path` that defaults to the working directory.
+All but the two `{id}` ones and `panoma_apps` take an optional `path` that defaults to the working directory.
 That `path` does not travel alone: `describeLocation` asks git for the remote
 (`config --get remote.origin.url`) and the repository root (`rev-parse --show-toplevel`),
 with a five-second cap and swallowing the failure. **Path and remote both go because each
@@ -216,6 +226,195 @@ id can come from the subject of a commit in somebody else's clone, or from a REA
 path but **a different route**, chosen by whoever wrote that text and with the Bearer key
 attached.
 
+### `panoma_conversations` — the person's own history, listed for one project
+
+Since 12-Sep-2026 the handoff of [handoff.md](handoff.md) has a machine door. This tool is the
+first half: it lists the conversations Claude Code, Codex CLI, OpenCode and Gemini CLI — and
+the Claude and Codex desktop apps, which write into the same stores — kept on this disk **for
+the catalog project the location names**, newest first, and the receipts of what was already
+handed from it. One line per conversation: the id (`agent:sessionId`, what `panoma_handoff`
+takes back), the handle a person types, the agent and its surface, when it was updated, the
+title covered by `redactSecrets`, its size, whether it carries a summary of its own and
+whether it ended on a usage limit. Never the file's path and never the conversation's folder:
+the id is how the agent names one, and the server knows where it is.
+
+**The scope is the catalog project the location names — its root and every folder inside
+it.** The route resolves the location the client describes to a catalog project (the folder
+first, then the repository root, then the remote, as `panoma_context` does) and lists the
+discovery rows whose folder — realpath on both sides — is that project's root or lies inside
+it. A conversation kept for another project is not listed and, on the second tool, not
+reachable by its id; but `path` is an input of both tools, as of every tool, so an agent can
+name another project's path exactly as it can with `panoma_context`, and then that project's
+conversations are the ones listed. What bounds it is the catalog — only an enrolled project
+answers — and, on the write, the receipt naming the agent that asked. The agent keys of this
+channel have no per-project scope of their own (see the limits below), and this pair adds
+none: it has the rule `panoma_context` already has, and no more.
+
+The rows travel inside an `untrusted_data` block of origin `conversation`, the ninth origin
+of [untrusted.md](untrusted.md): the title is whatever was typed or pasted as the first message,
+which in a conversation that read a README is anybody's text. Twenty-five rows at most, the
+receipts outside the block and ten at most, and each cap says what it dropped. The receipts
+matter as much as the rows, and the formatter says what one is: a receipt says a copy was
+written then, the dry run of `panoma_handoff` says whether it still matches the conversation
+as it is now, and if it does the person resumes that copy instead of a second one.
+
+### `panoma_handoff` — the write, and the three guards in front of it
+
+The second half. It takes a conversation of this project — by `id`, whose shape is checked
+before anything is looked up (400 `invalid-id`), or without one the newest kept for the
+project, its root and every folder inside it, which is the CLI's own rule (`newestOfFolder`
+in the engine, read by `load()` in `apps/cli/src/handoff-command.ts` and by this route): two
+**different** agents within the same hour is not a choice the machine makes, every row within
+the hour of the newest counts, and the route answers 409 `ambiguous-id` naming both ids — a
+`target`, a `tier` (`full` by default, `compact` with `keepTurns`, `brief`) and, with
+`dryRun: true`, answers what would travel and writes nothing: the row, the mechanical digest
+with every string covered by `redactSecrets`, the target's fidelity — `null` at `brief`,
+because a document is written whatever the target — the source's size, what the reader
+dropped, and the newest receipt for that target and surface. The formatter labels the size as
+the source's and adds what the tier makes of it: at `compact` the digest and the newest turns
+travel whole and the rest as the digest only, at `brief` a Markdown document travels, at
+`full` nothing is added. Without `dryRun` it writes a new conversation into the target
+agent's own history on this machine, with an id of its own and the original untouched,
+records the receipt with `requested_by` set to the agent's name, and answers the body
+`POST /api/handoff` answers the screen with, less the document itself: a `.md` target gets
+its `path`, and the person reads the document there. Two differences, both on purpose: the
+OpenCode import step is **never run on this channel** — it stays in `result.steps` for the
+person — and the document does not travel on it. The engine writes the envelope, and a process
+started because a model asked is a different thing from one started because a person pressed.
+
+The `target` is the same vocabulary the operator route reads: an agent word (`claude`,
+`codex`, `opencode`, `gemini`, `cursor`, `copilot`, `aider`, `amp`, `goose`) or a canonical id,
+or an app word (`claude-app`, `codex-app`) that means the agent on its `app` surface. There is
+no `surface` field, no `digestBy`, no `targetHome`, no bundle: an unknown key in the body is a
+400. The **model-written digest is not on this channel**: the digest is mechanical, free and
+the same on every run, and a paid call made because a model asked another model would be spend
+nobody decided. A document-only target — Cursor, Copilot, Aider, Amp, Goose — gets a `.md` for
+the person to paste as the first message, and the answer says so.
+
+**The same agent is refused here, at any tier and on either surface**: 409 `same-store`. The
+person's two-account flow of [handoff.md](handoff.md) is a sequence of the person's own steps
+— sign out, sign in with the account they want to continue with, resume the same file — and
+this channel carries none of it; the hint beside the refusal says where the person does it,
+the `/handoff` screen or `panoma handoff`. That hint is the one sentence on this channel that
+names the person's own two-account case, for the same reason the same-agent section of that
+page may: it names the person's own action and nothing automated.
+
+Three guards, in this order, and none replaces another:
+
+1. `sameOrigin` and `localOperatorOnly`, **first**. What the pair reads is the four stores —
+   the same private history `twin/sources` puts behind the operator key — and what it writes
+   is a file in another agent's history. That family's gate is the operator's on the web
+   ([handoff.md](handoff.md), [guards.md](guards.md)), and test 6 of `guard.test.ts` sweeps
+   the route files for the names that open the stores and demands the operator gate beside
+   them. So the MCP client sends the operator key too, to the loopback only (see below), and
+   a remote catalog can never list or hand off: the stores live on the catalog's own disk.
+   Under `DATABASE_URL` both routes answer 400 `local-only` in fixed English.
+2. `requireAgent`, **second**. The agent key does not open the door; it says who came through
+   it — the project the agent stands in, and the name the receipt carries afterwards.
+3. The body: exactly the declared keys, or 400 `body` with the detail saying which shape was
+   expected. Both routes answer `Cache-Control: private, no-store`, because what they answer is
+   private history derived on request.
+
+**What a fault reads like to the model.** The routes answer the existing `handoffHttpError`
+shape — `{error: <code>, detail?}` with the code's status — plus a `hint` for `same-store`,
+`ambiguous-id`, `conversation-not-found` and `no-project`. The client keeps the three fields
+on a `CatalogError`, and one helper in front of both tools turns a known code into one English
+sentence, the fact, with the detail in brackets and the route's hint, the step, after it:
+«Two agents talked in this project within the same hour, so none was taken (claude-cli:…,
+codex-cli:…). Name one of the two ids with id.» The sentence and the hint divide the work so
+that nothing is said twice; a detail that is the route's own fixed sentence (`local-only`,
+`no-project`) gets no bracket, and a `conversation-not-found` with no id given — the detail
+is then the route's sentence, not an id — gets neither the bracket nor the hint to list ids
+that do not exist. It comes back as **text and not as an MCP error**: none of these is fixed
+by calling again with the same arguments, and a model that reads an error retries. What is
+not a known code — the catalog down, a redirect, the 403 of a gate — stays an error, as on
+every other tool.
+
+The lines the person runs — the resume command, the app link, the pending steps — do not go
+through `neutralizeInline`, which collapses whitespace and cuts at a label's length: a folder
+with two spaces in its name came out as a line that does not run. They go through
+`commandLine`, which strips only what would break the line or the block — control characters,
+the delimiter, the chat tokens — and caps at a path's length.
+
+And the descriptions say, for the model deciding when to call: that the write goes into the
+target's own history and the original is never touched; that it is called only when the
+person asks to continue somewhere else, once per request, never as a step of the model's own
+and never at the start of a session, with a `dryRun` first as the safe way to show what would
+travel; that without `id` the newest conversation kept for this project is taken, which —
+when the caller is the agent that conversation belongs to — means this very conversation up
+to this call; that the scope is the catalog project the location names and another project's
+path works exactly as with `panoma_context`, the receipt naming who asked; and that the answer
+carries the line the **person** runs to resume, which the model shows and never runs. The
+target words and the tiers are in the input schema and not in the prose, so the description
+stays shorter than `panoma_context`'s.
+
+### The video four — an agent asks for a production; the person installs and pays
+
+Until 12-Sep-2026 panoma video ([apps.md](apps.md)) was reached only by a person: the Apps
+screen, the production screen, `panoma apps` and `panoma video`. An agent connected to the
+catalog could read the project's brief and hand a conversation on, but could not tell whether
+a video could be made here, let alone ask for one. Four tools, over four routes, close that:
+
+- `panoma_apps` lists the official apps with what an agent decides with — the installed
+  version and the newest npm named, whether it is enabled and ready, each requirement with
+  whether it is present (`null` for one never checked), the model and the voice the person
+  switched on, and the person's next step in the setup's own order (`nextStep` in
+  `apps/web/lib/apps-view.ts`, the sentence under the title of the app's page). It takes no
+  `path`: which apps are installed is a fact of the machine.
+- `panoma_video` starts `panoma_video_auto` for the catalog project the location names. What it
+  takes is what the production screen takes — `goal`, `format`, `langs`, `until` — plus the two
+  an agent can know and a screen cannot: a `url` already running on this machine with real
+  content in it, and a `creative_brief`; the defaults are the terminal's (a promo, vertical, in
+  English, to the preview). The body goes through the same `enqueueAppJob` as the operator door:
+  the same closed field list, the same loopback rule for `url`, the same dedupe of identical live
+  work — a second identical request while the first runs answers **that** job, with 409, and the
+  formatter says it is the running one — and the same budget reservation before paid work enters
+  the queue. The row keeps the agent's name as `requested_by`, which both screens say.
+- `panoma_video_jobs` lists the project's productions, newest first and ten at most, or answers
+  one whole: the twelve stages with where each stands and the app's own sentence for it
+  (`stageReport`, the same rows the production screen draws), the app's last line while it
+  runs, how long it has been at it, and once it ended the cuts with their files, the kinds of
+  video set aside with the reason, what it spent. `wait: true` holds the call up to twenty-five
+  seconds on the supervisor's own notice, like `GET /api/apps/jobs/[jobId]?wait=1`, so following
+  a run costs one call per change. Only the project's rows are visible: another project's job,
+  or one of the app's own operations, is not found rather than shown.
+- `panoma_video_cancel` stops one, through the operator door's own cancellation.
+
+**What is not on this door, and why.** No `brain` and no `voice`: the model and the narration
+are the person's settings on the app's page, confirmed with the app's disclosure, and
+`enqueueAppJob` fills both from those settings whoever asked — so a run an agent asks for
+spends exactly what the person switched on, and no more. The body reader names each on
+refusal, so an agent that read the operator door's shape learns the difference at once. No
+`music` and no `dance`: a music file is a path on this disk. No install, no enable, no browser
+download, no provider switch, and no tool proposes them: every one is a download or a
+disclosure the person accepts, and the refusals and `panoma_apps` say so in the person's terms —
+the Apps screen, `panoma apps install` — instead of offering the agent a way round. And the
+other five tools of the app — render, review, revise, story, scout — stay the production
+screen's, which drives them from a finished run.
+
+**Three guards, split.** The start and the cancel carry `sameOrigin` and `localOperatorOnly`
+ahead of `requireAgent`, in the handoff pair's order: starting the app starts the project's own
+development server as this user and films it, and the family's gate is the operator's. The two
+reads carry `sameOrigin` and `requireAgent`, which is what `GET /api/apps` and
+`GET /api/apps/jobs/[jobId]` ask of a tab, because looking at an app's state moves nothing.
+Under `DATABASE_URL` all four answer 403 `local-catalog-required`, in fixed English: optional
+apps run on the catalog's own machine. What the four share with the handoff pair — the
+location, the `no-store` header, the body refusal, the project the location resolves to — is
+`apps/web/lib/agent-channel.ts`; what is theirs is `apps/web/lib/agent-video.ts`.
+
+**What the model reads.** The stage sentences, the reasons a kind was set aside and the
+review's own words are the app's — a program's reading of the project's README and pages, and
+a model's when the person wired one — so they go inside a block with the `app` origin
+([untrusted.md](untrusted.md)). The ids, states, figures and the files of the cuts stand
+outside it: they are the catalog's, and the agent works on this machine, so a cut it cannot
+name is a cut it cannot show or open. A refusal comes back as text, not as an MCP error, with
+the person's next step beside it (`formatVideoFault`): `not-installed` says where the person
+installs it, `app-budget-exhausted` says the cap is theirs to raise, `local-url-required` says
+why an address off this machine is not filmed. The descriptions say, for the model deciding
+when to call, that a production is asked for only when the person asks for a video, never as a
+step of the model's own, that it takes minutes and spends what the person switched on, and
+that the answer is followed with `panoma_video_jobs`.
+
 ## The briefing: what it carries, in what order and under what caps
 
 `packages/mcp/src/format.ts` composes it and it comes out as readable text, not as JSON: the
@@ -254,7 +453,7 @@ two decisions run about six hundred characters past the cap, and the formatter r
 them whole rather than cutting one; the test in `format.test.ts` keeps the largest shape
 that is promised to fit, with 100-character triggers.
 
-### The seventeen caps
+### The twenty-three caps
 
 Each one is a slice of the agent's window spent here and not on reading code. The section
 caps were chosen by how much actually gets used — nobody acts on the twentieth outdated
@@ -280,6 +479,12 @@ being able to hijack the rest of the document.
 | `proposals` | 8 | stalled proposals |
 | `proposalSummary` | 220 | the summary of each proposal |
 | `document` | 24,000 | the briefing, including any omission or refusal notice |
+| `conversations` | 25 | conversations listed by `panoma_conversations` |
+| `receipts` | 10 | receipts listed by `panoma_conversations` |
+| `digestItems` | 12 | decisions, files, commands and open items, each list, in a dry run |
+| `digestText` | 600 | the goal and each side of the last exchange in a dry run |
+| `digestSummary` | 2,400 | the source's own summary in a dry run |
+| `commandLine` | 4,096 | a line the person runs — the resume command, an app link, a pending step — which keeps its spaces and is cut at a path's length, not a label's |
 
 The last one is the **last net, not the first**. Approved memory is indivisible: if the
 requested files match every sleeping note, all their bodies still travel, and so do the
@@ -411,12 +616,30 @@ and it makes the attempt visible. The error names the file to go look at, which 
 actionable part. And it is checked **before touching the network**: not one connection to
 the barred destination.
 
-There is one more key, and it is not the agent's. With `panoma up --network` the catalog
+There are two more keys, and neither is the agent's. With `panoma up --network` the catalog
 demands a credential from everybody, loopback included, so the client adds `x-panoma-key`
 with the network key read from `~/.panoma/access.json` (0600 permissions). Only when
 `PANOMA_API` points at loopback: `unsafeDestination` lets the private network through as
 well, and there it is not sent — sending the network key to whatever address a configuration
 file names would be handing it to anyone who manages to edit one line.
+
+The second is the **operator key**, `x-panoma-operator`, read from the same file and sent
+under the same rule — loopback only — since 12-Sep-2026. The network key lets a caller look;
+the operator key lets a caller order this machine to do something, and it never travels in
+the link the phone gets (`packages/core/src/access.ts`). Two routes of this channel need it,
+`/api/agent/conversations` and `/api/agent/handoff`: they read the person's own conversation
+history off the disk and write into another agent's, and the family that owns those stores
+is behind the operator key on the web, so it is behind it here too, ahead of the agent key.
+The other routes ignore the header. It is exactly the rule `apps/cli/src/catalog-fetch.ts`
+follows, mirrored, and the reason is one sentence: sending the operator key to whatever
+address a configuration file names would be handing another machine the right to command in
+this one. A remote catalog gets neither key, and it could not hand off anyway — the stores
+live on the catalog's own disk. With the port closed and no `PANOMA_OPERATOR_KEY` in the
+server's environment, `localOperatorOnly` asks for nothing and the header is simply present;
+with the port open, it is what keeps the two doors open to this machine's agents.
+`client.test.ts` measures both halves: the two headers reach `127.0.0.1`, and neither reaches
+a private address, with `fetch` stood in for so no packet has to wait on a TCP that never
+answers.
 
 Three more precautions in the client, all of them from a failure that was measured:
 
@@ -431,10 +654,16 @@ Three more precautions in the client, all of them from a failure that was measur
 
 ## The `/api/agent/*` handlers
 
-Ten `route.ts` files, twelve handlers. Eight authenticate with the agent key and **carry no
-`sameOrigin`, on purpose**: they are called by the MCP server, which sends neither
+Sixteen `route.ts` files, eighteen handlers. Eight authenticate with the agent key and **carry
+no `sameOrigin`, on purpose**: they are called by the MCP server, which sends neither
 `Sec-Fetch-Site` nor `Origin`, so the guard would let them through anyway and would be
-decoration. The other four are not called by an agent.
+decoration. Two — the handoff pair — carry `sameOrigin`, the operator key **and** the agent
+key, in that order, because what is behind them is the person's private history and the
+family's gate comes first; the browser guard is decoration for the MCP server there too, and
+it stays because test 6 of `guard.test.ts` sweeps every route that opens the stores. The video
+four split the way the app's own doors do: the start and the cancel carry the three guards in
+the handoff pair's order, the two reads carry `sameOrigin` and the agent key. The other four
+are not called by an agent.
 
 | handler | what it does | who may |
 | --- | --- | --- |
@@ -446,6 +675,12 @@ decoration. The other four are not called by an agent.
 | `POST /api/agent/consult` | leaves a question for the twin | agent key |
 | `POST /api/agent/tasks` | lists the open ones, or creates with `title` | agent key |
 | `PATCH /api/agent/tasks/[id]` | claims or closes a task | agent key |
+| `POST /api/agent/conversations` | the conversations kept for this project, and its receipts | `sameOrigin` + operator + agent key, local only |
+| `POST /api/agent/handoff` | writes a conversation into another agent's history, or a dry run | `sameOrigin` + operator + agent key, local only |
+| `POST /api/agent/apps` | the optional apps' state and the person's next step | `sameOrigin` + agent key, local only |
+| `POST /api/agent/video` | starts a production of panoma video for this project | `sameOrigin` + operator + agent key, local only |
+| `POST /api/agent/video/jobs` | this project's productions, or one whole; `wait` holds until it moves | `sameOrigin` + agent key, local only |
+| `POST /api/agent/video/cancel` | stops a production of this project | `sameOrigin` + operator + agent key, local only |
 | `GET /api/agent/notes` | the sleeping notes for a path | `sameOrigin` |
 | `POST /api/agent/keys` | issues a new key | `sameOrigin` + operator + local |
 | `DELETE /api/agent/keys` | retires an agent and its key | `sameOrigin` + operator + local |
@@ -456,7 +691,13 @@ is called by the `panoma signal` hook right before an agent edits a file, and **
 no agent key**. So it carries the browser's guard and not the channel's.
 
 The last three issue or revoke a durable credential, or write to the owner's disk: that is
-commanding, not looking. `isLocalServer` on its own was not enough — it answers "am I
+commanding, not looking. The handoff pair is on the same side of that line — reading the four
+stores is looking at private history, and writing into one is writing to the owner's disk —
+which is why they carry the operator key and, unlike the last three, the agent key after it.
+So are the video start and the video cancel: a production starts the project's own development
+server as this user, and a cancel ends a process tree. The two video reads are on the other
+side, with `GET /api/apps` and `GET /api/apps/jobs/[jobId]`: looking at an app's state moves
+nothing. `isLocalServer` on its own was not enough — it answers "am I
 local?", not "who is calling me?", and with `--network` Next binds to `0.0.0.0` and it
 returned `true` for everybody — so they carry the operator key as well. Which door is which
 and what each one stops is in [mcp-security.md](mcp-security.md).
@@ -569,9 +810,13 @@ Afterwards you have to **restart the agent's session**: one already open picks u
 
 **The agent key has no per-project scope.** An agent working in A can ask for B's context by
 passing its path. It is consistent with "one machine, one person", but it is the thing to
-watch the day an injection succeeds.
+watch the day an injection succeeds. The handoff pair is no exception: its scope is the
+catalog project the location names — its root and every folder inside it — and an agent in A
+can name B's path exactly as it can with `panoma_context`. What bounds it is the catalog,
+which answers only for an enrolled project, and the receipt, which names the agent that
+asked; that is the same rule `panoma_context` already has, and not a lock.
 
-**The reread in `POST /api/agent/notes` is not triggered by any of the nine tools.** The MCP
+**The reread in `POST /api/agent/notes` is not triggered by any of the fifteen tools.** The MCP
 server always sends `note`, so that branch — the body with no note — exists and has no
 caller inside the repository: the awake memory already travels inside the briefing.
 
@@ -587,10 +832,31 @@ question goes into the twin's exam.
 memory is any use is the ablation scale (`/api/scale`), which is off out of the box. What
 gets served is written down; what gets obeyed is not.
 
-**No test guards the nine descriptions.** They are the program's real interface — the only
+**No test guards the eleven descriptions.** They are the program's real interface — the only
 thing the model reads to decide when to call — and they are checked by reading them. It has
 already happened once that one promised something the route does not send: `panoma_tasks`
-and its closed tasks.
+and its closed tasks. What a test does read off `index.ts` is the count of `registerTool`
+calls, which `apps/web/lib/tool-count.test.ts` and `apps/site/docs/docs-copy.test.ts` compare
+against the sentences that say it.
+
+**The handoff pair carries no model digest and no same-agent flow, and neither is coming
+through this door.** The digest is mechanical on this channel because a paid call made
+because a model asked would be spend nobody decided; the same agent is refused because the
+person's two-account steps are theirs to run. Both answers point at the `/handoff` screen and
+`panoma handoff`, which is where those two live.
+
+**A remote catalog can neither list nor hand off.** Under `DATABASE_URL` both routes answer
+`local-only`: the stores are on the catalog's disk, and that disk is another machine's. The
+client does not send the operator key there either, so the refusal is the gate's before it is
+the route's.
+
+**The OpenCode import step is never run on this channel**, even when OpenCode is installed:
+it stays in `result.steps` for the person. The operator route runs it; the difference is who
+asked.
+
+**The receipt is the only attribution.** `requested_by` on the `handoffs` row carries the name
+of the agent key that asked, and the person sees it in «Done so far». Nothing else records
+that a model, and not a person, wrote a file into another agent's history.
 
 **This page is not on `commands.test.ts`'s list.** That test compares the commands the
 documentation tells you to run against the ones the dispatcher recognizes, and it reads a

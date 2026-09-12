@@ -70,6 +70,18 @@ export interface Flags {
   network: boolean;
   /** With `up --network`: generate a new key and invalidate the previous one. */
   rotateKey: boolean;
+  /**
+   * The five of `panoma handoff`. `to` arrives as the word typed —`codex`, `claude-cli`,
+   * `bundle`— and the module resolves it, because the list of agents lives in `@panoma/handoff`
+   * and is loaded lazily with the verb; `tier` and `digest` are closed sets checked here, like
+   * `--isolation`, because a misspelled tier would carry a different amount than asked and say
+   * nothing; `keep` is a count with no defensible default, like `--limit`.
+   */
+  to?: string;
+  tier?: string;
+  digest?: string;
+  keep?: number;
+  targetHome?: string;
   /** Arguments that are neither flags nor flag values. */
   positionals: string[];
   browser?: boolean;
@@ -113,6 +125,11 @@ export const KNOWN_FLAGS = [
   "--project",
   "--source",
   "--dry-run",
+  "--to",
+  "--tier",
+  "--digest",
+  "--keep",
+  "--target-home",
   "--help",
   "-h",
   "--version",
@@ -254,6 +271,11 @@ export function parseArgs(argv: string[]): Flags | "help" | "version" | { error:
     else if (arg === "--limit") flags.limit = Number.parseInt(takeValue() ?? "", 10);
     else if (arg === "--project") flags.project = takeValue();
     else if (arg === "--source") flags.source = takeValue();
+    else if (arg === "--to") flags.to = takeValue();
+    else if (arg === "--tier") flags.tier = takeValue();
+    else if (arg === "--digest") flags.digest = takeValue();
+    else if (arg === "--keep") flags.keep = Number.parseInt(takeValue() ?? "", 10);
+    else if (arg === "--target-home") flags.targetHome = takeValue();
     else if (arg.startsWith("-")) unknown.push(arg);
     else positionals.push(arg);
   }
@@ -300,6 +322,33 @@ export function parseArgs(argv: string[]): Flags | "help" | "version" | { error:
    */
   if (flags.limit !== undefined && !(Number.isInteger(flags.limit) && flags.limit > 0)) {
     return { error: say("error.badLimit") };
+  }
+
+  /*
+    The two closed sets of `panoma handoff`, for the reason `--isolation` gives above: a tier
+    that does not exist would have to fall to some default, and whichever it fell to would carry
+    a different amount than the one asked for, with a green receipt on top. The digest author is
+    the same trap with money in it: `--digest modle` falling to `panoma` is free and silent, and
+    falling to `model` spends. `--keep` without a whole number above zero means nothing either.
+   */
+  const TIERS = ["full", "compact", "brief"];
+  if (flags.tier !== undefined && !TIERS.includes(flags.tier)) {
+    return {
+      error:
+        `${say("error.unknownTier", { value: flags.tier })}\n` +
+        say("error.tierLevels", { list: TIERS.join(" · ") }),
+    };
+  }
+  const DIGESTS = ["panoma", "model"];
+  if (flags.digest !== undefined && !DIGESTS.includes(flags.digest)) {
+    return {
+      error:
+        `${say("error.unknownDigest", { value: flags.digest })}\n` +
+        say("error.digestKinds", { list: DIGESTS.join(" · ") }),
+    };
+  }
+  if (flags.keep !== undefined && !(Number.isInteger(flags.keep) && flags.keep > 0)) {
+    return { error: say("error.badKeep") };
   }
 
   /*

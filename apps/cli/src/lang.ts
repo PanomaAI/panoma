@@ -25,6 +25,10 @@ ${pc.bold("YOUR DAY")}
   panoma north <project> "…"   write it, or replace the one there after showing it to you
   panoma open <project>        open it in your editor (--folder · --terminal · --all)
   panoma scan [path]           analyze one project, or every project under the path
+  panoma handoff               the conversations your agents kept on this disk, newest first
+  panoma handoff <id> --to <agent>  continue one in another agent: panoma writes it into
+                               that agent's own history, so its normal resume picks it up
+                               (--tier full|compact|brief · --dry-run · --digest model)
 
 ${pc.bold("RITUALS")}
   panoma up                    start the catalog (--on-boot, so it starts itself)
@@ -90,7 +94,8 @@ ${pc.bold("YOUR TWIN")} ${pc.dim("(what your agents already know about you)")}
 
 ${pc.bold("OPTIONS")}
   --json                       print the raw analysis as JSON
-  --out <file>                 with scan and memory export, write the JSON to a file
+  --out <file>                 with scan and memory export, write the JSON to a file;
+                               with handoff, where the document or the bundle goes
   --verbose, -v                show dependencies and the health breakdown
   --duplicates, -d             only the families of copies of the same project
   --save                       send the result to the catalog (needs the web app running)
@@ -118,7 +123,20 @@ ${pc.bold("OPTIONS")}
   --source <source>            with twin mine, a single history instead of every permitted
                                one: claude-code, codex…; with twin verdicts, only the
                                verdicts that came out of it
-  --dry-run                    with twin distill, stop at the estimate instead of spending
+  --dry-run                    with twin distill, stop at the estimate instead of spending;
+                               with handoff, show what would travel and write nothing
+  --to <agent>                 with handoff, where the conversation continues: claude · codex ·
+                               opencode · gemini · cursor · copilot · aider · amp · goose,
+                               claude-app · codex-app for the desktop apps (macOS), or
+                               bundle for a portable file
+  --tier <tier>                with handoff, how much travels: full (default), compact
+                               (digest + the last turns) or brief (a document only)
+  --digest <by>                with handoff, who writes the digest: panoma (free, default)
+                               or model (spends from the handoff cap; needs the catalog)
+  --keep <n>                   with handoff --tier compact, how many of the newest turns
+                               travel whole (12 by default)
+  --target-home <dir>          with handoff, a second home of the same agent — another
+                               CLAUDE_CONFIG_DIR or CODEX_HOME — that already exists
   --depth <n>                  how deep to look for projects (default 3)
   --no-git                     skip reading git (faster)
   --help, -h                   this help

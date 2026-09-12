@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { createInterface } from "node:readline";
 import { isRecord } from "../fs-utils";
+import { HANDOFF_CLAUDE_RECORD_VERSION } from "../handoff-marker";
 import { redactQuote } from "../quotes";
 import type { HistorySourceId } from "./inventory";
 import { fold } from "../fold";
@@ -138,6 +139,15 @@ export interface MineStats {
    * that there aren't any there.
    */
   sidechain: number;
+  /**
+   * Copies panoma wrote: a conversation handed off from another agent (`packages/handoff`),
+   * one count per file. Its carried records are stamped `version: "panoma-handoff"` and are
+   * skipped, because their turns are the same ones the source file already contributed and
+   * counting them would weigh every reaction in that conversation twice. What the person typed
+   * after resuming the copy is theirs and is read as always; until 12-Sep-2026 the whole file
+   * was skipped and those turns —the continuation the feature exists for— were never read.
+   */
+  handedOff: number;
   commands: number;
   reactions: number;
   briefs: number;
@@ -332,6 +342,23 @@ async function mineTranscript(
   const capture = narratives === undefined
     ? undefined
     : new NarrativeCapture(Math.max(0, limit - narratives.length), options.cwdPrefix);
+  /*
+    The record decides whether it is the person's or panoma's, by the stamp its writer put on
+    it and never by its text. A handed-off copy (`packages/handoff`) carries
+    `version: "panoma-handoff"` on every record it wrote, where Claude Code writes its own
+    version number; the person cannot type a field. Those records are the carried prefix and
+    are left alone as evidence: their turns were already mined from the source. Two things
+    still flow from them. The assistant's text becomes the `delivery`, and its paths the
+    window, because the first thing the person types after `claude --resume <id>` —which
+    appends to this same file— reacts to exactly that, and reading it is what the handoff is
+    for. And nothing of theirs adds the session until one of their own records does, so a copy
+    nobody resumed counts in `handedOff` and nowhere else.
+    Until 12-Sep-2026 the mark was the first two words of the provenance line on the first
+    prompt, and the file was dropped whole. That skipped the person's turns after the resume,
+    and a conversation of theirs that opened with a pasted `brief` —a document whose first line
+    is that same provenance line— vanished from the twin entirely.
+   */
+  let carriedSeen = false;
 
   try {
     for await (const line of lines) {
@@ -362,7 +389,12 @@ async function mineTranscript(
         typeof parsed["sessionId"] === "string" && parsed["sessionId"].length > 0
           ? parsed["sessionId"]
           : fallbackSession;
-      sessions.add(sessionId);
+      const carried = parsed["version"] === HANDOFF_CLAUDE_RECORD_VERSION;
+      if (!carried) sessions.add(sessionId);
+      else if (!carriedSeen) {
+        carriedSeen = true;
+        stats.handedOff += 1;
+      }
 
       const message = parsed["message"];
       const content = readContent(isRecord(message) ? message["content"] : undefined);
@@ -396,12 +428,14 @@ async function mineTranscript(
         continue;
       }
 
+      // A carried user record: the person said it at the source, where it was read.
+      if (carried) continue;
       // Rule 1: in blocks, never by `type`.
       if (content.toolResult) {
         stats.toolResults += 1;
         continue;
       }
-      // Regla 3.
+      // Rule 3.
       if (parsed["isSidechain"] === true) {
         stats.sidechain += 1;
         continue;
@@ -441,7 +475,7 @@ async function mineTranscript(
         gitBranch: typeof parsed["gitBranch"] === "string" ? parsed["gitBranch"] : undefined,
       }, text);
 
-      // Regla 5.
+      // Rule 5.
       if (delivery === undefined) {
         stats.spontaneous += 1;
         continue;
@@ -798,6 +832,7 @@ function emptyStats(): MineStats {
     userTurns: 0,
     toolResults: 0,
     sidechain: 0,
+    handedOff: 0,
     commands: 0,
     reactions: 0,
     briefs: 0,

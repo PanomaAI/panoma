@@ -132,7 +132,7 @@ export interface FamilyLine {
   envReadable?: boolean;
 }
 
-/** The seven families in `BUDGET_FAMILIES` order, each with today's spend of its kinds and its cap. */
+/** The nine families in `BUDGET_FAMILIES` order, each with today's spend of its kinds and its cap. */
 export function familyLines(spend: readonly KindSpend[], caps: Record<BudgetFamily, DailyCap>): FamilyLine[] {
   return BUDGET_FAMILIES.map((family) => {
     const kinds = [...FAMILY_KINDS[family]];

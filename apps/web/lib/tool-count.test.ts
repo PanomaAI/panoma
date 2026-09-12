@@ -37,6 +37,10 @@ describe("las dos pantallas cuentan las mismas herramientas", () => {
     10: { es: "diez", en: "ten" },
     11: { es: "once", en: "eleven" },
     12: { es: "doce", en: "twelve" },
+    13: { es: "trece", en: "thirteen" },
+    14: { es: "catorce", en: "fourteen" },
+    15: { es: "quince", en: "fifteen" },
+    16: { es: "dieciséis", en: "sixteen" },
   };
 
   /** Where the figure is written down. Both, because they disagreed. */

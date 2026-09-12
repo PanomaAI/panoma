@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { IconType } from "react-icons";
 import {
+  HiOutlineArrowsRightLeft,
   HiOutlineBanknotes,
   HiOutlineChevronLeft,
   HiOutlineChevronRight,
@@ -114,6 +115,9 @@ const SIDEBAR_ITEMS: NavItem[] = [
   { href: "/runs", label: "nav.activity", icon: HiOutlinePlayCircle, badge: "proposedRuns" },
   { href: "/unsaved", label: "nav.unsaved", icon: HiOutlinePencilSquare, badge: "unsaved" },
   { href: "/agents", label: "nav.agents", icon: HiOutlineCommandLine, groupStart: true },
+  // Right after the agents and not among the diagnostics: a handoff is what you reach for the
+  // minute an agent stops, and that minute is not the one to hunt through «More» for it.
+  { href: "/handoff", label: "nav.handoff", icon: HiOutlineArrowsRightLeft },
   { href: "/apps", label: "apps.title", icon: HiOutlineSquares2X2 },
   { href: "/twin", label: "nav.twin", icon: HiOutlineFingerPrint },
   { href: "/ai", label: "nav.ai", icon: HiOutlineCpuChip },

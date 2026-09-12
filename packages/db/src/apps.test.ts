@@ -36,14 +36,28 @@ beforeEach(async () => {
   await db.insert(t.projects).values({ id: "project", slug: "project", name: "Project", root: "/tmp/project", identity: "git:project" });
 });
 
-function enqueue(input: Record<string, unknown> = {}, options: { paid?: boolean; cap?: number; identity?: string } = {}) {
+function enqueue(input: Record<string, unknown> = {}, options: { paid?: boolean; cap?: number; identity?: string; requestedBy?: string } = {}) {
   return enqueueAppJobRow(db, {
     appId: "panoma-video", identity: options.identity ?? "git:project", tool: "panoma_video_auto",
     input, appVersion: "0.2.0", paid: options.paid, cap: options.cap,
+    ...(options.requestedBy !== undefined ? { requestedBy: options.requestedBy } : {}),
   });
 }
 
 describe("durable app jobs", () => {
+  it("keeps who asked, and the same work asked by an agent and by the person is one job", async () => {
+    const asked = await enqueue({ goal: "promo" }, { requestedBy: "claude-code" });
+    expect(asked.job.requestedBy).toBe("claude-code");
+    // The person asks for the very same production while it waits: the row is the agent's, not a second one.
+    const again = await enqueue({ goal: "promo" });
+    expect(again.duplicate).toBe(true);
+    expect(again.job.id).toBe(asked.job.id);
+    expect((await getAppJob(db, asked.job.id))!.requestedBy).toBe("claude-code");
+    // And a person's own row says nobody by name.
+    await transitionAppJob(db, asked.job.id, "pending", "cancelled");
+    expect((await enqueue({ goal: "promo" })).job.requestedBy).toBeNull();
+  });
+
   it("canonicalizes object keys but preserves arrays, values, identities and tools", () => {
     expect(canonicalAppInput({ b: [2, 1], a: { z: 3, b: null } })).toBe('{"a":{"b":null,"z":3},"b":[2,1]}');
     expect(appDedupeKey("video", "git:one", "auto", { a: 1, b: 2 })).toBe(appDedupeKey("video", "git:one", "auto", { b: 2, a: 1 }));

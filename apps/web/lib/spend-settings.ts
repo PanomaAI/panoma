@@ -36,7 +36,7 @@ import { panomaPath } from "@panoma/core";
  * The families a cap holds back. Several kinds in the ledger can answer to one family: the three
  * reads are one chained job, and the two buttons of the project card are one gesture repeated.
  */
-export type BudgetFamily = "read" | "look" | "memory" | "ask" | "rehearse" | "episodes" | "card" | "app";
+export type BudgetFamily = "read" | "look" | "memory" | "ask" | "rehearse" | "episodes" | "card" | "app" | "handoff";
 
 export const BUDGET_FAMILIES = [
   "read",
@@ -47,6 +47,8 @@ export const BUDGET_FAMILIES = [
   "episodes",
   "card",
   "app",
+  // The model-written digest of one conversation about to be handed off; one action, by the person.
+  "handoff",
 ] as const satisfies readonly BudgetFamily[];
 
 /** Out of the box. The reasons behind each number are in `docs/budgets.md`. */
@@ -59,6 +61,8 @@ export const FACTORY_CAPS: Record<BudgetFamily, number> = {
   episodes: 20,
   card: 100,
   app: 20,
+  // One conversation, one action, by the person; ten covers a bad day and stops a loop.
+  handoff: 10,
 };
 
 /** The variable that overrides each family. `PANOMA_DISTILL_BUDGET` keeps its historical name. */
@@ -71,6 +75,7 @@ export const BUDGET_ENV: Record<BudgetFamily, string> = {
   episodes: "PANOMA_EPISODE_BUDGET",
   card: "PANOMA_CARD_BUDGET",
   app: "PANOMA_APP_BUDGET",
+  handoff: "PANOMA_HANDOFF_BUDGET",
 };
 
 /**
@@ -87,6 +92,7 @@ export const FAMILY_KINDS: Record<BudgetFamily, readonly string[]> = {
   episodes: ["episodes"],
   card: ["describe", "review"],
   app: ["app"],
+  handoff: ["handoff"],
 };
 
 /**
@@ -367,7 +373,7 @@ export async function capFor(family: BudgetFamily): Promise<DailyCap> {
   return resolveCap(family, process.env, settings);
 }
 
-/** All seven at once, for the screens. */
+/** All nine at once, for the screens. */
 export async function capsFor(): Promise<Record<BudgetFamily, DailyCap>> {
   const { settings } = await readSpendSettings();
   return Object.fromEntries(

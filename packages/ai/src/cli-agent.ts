@@ -96,10 +96,13 @@ export async function detectCliAgents(providers: Provider[]): Promise<AgentAvail
         desktop application does not expect to have to export anything. Looking for it there is
         the difference between the button existing or not.
        */
-      for (const bundled of provider.bundles ?? []) {
-        const next = await probe(bundled);
-        if (next.ok) {
-          return { provider, installed: true, command: bundled, version: next.version };
+      for (const entry of provider.bundles ?? []) {
+        // A function entry resolves now: the app's version folder is whatever it is today.
+        for (const bundled of typeof entry === "function" ? entry() : [entry]) {
+          const next = await probe(bundled);
+          if (next.ok) {
+            return { provider, installed: true, command: bundled, version: next.version };
+          }
         }
       }
 

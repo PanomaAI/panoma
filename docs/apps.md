@@ -202,7 +202,7 @@ offers to export.
 
 Every Apps route checks same origin. Mutation handlers additionally check local operator
 authorization and refuse remote catalogs before reading the request body or opening the
-database. The eleven lifecycle operations share one handler and are validated against the same
+database. The ten lifecycle operations share one handler and are validated against the same
 closed list the supervisor dispatches on; any other path segment is refused. App detail
 responses omit filesystem paths, and they redact the app's own words rather than the manifest,
 which is validated data whose prose reads the same on every machine. What an installation and
@@ -216,6 +216,44 @@ The terminal uses `panoma apps` for lifecycle operations and `panoma video` for 
 These commands delegate work to HTTP and do not become a second catalog writer. Direct
 `panoma video doctor` probes the installed executable without opening the catalog.
 See [cli.md](cli.md) for syntax and [http-api.md](http-api.md) for the endpoints.
+
+## The agent's door
+
+Since 12-Sep-2026 an agent connected to the catalog can ask for a production, and only that.
+Four MCP tools — `panoma_apps`, `panoma_video`, `panoma_video_jobs`, `panoma_video_cancel` —
+over four routes under `/api/agent/`, told in [agent-channel.md](agent-channel.md) with the
+guards in front of each and in [http-api.md](http-api.md) with the bodies. What matters on
+this page is the line they keep, because it is this page's line: **the person installs,
+switches on and pays; an agent asks and follows.**
+
+- The agent's request is a `panoma_video_auto` job through the same `enqueueAppJob` the
+  production screen and `panoma video auto` use: the same closed field list, the same loopback
+  rule for a `url`, the same dedupe of identical live work, the same reservation of paid work
+  against the `app` budget before the row exists. A request that finds the cap spent is
+  refused with `app-budget-exhausted`, exactly as the screen's would be.
+- The model and the voice are never in the agent's body. They are the app's settings,
+  confirmed with the disclosure on the app's page, and every run reads them from there whoever
+  asked — so a run an agent asks for spends what the person switched on and nothing else. An
+  agent that sends `brain` or `voice` is told which setting that is and where it is chosen.
+- No install, no enable, no browser download, no provider switch, no `music` file: each is a
+  download or a disclosure the person accepts, or a path on this disk. `panoma_apps` answers
+  the state of each app and the person's next step in the setup's own order — the same sentence
+  the app's page puts under its title — and every refusal names the person's door rather than a
+  way round it.
+- The row keeps who asked as `requested_by`, the same column and the same word the `handoffs`
+  table keeps, and the job list on the app's page and the report on the production screen say
+  «asked by claude-code over MCP» when it was an agent. The dedupe key ignores it: the same
+  production asked by an agent and by the person is one job, and the row is whoever asked first.
+- What the agent reads of a run is the app's own words inside an `app` block
+  ([untrusted.md](untrusted.md)) — the stage sentences, the reasons a kind was set aside — and
+  the files of the cuts outside it, because the agent works on this machine and a cut it
+  cannot name is a cut it cannot show.
+
+The tests are the four `route.test.ts` under `apps/web/app/api/agent/apps` and `agent/video`,
+with a real catalog and a real agent key beside them; `apps/web/lib/agent-video.test.ts` for
+the readers and views; the video half of `packages/mcp/src/format.test.ts` for what the model
+reads; and `guard.test.ts` and `gates.test.ts`, which name the four doors so a fifth cannot
+open in silence.
 
 ## What a failure says
 
@@ -279,10 +317,12 @@ encoded preview. The opt-in HTTP test composes that local artifact with a real N
 using a separate `PANOMA_HOME`; it does not add a production registry override.
 
 What has deliberately not been measured, and who decides each of those, is a table of its own in
-[open-questions.md](open-questions.md): Windows above all, where nothing has yet run.
+[open-questions.md](open-questions.md). The manager's own suites have run on Windows since
+8-Sep-2026 (`apps.yml`); what is still measured nowhere is the end-to-end lab, which needs the
+app's real tarball and a product to film.
 
-Publication is separate from implementation. Until `@panoma/video` has its first authorized
-npm release, the normal registry install button cannot retrieve that package. Trusted npm
-publishing requires owner setup. Cross-platform CI and installation on Windows/Linux must
-pass before announcing those platforms as verified for this integration; local macOS
-checks alone do not establish that. `apps/site` is outside this change.
+Publication is separate from implementation, and it happened on 11-Sep-2026: `@panoma/video`
+0.9.0 was the first release on npm, 0.9.1 followed the same day, and the registry install
+button has retrieved the package since. The catalog carries no floor for the app's version
+beyond the protocol it speaks; what a release of the app changes is the app's to say, in its
+own repository. `apps/site` is outside this change.

@@ -1049,6 +1049,9 @@ async function rehomeMemory(
     await tx.update(t.servings).set({ projectId: heir }).where(eq(t.servings.projectId, row.id));
     await tx.update(t.launches).set({ projectId: heir }).where(eq(t.launches.projectId, row.id));
     await tx.update(t.runs).set({ projectId: heir }).where(eq(t.runs.projectId, row.id));
+    // Receipts hang off `project_id` with `set null` rather than a cascade, but the point is the
+    // same: a moved folder must not orphan what a person asked for from it.
+    await tx.update(t.handoffs).set({ projectId: heir }).where(eq(t.handoffs.projectId, row.id));
   }
 }
 

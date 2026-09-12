@@ -54,7 +54,7 @@ const NEXT = relative(
   dirname(createRequire(import.meta.url).resolve("next/package.json")),
 ).replace(/\\/g, "/");
 
-const PACKAGE_MANAGERS = ["@panoma/core", "@panoma/db", "@panoma/enrich", "@panoma/runner", "@panoma/ai", "@panoma/apps"];
+const PACKAGE_MANAGERS = ["@panoma/core", "@panoma/db", "@panoma/enrich", "@panoma/runner", "@panoma/ai", "@panoma/apps", "@panoma/handoff"];
 
 export default function config(phase: string): NextConfig {
   const dev = phase === PHASE_DEVELOPMENT_SERVER;

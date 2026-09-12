@@ -49,4 +49,6 @@ export const BRAND_ICONS: Record<string, IconType> = {
   // separates them is the label underneath, which says where you end up.
   "claude-app": SiClaude,
   "chatgpt-app": VscOpenai,
+  // The Codex app lives inside ChatGPT.app; the handoff screen names it by its own id.
+  "codex-app": VscOpenai,
 };

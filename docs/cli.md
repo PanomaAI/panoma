@@ -1,4 +1,4 @@
-# The terminal: twenty-three verbs that ask and render
+# The terminal: twenty-six verbs that ask and render
 
 This page tells how `apps/cli` is put together and what contract each verb has: which ones
 need the catalog up, which spend model, which leave the machine, which write to your disk,
@@ -35,9 +35,9 @@ implementations of the same security decision, and the second one is always the 
 forgets to check something. The same goes for `check`, which builds in a separate worktree,
 and for `run`, which installs.
 
-### The three that really do local work
+### The four that really do local work
 
-Three verbs are a façade over nothing: they read your disk, compute, and write themselves.
+Four verbs are a façade over nothing: they read your disk, compute, and write themselves.
 
 - **`panoma review [path]`** builds the file index, reads the design fingerprint and runs the
   mechanical critic, all with `@panoma/core` loaded into this process. No model, no browser,
@@ -49,14 +49,21 @@ Three verbs are a façade over nothing: they read your disk, compute, and write 
   process and with your permissions. It needs the catalog, but only for **reading**
   (`GET /api/md/context`): that no API writes the user's files at the client's request is a
   security decision, and it is told in [agents-md.md](agents-md.md).
+- **`panoma handoff`** reads the conversations Claude Code, Codex, OpenCode and Gemini CLI kept
+  on this disk through `@panoma/handoff`, and with `--to` writes **one new file** into the
+  target agent's own history, from this process and with your permissions, so that agent's
+  normal resume finds it. The catalog is asked only for what it alone has: the project roots
+  that group the list (the list works without them), the model behind `--digest model`
+  (refused before anything is written when the catalog is down), and the receipt afterwards,
+  best effort. The decision record is [handoff.md](handoff.md).
 
-And there is a fourth half-case, `panoma scan`, which analyzes locally: it only talks to the
+And there is a fifth half-case, `panoma scan`, which analyzes locally: it only talks to the
 catalog if you ask for `--save`, and it only leaves the machine if the version check is due
 that day.
 
-## The twenty-three verbs, and what each one needs
+## The twenty-six verbs, and what each one needs
 
-`grep -o 'command === "[a-z-]*"' apps/cli/src/index.ts | sort -u` gives twenty-three. To them
+`grep -o 'command === "[a-z-]*"' apps/cli/src/index.ts | sort -u` gives twenty-six. To them
 add bare `panoma`, which is not a verb but the absence of one: `parseArgs` returns flags with
 zero positionals and `index.ts` decides that this is the day's report.
 
@@ -87,15 +94,18 @@ already installed here.
 | `spend` | what the models cost today and in the last thirty days: one line per family as "read: 12 of 300 (factory)" with who decided the cap (factory · chosen on the Spend screen · the named variable decides, or is set and cannot be read · paused), the kinds no cap holds back, calls, tokens, unmetered calls and images, and money only once a rate is written; `--json` prints the whole receipt of `GET /api/spend`; the last line points to `/spend`, which is where caps and rates are written — see [budgets.md](budgets.md) | yes | no | no | no |
 | `twin` | `sources` · `allow` · `revoke` · `forget` · `mine` · `verdicts` · `distill` · `synthesize` · `taste` · `score` · `design` · `look` — see [twin.md](twin.md) | `sources`/`allow`/`revoke` no; the rest yes | `distill`, `synthesize` and `look` | depends on the provider | `allow`/`revoke` write `~/.panoma/twin.json` |
 | `memory` | `export <project>` — the project's memory as one versioned JSON document: its notes in every state, its decisions with their revision links, the owner's general decisions and the distiller's receipts — see [memory.md](memory.md) | yes | no | no | with `--out <file>` |
+| `handoff` | bare, the conversations your agents kept on this disk —«In this folder» first, then by project when the catalog answers, plain when it is down, and under a row that ended on a usage limit the ready line `panoma handoff <handle> --to codex`—; with a handle and `--to`, hands one over: `--tier full` (every turn, default), `compact` (digest + the last `--keep` turns) or `brief` (a document only; also what `cursor`, `copilot`, `aider`, `amp` and `goose` get); `--to bundle` writes the portable file, since 12-Sep-2026 through the redactor (every mark counted into `dropped.secrets`) and with mode 0600; `--dry-run` shows what travels and what stays; `--to` the same agent writes nothing —the conversation stays on this disk, because every store is per machine and never per account— and prints the person's own steps to continue it with the account they want: the agent's sign-out and sign-in commands (`SIGN_OUT` / `SIGN_IN`, never run), the resume line on the same file, on macOS the app's link under it (Claude.app lists per account, so the link is what adopts the conversation there), and two optional lines, the fork and `--to bundle --out <file>` as the copy outside every agent; the same agent with `--tier compact` does write, a shorter copy in the same store with its own id, and prints the sign-out and the sign-in above the copy's resume line; the same agent on its other surface (`--to claude-app` from a terminal conversation, `--to codex` from an app thread) is that same flow, both doors under the resume step; the list labels an app conversation «Claude (app)» / «Codex (app)» from the file's own marker; the source is never modified — see [handoff.md](handoff.md) | no, except `--digest model` and the receipt, which is best effort | only `--digest model` | no | yes: one file in the target agent's store, or a `.md` at `--out` |
 | `agent-key` | creates an agent key and, with `--install`, leaves it plugged in where that agent will read it | yes | no | no | with `--install` |
 | `hooks` | the state of the passive hooks; `--install` puts them in, `--remove` takes them out | no — it only writes the address inside the script | no | no | with `--install` and `--remove` |
 | `signal` | the `PreToolUse` hook: delivers the sleeping notes for the path about to be edited | yes, and if it is not there it keeps quiet | no | no | `~/.panoma/signal-seen.json` |
 
 Two things the table says without saying them. The first: **`signal` is not in the help**, and
 that is on purpose — it is a machine surface, Claude Code invokes it and nobody types it. The
-second: there are four places where the CLI writes the user's files without the catalog having
-to be alive —`hooks`, `md fix`, `ai use` and `ai key`—, and `hooks` is the strangest of the
-four, because **what it writes is the script that will call the catalog later**.
+second: there are five places where the CLI writes the user's files without the catalog having
+to be alive —`hooks`, `md fix`, `ai use`, `ai key` and `handoff`—, and `hooks` is the strangest
+of the five, because **what it writes is the script that will call the catalog later**.
+`handoff` is the only one that writes **inside another program's folder**: one new transcript
+in the target agent's own history, in that agent's own shape, never touching what was there.
 
 And a third, which is the one `memory export` adds: **it only works against the catalog of this
 machine, by design.** `GET /api/memory/export` asks for the operator key —the file carries the
@@ -142,15 +152,15 @@ problem is the same: you would have to choose on behalf of whoever typed it, and
 choose will do the opposite of what the other half of the command asked for. `--folder` with
 `--terminal` and `--install` with `--remove` get asked about instead of resolved.
 
-### The 31 flag tokens
+### The 42 flag tokens
 
-`KNOWN_FLAGS` has thirty-one, counting the short forms as tokens of their own. `-v` was
+`KNOWN_FLAGS` has forty-two, counting the short forms as tokens of their own. `-v` was
 already `--verbose`, so the short form for version is `-V`, as in npm.
 
 | token | what it does | who actually uses it |
 | --- | --- | --- |
-| `--json` | prints the raw analysis as JSON; with `spend`, the whole receipt of `GET /api/spend` | `scan`, `spend` |
-| `--out <file>` | writes that JSON to a file | `scan`, `memory export` |
+| `--json` | prints the raw analysis as JSON; with `spend`, the whole receipt of `GET /api/spend`; with `handoff`, one object and nothing else on stdout | `scan`, `spend`, `handoff` |
+| `--out <file>` | writes that JSON to a file; with `handoff`, where the document or the bundle goes | `scan`, `memory export`, `handoff` |
 | `--verbose` · `-v` | dependencies and health breakdown | `scan` |
 | `--duplicates` · `-d` | only the families of copies of the same project | `scan` |
 | `--save` | sends the result to the catalog | `scan`, `twin mine` |
@@ -173,7 +183,12 @@ already `--verbose`, so the short form for version is `-V`, as in npm.
 | `--project <path>` | only the sessions under that path | `twin mine` |
 | `--source <source>` | a single history instead of every allowed one | `twin mine`, `twin verdicts`, and also `twin allow`/`revoke` |
 | `--all` | with `open`, everything the project's plan lists, in order; without a saved plan the suggestion —which here ends with the first installed editor, because the browser's preferred destination lives in that browser— said in a dim line. Contradicts `--folder` and `--terminal`, and the parser says so. With `twin distill`, chains passes until the whole history has been read | `open`, `twin distill` |
-| `--dry-run` | stop at the estimate instead of spending; with `twin look` the estimate also says at what size the capture would travel, and why it would travel whole when it cannot be reduced | `twin distill`, `twin look` |
+| `--dry-run` | stop at the estimate instead of spending; with `twin look` the estimate also says at what size the capture would travel, and why it would travel whole when it cannot be reduced; with `handoff`, the preview —digest, what travels, what stays, size— and nothing written, nothing spent: `--to bundle --dry-run` writes no file and prints no bundle, only a dim line saying where it would go (or that it would print to stdout); `--digest model --dry-run` does not ask the catalog for the model digest, so no call of the `handoff` family is counted, and the preview carries the mechanical digest with a dim line saying so (and answers even with the catalog down, where the real command is refused); a document-only target previews `tier brief`, the tier the write records; and the same agent at the default tier, which writes nothing, previews what the real command prints —the numbered account steps— behind a dim line saying `--dry-run` changes nothing there, with `--json` answering the same `{ok: true, sameAgent: true, …}` object as the real command and no `dryRun` key (a script must not read its absence as a write). Until 12-Sep-2026 the bundle was written, the model call paid, `full` named and a fidelity table printed for a copy never written | `twin distill`, `twin look`, `handoff` |
+| `--to <agent>` | where the conversation continues: the plain words `claude` · `codex` · `opencode` · `gemini` · `cursor` · `copilot` · `aider` · `amp` · `goose`, the canonical ids, the desktop apps `claude-app` · `codex-app` (the same file the CLI target gets, written into the same store; only the door differs), or `bundle` for the portable file; a misspelling gets the nearest suggested, and the module checks it, not the parser, because the list lives in `@panoma/handoff`. An app target prints «Open it in Claude (app):» with the `open 'claude://resume?session=<id>'` line (Codex: `open 'codex://threads/<id>'`), the sentence for when the link does not answer, and «Or, in a terminal:» with the CLI resume line; off macOS it says the app exists only there and prints the CLI line alone. The same agent on its own surface and no `--target-home` —`--to claude` from a Claude Code conversation— writes nothing either at the default tier: the store is per machine and never per account, so it prints the numbered steps for the person to run —sign out (`claude auth logout`, or `/logout` inside `claude`), sign in with the account to continue with (`claude auth login`, or `/login`), resume the same file, on macOS the app link under it, then the optional fork and the optional `--to bundle --out <file>` copy— and exits 0; panoma runs none of them and holds no credential. With `--tier compact` it writes the shorter copy into the same store and prints the two account lines above «Resume it:»; `--json` then carries them as `account`. The same agent on its other surface —a Claude Code conversation `--to claude-app`, or a Codex app thread `--to codex`— gets the same steps: the two surfaces read one store, and both doors are printed under the resume step | `handoff` |
+| `--tier <tier>` | `full` · `compact` · `brief`; checked in the parser like `--isolation`, because a misspelled tier falling to a default would carry a different amount than asked. `compact` is also what lets `--to` name the source's own agent: a shorter copy in the same store, for another account | `handoff` |
+| `--digest <by>` | `panoma` (mechanical, free, default) · `model` (the catalog asks the model, family `handoff`); checked in the parser, because one of the two spends. With the catalog down, `model` prints the error path every catalog command shares —`unreachable(api)`, which names the `--api` address tried and says `panoma up`— with the one way out that is this flag's own in a dim line under it: leave `--digest` out for the mechanical one | `handoff` |
+| `--keep <n>` | with `--tier compact`, how many of the newest turns travel whole (12 by default); a value that is not a whole number above zero is an error, like `--limit` | `handoff` |
+| `--target-home <dir>` | a second home of the same agent —another `CLAUDE_CONFIG_DIR`, another `CODEX_HOME`—, absolute and already holding the store; CLI only, the web never takes a path | `handoff` |
 | `--help` · `-h` | the help, and it beats anything else | global |
 | `--version` · `-V` | the bare number, like node and npm | global |
 
@@ -236,6 +251,7 @@ that says what to do.
 | `spend` | the receipt printed, empty day included | catalog down, or `/api/spend` answers badly |
 | `twin` | whatever each subcommand asks for | an unknown subcommand, a source that does not exist, a missing source, catalog down |
 | `memory export` | the document printed, or written with `--out` | no `export` subcommand, no slug or an extra argument; catalog down; a slug the catalog does not know (404); from another host, or from the network without the operator key (403) |
+| `handoff` | the list, empty included; the preview; the file written — **and also when the catalog did not record the receipt**, said in a dim line; the same-agent steps and the other-surface door, which write nothing at `full`, and the shorter same-agent copy at `compact`, with the account lines above its resume line | a second positional; a target word that does not exist (with the nearest suggested); a handle that matches nothing or more than one conversation (the candidates named); no handle and nothing in this folder, or two agents there within the same hour; `--digest model` with the catalog down or saying no, before anything is written; every engine fault (`same-store`, `target-store-missing`, `cwd-missing`, `too-large`, `nothing-to-carry`, `bundle-invalid`, the disk's own); and an OpenCode import that ended with an error, the file written and the step left for you |
 | `hooks` | status, installed, or removed — **and also with unreadable Claude Code settings**: it warns in yellow, leaves the git hook in place and exits 0 | there is no git repository; there is somebody else's `post-commit`; the hooks cannot be merged with the settings that were already there |
 | `signal` | **always** | — |
 

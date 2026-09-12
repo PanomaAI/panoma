@@ -71,6 +71,9 @@ importers:
       '@panoma/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@panoma/handoff':
+        specifier: workspace:*
+        version: link:../../packages/handoff
 
   apps/site:
     dependencies:
@@ -120,6 +123,9 @@ importers:
       '@panoma/enrich':
         specifier: workspace:*
         version: link:../../packages/enrich
+      '@panoma/handoff':
+        specifier: workspace:*
+        version: link:../../packages/handoff
       '@panoma/mcp':
         specifier: workspace:*
         version: link:../../packages/mcp
@@ -215,6 +221,12 @@ importers:
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(@electric-sql/pglite@0.5.5)(gel@2.2.0)(postgres@3.4.9)
+
+  packages/handoff:
+    dependencies:
+      '@panoma/core':
+        specifier: workspace:*
+        version: link:../core
 
   packages/mcp:
     dependencies:

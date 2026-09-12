@@ -425,7 +425,7 @@ panoma hooks --install
 (Preceded, the first time, by scanning a folder: `npx panoma up ~/Desktop`.)
 
 The first registers the agent and writes the MCP configuration that agent reads — with it
-come the nine tools, the briefing with the memory inside, and the proposal channel. The
+come the fifteen tools, the briefing with the memory inside, and the proposal channel. The
 second installs the hooks: the one that records the activity without the model having to
 remember to, and the `PreToolUse` one that delivers sleeping notes for supported editing
 tools. Other clients retrieve them by supplying `files` to `panoma_context`. After

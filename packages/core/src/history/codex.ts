@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { createInterface } from "node:readline";
 import { isRecord } from "../fs-utils";
+import { HANDOFF_CODEX_ORIGINATOR } from "../handoff-marker";
 import { redactQuote } from "../quotes";
 import {
   detectSignals,
@@ -182,6 +183,13 @@ const TOOL_OUTPUT = '"function_call_output"';
  * `"custom_tool_call_output"`, and the output is the thick line that should not be opened.
  */
 const CUSTOM_CALL = '"custom_tool_call"';
+
+/**
+ * The last line `packages/handoff` writes into a rollout, and where its carried prefix ends.
+ * Looked for only while inside a copy of ours: the desktop app writes the same event every
+ * time it loads a thread, so outside a copy it says nothing and costs nothing to skip.
+ */
+const THREAD_SETTINGS = '"thread_settings_applied"';
 
 /**
  * How many different paths are stored per reaction. The same limit and for the same reason as in
@@ -433,6 +441,23 @@ async function mineRollout(
     ? undefined
     : new NarrativeCapture(Math.max(0, limit - narratives.length), options.cwdPrefix);
   capture?.begin(sessionId);
+  /*
+    The header decides whether the session is the person's or panoma's, by the stamp its writer
+    put there and never by the text of a turn: a handed-off copy (`packages/handoff`) carries
+    `originator: "panoma"` in its `session_meta`, where Codex writes its client's name. From
+    that header to the `thread_settings_applied` line the writer puts last, the records are
+    the carried prefix: its user turns were already mined from the source file and are left
+    alone; its agent messages still become the `delivery`, because the first thing the person
+    types after `codex resume <id>` —which appends to this same file— reacts to exactly that,
+    and reading it is what the handoff is for. Same rule as the other reader. A copy from the
+    afternoon of 11-Sep-2026, before the tail line existed, reads as carried to its end, which
+    is what every copy did before; none is on the disk this was measured on.
+    Until 12-Sep-2026 the mark was the first two words of the provenance line on the first
+    `user_message`, and the file was dropped whole, the person's turns after the resume with
+    it; and a conversation of theirs that opened with a pasted `brief` —a document whose first
+    line is that same provenance line— vanished from the twin entirely.
+   */
+  let carried = false;
 
   try {
     for await (const line of lines) {
@@ -443,7 +468,8 @@ async function mineRollout(
         !scan.includes(SESSION_META) &&
         !scan.includes(TURN_CONTEXT) &&
         !scan.includes(USER_MESSAGE) &&
-        !scan.includes(AGENT_MESSAGE)
+        !scan.includes(AGENT_MESSAGE) &&
+        !(carried && scan.includes(THREAD_SETTINGS))
       ) {
         // The fat ones are these, and they are counted without opening them. See the header: the
         // length limit comes after sorting just so as not to lose sight of them.
@@ -511,7 +537,10 @@ async function mineRollout(
         // one.
         window.clear();
         capture?.begin(sessionId);
-        sessions.add(sessionId);
+        // A copy of ours adds no session until the person's own turn arrives after its prefix.
+        carried = payload["originator"] === HANDOFF_CODEX_ORIGINATOR;
+        if (carried) stats.handedOff += 1;
+        else sessions.add(sessionId);
         continue;
       }
 
@@ -525,6 +554,11 @@ async function mineRollout(
 
       if (type !== "event_msg") continue;
       const kind = payload["type"];
+      // The writer's last line: what follows, Codex wrote for the person after the resume.
+      if (carried && kind === "thread_settings_applied") {
+        carried = false;
+        continue;
+      }
       // Here also arrive `agent_reasoning` and `token_count`, which are from the good channel and
       // are neither what you saw nor what you wrote.
       if (kind !== "user_message" && kind !== "agent_message") continue;
@@ -537,6 +571,8 @@ async function mineRollout(
         continue;
       }
 
+      // A carried user turn: the person said it at the source, where it was read.
+      if (carried) continue;
       // Rule 5, and first of all: if the session is from a sub-agent, this turn is a copy of
       // something you already said in the parent thread.
       if (subagent) {

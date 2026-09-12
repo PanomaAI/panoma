@@ -207,6 +207,7 @@
 
   .project-subnav {
     width: calc(100vw - 28px);
+    flex-wrap: nowrap;
     gap: var(--space-12);
     overflow-x: auto;
   }

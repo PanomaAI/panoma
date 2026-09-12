@@ -17,6 +17,8 @@ export type AppJob = {
   progress?: { stage?: string; progress?: number; total?: number; message?: string } | null;
   result?: unknown; error?: string | null; appVersion?: string;
   requestedAt?: string; finishedAt?: string | null;
+  /** The agent that asked over MCP, by its key's name; absent when a person did. */
+  requestedBy?: string | null;
 };
 export type AppRequirement = {
   id: string; kind?: string; present?: boolean; version?: string; approxMB?: number;

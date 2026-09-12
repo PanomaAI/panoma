@@ -336,6 +336,11 @@ your shell's PATH and that is the case that always breaks.
   store identifier — but that is opening the application, not opening the project with it, and
   it isn't what the button says. **Handing them the path would be inventing a promise they
   never made.**
+- **The handoff's app doors, for the same reason.** «Claude (app)» and «Codex (app)» are
+  targets only where the `.app` bundles exist: `resumeInApp` in
+  `packages/handoff/src/fidelity.ts` answers nothing off `darwin`, so on Linux and Windows a
+  handoff to those agents is the terminal's, and the receipt carries the terminal line
+  (11-Sep-2026, [handoff.md](handoff.md)).
 
 ## The three things each system does its own way
 

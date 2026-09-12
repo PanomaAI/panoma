@@ -53,7 +53,7 @@ const MODALES = FICHEROS.filter((ruta) => leer(ruta).includes('aria-modal="true"
 const PALETA = leer(join(AQUI, "command-palette.tsx"));
 
 describe("los diálogos modales", () => {
-  it("son los cinco de siempre, y si aparece un sexto hay que mirarlo", () => {
+  it("son los seis de siempre, y si aparece un séptimo hay que mirarlo", () => {
     /*
       The fourth arrived on 7-Sep-2026: the plan of "open everything", which lists what one click
       opens and lets the owner reorder it. It was looked at: focus fenced, Escape closes, and
@@ -64,10 +64,17 @@ describe("los diálogos modales", () => {
       program they had never heard of, with no sentence saying why. It was looked at too: the panel
       itself takes the focus —there is nothing inside worth landing on before it has been read—,
       Escape closes, and the two actions are a button and a link, both with a word in them.
+
+      The sixth on 11-Sep-2026: the handoff panel, which hands a conversation to another agent
+      or prints the steps to resume it in the same one. Looked at: the panel takes the focus on
+      opening, Tab is fenced inside it, Escape and the curtain close it, every radio and the
+      checkbox travel inside a `<label>`, the only icon-only control is the close button and it
+      carries its name, and the primary button is off until the preview has loaded.
      */
     expect(MODALES.map(corto).sort()).toEqual([
       "components/command-palette.tsx",
       "components/create-video.tsx",
+      "components/handoff-panel.tsx",
       "components/open-all.tsx",
       "components/project-actions.tsx",
       "components/share-panel.tsx",

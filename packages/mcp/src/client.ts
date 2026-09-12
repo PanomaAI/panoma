@@ -5,41 +5,60 @@ import { readAccessKey } from "@panoma/core";
 const run = promisify(execFile);
 
 /**
- * The network key of the catalog of this machine, if there is one.
+ * The two keys of the catalog of this machine, if there are any: the network one and the
+ * operator's.
  *
  * With `panoma up --network` the catalog requests credentials from **everyone**, including the
  * local loop — because from the outside it’s possible to fake coming from it — and this client
  * only sent its `Authorization: Bearer` with the agent key, which is a different thing. The
  * middleware would remove the `Bearer`, compare it against the network key, it didn’t match, and
  * returned 401 before `requireAgent` could even exist: opening the port to look at the catalog
- * from a mobile device would disconnect all agents on the same machine.
+ * from a mobile device would disconnect all agents on the same machine. That is `x-panoma-key`.
  *
- * It comes out of `~/.panoma/access.json`, which has permissions 0600. This process runs on the
- * same machine as the catalog —it is a child via stdio of the agent— so it can read it, and the
- * neighbor on the wifi cannot.
+ * `x-panoma-operator` is the second one, and it opens a different door. The network key lets you
+ * look; the operator key lets you order this machine to do something, and it never travels in the
+ * link the phone gets (`packages/core/src/access.ts`). Two of the routes this client calls —
+ * `/api/agent/conversations` and `/api/agent/handoff` — read the person's own conversation
+ * history off the disk and write into another agent's, and the family that owns those stores
+ * (`/api/handoff`) is gated by the operator key: the same doctrine, so the same header, and the
+ * agent key comes after it for attribution. The other routes ignore the header.
  *
- * **Only to the local loop.** `unsafeDestination` also allows private network addresses, and
- * nothing is sent there: `PANOMA_API` comes from a configuration file without special permissions
- * that is written inside the user's repositories, and sending the network key to the address that
- * this file specifies would be giving it away to anyone who manages to edit a line. A remote
- * catalog is configured manually.
+ * Both come out of `~/.panoma/access.json`, which has permissions 0600. This process runs on
+ * the same machine as the catalog —it is a child via stdio of the agent— so it can read it, and
+ * the neighbor on the wifi cannot.
+ *
+ * **Only to the local loop, both of them.** `unsafeDestination` also allows private network
+ * addresses, and nothing is sent there: `PANOMA_API` comes from a configuration file without
+ * special permissions that is written inside the user's repositories, and sending either key to
+ * the address that this file specifies would be giving it away to anyone who manages to edit a
+ * line — and the operator key, on top of that, would be handing another machine the right to
+ * command in this one. It is the rule `apps/cli/src/catalog-fetch.ts` follows, mirrored: a
+ * remote catalog is configured manually, and a remote catalog can never hand off, because the
+ * stores live on the catalog's own disk.
  */
-let network: Promise<string> | undefined;
+interface LocalKeys {
+  key: string;
+  operator: string;
+}
 
-function networkKey(api: string): Promise<string> {
+const NO_KEYS: LocalKeys = { key: "", operator: "" };
+
+let stored: Promise<LocalKeys> | undefined;
+
+function localKeys(api: string): Promise<LocalKeys> {
   let host: string;
   try {
     host = new URL(api).hostname.replace(/^\[|\]$/g, "").toLowerCase();
   } catch {
-    return Promise.resolve("");
+    return Promise.resolve(NO_KEYS);
   }
-  if (!LOOPBACK.has(host)) return Promise.resolve("");
-  network ??= readAccessKey()
-    .then((stored) => stored?.key ?? "")
-    // Without a file there is no key, and it is not an error: it is the normal `panoma up`, without
-    // an open port, where the catalog does not ask for any.
-    .catch(() => "");
-  return network;
+  if (!LOOPBACK.has(host)) return Promise.resolve(NO_KEYS);
+  stored ??= readAccessKey()
+    .then((found) => ({ key: found?.key ?? "", operator: found?.operator ?? "" }))
+    // Without a file there are no keys, and it is not an error: it is the normal `panoma up`,
+    // without an open port, where the catalog does not ask for any.
+    .catch(() => NO_KEYS);
+  return stored;
 }
 
 /**
@@ -138,6 +157,49 @@ function taskPath(taskId: string): string {
 }
 
 /**
+ * A conversation id as `panoma_conversations` lists it, or nothing.
+ *
+ * `<agent>:<sessionId>`: letters, digits, `_`, `-` and `.` on both sides of one colon, and no more
+ * than 200 characters. It travels in a body, not in a path, so it cannot choose a route the way a
+ * task id could; the check is here for the same reason all the same — what the agent takes for an
+ * id may come from a README or from somebody else's commit subject — and so that the catalog is
+ * asked only with something shaped like an id. The route checks the id against that agent's own
+ * shape afterwards; this is the coarse net.
+ */
+const CONVERSATION_ID = /^[A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+$/;
+
+export function checkConversationId(id: string): string {
+  if (id.length > 200 || !CONVERSATION_ID.test(id)) {
+    throw new Error(
+      `“${id.slice(0, 60)}” is not shaped like a conversation id. Ids come from ` +
+        `panoma_conversations as agent:sessionId and are copied verbatim; do not build one out of other text.`,
+    );
+  }
+  return id;
+}
+
+/**
+ * What the catalog answered when it refused, with the three fields its routes agree on.
+ *
+ * `error` is a sentence on most routes and a **code** on the handoff ones (`same-store`,
+ * `ambiguous-id`…), `detail` is what the code was about — the two candidate ids, the id that was
+ * not found — and `hint` is the one English sentence a route adds for the model. The message
+ * keeps the shape the tools have always shown; the fields exist so that a formatter can turn a
+ * code into a sentence and keep the detail, which the message alone dropped.
+ */
+export class CatalogError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string | undefined,
+    readonly detail: string | undefined,
+    readonly hint: string | undefined,
+  ) {
+    super(`${code ?? `HTTP ${status}`}.${hint ? ` ${hint}` : ""}`);
+    this.name = "CatalogError";
+  }
+}
+
+/**
  * Catalog client.
  *
  * The MCP server **does not touch the database**: it talks to the API just like the CLI. It is the same
@@ -174,14 +236,15 @@ export class CatalogClient {
 
     let response: Response;
     try {
-      const access = await networkKey(this.api);
+      const local = await localKeys(this.api);
       response = await fetch(new URL(path, this.api), {
         method,
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${this.key}`,
-          /* The network gate, when it is closed. See `networkKey`. */
-          ...(access ? { "x-panoma-key": access } : {}),
+          /* The network gate, when it is closed, and the operator's. See `localKeys`. */
+          ...(local.key ? { "x-panoma-key": local.key } : {}),
+          ...(local.operator ? { "x-panoma-operator": local.operator } : {}),
           /*
             The catalog is bilingual and decides for this header. Without it, it inherits the
             language of whoever is in front —or of its owner's browser— and the agent receives the
@@ -238,9 +301,8 @@ export class CatalogClient {
 
     const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
     if (!response.ok) {
-      const detail = typeof payload["error"] === "string" ? payload["error"] : response.statusText;
-      const hint = typeof payload["hint"] === "string" ? ` ${payload["hint"]}` : "";
-      throw new Error(`${detail}.${hint}`);
+      const text = (field: string) => (typeof payload[field] === "string" ? (payload[field] as string) : undefined);
+      throw new CatalogError(response.status, text("error") ?? (response.statusText || undefined), text("detail"), text("hint"));
     }
 
     return payload as T;

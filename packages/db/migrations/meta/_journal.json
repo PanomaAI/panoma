@@ -421,6 +421,34 @@
       "when": 1788868388163,
       "tag": "0059_desktop_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1789153513179,
+      "tag": "0060_handoffs",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1789177141988,
+      "tag": "0061_handoff_surface",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1789185821383,
+      "tag": "0062_handoff_requested_by",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1789198197369,
+      "tag": "0063_app_job_requested_by",
+      "breakpoints": true
     }
   ]
 }

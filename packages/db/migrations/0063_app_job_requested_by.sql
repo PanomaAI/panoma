@@ -1,0 +1,1 @@
+ALTER TABLE "app_jobs" ADD COLUMN "requested_by" text;

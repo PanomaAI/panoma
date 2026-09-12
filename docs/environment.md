@@ -41,10 +41,12 @@ and two processes over the same data directory corrupt it. For a second test ser
 this one and `PANOMA_DIST`, because two `next dev` cannot share an output directory either.
 
 What `DATABASE_URL` switches off is the watcher and the
-fifteen API routes that need the user's disk —`/api/check`, `/api/rescan`, `/api/md/apply`, `/api/open`, `/api/disk`,
-`/api/roots`, `/api/hooks`, the enrollment at `panoma_context` time and the rest—, each one
-with its reason said out loud in its own file. The list comes out of
-`grep -rl DATABASE_URL apps/web/app/api`, which is the only way it does not go stale here.
+API routes that need the user's disk —`/api/check`, `/api/rescan`, `/api/md/apply`, `/api/open`, `/api/disk`,
+`/api/roots`, `/api/hooks`, the whole handoff family with its two agent-channel doors, the
+enrollment at `panoma_context` time and the rest—, each one with its reason said out loud in
+its own file. The list comes out of
+`grep -rl DATABASE_URL apps/web/app/api --include=route.ts`, which is the only way it does not
+go stale here; on 12-Sep-2026 it named route files to the number of twenty-four.
 
 One thing it does **not** switch off, since 6-Sep-2026, and it lives in `apps/web/lib` and not
 in a route: the sentinel patrol that runs before a memory delivery is decided by the disk, not
@@ -90,9 +92,10 @@ around: the port can be opened with a network key and no operator key, and there
 key" does not mean "I am at home", it means the phone that came in with the network one is
 indistinguishable from the owner. Returning `undefined` left open to that phone every route
 that runs something on this machine. **Exactly how many there are is not written down
-anywhere trustworthy**: today `grep -rl 'localOperatorOnly(' --include=route.ts apps/web/app/api`
-returns eighteen route files, and [guards.md](guards.md) lists the twenty-two handlers inside
-them. The living list is that grep, not a figure typed by hand.
+anywhere trustworthy**: on 12-Sep-2026 `grep -rl 'localOperatorOnly(' --include=route.ts apps/web/app/api`
+returned route files to the number of thirty-one —the two agent-channel doors of the handoff
+among them, where that guard stands ahead of the agent key—, and [guards.md](guards.md) lists
+the handlers inside them. The living list is that grep, not a figure typed by hand.
 
 ## The ones for the agent channel
 
@@ -119,15 +122,15 @@ and the per-project ones that `--install` writes, `<project>/.mcp.json` and
 
 ## The brakes
 
-The seven budgets count **calls and not tokens**: with a `cli` provider —a session agent— no
+The nine budgets count **calls and not tokens**: with a `cli` provider —a session agent— no
 tokens come back to count, and a token brake would let through untouched precisely the case
 that runs away most easily, which is a loop of a thousand calls that do not publish what they
-spend. The seven share the same contract when they are read: empty or unreadable falls back to
+spend. The eight share the same contract when they are read: empty or unreadable falls back to
 the factory value and **never** to "no limit", because when a brake fails it has to fail on the
 braking side. Zero is valid and switches that organ off entirely, which is a legitimate answer
 and a different one from having written nothing.
 
-Since 6-Sep-2026 none of them is read by a parser of its own. All seven go through
+Since 6-Sep-2026 none of them is read by a parser of its own. All eight go through
 `resolveCap()` in `apps/web/lib/spend-settings.ts` —`capFor(family)` at request time, with the
 variable named in `BUDGET_ENV`— and **the variable is no longer the only control**: the
 `/spend` screen writes a cap per family into `~/.panoma/spend.json`, and the precedence is the
@@ -147,12 +150,13 @@ rest —the file, the pause, the rates— is in [budgets.md](budgets.md).
 | `PANOMA_REHEARSE_BUDGET` | `capFor("rehearse")` in `apps/web/lib/spend-settings.ts`, asked by the same `runRehearsal` | 20 rehearsals a day | What the owner's Decision Lab may draft per day, apart from the double's `ask` because one morning of rehearsals stranded the day's `panoma_ask` questions in `drafting`. On overflow, `429` from `POST /api/twin/rehearse`; the evidence preview is free. With `0`, the Lab still shows what it would have cited and drafts nothing. |
 | `PANOMA_EPISODE_BUDGET` | `capFor("episodes")` in `apps/web/lib/spend-settings.ts`, asked by `apps/web/lib/episode-learning.ts` | 20 calls a day | What decision-memory extraction may spend turning captured narratives into episodes: at most two calls per request and twelve records per call, so at the factory value the day reads at most 240 records. On overflow, `429` from `POST /api/twin/episodes/learn`; the dry run is free and says how many calls are left. With `0`, extraction is off and the owner form still records decisions, because it calls nobody. |
 | `PANOMA_CARD_BUDGET` | `capFor("card")` in `apps/web/lib/spend-settings.ts`, asked by `app/api/describe/route.ts` and `app/api/md/review/route.ts` | 100 calls a day | The two buttons of the project card, `describe` and `review`, under one cap: they are one gesture repeated, and a catalog of 76 projects described once is the legitimate ceiling of a day, an order of magnitude under a loop. On overflow both routes answer `429` with `{ error, hint }` naming the Spend screen and this variable, and the saved answer of an unchanged project is still returned for free (`cached: true`). There is no dry run. |
+| `PANOMA_HANDOFF_BUDGET` | `capFor("handoff")` in `apps/web/lib/spend-settings.ts`, asked by `app/api/handoff/route.ts` when the body says `digestBy: "model"` and by `app/api/handoff/digest/route.ts` | 10 calls a day | The model-written summary of a conversation about to be handed off: one call per handoff, two when the first answer was cut. It is the one call that sends a whole private transcript —redacted and wrapped— to a provider, which is why the cap is the smallest of the nine and why the box is off by default. On overflow both routes answer `429` with `{ error, hint }` naming the Spend screen and this variable, and nothing is written: without the box the same handoff goes through with the mechanical digest, which costs nothing. With `0`, the box on the screen is disabled and `--digest model` is refused before anything is written. The agent channel never asks for it: `POST /api/agent/handoff` has no `digestBy` and refuses a body that carries one, so nothing an agent orders counts here. |
 | `PANOMA_CUARENTENA_DIAS` | `quarantineDays()` in `packages/enrich/src/published.ts:70` | 3 days | How long a version has to have been published before it is proposed: that is where supply-chain compromises show up, and they are almost always pulled within the first day or two. With `0` quarantine is off and the date is not even consulted. `panoma run --security` never blocks on quarantine: it warns and carries on. |
 
-Quarantine is the only one of the eight that does not share the read contract of the other
-seven, and it is worth knowing: it is read with `Number.parseInt`, so a negative value or one
+Quarantine is the only one of the nine that does not share the read contract of the other
+eight, and it is worth knowing: it is read with `Number.parseInt`, so a negative value or one
 that does not start with a digit falls back to the factory 3, but `4.9` does not fall back —
-it is truncated to 4. The other seven demand an integer with `Number.isInteger` and reject
+it is truncated to 4. The other eight demand an integer with `Number.isInteger` and reject
 anything else.
 
 **`PANOMA_CUARENTENA_DIAS` is the only variable in the whole repository with a Spanish name**,
@@ -260,6 +264,7 @@ what regenerates on its own can be deleted without thinking, and what does not, 
 | `watcher.jsonl` | The watcher's journal, one line per event. In memory 20 are kept; here, all of them. A half-written line from a power cut is ignored on reading without losing the rest. | Yes, and it is not rotated either. |
 | `signal-seen.json` | Which sleeping notes were handed to each session, so as not to re-inject the same signal on every edit under its zone. At most 20 sessions. | Yes. It is the only file that builds its path by hand instead of with `panomaPath`, though it honors `PANOMA_HOME` all the same. |
 | `assignments/` | The assignment given to an agent and its launcher. Directory `0700`, the assignment `0600` and the script `0700`. Outside the project because it is not the project's code. | Yes. |
+| `handoff/` | The documents of a handoff at tier `brief`, or to an agent that cannot resume a written conversation: `<agent>-<handle>-<date>.md`, `0600`, the digest and the last turns with every secret masked, to paste as the first message somewhere else. Written by `POST /api/handoff`, by `POST /api/agent/handoff` when an agent orders a `brief` or a document-only target, and by `panoma handoff` only where `--out` points — without it the terminal prints the document to stdout and writes nothing here. | Yes: a document is derived from a conversation that is still in its agent's store, and the same handoff writes it again. |
 | `open/` | The scripts that open a terminal: `agent-<provider>-<hash>` for an agent and `terminal-<hash>` for the terminal step of «Open everything» when it carries a command. Both are named by the folder they open —two projects launching within a second used to overwrite each other's script— with the extension each system knows how to run: `.command` on macOS, `.ps1` on Windows (with a byte-order mark, or PowerShell 5.1 reads a path with an accent as ANSI), `.sh` on Linux. `0700` on macOS and Linux; on Windows Node ignores the mode and the file inherits the profile's permissions. | Yes. |
 | `work/` | The worktrees of the runs, **only** when the run is going to happen in a container; in every other case they go to `tmpdir()`. Opposite requirements: the container needs the worktree under the home because the VMs do not mount `/var/folders`, and the macOS sandbox needs it outside because it denies the whole home. | Yes, and the worktree is always destroyed in the `finally`. |
 | `on-boot.cmd` | Windows only: the wrapper that runs the logon task, written with `\r\n` and with the PATH of the day of installation inside it. It exists so that `schtasks` only has to know one path. See [platforms.md](platforms.md). | No: `panoma up --on-boot` writes it and `schtasks /Delete` takes it away. |
@@ -267,6 +272,32 @@ what regenerates on its own can be deleted without thinking, and what does not, 
 What is **not** here: nothing belonging to the projects. The screenshot inbox lives in
 `.panoma/shots/` inside each repository, and not in this folder, because the agent works with
 the project in front of it and knows nothing about panoma's home.
+
+## The files panoma writes outside your projects and outside its own folder
+
+There is exactly one thing panoma writes into a folder that is neither a project nor
+`~/.panoma/`: a handed-off conversation, into the store of the agent that will resume it. It
+is the whole point of the handoff —the target's own `--resume` has to find the file— and it
+is the one place where being precise about paths is the guarantee. Every write is a **new
+file with a fresh id**; the source is never modified; the file goes down as `.panoma-<id>.tmp`
+and is renamed into place; and **never any other file in those folders**: not an index, not a
+settings file, not a credential (`packages/handoff/src/no-credentials.test.ts` sweeps the
+package for the names of those files, and `no-network.test.ts` takes `child_process` away
+from it). The paths honour the same variables the agents honour.
+
+| agent | where the file goes | what it is |
+| --- | --- | --- |
+| Claude Code | `$CLAUDE_CONFIG_DIR/projects/<slug>/<uuid>.jsonl`, default `~/.claude/projects/`; the slug is the folder's absolute path with every character outside `[A-Za-z0-9]` turned into `-` | one JSON record per line: a `custom-title` record, then `user` and `assistant` records chained by `parentUuid`, one assistant record per content block, tool calls and results balanced; a `compact_boundary` record plus a summary user record when a digest travels |
+| Codex CLI | `$CODEX_HOME/sessions/YYYY/MM/DD/rollout-<local timestamp>-<uuid>.jsonl` (the machine's local time, the way Codex names its own), default `~/.codex/sessions/`, and one line appended to `$CODEX_HOME/session_index.jsonl` (`{id, thread_name, updated_at}`) so the picker shows the title | a `session_meta` line with `originator: "panoma"`, then `response_item` messages and the `event_msg` lines the picker needs for its preview, tool calls and results as bracketed text notes, and last a `thread_settings_applied` line the desktop app needs, stamping the person's own `config.toml` —model, effort, `approval_policy`, `sandbox_mode` as the profile Codex writes for it— with Codex's defaults where the file says nothing |
+| OpenCode | `$XDG_DATA_HOME/opencode/panoma-import-<ses_…>.json`, default `~/.local/share/opencode/`, next to `opencode.db` | the envelope `{info, messages: [{info, parts}]}` that `opencode import` reads; panoma never writes `opencode.db` itself — the import is OpenCode's own door, run by the operator route when OpenCode is installed, left as a step for the person otherwise, and never run on an agent's order: the agent channel answers the step and starts nothing |
+| Gemini CLI | `~/.gemini/tmp/<project id>/chats/session-<YYYY-MM-DDTHH-MM>-<id8>.jsonl`; the project id is the slug `~/.gemini/projects.json` registers for that folder, else `sha256(folder)` | the metadata line (`sessionId`, `projectHash`, `startTime`, `lastUpdated`, `kind: "main"`), then `user` and `gemini` records and a `{"$set": {"summary"}}` line for the title |
+
+Reading is narrower still: the package opens only the transcript files above, Claude's
+offloaded `tool-results/*.txt`, Codex's `session_index.jsonl` and the two top-level keys of
+its `config.toml` (the person's own model and effort, stamped on the copy), OpenCode's `opencode.db`
+read-only (or its legacy `storage/session|message|part/**`) and Gemini's `projects.json` —
+the closed list is `MAY_OPEN` in `packages/handoff/src/stores/`. The record is
+[handoff.md](handoff.md).
 
 ## What it doesn't do / Known limits
 

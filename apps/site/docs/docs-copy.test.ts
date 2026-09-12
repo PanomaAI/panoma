@@ -44,6 +44,7 @@ describe("docs copy is English and matches the shipped CLI", () => {
       "catalog",
       "day",
       "agents",
+      "handoff",
       "memory",
       "twin",
       "maintain",
@@ -70,6 +71,7 @@ describe("docs copy is English and matches the shipped CLI", () => {
       "09",
       "10",
       "11",
+      "12",
     ]);
   });
 
@@ -172,7 +174,7 @@ describe("docs copy is English and matches the shipped CLI", () => {
       "utf8",
     );
     const total = [...source.matchAll(/registerTool\(\s*"([a-z_]+)"/g)].length;
-    const words = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+    const words = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen"];
     const expected = words[total - 1];
     const strings = [...collectStrings(DOCS_COPY), ...DOCS_COMMANDS.map((block) => block.body)];
     for (const line of strings) {

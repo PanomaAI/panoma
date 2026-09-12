@@ -12,6 +12,7 @@ export const DOCS_NAV = [
   { id: "catalog", label: "Catalog" },
   { id: "day", label: "Your day" },
   { id: "agents", label: "Agents" },
+  { id: "handoff", label: "Handoff" },
   { id: "memory", label: "Memory" },
   { id: "twin", label: "Twin" },
   { id: "maintain", label: "Maintain" },
@@ -162,7 +163,25 @@ export const DOCS_COMMANDS: DocsCommandBlock[] = [
     verb: "agent-key",
     command: 'panoma agent-key "Claude Code" --install',
     title: "Connect an agent",
-    body: "Creates a key, prints it once, and writes the config where that agent reads it. The agent then sees the nine catalog tools. Or press Connect on the Agents page and skip the terminal.",
+    body: "Creates a key, prints it once, and writes the config where that agent reads it. The agent then sees the fifteen catalog tools. Or press Connect on the Agents page and skip the terminal.",
+  },
+  {
+    verb: "handoff",
+    command: "panoma handoff",
+    title: "The conversations on this disk",
+    body: "What your agents kept, newest first and grouped by project: the agent, the handle, the title, when it last moved, and whether it ended on a usage limit. Read from the agents' own stores — Claude Code, Codex CLI, OpenCode, Gemini CLI, and the two desktop apps on macOS — in process and on this machine. Nothing is ingested by looking.",
+  },
+  {
+    verb: "handoff",
+    command: "panoma handoff --to codex",
+    title: "Continue it in another agent",
+    body: "The newest conversation in this folder, written into Codex's own history with a fresh id, so its normal resume finds it as one of its own. The original is untouched. --tier compact sends the digest and the newest turns instead of every one; --dry-run shows what would travel and what would stay, and writes nothing. A handle picks a conversation that is not the newest: the first eight characters of its id, or any unique prefix of four or more.",
+  },
+  {
+    verb: "handoff",
+    command: "panoma handoff --to bundle --out conversation.json",
+    title: "Take it to another machine",
+    body: "A portable file with the conversation and its digest, outside every agent's store. On the other machine, panoma handoff conversation.json --to claude reads it back and writes it there. It is also the copy that survives a store being emptied or an agent being uninstalled.",
   },
   {
     verb: "hooks",
@@ -331,7 +350,7 @@ export const DOCS_COPY = {
     setupRestart:
       "Then restart the agent. None of this is picked up by a session that was already open, and an agent that starts without the tools looks exactly like an agent that was never connected.",
 
-    toolsTitle: "The nine tools",
+    toolsTitle: "The fifteen tools",
     tools: [
       {
         name: "panoma_context",
@@ -369,6 +388,30 @@ export const DOCS_COPY = {
         name: "panoma_complete_task",
         why: "Close it, and say how it was solved.",
       },
+      {
+        name: "panoma_conversations",
+        why: "The conversations kept for this project, newest first, and the receipts of what was already handed off. Read from the agents' own stores on this machine; nothing is ingested by looking.",
+      },
+      {
+        name: "panoma_handoff",
+        why: "Continue this conversation in another agent, when the person asks. The copy goes into that agent's own history with the mechanical digest; dryRun shows what would travel and writes nothing. The same agent is not a target on this channel: see Handoff below.",
+      },
+      {
+        name: "panoma_apps",
+        why: "The optional apps on this machine: installed version and the newest on npm, whether each is ready, every requirement and whether it is present, the model and the voice you switched on, and your next step when it is not ready. Reads only.",
+      },
+      {
+        name: "panoma_video",
+        why: "Make a video of this project with panoma video, when you ask for one: a promo, a trailer, a tutorial. A durable job in the agent's name, with the model and the voice you confirmed on the app's page — the agent cannot choose them, and it cannot install, enable or download anything.",
+      },
+      {
+        name: "panoma_video_jobs",
+        why: "The project's productions, or one whole: its twelve stages with what each did, the cuts with their files on this machine, the kinds of video set aside and why, what it spent. wait holds the call until the job moves.",
+      },
+      {
+        name: "panoma_video_cancel",
+        why: "Stop a production of this project. What it had already recorded stays for the next run.",
+      },
     ],
 
     reportTitle: "What comes back",
@@ -398,8 +441,108 @@ export const DOCS_COPY = {
       { command: "panoma md review", note: "The model's opinion. Paid. On purpose." },
     ],
   },
-  memory: {
+  handoff: {
     kicker: "05",
+    title: "Handoff",
+    lead: "A conversation continues in another agent, and the original stays where it was.",
+    leadBody:
+      "You are working with an agent and the usage limit hits, or the next step wants a different tool. Until now the answer was re-explaining everything, or pasting a summary by hand. A handoff writes a new conversation into the target agent's own history, with an id of its own, so that agent's normal resume picks it up as one of its own — no prompt to paste, no summary to trust. The original is never modified: the copy is written beside it and renamed into place, and the two can be opened a month later and told apart. Nothing is deleted anywhere.",
+
+    targetsTitle: "Who can take one",
+    targetsLead:
+      "Every agent's own resume reads a file from a folder, consults no index, and accepts a file somebody else wrote as long as it has the shape. That observation is the whole feature, and it draws the line between three kinds of target.",
+    targets: [
+      {
+        title: "Resume it themselves",
+        body: "Claude Code, Codex CLI, OpenCode and Gemini CLI. The copy is written into their own store and the resume command each of them already has picks it up, from the project folder. OpenCode imports the file first: Panoma runs opencode import for you when it finds the binary, prints the line when it does not, and always prints it when an agent asked. The same four are the sources, because those are the stores Panoma reads. Three were resumed live — Claude Code 2.1.258, Codex CLI 0.153.0, OpenCode 1.2.6 —; Gemini CLI was checked against its source and never run, so the first person with it installed is the first real test.",
+      },
+      {
+        title: "Open it through a link, on macOS",
+        body: "Claude (app) and Codex (app). An app is not another agent, it is a surface: one vendor, one store, two doors. The file written is the same the terminal target gets, and the door is the vendor's own link, run once each on the builds of 11-Sep-2026 — Claude.app 1.52386.3, and the Codex app inside ChatGPT.app: the Claude link adopts the file and marks the folder as trusted, the Codex link registers the thread and opens it. The terminal line is printed under the link every time, and off macOS the two app targets are not offered.",
+      },
+      {
+        title: "Get a document",
+        body: "Cursor, Copilot, Aider, Amp and Goose cannot resume a file Panoma wrote, so they get a Markdown document with the digest and the last exchange, to paste as the first message. Their stores are not read: targets, never sources, and a target that cannot resume what was written says so instead of pretending.",
+      },
+    ],
+
+    tiersTitle: "Three tiers",
+    tiersLead:
+      "How much travels is chosen before anything is written, with the counts in front of you.",
+    tiers: [
+      {
+        level: "full",
+        body: "Every turn, the tool calls and their results, the source's own summary and the title. The default for a native target, and the promise the tests hold: read back, the copy hashes the same as the source.",
+      },
+      {
+        level: "compact",
+        body: "The digest written as the first turn, plus the newest turns whole — twelve by default, and --keep changes it. For a source that is large: a conversation that ended on a limit is usually the size that hit it, and the Handoff screen preselects this tier over 16 MiB and says why.",
+      },
+      {
+        level: "brief",
+        body: "A Markdown document with the digest and the last exchange, to paste as the first message. Any agent takes it, and it is the only tier for a document-only one.",
+      },
+    ],
+
+    staysTitle: "What never travels",
+    stays: [
+      "Thinking and reasoning blocks. Claude's signed ones cannot be reproduced, and Codex's cannot be produced at all. A target cannot verify another model's reasoning, and that is a loss you are told about, not a fix waiting to happen.",
+      "Images.",
+      "Subagent runs.",
+      "Secrets. Every text the writers emit — turn text, tool output, summary, title — goes through the same redactor as the journal, and each mark is one more in the count. It matches known provider shapes and nothing else: a password with no known shape travels, and the count is a count of what matched.",
+      "A conversation over 64 MiB. Refused before anything is written.",
+    ],
+    staysNote:
+      "None of it is dropped in silence. The counts are computed before the write and painted on the Handoff screen, above the button, as travels and stays behind, so the decision is taken with the figures in front of you. And the first written turn — or the summary, when there is one — starts with Continued from, followed by the source agent, its session id, the date and the tier. It is there for whoever opens the file a month later, and for Twin: the history readers skip a file that starts with it, so a handed-off copy is never mined as your own evidence a second time.",
+
+    doorsTitle: "Three doors",
+    doorsLead:
+      "The screen, the terminal, and the agent channel open the same engine. The screen is /handoff, behind the second key, the one that authorizes running things on this machine (Network, below): the conversations on this disk grouped by project, a badge on the ones that ended on a limit, a preview with what travels and what stays, one press to write, and a launch button that opens the terminal or the app on the copy. Listing and previewing read the stores in process and store nothing: a conversation appears because it is on the disk. From the terminal:",
+    commands: [
+      {
+        command: "panoma handoff",
+        note: "The list: what your agents kept on this disk, newest first, grouped by project when the catalog is up and plain when it is not.",
+      },
+      {
+        command: "panoma handoff --to codex",
+        note: "The newest conversation in this folder, into Codex's own history. Two different agents within the same hour is not a choice this command makes: it names both handles and stops, because the wrong one handed over is the one you were not looking at.",
+      },
+      {
+        command: "panoma handoff 3f9a --to claude --tier compact",
+        note: "A handle picks one that is not the newest: the first eight characters of the id, or any unique prefix of four or more. Ambiguity is an error that names the candidates, never a guess. --keep changes how many of the newest turns travel whole.",
+      },
+      {
+        command: "panoma handoff --to opencode --dry-run",
+        note: "What would travel and what would stay, with the counts, and nothing written. --json prints the same as an object, for a script.",
+      },
+      {
+        command: "panoma handoff --to bundle --out conversation.json",
+        note: "The portable file: the conversation and its digest, outside every agent. It survives a store that is emptied, an agent that is uninstalled, another machine — where panoma handoff conversation.json --to codex reads it back.",
+      },
+      {
+        command: "panoma handoff --to codex --digest model",
+        note: "A model writes the summary section of the digest instead of a function. Paid, under its own daily cap, and the conversation travels to the provider wrapped as untrusted material; the catalog has to be up. Off by default, because the mechanical digest is free and the same on every run.",
+      },
+    ],
+    commandsNote:
+      "Every path honours the agent's own variable — CLAUDE_CONFIG_DIR, CODEX_HOME, XDG_DATA_HOME — and --target-home points a copy at a second home of the same agent that already exists. The terminal is the only door that takes a path.",
+
+    mcpTitle: "The agent hands its own conversation on",
+    mcpBody:
+      "The third door is MCP. An agent with a key can list the conversations kept for the project its call names — the folder it is in unless it names another, the way panoma_context does — and the receipts of what was already handed off, with panoma_conversations; and when the person asks, hand its own conversation to another agent with panoma_handoff — the newest one for the project unless an id names another, at any tier, to a terminal or an app target, with dryRun answering what would travel and writing nothing: no file, no receipt. The write answers what the screen gets — the digest redacted, and never the document itself — and the receipt carries the agent's name as who asked. Two things are decided at the door. The same agent is not a target on this channel, at any tier or surface: continuing with the account you sign in with is your own gesture, on the screen or in the terminal, and an agent never takes it for you. And the model-written digest is not on this channel either: an agent gets the mechanical one, so no conversation is sent to a provider because a model decided to. One more step in the flow stays yours too: for OpenCode the import line is printed for you to run, never run by the agent.",
+    mcpGate:
+      "The stores are private history, so the gate is that second key's before it is the agent's: both routes answer this machine only, then ask for the agent key, which sets who asked and which project. A catalog reached over the network cannot hand off, whatever key it holds, because the conversations live on the catalog's disk and the second key never leaves it. Under a remote database the routes refuse outright.",
+
+    sameTitle: "The same agent, the account you sign in with",
+    sameBody:
+      "Every store is per machine and per folder, never per account — Claude Code's projects folder, Codex's sessions, OpenCode's database, Gemini's chats — so signing out removes a credential and not a file, and the conversation is still on the disk when you sign in again. That is why the same agent, whichever surface, writes nothing at full: there is nothing to write. What the screen and the terminal print is your own steps, and neither runs one of them: sign out of that agent, sign in with the account you want to continue with, and resume the same file with its normal line. Two optional lines under it: a fork, so the original stays as it is, and the bundle above. On macOS the app link is printed under the resume step, because Claude.app lists conversations per account and the link adopts the file into whichever you signed in with, and the Codex app lists from the shared database, where the thread already is. At compact it does write: a shorter copy in the same store with an id of its own, for a conversation that hit the limit at exactly the size that hit it — the steps are the same, with the copy's line under the third. Panoma holds no credential, rotates nothing and automates nothing here.",
+
+    receiptTitle: "The receipt",
+    receiptBody:
+      "What reaches the catalog is the receipt, never the text: which conversation became which, when, at which tier, on which surface, who asked, what was left behind, and the line that resumes it. It is what lets the screen say already handed to Codex on Tuesday, resume that one, instead of writing a second copy — keyed by source, agent and surface, so a copy for the app and one for the terminal are two receipts — and what Done so far lists at the foot of the screen, with what travelled and what stayed. The resume line is a display line: the launch button re-derives the command from the agent and the id every time and hands it to a binary the detector verified, so nothing stored is ever executed as stored. The receipt does not watch the file; if the agent later deletes or moves it, the screen says file gone when it looks, and nothing else. And the digest is not memory: title, goal, decisions, files touched, commands run, open items, the last exchange and the counts are derived from one file for one gesture, regenerable from the same conversation, and stored nowhere.",
+  },
+  memory: {
+    kicker: "06",
     title: "Memory",
     /*
       The phrase that gives name to the entire floor, and the contrast that explains it. It comes
@@ -484,7 +627,7 @@ export const DOCS_COPY = {
       "Then restart the agent's session: one already open picks up nothing. What the distiller and the double may spend in a day has a ceiling each, on the Spend screen or with PANOMA_DISTILL_BUDGET and PANOMA_ASK_BUDGET; 0 turns either of them off.",
   },
   twin: {
-    kicker: "06",
+    kicker: "07",
     title: "Twin",
     lead: "A portrait of your taste, mined from what you already told your agents.",
     leadBody:
@@ -541,7 +684,7 @@ export const DOCS_COPY = {
       "Everything here also has a screen: the terminal is where it gets tested, the browser is where it gets used. Budgets are counted in calls, not tokens — with a CLI provider there are no tokens to count, and a token budget would let exactly the runaway loop through. Reading your history and looking at a screen have a ceiling each, and both are moved on the Spend screen or with PANOMA_READ_BUDGET and PANOMA_LOOK_BUDGET.",
   },
   maintain: {
-    kicker: "07",
+    kicker: "08",
     title: "Keep it working",
     lead: "A project that scanned clean in March may not build in August. These three commands go and find out, and the answer is written on the project card with a date.",
     commands: [
@@ -588,12 +731,12 @@ export const DOCS_COPY = {
       "Verified means there were tests and they passed. It does not mean the change is correct. With no test command the proposal stays unverified, the summary says the project has no tests and that nobody has checked it still works, and the commit message writes it out. The placeholder test script npm init leaves behind counts as having no tests: running it and calling that verification would be worse than running nothing. When tests do pass outside a container, the card adds a line saying so — tests are code from the repository itself. And if the package being upgraded is one the project already lets run install scripts, the card says that in capitals: trusting a package is not the same as trusting every future version of it.",
   },
   models: {
-    kicker: "08",
+    kicker: "09",
     title: "Pick a model",
     lead: "Most of this program is disk reads and arithmetic, and costs nothing. A few parts ask a model, and none of them answer until you say whose model it is.",
     freeTitle: "What never spends",
     freeBody:
-      "panoma scan, panoma review, panoma twin design, panoma disk, panoma secrets and panoma search never call anything. No key, no account, no network. They work on the first day and they work offline. What does spend is named where it appears: panoma describe, panoma md review, panoma twin distill and panoma twin look.",
+      "panoma scan, panoma review, panoma twin design, panoma disk, panoma secrets and panoma search never call anything. No key, no account, no network. They work on the first day and they work offline. What does spend is named where it appears: panoma describe, panoma md review, panoma twin distill, panoma twin look, and panoma handoff only with --digest model.",
     commands: [
       {
         command: "panoma ai",
@@ -615,7 +758,7 @@ export const DOCS_COPY = {
     keyTitle: "The key is not encrypted",
     keyBody:
       "A stored key goes to ~/.panoma/ai.json, written at mode 0600. That is the floor, not protection: the file is plain text, and any process running as you can read it whole. There is no keychain and no passphrase yet. If that is not good enough, export the key in your environment and store nothing — the environment is read first and wins over the file. What comes back on screen is always masked, three characters and the last four, which is enough to tell which of your keys is in there. Reach a model through a command-line agent instead and there is no key to keep at all. One key in that file is not a model's: an app that narrates needs an ElevenLabs key, and it is typed on that app's own page in Apps rather than here. It lands in the same ~/.panoma/ai.json at the same 0600, under its own name, and only the operator of this machine may write it or ask whether it is there. It is deliberately not a provider you can pick under Models, so nothing you set here reaches it — and switching voice on is a separate change that asks you to confirm.",
-    capsTitle: "Eight daily caps",
+    capsTitle: "Nine daily caps",
     capsLead:
       "Each organ that spends has its own ceiling for the day, and the day is this machine's own day, not a sliding window. The Spend screen moves any of them without restarting anything, and says which ceiling an exported variable is deciding — the variable always wins over the screen, so an install behaves the same on a laptop and in CI.",
     caps: [
@@ -659,12 +802,17 @@ export const DOCS_COPY = {
         value: "20",
         what: "What an installed app may spend in a day: the model calls and the narration requests it makes on your behalf. Capacity is held before the work is queued and checked again before it runs, so a ceiling you lower mid-job is obeyed.",
       },
+      {
+        name: "PANOMA_HANDOFF_BUDGET",
+        value: "10",
+        what: "The model-written digest of a conversation being handed off. Asked for only by a person — the box on the screen, or --digest model in the terminal — and never through MCP, where an agent gets the mechanical digest. It is the one call that sends a whole transcript, redacted and wrapped, to a provider, which is why the cap is the smallest of the nine and the box is off by default.",
+      },
     ],
     capsNote:
-      "Calls, not tokens. A command-line agent returns loose text and no usage at all, so a token cap would count a thousand runaway calls as zero and let through exactly the case that runs away easiest. Tokens are still recorded and shown, because they are the price; what gets stopped is how often. Spent means 429 for the five somebody asked for, with both numbers in the message, and 409 for an app job that is refused before it is queued. The distiller and the double run in the background with nobody to answer, so they go quiet and pick it up tomorrow. Set one to 0 to switch that organ off; anything unreadable falls back to the default and never to no limit. The Spend screen adds one switch the variables do not have: a pause that reads every ceiling as zero until you lift it.",
+      "Calls, not tokens. A command-line agent returns loose text and no usage at all, so a token cap would count a thousand runaway calls as zero and let through exactly the case that runs away easiest. Tokens are still recorded and shown, because they are the price; what gets stopped is how often. Spent means 429 for the six somebody asked for, with both numbers in the message, and 409 for an app job that is refused before it is queued. The distiller and the double run in the background with nobody to answer, so they go quiet and pick it up tomorrow. Set one to 0 to switch that organ off; anything unreadable falls back to the default and never to no limit. The Spend screen adds one switch the variables do not have: a pause that reads every ceiling as zero until you lift it.",
   },
   network: {
-    kicker: "09",
+    kicker: "10",
     title: "Network",
     lead: "The catalog does real work on this machine: opens folders, installs, runs tests, reads what git tracks. Binding to the loopback is what keeps that private.",
     localTitle: "This machine",
@@ -691,9 +839,9 @@ export const DOCS_COPY = {
     home: "State lives in ~/.panoma. The default catalog address is http://localhost:4173. Use --api or PANOMA_API to point elsewhere. The CLI speaks English.",
   },
   commands: {
-    kicker: "10",
+    kicker: "11",
     title: "All commands",
-    lead: "Twenty-one verbs are written out here. Three more exist and are not: panoma apps, panoma video and panoma memory, which belong to the optional apps and are listed by panoma --help. Flags match panoma --help, and a flag it does not recognise is an error rather than a warning: a mistyped one is a different command that succeeds.",
+    lead: "Twenty-two verbs are written out here. Three more exist and are not: panoma apps, panoma video and panoma memory, which belong to the optional apps and are listed by panoma --help. Flags match panoma --help, and a flag it does not recognise is an error rather than a warning: a mistyped one is a different command that succeeds.",
     extrasTitle: "Before any verb",
     extras: [
       {
@@ -739,7 +887,7 @@ export const DOCS_COPY = {
     ],
   },
   reference: {
-    kicker: "11",
+    kicker: "12",
     title: "Reference",
     lead: "Where the state lives, which knobs are worth touching, and what to do when something is broken. None of this is needed for normal use.",
     filesTitle: "Inside ~/.panoma",
@@ -843,7 +991,7 @@ export const DOCS_COPY = {
       },
       {
         name: "PANOMA_KEY",
-        note: "The agent key the MCP server sends. Written for you by panoma agent-key --install. Treat it as a credential: it has no per-project scope, and it reads the brief, the journal and the tasks of the whole catalog.",
+        note: "The agent key the MCP server sends. Written for you by panoma agent-key --install. Treat it as a credential: it has no per-project scope, and it reads the brief, the journal and the tasks of the whole catalog. It can also list and hand off the conversations kept for a project — those two calls are scoped to the project the call names, the way panoma_context is, answer this machine only, and pass the operator's door before the key is even read.",
       },
       {
         name: "PANOMA_ACCESS_KEY",
@@ -855,7 +1003,7 @@ export const DOCS_COPY = {
       },
       {
         name: "PANOMA_READ_BUDGET",
-        note: "The daily brakes, with PANOMA_LOOK_BUDGET, PANOMA_DISTILL_BUDGET, PANOMA_ASK_BUDGET, PANOMA_REHEARSE_BUDGET, PANOMA_EPISODE_BUDGET, PANOMA_CARD_BUDGET and PANOMA_APP_BUDGET. They count calls, not tokens: with a session agent as the provider there are no tokens to count. Unreadable falls back to the default, never to unlimited; 0 is legitimate and turns that organ off. Exporting one takes that ceiling away from the Spend screen, which then says so instead of showing a number nobody is applying.",
+        note: "The daily brakes, with PANOMA_LOOK_BUDGET, PANOMA_DISTILL_BUDGET, PANOMA_ASK_BUDGET, PANOMA_REHEARSE_BUDGET, PANOMA_EPISODE_BUDGET, PANOMA_CARD_BUDGET, PANOMA_APP_BUDGET and PANOMA_HANDOFF_BUDGET. They count calls, not tokens: with a session agent as the provider there are no tokens to count. Unreadable falls back to the default, never to unlimited; 0 is legitimate and turns that organ off. Exporting one takes that ceiling away from the Spend screen, which then says so instead of showing a number nobody is applying.",
       },
       {
         name: "PANOMA_EDITOR",
@@ -897,12 +1045,12 @@ export const DOCS_COPY = {
         body: "New projects and today's commits stop appearing. The watcher is not running, and the app prints that rather than looking healthy: it was turned off with PANOMA_WATCH=0, or the catalog underneath it did not open. Until it is back, scanning by hand is what keeps the catalog current, and the versions and advisories it refreshes on its own every 12 hours have to be asked for with panoma enrich.",
       },
       {
-        title: "The Apps screen has nothing to install yet",
-        body: "Apps is where an optional app is installed, and one is listed: panoma video, which adds a production screen to every project and a Create video button to the project header — press that button before installing and a dialog sends you here. The install stops here too. That package is not published on npm yet, so the version check comes back with nothing and there is no release to fetch. Nothing is broken and there is nothing to repair; the screen is waiting on a release. The key that app needs is typed on its own page rather than under Models, and every recording tool it wants is probed and named on that page before anything runs.",
+        title: "The Apps screen, and what panoma video needs before it films",
+        body: "Apps is where an optional app is installed, and one is listed: panoma video, which adds a production screen to every project and a Create video button to the project header — press that button before installing and a dialog sends you here. Its page is numbered, and the sentence under the title is the next step: install the package from npm, then check its two requirements — a browser of its own, downloaded from that page after you read its size and Google's terms, apart from any browser on the system; and FFmpeg, which the catalog detects on your PATH and never installs — and then create. The key that app needs is typed on its own page rather than under Models. A production says what it will use before the button that starts it — the app's version, the two requirements, the model, whether narration has a key — and while it runs the twelve stages are listed with the one in progress; when it ends without a preview, the same list stays as the report, stage by stage in the app's own words. An agent connected through MCP can ask for a production too, with panoma_video, and it spends only what you switched on.",
       },
     ],
     privacyTitle: "What leaves this machine",
-    privacyBody: "No telemetry. Nothing is reported about how you use this, there is no account it could be reported to, and the analyzer does not touch the network at all — that one is tested, by running it with http, https, dns, net and fetch sabotaged. Three things go out on their own, and you can name all three. Model calls, to the provider you configured, and only when you ask for one: describe a project, panoma md review, distill, the critic with eyes. Then panoma enrich, which asks the public registries — npm, PyPI, crates.io, RubyGems, Packagist, the Go proxy — and OSV for advisories, sending package names and versions and nothing else. And once a day the npm registry is asked whether there is a newer release: by the terminal when you type a command, and by the catalog on its own while it is left running, because a server up for weeks would otherwise never find out. It is one question a day between the two, it carries the name of a public package and nothing else, and PANOMA_NO_UPDATE_CHECK=1 stops it. A fourth exists only if you put it there: an optional app is the one thing that can add a destination, and it names that destination before you switch it on. Panoma Video asks npm for its own releases, downloads its recording browser when you press the button that says so, and sends narration text to ElevenLabs once you turn voice on. Nothing on that list moves until you confirm it. One warning about the first of the three: an image travels whole, so anything written in a screenshot goes with it.",
+    privacyBody: "No telemetry. Nothing is reported about how you use this, there is no account it could be reported to, and the analyzer does not touch the network at all — that one is tested, by running it with http, https, dns, net and fetch sabotaged. Three things go out on their own, and you can name all three. Model calls, to the provider you configured, and only when you ask for one: describe a project, panoma md review, distill, the critic with eyes, and the handoff digest when you tick the box or pass --digest model — that last one carries a whole conversation, redacted, and only a person can ask for it, never an agent through MCP. Then panoma enrich, which asks the public registries — npm, PyPI, crates.io, RubyGems, Packagist, the Go proxy — and OSV for advisories, sending package names and versions and nothing else. And once a day the npm registry is asked whether there is a newer release: by the terminal when you type a command, and by the catalog on its own while it is left running, because a server up for weeks would otherwise never find out. It is one question a day between the two, it carries the name of a public package and nothing else, and PANOMA_NO_UPDATE_CHECK=1 stops it. A fourth exists only if you put it there: an optional app is the one thing that can add a destination, and it names that destination before you switch it on. Panoma Video asks npm for its own releases, downloads its recording browser when you press the button that says so, and sends narration text to ElevenLabs once you turn voice on. Nothing on that list moves until you confirm it. One warning about the first of the three: an image travels whole, so anything written in a screenshot goes with it.",
   },
 } as const;
 

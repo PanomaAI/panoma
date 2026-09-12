@@ -49,6 +49,7 @@ path for the area you plan to change:
 | Folder analysis | `packages/core` | [discovery.md](docs/discovery.md), [analysis.md](docs/analysis.md), and [health.md](docs/health.md) |
 | The schema or a migration | `packages/db` | [database.md](docs/database.md) and [single-writer.md](docs/single-writer.md) |
 | The agent channel | `packages/mcp` and `/api/agent/*` | [agent-channel.md](docs/agent-channel.md), [mcp-security.md](docs/mcp-security.md), and [untrusted.md](docs/untrusted.md) |
+| A handoff of a conversation to another agent | `packages/handoff`, `apps/web/app/(app)/handoff`, and `apps/cli/src/handoff-command.ts` | [handoff.md](docs/handoff.md) and [untrusted.md](docs/untrusted.md) |
 | `run`, `check`, or enrichment | `packages/runner` and `packages/enrich` | [run-and-isolation.md](docs/run-and-isolation.md) and [enrichment.md](docs/enrichment.md) |
 | The landing page, `/docs`, or deployment | `apps/site` | [deploy.md](docs/deploy.md); agree on scope first because this application is deployed separately and follows its own release rhythm. |
 

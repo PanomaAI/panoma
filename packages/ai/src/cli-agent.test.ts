@@ -1,9 +1,9 @@
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { detectCliAgents } from "./cli-agent";
-import type { Provider } from "./providers";
+import { PROVIDERS, newestVersionUnder, type Provider } from "./providers";
 
 /**
  * Find an agent that is installed, wherever it is.
@@ -119,5 +119,67 @@ describe("encontrar un agente instalado", () => {
     ]);
     expect(found?.installed).toBe(false);
     expect(found?.broken).toBeUndefined();
+  });
+});
+
+describe("a binary under a version folder", () => {
+  let home: string;
+
+  beforeEach(async () => {
+    home = await mkdtemp(join(tmpdir(), "panoma-agente-version-"));
+  });
+
+  afterEach(async () => {
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("newestVersionUnder lists the version folders newest first, numerically, and nothing where there is no folder", async () => {
+    const dir = join(home, "claude-code");
+    expect(newestVersionUnder(dir, "bin")()).toEqual([]);
+    for (const version of ["2.1.9", "2.1.266", "2.1.260", "notes.txt", "10.0.0"]) await mkdir(join(dir, version), { recursive: true });
+    expect(newestVersionUnder(dir, join("claude.app", "Contents", "MacOS", "claude"))()).toEqual([
+      join(dir, "10.0.0", "claude.app", "Contents", "MacOS", "claude"),
+      join(dir, "2.1.266", "claude.app", "Contents", "MacOS", "claude"),
+      join(dir, "2.1.260", "claude.app", "Contents", "MacOS", "claude"),
+      join(dir, "2.1.9", "claude.app", "Contents", "MacOS", "claude"),
+    ]);
+  });
+
+  it("detectCliAgents resolves a function entry at detection time and takes the newest version that answers", async () => {
+    const dir = join(home, "claude-code");
+    const script = process.platform === "win32" ? "claude.cmd" : "claude";
+    const lay = async (version: string, says: string) => {
+      const folder = join(dir, version, "claude.app", "Contents", "MacOS");
+      await mkdir(folder, { recursive: true });
+      const path = join(folder, script);
+      if (process.platform === "win32") await writeFile(path, `@echo off\r\necho ${says}\r\nexit /b 0\r\n`);
+      else {
+        await writeFile(path, `#!/bin/sh\necho "${says}"\nexit 0\n`);
+        await chmod(path, 0o755);
+      }
+      return path;
+    };
+    await lay("2.1.260", "2.1.260 (Claude Code)");
+    const newest = await lay("2.1.266", "2.1.266 (Claude Code)");
+    const entry = newestVersionUnder(dir, join("claude.app", "Contents", "MacOS", script));
+    const [found] = await detectCliAgents([agente({ bundles: [join(home, "not-there"), entry] })]);
+    expect(found?.installed).toBe(true);
+    expect(found?.command).toBe(newest);
+    expect(found?.version).toBe("2.1.266 (Claude Code)");
+    // Newer versions that are not there yet at detection time are seen once they land.
+    const newer = await lay("2.2.0", "2.2.0 (Claude Code)");
+    const [again] = await detectCliAgents([agente({ bundles: [entry] })]);
+    expect(again?.command).toBe(newer);
+  });
+
+  it("the shipped claude-cli row looks for the app's binary under its version folders", () => {
+    const row = PROVIDERS.find((provider) => provider.id === "claude-cli")!;
+    expect(row.bundles).toHaveLength(2);
+    expect(typeof row.bundles![1]).toBe("function");
+    // Whatever this machine has, the candidates are under the app's own folder and end at the binary.
+    for (const candidate of (row.bundles![1] as () => string[])()) {
+      expect(candidate).toContain(join("Library", "Application Support", "Claude", "claude-code"));
+      expect(candidate.endsWith(join("claude.app", "Contents", "MacOS", "claude"))).toBe(true);
+    }
   });
 });

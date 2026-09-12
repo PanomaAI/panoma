@@ -230,7 +230,7 @@ there any more — and the three phantom packages a scanner used to read out of
 The evidence that it is safe is not that the tests pass. It is that the bundle answers the
 protocol from a directory with **no `node_modules` anywhere above it**: copy
 `app/node_modules/@panoma/mcp/dist/index.js` alone into an empty folder, send it `initialize`,
-and it replies with its nine tools. A server that owes nothing to its neighbours cannot be
+and it replies with its fifteen tools. A server that owes nothing to its neighbours cannot be
 broken by taking the neighbours away. Both guards say the same from the other side: `prepack`
 spawns the packaged server and demands `serverInfo` in the reply, and the packaged journey does
 it again over a really installed tarball.

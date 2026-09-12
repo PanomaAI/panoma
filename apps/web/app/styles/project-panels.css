@@ -4,8 +4,15 @@
  */
 .project-subnav {
   display: flex;
+  /*
+    Eleven tabs fit on one line only above about 1,180 px. Between that and the phone dock the
+    strip used to push the page wider than the viewport and the body scrolled sideways; now the
+    tabs wrap, each row keeping the strip's height so the underline stays under its label. On a
+    phone the strip scrolls inside itself instead, see responsive.css.
+   */
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-14);
+  gap: 0 var(--space-14);
   min-height: 48px;
   margin-top: var(--space-12);
   border-bottom: 1px solid var(--line);
@@ -16,6 +23,7 @@
   display: inline-flex;
   align-items: center;
   align-self: stretch;
+  min-height: 48px;
   color: var(--muted);
   font-size: var(--type-sm);
   font-weight: var(--weight-medium);

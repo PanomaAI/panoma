@@ -286,6 +286,68 @@ describe("los flags de `panoma ai`, que estaban implementados y eran inalcanzabl
   });
 });
 
+/**
+ * The five of `panoma handoff`.
+ *
+ * `--tier` and `--digest` are closed sets and get the treatment of `--isolation`: a misspelled
+ * tier falling to some default would carry a different amount than asked, and a misspelled
+ * digest author is the same trap with money in it, because one of the two values spends. The
+ * words `--to` accepts live in `@panoma/handoff` and are checked by the module, so here only the
+ * value has to arrive whole and out of the positionals.
+ */
+describe("the flags of panoma handoff", () => {
+  it("accepts the five, with = and with a space, and none falls into the positionals", () => {
+    const parsed = flagsOf([
+      "handoff", "a3f19c2e", "--to", "codex", "--tier=compact", "--digest", "model", "--keep", "6", "--target-home", "/tmp/second",
+    ]);
+    expect(parsed.to).toBe("codex");
+    expect(parsed.tier).toBe("compact");
+    expect(parsed.digest).toBe("model");
+    expect(parsed.keep).toBe(6);
+    expect(parsed.targetHome).toBe("/tmp/second");
+    expect(parsed.positionals).toEqual(["handoff", "a3f19c2e"]);
+  });
+
+  it("rejects a tier that does not exist and names the three", () => {
+    const error = errorOf(["handoff", "a3f19c2e", "--to", "codex", "--tier", "compct"]);
+    expect(error).toContain("compct");
+    expect(error).toContain("compact");
+    expect(error).toContain("brief");
+  });
+
+  it("accepts the three tiers", () => {
+    for (const tier of ["full", "compact", "brief"]) {
+      expect(flagsOf(["handoff", "--tier", tier]).tier).toBe(tier);
+    }
+  });
+
+  it("rejects a digest author that does not exist, because one of the two spends", () => {
+    const error = errorOf(["handoff", "a3f19c2e", "--to", "codex", "--digest", "modle"]);
+    expect(error).toContain("modle");
+    expect(error).toContain("model");
+    expect(error).toContain("panoma");
+  });
+
+  it("rejects --keep when it is not a whole number above zero", () => {
+    expect(errorOf(["handoff", "--tier", "compact", "--keep", "six"])).toContain("--keep");
+    expect(errorOf(["handoff", "--tier", "compact", "--keep", "0"])).toContain("--keep");
+    expect(errorOf(["handoff", "--tier", "compact", "--keep", "-3"])).toContain("--keep");
+    expect(flagsOf(["handoff", "--tier", "compact", "--keep", "1"]).keep).toBe(1);
+  });
+
+  it("a value flag without its value is an error, not the next flag swallowed", () => {
+    expect(errorOf(["handoff", "a3f19c2e", "--to", "--json"])).toContain("--to needs a value");
+    expect(errorOf(["handoff", "--target-home"])).toContain("--target-home");
+  });
+
+  it("a misspelled flag gets the right one suggested", () => {
+    const error = errorOf(["handoff", "a3f19c2e", "--too", "codex"]);
+    expect(error).toContain("--too");
+    expect(error).toContain("--to");
+    expect(errorOf(["handoff", "--target-hom", "/x"])).toContain("--target-home");
+  });
+});
+
 describe("un solo parser, no dos", () => {
   /*
     The underlying cause was not forgetting two entries on a list: it was that the command had its

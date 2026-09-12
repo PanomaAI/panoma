@@ -3514,7 +3514,7 @@ export interface NewModelCall {
   appJobId?: string;
   /**
    * Which organ spent: look · distill · classify · synthesize · memory · ask · rehearse · episodes
-   * · describe · review · probe. The list lives in `apps/web/lib/spend-settings.ts`
+   * · describe · review · probe · app · handoff. The list lives in `apps/web/lib/spend-settings.ts`
    * (`FAMILY_KINDS`), and the budgets are applied per family there — not per kind, and not here.
    */
   kind: string;

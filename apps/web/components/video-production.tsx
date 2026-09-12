@@ -362,7 +362,11 @@ function StageList({ t, job, locked, onCancel }: {
         </div>
       </div>
       {seconds !== undefined && (
-        <p className="mt-2 text-sm text-smoke">{t(active ? "apps.jobs.elapsed" : "apps.jobs.took", { time: duration(t, seconds) })}</p>
+        <p className="mt-2 text-sm text-smoke">
+          {t(active ? "apps.jobs.elapsed" : "apps.jobs.took", { time: duration(t, seconds) })}
+          {/* A run an agent asked for over the channel says so: the person may not have pressed anything. */}
+          {job.requestedBy && <> {t("apps.jobs.requestedBy", { name: job.requestedBy })}</>}
+        </p>
       )}
       {starting && <p className="mt-2 text-sm text-smoke">{t("apps.jobs.starting")}</p>}
       <ol className="mt-4 grid gap-x-6 gap-y-1 sm:grid-cols-2">

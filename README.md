@@ -85,10 +85,11 @@ dispatch.
 - [x] Agent instruction files: linting against the real disk, a self-managed block, attribution, inherited files, and model review ([docs/agents-md.md](docs/agents-md.md))
 - [x] Curated project memory: agents propose durable facts, you approve them, and approved memory reaches every agent's first turn under a budget that refuses silent compaction ([docs/memory.md](docs/memory.md))
 - [x] Optional official apps, with a screen of their own: a validated manifest, versions that activate and roll back, and each job in a separate process ([docs/apps.md](docs/apps.md))
-- [x] panoma video, the first app: it adds a production screen to every project and a "Create video" button to the project header, and installs from npm as [`@panoma/video`](https://www.npmjs.com/package/@panoma/video)
-- [x] A spend screen: every model call is recorded, with a daily cap for each of the eight budget families that you can raise, lower, set to zero to switch that family off, or leave at the factory value ([docs/budgets.md](docs/budgets.md))
+- [x] panoma video, the first app: it adds a production screen to every project and a "Create video" button to the project header, installs from npm as [`@panoma/video`](https://www.npmjs.com/package/@panoma/video), and an agent holding a key can ask for a production of the project it is in through the `panoma_video` MCP tools — with the model and the voice you switched on, never ones it chose
+- [x] A spend screen: every model call is recorded, with a daily cap for each of the nine budget families that you can raise, lower, set to zero to switch that family off, or leave at the factory value ([docs/budgets.md](docs/budgets.md))
 - [x] A bridge screen: the four setup steps between your projects and your agents—catalog, model, agent, and automatic logging—one at a time, kept apart from what the agents have already recorded
 - [x] Execution inside an ephemeral container through docker, podman, nerdctl, or finch, falling back to the hardened level and saying why when no runtime is installed ([docs/run-and-isolation.md](docs/run-and-isolation.md))
+- [x] Handoff: continue a conversation in another agent, or in the same one after signing in, with `panoma handoff`, the `/handoff` screen, or—when you ask it to—the agent itself through the `panoma_conversations` and `panoma_handoff` MCP tools; panoma writes a new conversation into the target agent's own history so its normal resume finds it, the original is never touched, and the receipt says what travelled, what stayed behind, and who asked ([docs/handoff.md](docs/handoff.md))
 - [ ] Execution in CI
 - [ ] Notifications
 - [ ] Maven/Gradle and NuGet through Syft
@@ -209,7 +210,7 @@ The file contains the key in plain text, so panoma writes it with mode 0600 and 
 would track it. [docs/mcp-security.md](docs/mcp-security.md) explains what each door protects
 and what no door protects.
 
-Restart the agent afterwards. It then receives nine tools:
+Restart the agent afterwards. It then receives fifteen tools:
 
 | Tool | Purpose |
 |---|---|
@@ -222,8 +223,61 @@ Restart the agent afterwards. It then receives nine tools:
 | `panoma_create_task` | Record technical debt without leaving the current task |
 | `panoma_claim_task` | Claim work without colliding with another agent |
 | `panoma_complete_task` | Close a task and explain how it was completed |
+| `panoma_conversations` | The conversations kept for this project, newest first, and the receipts of what was already handed off. Read from the agents' own stores on this machine; nothing is ingested by looking |
+| `panoma_handoff` | Continue this conversation in another agent, when you ask for it. The copy goes into that agent's own history with the mechanical digest; `dryRun` shows what would travel and writes nothing. The same agent is not a target on this channel |
+| `panoma_apps` | The optional apps on this machine: installed version, readiness, each requirement, the model and voice you switched on, and your next step when one is not ready |
+| `panoma_video` | Make a video of this project with panoma video, when you ask for one: a durable job in the agent's name, with the settings you confirmed on the app's page. Installing, enabling and switching a provider on stay yours |
+| `panoma_video_jobs` | The project's productions, or one whole: its twelve stages, the cuts with their files on this machine, the kinds of video set aside and why, what it spent; `wait` holds until it moves |
+| `panoma_video_cancel` | Stop a production of this project |
 
 The full contract is documented in [docs/agent-channel.md](docs/agent-channel.md).
+
+### Hand off a conversation
+
+The usage limit hits, or the next step wants a different tool, and the conversation should go
+on somewhere else. List what your agents kept on this disk, newest first:
+
+```bash
+pnpm exec tsx apps/cli/src/index.ts handoff
+```
+
+Continue the newest conversation in this folder in Codex. Panoma writes it into Codex's own
+history with a fresh id, so `codex resume` finds it as one of its own; the original is never
+touched:
+
+```bash
+pnpm exec tsx apps/cli/src/index.ts handoff --to codex
+```
+
+Send the digest and the newest turns instead of every one, for a conversation that is large:
+
+```bash
+pnpm exec tsx apps/cli/src/index.ts handoff --to claude --tier compact
+```
+
+See what would travel and what would stay, with the counts, and write nothing:
+
+```bash
+pnpm exec tsx apps/cli/src/index.ts handoff --to opencode --dry-run
+```
+
+Take it to another machine as a portable file, outside every agent's store:
+
+```bash
+pnpm exec tsx apps/cli/src/index.ts handoff --to bundle --out conversation.json
+```
+
+Claude Code, Codex CLI, OpenCode, and Gemini CLI resume the copy themselves; Claude (app) and
+Codex (app) open it through a link on macOS; Cursor, Copilot, Aider, Amp, and Goose get a
+document to paste. Thinking blocks, images, and subagent runs never travel, secrets are masked,
+and every count is shown before anything is written. The `/handoff` screen does the same
+behind the operator key, and an agent holding a key can do it for the project it is in through
+`panoma_conversations` and `panoma_handoff`, with a mechanical digest only and never to the
+same agent. The same agent, with the account you want to continue with, writes nothing at
+`full`: every store is per machine and per folder, never per account, so panoma prints your own
+sign-out, sign-in, and resume steps and runs none of them; at `compact` it writes a shorter
+copy in the same store. [docs/handoff.md](docs/handoff.md) has the decision, the versions
+each store was verified against, and what never crosses the line.
 
 Analyze one project:
 
@@ -302,7 +356,19 @@ packages/ai/       model connections
 packages/mcp/      MCP server—the bridge to agents
   client.ts        catalog HTTP client and project detection
   format.ts        responses written for model consumption
-  index.ts         definitions for the nine tools
+  index.ts         definitions for the fifteen tools
+
+packages/handoff/  hands a conversation to another agent, and never touches the original
+  stores/          the four stores, and the closed list of what may be opened under each
+  discover.ts      lists the conversations in the agents' own stores; a large file by head and tail
+  readers/         one per native store: Claude Code, Codex CLI, OpenCode, Gemini CLI
+  writers/         one per native target, plus the Markdown document for the rest
+  transfer.ts      handoff(): one conversation, one target, one tier, one new file
+  digest.ts        the mechanical digest: title, goal, decisions, files, commands, open items
+  compact.ts       the compact tier: the digest plus the newest turns whole
+  fidelity.ts      what each target keeps and leaves, its resume line, and the app links
+  bundle.ts        the portable file for another machine
+  faults.ts        the closed list of refusals; the HTTP status of each lives in apps/web
 
 packages/apps/     manager for the optional official apps
   manifest.ts      the app manifest as data, validated before activation
@@ -313,7 +379,7 @@ packages/apps/     manager for the optional official apps
   layout.ts        where each app and its work live under ~/.panoma
   environment.ts   the variables an app child inherits, and no others
 
-apps/cli/          CLI: scan, enrich, disk, search, secrets, run, ai
+apps/cli/          CLI: scan, enrich, disk, search, secrets, run, ai, handoff
 apps/web/          local-only web catalog through Next.js 15; never deployed
 apps/site/         public landing page and /docs through Next.js 15
 ```

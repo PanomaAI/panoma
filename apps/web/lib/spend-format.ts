@@ -72,6 +72,7 @@ export const FAMILY_KEY = {
   episodes: "spend.family.episodes",
   card: "spend.family.card",
   app: "spend.family.app",
+  handoff: "spend.family.handoff",
 } as const satisfies Record<string, MessageKey>;
 
 export type FamilyName = keyof typeof FAMILY_KEY;
@@ -86,6 +87,7 @@ export const FAMILY_HINT_KEY = {
   episodes: "spend.familyHint.episodes",
   card: "spend.familyHint.card",
   app: "spend.familyHint.app",
+  handoff: "spend.familyHint.handoff",
 } as const satisfies Record<FamilyName, MessageKey>;
 
 /**
@@ -105,6 +107,7 @@ const KIND_KEY: Record<string, MessageKey> = {
   review: "spend.kind.review",
   probe: "spend.kind.probe",
   app: "spend.kind.app",
+  handoff: "spend.kind.handoff",
 };
 
 export function kindKey(kind: string): MessageKey | undefined {

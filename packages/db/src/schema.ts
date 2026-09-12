@@ -55,6 +55,13 @@ export const appJobs = pgTable("app_jobs", {
   requestedAt: timestamp("requested_at", { withTimezone: true }).notNull().defaultNow(),
   startedAt: timestamp("started_at", { withTimezone: true }),
   finishedAt: timestamp("finished_at", { withTimezone: true }),
+  /**
+   * The agent that asked for it over the MCP channel (`panoma_video`), by the name its key was
+   * issued under; `null` when a person did, from the screen or the terminal. The same word the
+   * `handoffs` table keeps, for the same reason: attribution, not authority — the job's gate is
+   * the operator's, and its budget is the person's settings whoever asked.
+   */
+  requestedBy: text("requested_by"),
 }, (table) => [
   index("app_jobs_identity_idx").on(table.identity, table.requestedAt),
   index("app_jobs_status_idx").on(table.status),
@@ -871,6 +878,78 @@ export const launches = pgTable(
   (table) => [index("launches_project_idx").on(table.projectId, table.at)],
 );
 
+/** What could not travel in a handoff, counted; mirrors `Dropped` in `@panoma/handoff`. */
+export interface HandoffDropped {
+  thinking: number;
+  images: number;
+  subagents: number;
+  offloaded: number;
+  secrets: number;
+  other: number;
+}
+
+/**
+ * The receipt of a handoff: which conversation became which, when, at which tier, what was left
+ * behind, and the command that resumes it. Never the text — the conversation itself lives in the
+ * agents' own stores and panoma keeps no copy of it.
+ *
+ * Never comes back. A rescan of the disk recomputes nothing here: the receipt records an event a
+ * person asked for, so it hangs off `project_id` with `set null` (a conversation whose folder is
+ * not in the catalog still gets a receipt) and joins the `rehomeMemory` family when a folder
+ * moves. `resume_command` is the display line the server derived from `target_agent` and
+ * `target_session_id`; it never comes from a client and it is never executed as stored — argv is
+ * re-derived every time from a binary the detector verified.
+ */
+export const handoffs = pgTable(
+  "handoffs",
+  {
+    /** `hnd_` + random: a receipt is born of an event, and two handoffs of one conversation are two rows. */
+    id: text("id").primaryKey(),
+    projectId: text("project_id").references(() => projects.id, { onDelete: "set null" }),
+    /** The folder the conversation belongs to, kept even when it is not a catalog project. */
+    cwd: text("cwd").notNull(),
+    /** The source title, redacted before it is stored. */
+    title: text("title"),
+    /** Canonical provider ids: `claude-cli`, `codex-cli`, `opencode`, `gemini-cli`… */
+    sourceAgent: text("source_agent").notNull(),
+    sourceSessionId: text("source_session_id").notNull(),
+    sourcePath: text("source_path").notNull(),
+    /** sha256 over the normalized turns: the key that says 'this one was already handed to that agent'. */
+    sourceHash: text("source_hash").notNull(),
+    targetAgent: text("target_agent").notNull(),
+    /**
+     * `cli` or `app`: the terminal, or the vendor's desktop app, which shares the store. The file
+     * is the same either way; the surface decides which door the receipt opens (a command or a
+     * deep link) and keys the 'already handed to Claude (app)' check together with the agent.
+     */
+    targetSurface: text("target_surface").$type<"cli" | "app">().notNull().default("cli"),
+    targetSessionId: text("target_session_id").notNull(),
+    targetPath: text("target_path").notNull(),
+    tier: text("tier").$type<"full" | "compact" | "brief">().notNull(),
+    turns: integer("turns").notNull(),
+    bytes: integer("bytes").notNull(),
+    dropped: jsonb("dropped")
+      .$type<HandoffDropped>()
+      .notNull()
+      .default({ thinking: 0, images: 0, subagents: 0, offloaded: 0, secrets: 0, other: 0 }),
+    resumeCommand: text("resume_command"),
+    /**
+     * The agent that asked for it over the MCP channel (`panoma_handoff`), by the name its key
+     * was issued under; `null` when a person did, from the screen or the terminal. Attribution,
+     * not authority: the channel's gate is the operator's, and the name is what the receipt says
+     * afterwards.
+     */
+    requestedBy: text("requested_by"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // The project card and the screen ask 'what was handed off from here, the latest first'.
+    index("handoffs_project_idx").on(table.projectId, table.createdAt),
+    // The panel asks 'was this conversation already handed to that agent?' before writing again.
+    index("handoffs_source_idx").on(table.sourceHash, table.targetAgent),
+  ],
+);
+
 /**
  * Execution dispatched on a project.
  *
@@ -1609,8 +1688,9 @@ export const modelCalls = pgTable(
     id: text("id").primaryKey(),
     /**
      * Which organ spent: look · distill · classify · synthesize · memory · ask · rehearse ·
-     * episodes · describe · review · probe. The list lives in `apps/web/lib/spend-settings.ts`
-     * (`FAMILY_KINDS`), and the budgets are applied per family there, not per kind.
+     * episodes · describe · review · app · handoff · probe. The list lives in
+     * `apps/web/lib/spend-settings.ts` (`FAMILY_KINDS`), and the budgets are applied per family
+     * there, not per kind.
      */
     kind: text("kind").notNull(),
     provider: text("provider").notNull(),

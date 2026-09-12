@@ -61,6 +61,22 @@
         "4181"
       ],
       "port": 4181
+    },
+    {
+      "name": "panoma-site-4176",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--filter",
+        "@panoma/site",
+        "exec",
+        "next",
+        "dev",
+        "-H",
+        "127.0.0.1",
+        "--port",
+        "4176"
+      ],
+      "port": 4176
     }
   ]
 }

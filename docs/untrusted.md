@@ -35,7 +35,7 @@ because the browser needs it and the package's full index drags in `node:fs`.
 `UNTRUSTED_NOTE` is exported from the module but **not** from the package index: whoever
 needs it is whoever emits several blocks, and that caller comes in through the direct entry.
 
-## The eight origins
+## The nine origins
 
 `UntrustedOrigin` is a closed union, and that is half the value: it forces you to decide
 where each thing came from instead of leaving it at "text".
@@ -50,11 +50,39 @@ where each thing came from instead of leaving it at "text".
 | `advisories` | the security advisories |
 | `agents-doc` | the `AGENTS.md`/`CLAUDE.md`: prose the model **judges, never obeys** |
 | `notes` | the project's curated memory |
+| `conversation` | the turns of a conversation an agent kept on disk, when a model writes the digest of a handoff: the person's own words, and every tool output the agent read along the way, READMEs and pages included. Since 12-Sep-2026 also what the MCP server prints from one: the titles `panoma_conversations` lists and the redacted digest a `panoma_handoff` dry run answers |
+| `app` | what an optional app reported about a job it ran — the sentence each stage ended on, the reason a kind of video was set aside, what a review measured — as `panoma_video_jobs` prints it. Written by a program that read the project's README and pages, and by a model when the person wired one |
 
 `notes` is the one that gets argued about most, and that is why there is a comment on the
 type itself: the person **approved** those notes, but an agent that was reading someone
 else's text **wrote** them. Approval filters intent, not provenance — and provenance is
 exactly what this vocabulary classifies.
+
+`conversation` (11-Sep-2026) is the same argument one step further. The person typed half of
+the transcript, so it is tempting to call it theirs; the other half is what the agent read
+back to them —tool outputs, which carry any README or page the agent opened— and a transcript
+is served to a model whole. So one origin covers the whole file, and it is not `journal`
+wearing another hat: the person's words were addressed to that agent, never to the one
+writing the digest, and a request typed at eleven at night is not an instruction to a model
+that reads it a week later. It is told in [handoff.md](handoff.md). The same origin travels
+the other way since 12-Sep-2026: when an agent asks the MCP server for the conversations of
+its project, or for the dry run of a handoff, the titles and the digest —every string of the
+digest already through `redactSecrets`— reach the model inside `conversation` blocks, on the
+same argument, with the agent that reads them holding tools. Each title is one line and goes
+through `neutralizeInline` like any short field, and the whole list still sits inside one
+`conversation` block, because a title is whatever was typed or pasted as the first message to
+another agent, and the mark says so where a bullet alone would not.
+
+`app` (12-Sep-2026) is the same argument for the optional apps. What panoma video reports about
+a run —«no brief could be planned: promo — a promotion needs a real product click», «read 12
+routes»— is a program's reading of the project's README and pages, and with a brain wired, a
+model's, which chose what the camera saw pressed and wrote the words; what it quotes is the
+product's own text. None of it was written for the agent that reads it, and all of it reached
+that agent because it asked what happened to a job. So the stage sentences, the reasons and
+the review's words sit inside an `app` block, and the ids, the states, the figures and the
+files of the cuts stand outside it: those are the catalog's, and the agent works on this
+machine — a path inside a block is a path the model is told not to trust, and a cut it cannot
+name is a cut it cannot show ([agent-channel.md](agent-channel.md)).
 
 ## The block, and the order of operations
 
@@ -188,7 +216,10 @@ origin `journal`. The **rehearsal** (`apps/web/lib/consult.ts`) wraps the owner'
 the double uses. And the briefing's "Owner decisions" block, the one wire from decision
 memory to an agent, goes through `wrapUntrusted` as `notes` like the memory notes right above
 it: the owner wrote every word, and the wrapper bounds where the part that is not the
-instruction starts and ends; it does not classify who wrote it.
+instruction starts and ends; it does not classify who wrote it. And the two handoff tools of
+the MCP server, `panoma_conversations` and `panoma_handoff`, wrap what came out of a
+transcript —the titles of the list, the digest of a dry run— as `conversation`, and the
+format test counts those marks with the rest.
 
 ## Where the wrapper does not reach
 
@@ -215,7 +246,7 @@ instruction starts and ends; it does not classify who wrote it.
   the answer passed as backed. The rule that stuck: **a label that did not travel is a label
   that does not exist** — the list is trimmed before labelling.
 - **The vocabulary of origins falls short sometimes.** The distiller's quotes travel as
-  `journal`, which is the closest of the eight and does not quite fit: they are not an
+  `journal`, which is the closest of the nine and does not quite fit: they are not an
   agent's journal; the extractor's narratives and the Lab's question wear the same label for
   the same reason. Calling them `readme` would lie more, and adding an origin means touching
   the engine from a task that is not the engine's. It is noted in `apps/web/lib/distill.ts`.

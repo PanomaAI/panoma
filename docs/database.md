@@ -1,6 +1,6 @@
 # What the catalog stores, and under what rules
 
-The catalog is thirty-eight tables in PostgreSQL —PGlite locally, a real server with
+The catalog is thirty-nine tables in PostgreSQL —PGlite locally, a real server with
 `DATABASE_URL`— and the whole schema lives in `packages/db/src/schema.ts`. This page does
 not list columns: it tells the rules that decided the shape, and above all where **the
 border between what a scan gives back and what a loss takes away forever** runs. Who may
@@ -36,7 +36,7 @@ They are written in the schema's header and they explain half the oddities of th
    the engine's rule. That turns ingestion into pure upserts —no prior reads, no duplicate
    ids when rescanning— and makes rescanning idempotent by construction, not by care.
 
-## The thirty-eight tables, by family
+## The thirty-nine tables, by family
 
 | Table | What for | What it hangs off |
 | --- | --- | --- |
@@ -74,6 +74,7 @@ Comparing it with a list of advisories is comparing two questions. See
 | `consultations` | The judgment questions the twin answers in the shadows | `project_id` · `agent_id` |
 | `servings` | Each delivery —or withholding— of memory to an agent | `project_id` · `agent_id` |
 | `launches` | Each assignment that went out to a terminal, one gesture per click | `project_id` · `task_id` |
+| `handoffs` | The receipt of a handoff: which conversation became which, when, at which tier, on which surface —`target_surface`, `cli` or `app`, added on 11-Sep-2026 for the desktop apps— what was left behind, the line that resumes it, and who asked —`requested_by`, added on 12-Sep-2026: the agent's name when the write came over the MCP channel, `null` when a person did it from the screen or the terminal; never the text | nullable `project_id`, **set null** and not a cascade: a folder outside the catalog still gets a receipt |
 | `runs` | A proposal to bump a dependency, with its branch and its patch | `project_id` · `task_id` |
 | `verdicts` | Your literal quotes, mined from the agent history | `identity`, **no foreign key** |
 | `narratives` | Your verified turns —`opening`, `brief`, `reaction`— with the assistant's context kept apart, a read marker and a failed marker | `identity`, **no foreign key**; `id` = sha1 of source, session, date and redacted text |
@@ -84,9 +85,10 @@ Comparing it with a list of advisories is comparing two questions. See
 | `looks` | What the critic with eyes saw in a screenshot | random `id` · `identity` |
 | `model_calls` | The spend ledger: one row per model call | random `id` |
 
-The first nine describe **the disk**; the next four, **the supply**; the two family ones,
-**the copies**; `decisions` and `exclusions`, **what the person said**; the nine about
-agents and work, **what happened**; and the last eight are **the twin**.
+The three at the top are **the optional programs**; the next nine describe **the disk**; the
+four after them, **the supply**; the two family ones, **the copies**; `decisions` and
+`exclusions`, **what the person said**; the eleven about agents and work, **what happened**;
+and the last eight are **the twin**.
 
 ## The border: what a scan gives back and what it does not
 
@@ -99,14 +101,16 @@ and it comes back the same. With it come back its technologies, its dependencies
 distributions, its links, its families and its design fingerprint. `reviews` recomputes in
 a second and a half by reading the same folder. `packages`, `advisories` and
 `vulnerabilities` come back with one pass of `panoma enrich`, which costs network but costs
-no decision. Fifteen of the thirty-five tables are on this side, and one of them with fine
+no decision. Fifteen of the thirty-nine tables are on this side, and one of them with fine
 print: from `snapshots` today's analysis comes back, not the timeline of the earlier ones —
 which the pruning trims on purpose anyway.
 
-**What does not come back.** The other twenty hold things no scan can reconstruct: what
-a person wrote (`decisions`, `exclusions`, `notes`, `tasks`), what the agents did while
+**What does not come back.** The other twenty-four hold things no scan can reconstruct:
+what a person wrote (`decisions`, `exclusions`, `notes`, `tasks`), what the agents did while
 they worked (`agents`, `agent_sessions`, `agent_activities`, `memory_jobs`, `runs`, `launches`,
-`servings`, `consultations`) and the entire portrait (`verdicts`, `narratives`,
+`servings`, `consultations`), what a person asked for from a folder (`handoffs`: the
+conversation it records lives in the agent's own store, and a rescan knows nothing of it), the
+three app tables, and the entire portrait (`verdicts`, `narratives`,
 `observations`, `beliefs`, `decision_episodes`, `synthesis_passes`, `looks`,
 `model_calls`). Migration `0014` says it in the words that forced it to be done with
 `UPDATE` instead of by deleting and rescanning: there are things a scan cannot reconstruct,
@@ -143,11 +147,11 @@ Two things it cannot do on its own, and that ingestion settles:
   fall back to `ruta:`. Hanging off `identity` are `decisions`, `verdicts`, `narratives`,
   `observations`, `beliefs`, `decision_episodes`, `looks` and `model_calls`.
 
-## Fifty-eight migrations, and four snapshots that are missing
+## Sixty-four migrations, and four snapshots that are missing
 
-`packages/db/migrations` has fifty-eight `.sql` files, from `0000_lonely_tigra` to
-`0057_open_plan`, and `meta/_journal.json` with its fifty-eight entries. In
-`meta/` there are fifty-four snapshots: `0014`, `0015`, `0052` and `0053` are missing.
+`packages/db/migrations` has sixty-four `.sql` files, from `0000_lonely_tigra` to
+`0063_app_job_requested_by`, and `meta/_journal.json` with its sixty-four entries. In
+`meta/` there are sixty snapshots: `0014`, `0015`, `0052` and `0053` are missing.
 
 It is not an oversight, and it is worth knowing why before trying to "fix it". Those
 migrations **were written by hand**, and the snapshots are generated by `drizzle-kit` when
@@ -170,7 +174,18 @@ column on `decision_episodes`— be derived by `drizzle-kit` again, with its own
 on `0054`'s and a `when` the clock had already passed; `0056_ai_summary_hash` followed the
 same road on 6-Sep-2026 (`pnpm --filter ./packages/db generate --name ai_summary_hash`), one
 `ALTER TABLE` adding a text column, with its snapshot chained on `0055`'s; and `0057_open_plan`
-(7-Sep-2026, the `jsonb` that keeps the plan of «Open everything») on `0056`'s, the same way. The two `CHECK` constraints written by hand on `memory_jobs` are
+(7-Sep-2026, the `jsonb` that keeps the plan of «Open everything») on `0056`'s, the same way;
+`0058_apps` and `0059_desktop_keys` (8-Sep-2026) are told at the top of this page; and
+`0060_handoffs` (11-Sep-2026, the receipts table with its two indexes) was generated on
+`0059`'s, and `0061_handoff_surface` (the evening of the same day, one `ALTER TABLE` adding
+`target_surface` as text, `cli` by default, so every receipt written before the desktop apps
+reads as a terminal one) on `0060`'s; and `0062_handoff_requested_by` (12-Sep-2026, one
+`ALTER TABLE` adding `requested_by` as a nullable text, no default, so every receipt written
+before the agent channel's door reads as a person's, which is what it was) on `0061`'s, the
+same way (`pnpm --filter @panoma/db generate --name handoff_requested_by`); and
+`0063_app_job_requested_by` (12-Sep-2026, the same column on `app_jobs`, for the same reason and
+under the same name, the day the optional apps got their door on the agent channel) on
+`0062`'s, the same way again. The two `CHECK` constraints written by hand on `memory_jobs` are
 not in it because the schema does not declare them, and that is harmless — drizzle only ever
 diffs what the schema says, so it will neither drop them nor recreate them.
 
@@ -245,9 +260,11 @@ repetition is the fact you want to count**:
   when the portrait has changed between one and the other.
 
 Everything else that is born of an event —agents, sessions, activity, tasks, notes,
-proposals, servings, launches, consultations— uses `newId(prefix)`: nine random bytes with
-a readable prefix (`agt_`, `ses_`, `act_`, `tsk_`, `note_`, `run_`, `srv_`, `lnc_`,
-`ask_`). `synthesis_passes` is also born with a random one, with no prefix and no argument:
+proposals, servings, launches, consultations, handoff receipts— uses `newId(prefix)`: nine
+random bytes with a readable prefix (`agt_`, `ses_`, `act_`, `tsk_`, `note_`, `run_`, `srv_`,
+`lnc_`, `ask_`, `hnd_`). A receipt is random on purpose, like a model call: handing the same
+conversation to the same agent twice is two files in that agent's store, and two rows here.
+`synthesis_passes` is also born with a random one, with no prefix and no argument:
 nobody is ever going to call that row by its name again.
 
 ## How writing happens: one transaction, and `tx` never `db`
@@ -315,9 +332,10 @@ Before deleting, what a human or an agent wrote moves to the heir. The heir is t
 —just scanned, or already catalogued outside the scope— whose `git:` identity matches the
 condemned one's, and **only if it is unique**: two copies claiming the same identity are
 the same ambiguity that `assignIdentities` resolves by handing out nothing, and handing out
-memory blindly would be worse than losing it. Eight tables get re-pointed: `notes`,
-`agent_sessions`, `agent_activities`, `tasks`, `consultations`, `servings`, `launches` and
-`runs`.
+memory blindly would be worse than losing it. Nine tables get re-pointed: `notes`,
+`agent_sessions`, `agent_activities`, `tasks`, `consultations`, `servings`, `launches`, `runs`
+and `handoffs` —the last one hangs off the project with `set null` and not a cascade, but the
+point is the same: a moved folder must not orphan what a person asked for from it.
 
 **The gap is declared in the code itself:** if the new location is not in the catalog yet
 when the old one is pruned, there is no heir in sight and the memory goes with the row.

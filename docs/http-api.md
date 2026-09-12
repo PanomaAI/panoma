@@ -1,9 +1,10 @@
 # The HTTP surface, family by family
 
 Panoma serves its entire product over HTTP from a Next.js that runs on the machine of whoever
-uses it: **71 `route.ts` files under `apps/web/app/api/`, exporting 87 handlers** — 30 GET,
-52 POST, 3 PATCH and 2 DELETE. This page inventories every one of them: what each does, what
-guards it carries, who calls it, whether it writes and how long it is given.
+uses it: **79 `route.ts` files under `apps/web/app/api/`, exporting 98 handlers** — 33 GET,
+59 POST, 3 PATCH and 3 DELETE (counted 12-Sep-2026). This page inventories every one of them:
+what each does, what guards it carries, who calls it, whether it writes and how long it is
+given.
 
 **What test anchors this.** The guard columns are checked by `apps/web/lib/guard.test.ts` and
 `apps/web/app/api/gates.test.ts`, handler by handler and reading the source code: a new route
@@ -52,7 +53,7 @@ install). The watcher never shows up in that column: **it calls no route at all*
 other way round — `/api/today` and `/api/watch` are the ones that wake it with
 `ensureWatcher()`.
 
-`maxDuration` is the ceiling declared in the file. Only seventeen declare it; the rest keep the
+`maxDuration` is the ceiling declared in the file. Only nineteen declare it; the rest keep the
 default value, which the repository's comments call "the default minute"
 (`apps/web/app/api/disk/route.ts:61`).
 
@@ -104,10 +105,21 @@ silence.
 
 ## The agent channel
 
-Twelve handlers in ten files. The eight an agent actually uses **do not carry `sameOrigin`**,
-and that is no oversight either: they are called by the MCP server, which sends neither
-`Sec-Fetch-Site` nor `Origin`, so the guard would let them through all the same and would be
-decoration. What guards them is a 192-bit Bearer key stored only hashed.
+Eighteen handlers in sixteen files. Eight of the fourteen an agent actually uses **do not
+carry `sameOrigin`**, and that is no oversight either: they are called by the MCP server, which
+sends neither `Sec-Fetch-Site` nor `Origin`, so the guard would let them through all the same
+and would be decoration. What guards them is a 192-bit Bearer key stored only hashed. The six
+that do carry it are the handoff's two doors on this channel and the video four. The handoff
+pair — `agent/conversations` and `agent/handoff` — carry the operator key as well, and **both
+come before the agent key**: the four stores are private history, the family's gate is the
+operator's, and the agent key there only says who came through the door (the project it stands
+in, the name the receipt keeps). The MCP client sends the operator key to the loopback only,
+read from the 0600 file the way the CLI does, so a remote catalog can never list or hand off:
+the stores live on the catalog's disk. Of the video four, the two that move something —
+`agent/video` starts a production, `agent/video/cancel` ends one — carry the operator key in
+the same order, because starting the app starts the project's own development server as this
+user; the two that read, `agent/apps` and `agent/video/jobs`, carry `sameOrigin` and the agent
+key, which is what their operator-door twins ask of a tab.
 
 | route · method | what it does | guards | who calls | writes | `maxDuration` |
 | --- | --- | --- | --- | --- | --- |
@@ -119,6 +131,12 @@ decoration. What guards them is a 192-bit Bearer key stored only hashed.
 | `POST /api/agent/journal` | searches the project's complete logbook by pages of 12, or reads one original entry in segments with `entryId` | `agent` | MCP | no | — |
 | `POST /api/agent/consult` | the stand-in: leaves a question of judgment, in shadow | `agent` | MCP | yes | — |
 | `POST /api/agent/notes` | proposes memory, or re-reads what was approved. **It does not decide** | `agent` | MCP | yes | — |
+| `POST /api/agent/conversations` | `panoma_conversations`: body exactly `{cwd, root?, remote?}` (the MCP client's location); answers the catalog project it resolves to (`project`, `root`), the conversations the four agents kept whose folder is that root or lies inside it — both sides resolved on disk, discovery asked for that folder so the forty-per-store cap is of the folder's files and not of the disk's (since 12-Sep-2026), one row per id, newest first, as `{id, handle, agent, surface, title, updatedAt, turnCount, bytes, compacted, limit?}`: **no `path` and no `cwd`**, and the `title` through `redactSecrets` (a title the person did not set is the first prompt) — and the project's receipts newest first as `{id, sourceAgent, sourceSessionId, targetAgent, targetSurface, tier, createdAt, resumeCommand, requestedBy}`. 404 `no-project` for a folder the catalog does not know; 400 `local-only` under `DATABASE_URL`, in fixed English. Every answer `private, no-store` | `origin` · `operator` · `local only` · `agent` | MCP | no | — |
+| `POST /api/agent/handoff` | `panoma_handoff`: body exactly `{cwd, root?, remote?, id?, target, tier?, keepTurns?, dryRun?}`. Without `id`, the newest conversation kept for the project, with `panoma handoff`'s rule — two different agents within the same hour answer 409 `ambiguous-id` naming both ids; none, 404 `conversation-not-found`; an `id` must be one of the project's own, else 404, never a path, and a malformed one answers 400 `invalid-id` before anything is looked up. `target` is an agent word or an app word (the app word carries the surface; a `surface` field, a `digestBy`, a `targetHome` or any other key answers 400 `body` naming it — the digest on this channel is always the mechanical one). The same agent as the source answers 409 `same-store` at **every** tier and on either surface, with a `hint` that names the person's doors. `dryRun: true` answers the preview — `{dryRun, conversation, target, surface, tier, digest, fidelity, size, dropped, receipt}`, `conversation` the row as the list shows it, the digest with every string through `redactSecrets`, `fidelity` null for a document — a target without a store, or any target at `brief` — `receipt` the newest for that target and surface as the list shows it — and writes nothing. A write answers what `POST /api/handoff` answers, `{ok, receipt, result}`, the `receipt` as the list shows it (the view: no `sourcePath`, `targetPath`, `cwd`, hash or project id — until 12-Sep-2026 the raw row travelled here alone) with `requestedBy` set to the agent's name, and **without `result.document`**: the brief of a document-only handoff is read at `result.path`, and what this channel carries of the transcript is the redacted digest and the redacted titles; the `opencode import` step is **never** run here and stays in `result.steps` for the person. Faults are `handoffHttpError`'s, plus a `hint` for `same-store`, `ambiguous-id` and `conversation-not-found` | `origin` · `operator` · `local only` · `agent` | MCP | yes: **a new file in the target agent's store** (or a `.md` under `~/.panoma/handoff/` for `brief`), the row in `handoffs` with `requested_by` | — |
+| `POST /api/agent/apps` | `panoma_apps`: body empty or the location, which is ignored — which apps are installed is a fact of the machine. Answers one row per official app as `{id, name, version, latestVersion, enabled, ready, requirements: [{id, present, version?}], providers: {brain, voice}, next}`, `next` being the setup step `nextStep` picks for the app's page (`install`, `enable`, `check`, `browser`, `ffmpeg`, `create`); `present` is `null` for a requirement never checked. No path of this disk: it is `getAppDetail`'s answer, reduced. 403 `local-catalog-required` under `DATABASE_URL`, in fixed English; `private, no-store` | `origin` · `agent` | MCP | no | — |
+| `POST /api/agent/video` | `panoma_video`: body exactly `{cwd, root?, remote?, goal?, format?, langs?, until?, url?, theme?, creative_brief?, force?, new_story?}`, with the terminal's defaults (`promo`, `v`, `["en"]`, `preview`). `brain`, `voice`, `music` and `dance` answer 400 `body` naming the person's setting they are. Queues `panoma_video_auto` for the catalog project the location names through the same `enqueueAppJob` as `POST /api/apps/[id]/jobs` — same closed field list, same loopback rule for `url`, same dedupe, same budget reservation, the model and the voice read from the app's settings — with `requested_by` set to the agent's name. Answers `{project, duplicate, job}`, the job as `/api/agent/video/jobs` shows it: 202 for a new row, **409 with the running one** when the same input is already live. 404 `no-project`; 409 `invalid-identity` for a project without a stable identity, with a `hint`; the queue's own faults bare, with the status `apps-http.ts` gives them (`not-installed`, `app-budget-exhausted`, `local-url-required`…); 403 `local-catalog-required` under `DATABASE_URL` | `origin` · `operator` · `local only` · `agent` | MCP | yes: a row in `app_jobs`, and the production it starts | — |
+| `POST /api/agent/video/jobs` | `panoma_video_jobs`: body exactly `{cwd, root?, remote?, id?, wait?}`. Without `id`, the newest ten productions of the project as `{project, jobs}`; with `id`, that job whole as `{project, job}` — `{id, tool, status, requestedAt, startedAt, finishedAt, requestedBy, input, stage, lastLine, stages, error, report}`, `stages` the twelve with their state and the app's sentence (`stageReport`), `report` the reduced result once there is one: `renders` with their files **on this disk**, `skipped` with the reasons, `briefs`, `disclose`, `reference`, `dir`, `spend`. `wait: true` needs an `id` and holds up to 25 seconds on the supervisor's notice, like `GET /api/apps/jobs/[jobId]?wait=1`. Only the project's own rows: another project's job, or one of the app's operations (empty identity), is 404 `job-not-found`. 403 `local-catalog-required` under `DATABASE_URL` | `origin` · `agent` | MCP | no | 30 |
+| `POST /api/agent/video/cancel` | `panoma_video_cancel`: body exactly `{cwd, root?, remote?, id}`; the job must be a production of the project the location names, else 404 `job-not-found`. Cancels as `POST /api/apps/jobs/[jobId]/cancel` does and answers `{project, job}` as it stands afterwards. 403 `local-catalog-required` under `DATABASE_URL` | `origin` · `operator` · `local only` · `agent` | MCP | yes: the row's state, and the process tree it ends | — |
 | `GET /api/agent/notes` | the signals planted on a path, for the hook | `origin` | hook | only the challenges its sentinel patrol opens | — |
 | `POST /api/agent/keys` | creates an agent and shows its key exactly once | `origin` · `operator` · `local server` | CLI | yes | — |
 | `DELETE /api/agent/keys` | retires an agent and its key with it; cascades to its sessions | `origin` · `operator` · `local server` | browser | yes | — |
@@ -127,6 +145,23 @@ decoration. What guards them is a 192-bit Bearer key stored only hashed.
 `GET /api/agent/notes` runs exactly the other way round from its neighbors: it is called by the
 `panoma signal` hook before an agent edits a file, and **a hook has no agent key**, so it
 carries `sameOrigin` and not `requireAgent`. It is the only handler in `/api/agent/*` like that.
+
+The two handoff doors are the other exception, in the other direction: they carry every guard
+there is. Both go through `apps/web/lib/handoff-write.ts`, the half `POST /api/handoff` and
+`GET /api/handoff/[id]` share — the same discovery over the same folders (the thirty-second
+cache is one), the same read, the same write and receipt — so what an agent hands off is what a
+person would have handed off from the screen, minus the two things the channel does not have: a
+model-written digest and a same-agent copy.
+
+The video four (12-Sep-2026) split the same way the operator doors of the apps do: the two that
+move something — a start, a cancel — carry the operator key ahead of the agent key, and the two
+that read carry `sameOrigin` and the agent key alone, which is what `GET /api/apps` and
+`GET /api/apps/jobs/[jobId]` ask of a tab. What they share with each other and with the handoff
+pair — the location an MCP client describes, the `no-store` header, the body refusal, the
+project the location resolves to — is `apps/web/lib/agent-channel.ts`; what is theirs is
+`apps/web/lib/agent-video.ts`: the body readers, narrower than the operator door's on purpose
+(no `brain`, no `voice`, no `music`), and the views, which keep the files of the cuts because the
+agent works on this machine and a cut it cannot name is a cut it cannot show.
 
 Approving and discarding memory do not exist in this channel, not even with a key: they live in
 `POST /api/notes`, with `sameOrigin` and no agent credential. The separation is the design — an
@@ -195,9 +230,10 @@ never accepted from the client.
 ## What executes
 
 Ten handlers in seven files. These are the ones that put this machine to work, and six of those
-seven are listed by their full name in the `EJECUTAN` list in `guard.test.ts` — which holds nine
-files: the other three belong to the twin. The seventh, `environment`, goes in the list of routes
-exempt from the second key, with its reason written down.
+seven are listed by their full name in the `EJECUTAN` list in `guard.test.ts` — which holds
+twenty-three files: ten belong to the official apps, three to the twin and four to the handoff
+(the two operator doors and the two on the agent channel). The seventh, `environment`, goes in
+the list of routes exempt from the second key, with its reason written down.
 
 | route · method | what it does | guards | who calls | writes | `maxDuration` |
 | --- | --- | --- | --- | --- | --- |
@@ -250,6 +286,44 @@ Job retry arguments omit internal project selection metadata and process IDs. Re
 and guide output are application data, not instructions. The full lifecycle and process
 boundaries are in [apps.md](apps.md). `/api/environment` also reports whether npm is available
 and whether it came from PATH or Node's installation, without exposing its absolute path.
+
+## The handoff
+
+Six handlers in five files here, all behind both guards and all local only, plus the two doors
+of the agent channel listed above (`POST /api/agent/conversations`, `POST /api/agent/handoff`),
+which carry both guards too and the agent key after them. They read the conversations that
+Claude Code, Codex CLI, OpenCode and Gemini CLI keep on this disk, and the ones that write put
+a new conversation into another agent's own store so its normal resume finds it. The engine is
+`@panoma/handoff`, which starts no process and talks to nothing; the one process this family
+starts is `opencode import`, run by `POST /api/handoff` alone — the channel's door leaves that
+step in `result.steps` — and the launchers it uses are `openAgent` with `strict` for a terminal
+and, for a desktop app, `open <url>` with `openApp` (`open -a`) as the fallback. A **surface**
+is where the copy is meant to be opened: `cli` (the terminal, the default) or `app`
+(Claude.app's Code tab, the Codex app inside ChatGPT.app), the same store either way; a target
+on the `app` surface is named by the agent with `surface: "app"` beside it, or by the app word
+(`claude-app`, `codex-app`). Since 12-Sep-2026 the receipt also says who asked: `requested_by`
+is the agent's name when the write came over the channel, and `null` when a person did it. The
+record is [handoff.md](handoff.md).
+
+| route · method | what it does | guards | who calls | writes | `maxDuration` |
+| --- | --- | --- | --- | --- | --- |
+| `GET /api/handoff` | the conversations on this disk (newest forty per store, each with its `surface` read from the file's own marker), the four store reports, the installed agents with `native` per agent plus one row per desktop app `{id: "claude-app" \| "codex-app", agent, surface: "app", name, installed: true, broken: false, native: true}` when its bundle is on this Mac **and** the agent's store was found, and the day's digest budget `{ left, cap, connected }`. Thirty-second cache; `?fresh=1` skips it. Answers `remote: true` under `DATABASE_URL` | `origin` · `operator` | browser | no | — |
+| `POST /api/handoff` | body exactly `{id, target, tier, surface?, digestBy?, keepTurns?}` (`surface` through `isSurface`, default `cli`; an app word as `target` means `surface: "app"`): reads the conversation, digests it (a model writes the summary with `digestBy: "model"`, family `handoff` — and since 12-Sep-2026 only after `checkHandoff` has run the engine's free refusals, so a missing store, a missing folder or nothing to carry answers before the paid call, the ledger row and the receipt), writes it into the target's store — the same file for either surface — runs `opencode import` when the target is OpenCode and it is installed, records the receipt with `target_surface` and answers `{ok, receipt, result}` with `result.surface`, `result.resume` (the agent's command, always) and `result.resumeInApp` (`{app, url, line, sentence}` on a Mac for an agent with an app, else `null`); the receipt's `resume_command` is the `open '<url>'` line for an app target and the command otherwise. The same agent on either surface answers 409 `same-store` at `full`: the app and the CLI share one store, and that door is the launch on the original; at `compact` it writes the shorter copy into that same store, with a receipt keyed by the source's own agent | `origin` · `operator` · `local only` | browser | yes: **a new file in the target agent's store** (or a `.md` under `~/.panoma/handoff/` for `brief`), the row in `handoffs`, one `handoff` row in `model_calls` per paid digest | — |
+| `GET /api/handoff/[id]` | the preview the panel paints before writing (`?fresh=1` skips the thirty-second cache, as on the list; the panel sends it when a row is pressed): the row, the mechanical digest, what each native target keeps and leaves, what the reader dropped, the size, the receipts by hash keyed `<agent>` for the terminal and `<agent>@app` for the desktop app, and `sameSurfaceDoor: {cli, app}` — the two lines that reopen this very conversation in its own agent, `app` being `null` off macOS or for an agent with no app | `origin` · `operator` · `local only` | browser | no | — |
+| `POST /api/handoff/launch` | body exactly `{receipt}` **or** exactly `{id, surface: "app"}`; a `receipt` that is not a safe id answers 400 `invalid-id`, a missing one 400 `body`. A receipt on the `cli` surface opens a terminal with the target agent resuming the copy, argv re-derived from the row (`resumeOf`), folder from the catalog project, binary the detector verified, `strict`. A receipt on the `app` surface, or `{id, surface: "app"}` for the same-agent door on an original conversation (resolved against discovery; folder = the catalog root that contains it, else its own), runs `open <url>` with the URL built here from the agent and the validated id through the two closed templates (`claude://resume?session=<uuid>`, `codex://threads/<uuid>`, checked by `isAppLink` before it is an argument — never a stored string), falls back to `open -a <bundle>` over the folder when `open` fails at once, and answers `{ok, root, line, sentence, with}`; off macOS it answers 501 naming the app. 410 when the folder is gone, either way | `origin` · `operator` · `local only` | browser | yes: the 0700 `agent-<provider>-<hash>` script in `~/.panoma/open` for a terminal; nothing for an app (the app itself adopts the file and, for Claude, saves trust for the folder) | — |
+| `POST /api/handoff/digest` | body exactly `{id}`: the server re-reads the conversation, redacts and wraps every turn as `conversation` origin, and a model writes the summary; `429` at the `handoff` cap, one retry on a cut answer, `502` via `modelErrorParts` | `origin` · `operator` · `local only` | CLI (`panoma handoff --digest model`) | yes: one `handoff` row in `model_calls` per call | 120 |
+| `POST /api/handoff/record` | body exactly `{id, target, surface, tier, targetSessionId, targetPath, sourceHash, turns, bytes, dropped}` (`surface` required, through `isSurface`): the CLI's receipt after it wrote the file itself; `title` and `cwd` re-read from discovery, `target_surface` stored, `resume_command` derived per surface — the `open '<url>'` line for `app` on a Mac, the agent's command otherwise | `origin` · `operator` · `local only` | CLI | yes: the row in `handoffs` | — |
+
+Failures answer `{ error: <HandoffFaultCode>, detail? }` with the status `HANDOFF_STATUS` in
+`apps/web/lib/handoff-http.ts` assigns (400 `invalid-id` · `cwd-missing` ·
+`target-store-missing`, 404 `conversation-not-found` · `store-missing`, 409 `ambiguous-id` ·
+`same-store`, 413 `too-large`, 501 `unsupported-target` · `import-command-missing`, 500 the
+rest); the detail is scrubbed of this machine's paths, and a door may add one English sentence
+as `hint` for the codes that have a next step — the agent channel does, for `same-store`,
+`ambiguous-id` and `conversation-not-found`. A body that is not exactly the declared fields
+answers 400 `{ error: "body", code: "body" }`. No route takes a path or a command from the
+client: a conversation is named by `agent:sessionId` and resolved against discovery — on the
+channel, against the project's own rows only — a receipt by its `hnd_` id.
 
 ## The settings
 
@@ -354,14 +428,19 @@ distinguishes them, because it is the only one that carries megabytes.
 
 ## The remote-catalog cutoff
 
-Sixteen route files, with twenty-one handlers between them, refuse to work against a remote
-catalog: `hooks`, `disk`, `md/inspect`, `md/apply`, `md/repair`, `check`, `tasks`,
-`assignments`, `notes`, `rescan`, `ai`, `roots`, `assignments/launch`, `open`, `open/all` and
-the just-in-time enrollment that lives inside `agent/context`. Most answer 400 with
-`api.localOnly` naming the action; the five GETs the interface needs in order to paint itself —
-`roots`, `assignments/launch`, `open`, `open/all` and `ai` — do not cut off: they answer with an
-empty response or with `remote: true` inside, which is what lets the screen say "this cannot be
-done from here" instead of breaking.
+Twenty-three route files, with twenty-nine handlers between them, refuse to work against a
+remote catalog: `hooks`, `disk`, `md/inspect`, `md/apply`, `md/repair`, `check`, `tasks`,
+`assignments`, `notes`, `rescan`, `ai`, `roots`, `assignments/launch`, `open`, `open/all`, the
+just-in-time enrollment that lives inside `agent/context`, the five of the handoff —
+`handoff`, `handoff/[id]`, `handoff/launch`, `handoff/digest` and `handoff/record`, whose four
+POSTs write into an agent's store, open a terminal, spend a credential or record a receipt for
+files on this disk — and the handoff's two doors on the agent channel, `agent/conversations`
+and `agent/handoff`, which answer 400 `{error: "local-only", code: "local-only", detail}` in
+fixed English because a machine reads them. Most of the rest answer 400 with `api.localOnly`
+naming the action; the six GETs the interface needs in order to paint itself — `roots`,
+`assignments/launch`, `open`, `open/all`, `ai` and `handoff` — do not cut off: they answer with
+an empty response or with `remote: true` inside, which is what lets the screen say "this cannot
+be done from here" instead of breaking.
 
 The reason is always the same: with the database on another machine, the folders are not on the
 server's disk. The list comes back in one pass:
@@ -371,8 +450,8 @@ grep -rl DATABASE_URL --include=route.ts apps/web/app/api
 ```
 
 Since 6-Sep-2026 that grep returns one file more than the list above: `memory/export` names the
-variable only to say that it does **not** cut. Today it answers seventeen; the sixteen above are
-the ones that do.
+variable only to say that it does **not** cut. Today it answers twenty-four; the twenty-three
+above are the ones that do.
 
 ## What it does not do / Known limits
 
@@ -389,7 +468,7 @@ the ones that do.
   app are published together and deployed together; nothing here is a public API, and no route
   carries a version prefix.
 - **There is no rate limit on any route.** The expensive ones defend themselves with a daily
-  budget (the seven families of [budgets.md](budgets.md), moved from `/spend` or from their
+  budget (the nine families of [budgets.md](budgets.md), moved from `/spend` or from their
   `PANOMA_…_BUDGET` variable), with an in-memory `Set` (`/api/check`) or
   with a 409 of "there is already one alive" (`/api/runs`), but that brakes spend and
   concurrency, not frequency.

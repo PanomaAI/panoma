@@ -1,0 +1,23 @@
+{
+  "name": "@panoma/handoff",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "description": "Hands a coding-agent conversation to another agent: reads the agents' own stores, writes one new transcript the target's resume picks up.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "panoma-src": "./src/index.ts", "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./faults": { "panoma-src": "./src/faults.ts", "types": "./dist/faults.d.ts", "default": "./dist/faults.js" }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup src/index.ts src/faults.ts --format esm --dts --clean",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@panoma/core": "workspace:*"
+  }
+}

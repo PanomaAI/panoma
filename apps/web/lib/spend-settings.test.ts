@@ -57,6 +57,7 @@ describe("every ledger kind answers to one family or to none", () => {
     expect(familyOf("episodes")).toBe("episodes");
     expect(familyOf("describe")).toBe("card");
     expect(familyOf("review")).toBe("card");
+    expect(familyOf("handoff")).toBe("handoff");
     for (const kind of UNBUDGETED_KINDS) expect(familyOf(kind)).toBeUndefined();
   });
 
@@ -191,7 +192,7 @@ describe("what a form may change", () => {
 });
 
 describe("the factory values", () => {
-  it("match the eight documented in docs/budgets.md", () => {
-    expect(FACTORY_CAPS).toEqual({ read: 300, look: 20, memory: 12, ask: 20, rehearse: 20, episodes: 20, card: 100, app: 20 });
+  it("match the nine documented in docs/budgets.md", () => {
+    expect(FACTORY_CAPS).toEqual({ read: 300, look: 20, memory: 12, ask: 20, rehearse: 20, episodes: 20, card: 100, app: 20, handoff: 10 });
   });
 });

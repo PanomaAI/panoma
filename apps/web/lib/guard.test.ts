@@ -258,6 +258,33 @@ describe("las puertas que ejecutan llevan todas la misma guarda", () => {
     "twin/mine/route.ts",
     /* And write TASTE.md —what all your agents read— and save the permission of what is inferred. */
     "twin/taste/route.ts",
+    /*
+      The handoff: writes a new conversation into another agent's own history and runs
+      `opencode import` on it; the launch opens a terminal with the target agent resuming it.
+      The GET beside the POST lists private conversations and carries both guards as well —
+      the whole family sits behind the operator key, the list included.
+     */
+    "handoff/route.ts",
+    "handoff/launch/route.ts",
+    /*
+      The same family on the agent channel: `panoma_handoff` writes into another agent's history
+      and `panoma_conversations` lists it. The agent key comes AFTER both guards there — it says
+      who asked, it does not open the door — so the sweep below demands them handler by handler,
+      and `gates.test.ts` calls both with the body unread.
+     */
+    "agent/handoff/route.ts",
+    "agent/conversations/route.ts",
+    /*
+      The video four on the agent channel. The two that move something — `panoma_video` starts a
+      production, which starts the project's own development server as this user and films it;
+      `panoma_video_cancel` ends one — carry the operator key ahead of the agent key, like the
+      handoff pair. The two that read, `agent/apps` and `agent/video/jobs`, are the operator
+      door's own GETs on the agent's side and are exempt below with the same sentence.
+     */
+    "agent/video/route.ts",
+    "agent/video/cancel/route.ts",
+    "agent/apps/route.ts",
+    "agent/video/jobs/route.ts",
   ];
 
   /*
@@ -287,6 +314,8 @@ describe("las puertas que ejecutan llevan todas la misma guarda", () => {
     "apps/[id]/jobs/route.ts GET": "Reads official app metadata, a previously authorized job, or its contained output. It creates no new operation and still requires sameOrigin.",
     "apps/jobs/[jobId]/route.ts GET": "Reads official app metadata, a previously authorized job, or its contained output. It creates no new operation and still requires sameOrigin.",
     "apps/jobs/[jobId]/artifact/route.ts GET": "Reads official app metadata, a previously authorized job, or its contained output. It creates no new operation and still requires sameOrigin.",
+    "agent/apps/route.ts POST": "Reads the official apps' state for an MCP client, as GET /api/apps does for a tab: no operation is created, sameOrigin stays, and requireAgent says who asked.",
+    "agent/video/jobs/route.ts POST": "Reads one project's productions for an MCP client, as GET /api/apps/jobs/{id} does for a tab: nothing moves, sameOrigin stays, and requireAgent says who asked.",
     "open/route.ts GET":
       "Exento de localOperatorOnly, no de sameOrigin: lista qué editores hay instalados para que el menú pinte solo lo que existe. Es detectar, no obedecer, y no lleva nada del cliente.",
     "open/all/route.ts GET":
@@ -455,8 +484,20 @@ describe("las puertas que ejecutan llevan todas la misma guarda", () => {
     }
   });
 
+  /*
+    And the fourth kind of private thing on this disk: the conversations the agents keep.
+    `discoverConversations` lists them (titles, folders, the first prompt), `readConversation`
+    opens one whole, and `discoverCached` is the thirty-second cache in front of the first —
+    the routes go through it, so the sweep names it too, or a new route reading through the
+    cache would be invisible to this test. Since the agent channel got its two doors, the
+    routes reach all three through `lib/handoff-write.ts`: `discoverForCatalog` lists,
+    `openConversation` reads one whole, and `writeHandoff` puts a copy into another agent's
+    store. The sweep names those three as well — a route that calls the library instead of the
+    engine is reading the same history — and the library's header says so, so a rename there
+    does not blind this test in silence.
+   */
   it("una puerta nueva que abra el historial o conceda su permiso tampoco", () => {
-    const intima = /\b(mineHistory|setConsent|setInferredConsent)\s*\(/;
+    const intima = /\b(mineHistory|setConsent|setInferredConsent|discoverConversations|discoverCached|readConversation|discoverForCatalog|openConversation|writeHandoff)\s*\(/;
     for (const ruta of rutas(API)) {
       const source = readFileSync(new URL(ruta, API), "utf8");
       if (!intima.test(source)) continue;

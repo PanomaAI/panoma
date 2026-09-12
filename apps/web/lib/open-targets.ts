@@ -411,6 +411,25 @@ export async function openTerminal(
 }
 
 /**
+ * What the handoff launch adds to opening an agent, and nothing the card's button sends.
+ *
+ * `args` are the resume arguments the server re-derived from a receipt (`resumeOf`), never a
+ * string from a client, and they still pass `isSafeArgument` before reaching the script: a
+ * session id is letters, digits and dashes, and a flag is a flag. `strict` refuses the
+ * fallback to whichever agent is installed: a conversation handed to Codex must open in Codex
+ * or say that Codex is not here, not open Claude on the wrong history.
+ */
+export interface OpenAgentOptions {
+  args?: string[];
+  strict?: boolean;
+}
+
+/** A flag or a bare token: what `composeScript` joins into the line without quoting. */
+function isSafeArgument(value: string): boolean {
+  return /^-{0,2}[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/.test(value);
+}
+
+/**
  * Open a coding agent in the project folder.
  *
  * It is not the same as 'do it now' from the card: that one writes an assignment and hands it over
@@ -426,6 +445,7 @@ export async function openAgent(
   root: string,
   wanted: string | undefined,
   locale: Locale,
+  options: OpenAgentOptions = {},
 ): Promise<LaunchOutcome> {
   /*
     One no longer asks about the system but about what is there: opening an agent is opening a
@@ -447,23 +467,35 @@ export async function openAgent(
   // The id comes from the browser, so it is searched among those detected instead of trusted: what
   // is executed is the binary that the detector verified responds, never a string that has traveled
   // from the page.
-  const found = available.find((entry) => entry.provider.id === wanted) ?? available[0];
+  const found =
+    available.find((entry) => entry.provider.id === wanted) ?? (options.strict ? undefined : available[0]);
   if (!found?.command) {
     return {
       ok: false,
       status: 501,
       error: t(locale, "open.noAgent"),
       hint: t(locale, "open.noAgentHint", {
-        agents: providersByAuth("cli")
-          .map((entry) => entry.command)
-          .join(", "),
+        agents: options.strict && wanted
+          ? wanted
+          : providersByAuth("cli")
+              .map((entry) => entry.command)
+              .join(", "),
       }),
+    };
+  }
+
+  const args = options.args ?? [];
+  if (!args.every(isSafeArgument)) {
+    return {
+      ok: false,
+      status: 400,
+      error: t(locale, "open.launchNamedFailed", { name: found.provider.name, detail: "unsafe argument" }),
     };
   }
 
   let script: string;
   try {
-    script = await writeAgentScript(root, found);
+    script = await writeAgentScript(root, found, args);
   } catch (error) {
     return {
       ok: false,
@@ -534,15 +566,23 @@ async function writeScript(name: string, body: string, windows: boolean, dir: st
   return script;
 }
 
-async function writeAgentScript(root: string, found: AgentAvailability): Promise<string> {
+/*
+  The stamp carries the arguments as well as the folder since the handoff launch: resuming two
+  conversations of one project within a second would otherwise write the same file twice, and
+  the first terminal would open the second one's session. `sha1(root)` alone is what every
+  launch without arguments still gets, byte for byte, so the scripts already on disk keep their
+  names.
+ */
+async function writeAgentScript(root: string, found: AgentAvailability, args: string[] = []): Promise<string> {
   const { dir, extension, windows } = await scriptHome();
-  const stamp = createHash("sha1").update(root).digest("hex").slice(0, 12);
+  const stamped = args.length === 0 ? root : `${root}\0${args.join("\0")}`;
+  const stamp = createHash("sha1").update(stamped).digest("hex").slice(0, 12);
   return writeScript(
     `agent-${found.provider.id}-${stamp}.${extension}`,
     composeScript({
       root,
       command: found.command!,
-      args: [],
+      args,
       ...(windows ? { shell: "powershell" as const } : {}),
     }),
     windows,

@@ -33,6 +33,7 @@
  * pattern, and it is the only thing that Anthropic does allow for a consumption plan.
  */
 
+import { readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -116,11 +117,49 @@ export interface Provider {
    * because a binary inside a `.app` is not in PATH and will never be: whoever installs the
    * ChatGPT application does not expect to have to export anything, and yet inside there is a
    * `codex` that works. Absolute paths and written here — nothing coming from outside.
+   *
+   * An entry may be a function returning candidates, for an app that keeps its binary under a
+   * version folder that changes with every update: see `newestVersionUnder`. It runs at
+   * detection time, so an app updated while the server runs is found without a restart.
    */
-  bundles?: string[];
+  bundles?: BundleEntry[];
 
   // ── auth: "oauth" ──────────────────────────────────────────────────────────
   oauth?: OauthConfig;
+}
+
+export type BundleEntry = string | (() => string[]);
+
+/**
+ * `<dir>/<version>/<tail>` for every version folder under `dir`, newest first, at call time.
+ *
+ * Claude.app keeps its Claude Code under `~/Library/Application Support/Claude/claude-code/<version>/`
+ * and leaves the previous version beside the new one for a while; the newest is the one the app
+ * runs. Version folders sort numerically, part by part, so `2.1.266` comes before `2.1.9`.
+ * A folder that is not there, or holds nothing, yields no candidate — never an error.
+ */
+export function newestVersionUnder(dir: string, tail: string): () => string[] {
+  return () => {
+    let names: string[];
+    try {
+      names = readdirSync(dir);
+    } catch {
+      return [];
+    }
+    const parts = (name: string) => name.split(/[.-]/).map((part) => (/^\d+$/.test(part) ? Number(part) : Number.NaN));
+    return names
+      .filter((name) => /^\d+(\.\d+)*$/.test(name))
+      .sort((a, b) => {
+        const x = parts(a);
+        const y = parts(b);
+        for (let i = 0; i < Math.max(x.length, y.length); i += 1) {
+          const d = (y[i] ?? 0) - (x[i] ?? 0);
+          if (d !== 0) return d;
+        }
+        return 0;
+      })
+      .map((name) => join(dir, name, tail));
+  };
 }
 
 export const PROVIDERS: Provider[] = [
@@ -431,9 +470,20 @@ export const PROVIDERS: Provider[] = [
       OAuth and would break the very subscription route this row exists for.
      */
     args: ["-p", "--strict-mcp-config", "--no-session-persistence"],
+    /*
+      `~/.claude/local/claude` is where `claude migrate-installer` puts the terminal's own copy.
+      The desktop app does not ship the binary inside `/Applications/Claude.app` — the path
+      `Contents/Resources/claude` listed here before did not exist on the Mac it was checked
+      on, 11-Sep-2026 — it downloads Claude Code into
+      `~/Library/Application Support/Claude/claude-code/<version>/claude.app/Contents/MacOS/claude`
+      (2.1.260 and 2.1.266 side by side on 11-Sep-2026) and runs the newest.
+     */
     bundles: [
       join(homedir(), ".claude", "local", "claude"),
-      "/Applications/Claude.app/Contents/Resources/claude",
+      newestVersionUnder(
+        join(homedir(), "Library", "Application Support", "Claude", "claude-code"),
+        join("claude.app", "Contents", "MacOS", "claude"),
+      ),
     ],
   },
   {
@@ -505,6 +555,9 @@ export const PROVIDERS: Provider[] = [
     descriptionEn: "Uses your OpenCode install. No keys.",
     command: "opencode",
     args: ["run"],
+    // The desktop app ships the CLI inside its bundle and never puts it on the PATH (verified
+    // on 1.2.6). Same case as the ChatGPT app carrying `codex`.
+    bundles: ["/Applications/OpenCode.app/Contents/MacOS/opencode-cli"],
   },
   {
     id: "aider",
