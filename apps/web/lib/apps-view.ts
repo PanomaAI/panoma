@@ -19,6 +19,8 @@ export type AppJob = {
   requestedAt?: string; finishedAt?: string | null;
   /** The agent that asked over MCP, by its key's name; absent when a person did. */
   requestedBy?: string | null;
+  /** An update that found nothing newer than the version running: the one bit of a result the public detail keeps. */
+  unchanged?: boolean;
 };
 export type AppRequirement = {
   id: string; kind?: string; present?: boolean; version?: string; approxMB?: number;
@@ -340,6 +342,55 @@ export const GOAL_KEY: Readonly<Record<string, MessageKey>> = {
   trailer: "apps.jobs.goalTrailer", changelog: "apps.jobs.goalChangelog", sitetour: "apps.jobs.goalSitetour",
   facts: "apps.jobs.tutorial",
 };
+
+/**
+ * What a production was asked for, in the words of the form: the kind of video, the frame, the
+ * languages, and where the camera pointed — the address a person gave, or nothing, which means
+ * the app started its own copy of the product. Only `panoma_video_auto` carries these; the
+ * other tools take a production id, which the screen already names elsewhere.
+ *
+ * Seven failed productions read as seven identical lines on 12-Sep-2026, and seven identical
+ * «Retry» buttons under them, while one had filmed the person's own catalog and the other six
+ * an empty copy the app had started; nothing on the screen said which. The line says it now,
+ * and the retry button carries the same words, so a person retries the one they mean.
+ */
+export type JobAsk = { goal?: string; ratio?: string; languages: string[]; url?: string };
+export function jobAsk(job: Pick<AppJob, "tool"> & Partial<Pick<AppJob, "input">>): JobAsk | undefined {
+  /* The app's own page lists jobs without their input: the public detail drops it with the result. */
+  if (job.tool !== "panoma_video_auto" || !isRecord(job.input)) return undefined;
+  const { goal, format, langs, url } = job.input;
+  return {
+    goal: typeof goal === "string" ? goal : undefined,
+    ratio: VIDEO_FORMATS.find((entry) => entry.value === format)?.ratio,
+    languages: Array.isArray(langs) ? langs.filter((lang): lang is string => typeof lang === "string") : [],
+    url: typeof url === "string" && url.trim() ? url.trim() : undefined,
+  };
+}
+
+/** One retry per distinct request, the newest of each: the list arrives newest first. */
+export function retryable(jobs: AppJob[]): AppJob[] {
+  const seen = new Set<string>();
+  return jobs.filter((job) => {
+    if (job.status !== "failed" && job.status !== "cancelled") return false;
+    const key = `${job.tool}\u0000${JSON.stringify(job.input ?? null)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * The version an update found nothing newer than, or nothing: read from the newest operation on
+ * the app itself — a later check, install or rollback retires it — so the Versions card can say
+ * «already on 0.9.3» under the button instead of leaving a re-activation of the same version to
+ * look like a button that does nothing. Measured on 12-Sep-2026: two updates pressed one minute
+ * before a publish landed, both silent.
+ */
+export function nothingNewer(app: AppSummary | null): string | undefined {
+  const latest = app?.jobs?.find((job) => ["install", "update", "check", "rollback"].includes(job.tool) && job.status === "done");
+  if (!latest || latest.tool !== "update" || latest.unchanged !== true || !app?.version) return undefined;
+  return app.version;
+}
 
 /**
  * What the app's page is doing right now on the app itself — installing, downloading the

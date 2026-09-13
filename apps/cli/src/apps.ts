@@ -51,6 +51,10 @@ export async function followAppJob(api: string, id: string, json: boolean, quiet
       }
       if (job.status === "done") {
         if (!quiet) process.stdout.write(json ? `${JSON.stringify(job, null, 2)}\n` : `${say("apps.jobDone", { id })}\n`);
+        const result = job.result as { unchanged?: unknown; version?: unknown } | undefined;
+        if (!quiet && !json && result?.unchanged === true && typeof result.version === "string") {
+          process.stdout.write(`${say("apps.nothingNewer", { version: result.version })}\n`);
+        }
         return 0;
       }
       if (job.status === "cancelled") { process.stderr.write(`${say("apps.cancelled")}\n`); return 3; }

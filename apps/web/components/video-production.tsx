@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useId, useState } from "react";
 import { HiOutlineCheck, HiOutlineMinus, HiOutlineXMark } from "react-icons/hi2";
 import { useLocale, useT } from "./i18n-provider";
-import { AppError, AppJobList } from "./apps";
+import { AppError, AppJobList, askWords } from "./apps";
 import { BRAINS } from "./app-providers";
 import { Tag, type TagTone } from "./primitives";
 import {
@@ -23,6 +23,7 @@ import {
   productionLanguages,
   productionStory,
   requirementsOf,
+  retryable,
   skippedGoals,
   stageReport,
   watchAppJob,
@@ -688,14 +689,15 @@ function JobsSection({ t, jobs, locked, onCancel, onEnqueue }: {
     <section className="mt-8">
       <h2 className="font-display text-xl font-semibold">{t("apps.jobs.title")}</h2>
       <AppJobList jobs={jobs} onCancel={onCancel} />
-      {jobs.filter((job) => job.status === "failed" || job.status === "cancelled").map((job) => (
+      {/* One button per distinct request, worded like the request: a retry repeats its input, address included. */}
+      {retryable(jobs).map((job) => (
         <button
           key={job.id}
           className="apps-button mr-2 mt-3"
           disabled={locked}
           onClick={() => onEnqueue(job.tool, job.input)}
         >
-          {t("apps.jobs.retry")} · {job.tool}
+          {t("apps.jobs.retry")} · {askWords(t, job) ?? job.tool}
         </button>
       ))}
       {jobs.filter((job) => job.tool === "panoma_video_review" && job.result).map((job) => (

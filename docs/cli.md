@@ -536,7 +536,9 @@ the local server: `panoma apps install panoma-video`, `panoma apps update panoma
 `panoma apps disable panoma-video`, and `panoma apps remove panoma-video`. Removing keeps
 productions. `panoma apps clean panoma-video` shows their size and asks before deleting them.
 `panoma apps doctor panoma-video` refreshes and prints the runtime requirements;
-`panoma apps check panoma-video` refreshes registry metadata.
+`panoma apps check panoma-video` refreshes registry metadata. An update that finds nothing
+newer than the version running says so after «Job complete», with the version the registry
+reports: a publish takes a moment to reach the registry, so check again, then update.
 
 `panoma apps install panoma-video --browser` installs the package, then separately presents
 the browser download and its terms for confirmation. Noninteractive calls do not accept this

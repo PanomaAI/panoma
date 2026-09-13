@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { APP_FAULTS } from "@panoma/apps/faults";
 import { t } from "./i18n";
-import { activeOperation, appFaultText, appRequest, appStatusKey, requirementsOf, currentProduction, jobArtifacts, jobPercent, jobSeconds, nextStep, productionExport, productionInput, productionLanguages, productionStory, skippedGoals, stageReport, videoDestination, watchAppJob, VIDEO_STAGES, type AppJob, type AppSummary } from "./apps-view";
+import { activeOperation, appFaultText, appRequest, appStatusKey, requirementsOf, currentProduction, jobArtifacts, jobAsk, jobPercent, jobSeconds, nextStep, nothingNewer, productionExport, productionInput, productionLanguages, productionStory, retryable, skippedGoals, stageReport, videoDestination, watchAppJob, VIDEO_STAGES, type AppJob, type AppSummary } from "./apps-view";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -231,5 +231,50 @@ describe("every failure has a sentence, in both languages", () => {
     expect(appFaultText("process-failed: npm error code E404"))
       .toEqual({ key: "apps.fault.processFailed", quote: "npm error code E404" });
     expect(appFaultText("offline")).toEqual({ key: "apps.fault.offline" });
+  });
+});
+
+describe("what a production asked for", () => {
+  const auto = (input: Record<string, unknown>, status = "failed", id = input.format as string): AppJob =>
+    ({ id, appId: "panoma-video", identity: "git:x", tool: "panoma_video_auto", input, status });
+
+  it("reads the kind, the frame, the languages and the address from the request, and nothing from other tools", () => {
+    expect(jobAsk(auto({ goal: "promo", format: "h", langs: ["en", "es"], url: " http://127.0.0.1:4173 " })))
+      .toEqual({ goal: "promo", ratio: "16:9", languages: ["en", "es"], url: "http://127.0.0.1:4173" });
+    expect(jobAsk(auto({ goal: "promo", format: "v", langs: ["en"] })))
+      .toEqual({ goal: "promo", ratio: "9:16", languages: ["en"], url: undefined });
+    expect(jobAsk(auto({ goal: 7, format: "x", langs: "en", url: "" }))).toEqual({ goal: undefined, ratio: undefined, languages: [], url: undefined });
+    expect(jobAsk({ tool: "panoma_video_export", input: { productionId: "p1" } })).toBeUndefined();
+    /* The app's own page lists jobs without their input, and it crashed on the first production there. */
+    expect(jobAsk({ tool: "panoma_video_auto" })).toBeUndefined();
+    expect(jobAsk({ tool: "panoma_video_auto", input: undefined as unknown as Record<string, unknown> })).toBeUndefined();
+  });
+
+  it("offers one retry per distinct request, the newest of each, and only for what ended badly", () => {
+    const jobs = [
+      auto({ goal: "promo", format: "h", langs: ["en"] }, "failed", "newest-h"),
+      auto({ goal: "promo", format: "v", langs: ["en"], url: "http://127.0.0.1:4173" }, "failed", "with-address"),
+      auto({ goal: "promo", format: "h", langs: ["en"] }, "failed", "older-h"),
+      auto({ goal: "promo", format: "v", langs: ["en"] }, "cancelled", "plain-v"),
+      auto({ goal: "promo", format: "h", langs: ["en"] }, "succeeded", "done-h"),
+      auto({ goal: "promo", format: "s", langs: ["en"] }, "running", "live-s"),
+    ];
+    expect(retryable(jobs).map((job) => job.id)).toEqual(["newest-h", "with-address", "plain-v"]);
+  });
+});
+
+describe("an update that found nothing newer", () => {
+  const op = (tool: string, status = "done", unchanged?: boolean): AppJob =>
+    ({ id: tool + status, appId: "panoma-video", identity: "app", tool, input: {}, status, ...(unchanged ? { unchanged } : {}) });
+  const app = (jobs: AppJob[]): AppSummary => ({ id: "panoma-video", pkg: "@panoma/video", status: "installed", version: "0.9.3", jobs });
+
+  it("names the version only while that update is the newest operation on the app", () => {
+    expect(nothingNewer(app([op("update", "done", true)]))).toBe("0.9.3");
+    expect(nothingNewer(app([op("panoma_video_auto", "failed"), op("update", "done", true)]))).toBe("0.9.3");
+    expect(nothingNewer(app([op("check"), op("update", "done", true)]))).toBeUndefined();
+    expect(nothingNewer(app([op("update", "done"), op("update", "done", true)]))).toBeUndefined();
+    expect(nothingNewer(app([op("update", "failed", true)]))).toBeUndefined();
+    expect(nothingNewer({ ...app([op("update", "done", true)]), version: null })).toBeUndefined();
+    expect(nothingNewer(null)).toBeUndefined();
   });
 });

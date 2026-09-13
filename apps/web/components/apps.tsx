@@ -12,10 +12,13 @@ import {
   appStatusKey,
   appFaultText,
   requirementsOf,
+  jobAsk,
   jobStatusKey,
   jobPercent,
   nextStep,
+  nothingNewer,
   watchAppJob,
+  GOAL_KEY,
   type AppRequirement,
   type AppSummary,
   type AppJob,
@@ -302,6 +305,7 @@ function VersionsSection({ t, locale, app, busy, onOperate }: {
 }) {
   const [confirming, setConfirming] = useState(false);
   const dataBytes = app.space?.dataBytes ?? 0;
+  const unchanged = nothingNewer(app);
   return (
     <Card as="section">
       <h2 className="text-base font-semibold">{t("apps.versions")}</h2>
@@ -318,6 +322,11 @@ function VersionsSection({ t, locale, app, busy, onOperate }: {
         <p>{t("apps.dataSpace", { bytes: formatBytes(dataBytes) })}</p>
       </div>
       <AppActions t={t} app={app} busy={busy} onOperate={onOperate} />
+      {unchanged && (
+        <Notice tone="info" className="mt-4" title={t("apps.nothingNewer", { version: unchanged })}>
+          {t("apps.nothingNewerHint")}
+        </Notice>
+      )}
       {app.version && (
         <button className="apps-button mt-4" disabled={busy} onClick={() => onOperate("uninstall")}>
           {t("apps.uninstall")}
@@ -485,6 +494,20 @@ export function AppDetail({ id, project, projects, projectsError }: {
   );
 }
 
+/**
+ * What a production asked for, in one line: the kind of video, the frame, the languages, and
+ * the address the camera pointed at — or that the app started its own copy of the product. It
+ * is the difference between a film of the person's catalog and a film of an empty one, and
+ * until 12-Sep-2026 neither the list nor the retry buttons said which was which.
+ */
+export function askWords(t: Translate, job: Pick<AppJob, "tool" | "input">): string | undefined {
+  const ask = jobAsk(job);
+  if (!ask) return undefined;
+  const goalKey = ask.goal ? GOAL_KEY[ask.goal] : undefined;
+  const goal = goalKey ? t(goalKey) : ask.goal;
+  return [goal, ask.ratio, ask.languages.join("/"), ask.url ?? t("apps.jobs.ownCopy")].filter(Boolean).join(" · ");
+}
+
 export function AppJobList({ jobs, onCancel }: { jobs: AppJob[]; onCancel?: (job: AppJob) => void }) {
   const t = useT();
   const locale = useLocale();
@@ -495,6 +518,7 @@ export function AppJobList({ jobs, onCancel }: { jobs: AppJob[]; onCancel?: (job
         const percent = jobPercent(job);
         const active = ACTIVE_JOB_STATES.has(job.status);
         const when = job.requestedAt ? new Date(job.requestedAt).toLocaleString(locale) : "";
+        const asked = askWords(t, job);
         return (
           <div key={job.id} className="rounded border border-edge p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -502,6 +526,7 @@ export function AppJobList({ jobs, onCancel }: { jobs: AppJob[]; onCancel?: (job
                 <span className="font-mono">{job.tool}</span> · {t(jobStatusKey(job.status))}
                 {when && <span className="text-faint"> · {when}</span>}
                 {job.requestedBy && <span className="text-faint"> · {t("apps.jobs.requestedBy", { name: job.requestedBy })}</span>}
+                {asked && <span className="block text-smoke">{asked}</span>}
               </p>
               {onCancel && active && (
                 <button

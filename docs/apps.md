@@ -206,6 +206,25 @@ verdict laid out by kind of video, the kind that was asked for first and the res
 (`stageReport` and `skippedGoals`, both in `apps-view.ts`). Only a production that finished
 offers to export.
 
+An update that finds nothing newer re-activates the version already running, and until
+12-Sep-2026 it did so in silence: a person who had just published pressed «Update» twice, saw
+the same number, and read the button as broken — the registry had answered one second before
+their publish landed. The job's result now carries `unchanged: true`, the public detail keeps
+that one bit of a result it otherwise drops whole (a result names files on this disk), the
+Versions card paints it as an information notice under the buttons — «nothing newer: 0.9.3 is
+the latest version the registry reports», with the advice to check again in a moment — until a
+later check, install or rollback retires it (`nothingNewer` in `apps-view.ts`), and
+`panoma apps update` prints the same sentence after «Job complete».
+
+Each job in the list says what it asked for, in the words of the form: the kind of video, the
+frame, the languages, and the address the camera pointed at — or «a copy the app started
+itself» (`jobAsk` and `askWords`). It is the difference between a film of the person's catalog
+and a film of an empty one: on 12-Sep-2026 seven failed productions read as seven identical
+lines, one of them had carried the address and six had not, and nothing on the screen said
+which. The retry buttons under the list are one per distinct request, the newest of each,
+worded the same way (`retryable`): a retry repeats its input, address included, so seven
+buttons that all said `panoma_video_auto` were six ways of filming the empty copy again.
+
 A refusal on these screens is drawn as a notice and not as a line of the page: `Notice` in
 `apps/web/components/primitives.tsx` — an icon, an edge and a paper in its tone, `role="alert"`
 for an action that failed — and it stands under the button that met it, not at the head of the

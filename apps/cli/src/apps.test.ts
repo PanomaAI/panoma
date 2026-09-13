@@ -23,6 +23,17 @@ describe("apps CLI", () => {
     fetcher.mockResolvedValue(response({ id: "j", status, error: "fixture" }));
     expect(await followAppJob("http://localhost:4173", "j", false)).toBe(code);
   });
+  it("says when an update found nothing newer, and only then", async () => {
+    const output = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    fetcher.mockResolvedValue(response({ id: "j", status: "done", result: { version: "0.9.3", installed: true, unchanged: true } }));
+    expect(await followAppJob("http://localhost:4173", "j", false)).toBe(0);
+    expect(output.mock.calls.map(([line]) => line)).toEqual(["Job complete: j\n", expect.stringMatching(/^Nothing newer: 0\.9\.3 is the latest version the registry reports\./)]);
+    output.mockClear();
+    fetcher.mockResolvedValue(response({ id: "j", status: "done", result: { version: "0.9.4", installed: true } }));
+    expect(await followAppJob("http://localhost:4173", "j", false)).toBe(0);
+    expect(output.mock.calls.map(([line]) => line)).toEqual(["Job complete: j\n"]);
+  });
   it("rejects missing and unknown video verbs", () => {
     expect(parseArgs(["video"])).toHaveProperty("error");
     expect(parseArgs(["video", "publish"])).toHaveProperty("error");

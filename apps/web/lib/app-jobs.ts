@@ -187,7 +187,14 @@ async function executeManager(
     await queueWrite(() => updateApp(database, job.appId, {
       requirements: Object.fromEntries(outcome.requirements.map(item => [item.id, item])), requirementsAt: new Date(),
     }));
-    return { version: outcome.version, installed: true };
+    /*
+      An update that finds nothing newer re-activates the version already running, and until
+      12-Sep-2026 it ended in silence: a person who had just published pressed «Update» twice,
+      saw the same number, and read the button as broken. The registry had answered one second
+      before their publish landed. The result now says so, and both surfaces repeat it.
+     */
+    const unchanged = job.tool === "update" && outcome.previousVersion === outcome.version;
+    return { version: outcome.version, installed: true, ...(unchanged ? { unchanged: true } : {}) };
   }
   if (job.tool === "browser") await installBrowser(job.appId, progress, signal);
   else if (job.tool === "rollback") await rollback(job.appId);

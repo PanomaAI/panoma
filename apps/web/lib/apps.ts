@@ -4,6 +4,7 @@ import {
 import { getApp, listAppJobs, queueWrite, updateApp } from "@panoma/db";
 import { db } from "./db";
 import { appRequirementsReady, requiredRequirementIds } from "./app-client";
+import { isRecord } from "./app-input";
 import { AppFault } from "@panoma/apps/faults";
 
 /*
@@ -93,7 +94,15 @@ export async function getAppDetail(id: string, options: { space?: boolean } = {}
       space: { packageBytes: packageBytes ?? 0, dataBytes: dataBytes ?? 0 },
     } : {}),
     npm: { present: !!npm, source: npm?.source ?? null },
-    jobs: jobs.map(({ input: _input, result: _result, pid: _pid, ...job }) => publicAppValue(job)),
+    /*
+      A result names files on this disk, so the detail drops it whole — except one bit of it: an
+      update that found nothing newer says so, and the Versions card needs that bit to answer a
+      person who pressed «Update» and saw the same number (12-Sep-2026).
+     */
+    jobs: jobs.map(({ input: _input, result, pid: _pid, ...job }) => ({
+      ...publicAppValue(job) as Record<string, unknown>,
+      ...(isRecord(result) && result.unchanged === true ? { unchanged: true } : {}),
+    })),
   };
 }
 

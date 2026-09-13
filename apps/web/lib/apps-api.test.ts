@@ -47,6 +47,17 @@ describe("official app detail and settings", () => {
     expect(detail.jobs[0]).not.toHaveProperty("result");
     expect(detail.jobs[0]).not.toHaveProperty("pid");
   });
+  it("keeps the one bit of a result that says an update found nothing newer, and no path with it", async () => {
+    mocks.listAppJobs.mockResolvedValue([
+      { id: "u", appId: "panoma-video", tool: "update", status: "done", input: {}, result: { version: "0.2.0", installed: true, unchanged: true, home: "/home/person/video" } },
+      { id: "i", appId: "panoma-video", tool: "install", status: "done", input: {}, result: { version: "0.2.0", installed: true } },
+    ]);
+    const detail = await getAppDetail("panoma-video");
+    expect(detail.jobs[0]).toMatchObject({ id: "u", unchanged: true });
+    expect(detail.jobs[0]).not.toHaveProperty("result");
+    expect(detail.jobs[1]).not.toHaveProperty("unchanged");
+    expect(JSON.stringify(detail)).not.toMatch(/\/home/);
+  });
   it.each(["broken", "disabled", "installing", "absent"])("does not call %s ready despite stale requirements", async (status) => {
     mocks.getApp.mockResolvedValue({ ...base(), status });
     expect((await getAppDetail("panoma-video")).ready).toBe(false);

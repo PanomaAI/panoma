@@ -93,6 +93,7 @@ const MESSAGES = {
   "apps.job": "Job: {id}",
   "apps.jobProgress": "{status} · {message}",
   "apps.jobDone": "Job complete: {id}",
+  "apps.nothingNewer": "Nothing newer: {version} is the latest version the registry reports. If you just published one, run `panoma apps check` again in a moment, then update.",
   "apps.jobFailed": "Job failed: {detail}",
   "apps.jobDetached": "The job continues in the catalog: {id}",
   "apps.requirement": "{name}: {status}",
