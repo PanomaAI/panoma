@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { getLocale, t } from "@/lib/i18n";
 import { PageShell } from "@/components/page-shell";
 import { VideoProduction } from "@/components/video-production";
+import { runningAt } from "@/lib/running-at";
 
 export const dynamic = "force-dynamic";
 export default async function VideoPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -12,6 +13,8 @@ export default async function VideoPage({ params }: { params: Promise<{ slug: st
   const [{ db: database }, locale] = await Promise.all([db(), getLocale()]);
   const data = await getProject(database, slug);
   if (!data) notFound();
+  /* Measured on every open, in a few hundred milliseconds: what answers now is what the camera can film now. */
+  const running = await runningAt(data.project.root);
   /*
     The way back goes in `headExtra`, which puts it under the lead instead of over the eyebrow
     where this page used to write it. That move is deliberate and it is the only visible change of
@@ -34,7 +37,7 @@ export default async function VideoPage({ params }: { params: Promise<{ slug: st
         </Link>
       }
     >
-      <VideoProduction projectId={data.project.id} identity={data.project.identity} slug={slug} />
+      <VideoProduction projectId={data.project.id} identity={data.project.identity} slug={slug} running={running} />
     </PageShell>
   );
 }

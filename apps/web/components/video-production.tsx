@@ -35,6 +35,7 @@ import {
   type VideoFormat,
 } from "@/lib/apps-view";
 import type { Locale, Translate } from "@/lib/i18n";
+import type { RunningAt } from "@/lib/running-at";
 
 /**
  * The production screen of a project: start a preview, watch it, review it, revise its scenes
@@ -224,9 +225,10 @@ function LanguageSelect({ value, tracks, onChange, label }: {
 }
 
 /** What a new production is: a kind of video, a shape and a language. Nothing is paid here. */
-function ProductionForm({ t, locked, onStart }: {
+function ProductionForm({ t, locked, running, onStart }: {
   t: Translate;
   locked: boolean;
+  running: RunningAt[];
   onStart: (options: { goal: string; format: string; language: Locale; url?: string }) => void;
 }) {
   const locale = useLocale();
@@ -283,6 +285,30 @@ function ProductionForm({ t, locked, onStart }: {
         />
         <span className="mt-1 block text-xs text-faint">{t("apps.jobs.urlHint")}</span>
       </label>
+      {/*
+        What answers on this machine right now, measured when the page opened: the port the
+        project's scripts declare, or a listener started from its folder. One click fills the
+        field; typing stays possible for an address neither signal finds. Nothing is chosen on
+        a person's behalf — a copy the app starts is still the default until they pick.
+       */}
+      {running.length > 0 && (
+        <div className="mt-3 text-sm">
+          <p className="text-smoke">{t("apps.jobs.runningNow")}</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {running.map((entry) => (
+              <button
+                key={entry.url}
+                type="button"
+                className={url === entry.url ? "apps-button apps-button-primary" : "apps-button"}
+                aria-pressed={url === entry.url}
+                onClick={() => setUrl(entry.url)}
+              >
+                {entry.url} · {t(entry.why === "declared" ? "apps.jobs.runningDeclared" : "apps.jobs.runningFolder")}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <button className="apps-button apps-button-primary mt-5" disabled={locked}>
         {t("apps.jobs.start")}
       </button>
@@ -720,10 +746,11 @@ function JobsSection({ t, jobs, locked, onCancel, onEnqueue }: {
   );
 }
 
-export function VideoProduction({ projectId, identity, slug }: {
+export function VideoProduction({ projectId, identity, slug, running }: {
   projectId: string;
   identity: string | null;
   slug: string;
+  running: RunningAt[];
 }) {
   const t = useT();
   const locale = useLocale();
@@ -847,6 +874,7 @@ export function VideoProduction({ projectId, identity, slug }: {
       <ProductionForm
         t={t}
         locked={locked}
+        running={running}
         onStart={(options) => enqueue("panoma_video_auto", productionInput(options))}
       />
       {/*

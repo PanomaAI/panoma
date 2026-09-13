@@ -267,6 +267,13 @@ on closing withdrew "its" note, leaving the first one alive with nothing to give
 what is stale is decided **by the pid and not by the clock**, because `process.kill(pid, 0)`
 is the only question the three systems answer the same way.
 
+`lsof` is asked once more, since 13-Sep-2026, by the production screen of an optional app:
+`serversFromFolder` in `apps/web/lib/running-at.ts` lists the loopback listeners whose
+process runs from inside the project's folder, to offer their addresses as one click. Same
+posture — a short leash, fail forward to nothing — and on Windows the second signal is simply
+absent: the first, the port the project's scripts declare, checked with an HTTP request, works
+on all three and is the one that finds the common case.
+
 **`du`.** The accumulated size of each directory comes out of a single `du -k` invocation,
 which without `-s` prints every directory in one pass. On Windows there is no `du`, and on
 Unix it can fail halfway through the pass; in both cases it falls back to `walkSizes`, a pass

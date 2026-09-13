@@ -222,6 +222,19 @@ the latest version the registry reports», with the advice to check again in a m
 later check, install or rollback retires it (`nothingNewer` in `apps-view.ts`), and
 `panoma apps update` prints the same sentence after «Job complete».
 
+Under the field, what answers on this machine right now, measured when the page opened and
+offered as one click each (`runningAt` in `apps/web/lib/running-at.ts`): the ports the
+project's own scripts declare — `--port 4173`, `PORT=3000`, `${PORT:-8080}`, a `localhost:`
+in a script — that answer an HTTP request on loopback, and any HTTP listener whose process
+runs from inside the project's folder, which `lsof` tells on macOS and Linux and nothing
+tells on Windows. HTTP and not a bare socket: a development server keeps sidecars — a
+hot-reload channel, a resolver on 53 — and the first cut offered five addresses for this
+catalog, three of them nothing a browser could open. The catalog's own owner was the first
+case on 13-Sep-2026: the catalog runs from an npx cache, not from its repository, so only
+the declared port finds it. Nothing is chosen on a person's behalf; the copy the app starts
+stays the default until they pick, and typing stays possible for an address neither signal
+finds.
+
 And when a production without an address failed on the way from starting the copy to
 planning from it — `serve`, `tour`, `record` or `plan` — the report ends with an information
 notice that says what happened in one breath: the camera filmed a copy the app started
