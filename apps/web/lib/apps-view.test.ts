@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { APP_FAULTS } from "@panoma/apps/faults";
 import { t } from "./i18n";
-import { activeOperation, appFaultText, appRequest, appStatusKey, requirementsOf, currentProduction, jobArtifacts, jobAsk, jobPercent, jobSeconds, nextStep, nothingNewer, productionExport, productionInput, productionLanguages, productionStory, retryable, skippedGoals, stageReport, videoDestination, watchAppJob, VIDEO_STAGES, type AppJob, type AppSummary } from "./apps-view";
+import { activeOperation, appFaultText, appRequest, appStatusKey, requirementsOf, currentProduction, jobArtifacts, jobAsk, jobPercent, jobSeconds, nextStep, nothingNewer, ownCopyFailed, productionExport, productionInput, productionLanguages, productionStory, retryable, skippedGoals, stageReport, videoDestination, watchAppJob, VIDEO_STAGES, type AppJob, type AppSummary } from "./apps-view";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -276,5 +276,21 @@ describe("an update that found nothing newer", () => {
     expect(nothingNewer(app([op("update", "failed", true)]))).toBeUndefined();
     expect(nothingNewer({ ...app([op("update", "done", true)]), version: null })).toBeUndefined();
     expect(nothingNewer(null)).toBeUndefined();
+  });
+});
+
+describe("a production that filmed the app's own copy and failed", () => {
+  const job = (input: Record<string, unknown>, status = "failed", error: string | null = "stage-failed: plan", tool = "panoma_video_auto"): AppJob =>
+    ({ id: "j", appId: "panoma-video", identity: "git:x", tool, input, status, error });
+
+  it("is named only without an address, failed, on the way from starting the copy to planning from it", () => {
+    expect(ownCopyFailed(job({ goal: "promo", format: "h" }))).toBe(true);
+    expect(ownCopyFailed(job({ goal: "promo", format: "h" }, "failed", "stage-failed: serve"))).toBe(true);
+    expect(ownCopyFailed(job({ goal: "promo", format: "h" }, "failed", "stage-failed: tour"))).toBe(true);
+    expect(ownCopyFailed(job({ goal: "promo", format: "h", url: "http://127.0.0.1:4173" }))).toBe(false);
+    expect(ownCopyFailed(job({ goal: "promo", format: "h" }, "done", null))).toBe(false);
+    expect(ownCopyFailed(job({ goal: "promo", format: "h" }, "failed", "stage-failed: render"))).toBe(false);
+    expect(ownCopyFailed(job({ goal: "promo", format: "h" }, "failed", "app-budget-exhausted"))).toBe(false);
+    expect(ownCopyFailed(job({ productionId: "p" }, "failed", "stage-failed: plan", "panoma_video_export"))).toBe(false);
   });
 });

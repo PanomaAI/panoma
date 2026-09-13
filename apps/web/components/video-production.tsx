@@ -6,7 +6,7 @@ import { HiOutlineCheck, HiOutlineMinus, HiOutlineXMark } from "react-icons/hi2"
 import { useLocale, useT } from "./i18n-provider";
 import { AppError, AppJobList, askWords } from "./apps";
 import { BRAINS } from "./app-providers";
-import { Tag, type TagTone } from "./primitives";
+import { Notice, Tag, type TagTone } from "./primitives";
 import {
   ACTIVE_JOB_STATES,
   GOAL_KEY,
@@ -18,6 +18,7 @@ import {
   isVideoFormat,
   jobArtifacts,
   jobSeconds,
+  ownCopyFailed,
   productionExport,
   productionInput,
   productionLanguages,
@@ -273,6 +274,7 @@ function ProductionForm({ t, locked, onStart }: {
       <label className="mt-4 block text-sm">
         {t("apps.jobs.url")}
         <input
+          id="production-address"
           className={SELECT}
           type="url"
           inputMode="url"
@@ -416,6 +418,12 @@ function StageList({ t, job, locked, onCancel }: {
       </ol>
       {!active && job.error && <AppError error={job.error} />}
       {verdict && <PlanVerdict t={t} job={job} />}
+      {ownCopyFailed(job) && (
+        <Notice tone="info" className="mt-4" title={t("apps.jobs.ownCopyFailed")}>
+          {t("apps.jobs.ownCopyWhy")}{" "}
+          <a className="underline underline-offset-4" href="#production-address">{t("apps.jobs.ownCopyNext")}</a>
+        </Notice>
+      )}
       {!active && job.status === "done" && <p className="mt-3 text-sm text-smoke">{t("apps.jobs.reportDone")}</p>}
     </section>
   );

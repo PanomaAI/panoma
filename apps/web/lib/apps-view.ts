@@ -367,6 +367,20 @@ export function jobAsk(job: Pick<AppJob, "tool"> & Partial<Pick<AppJob, "input">
   };
 }
 
+/**
+ * Whether a failed production filmed a copy of the product the app started itself, and fell on
+ * the way from starting it to planning from it — the four stages an empty copy can break. A
+ * product whose data lives outside its folder opens empty in that copy; this catalog does, and
+ * on 13-Sep-2026 its owner ran four productions into «a promotion needs a real product click»
+ * before anyone said the word address. The screen says it now, next to the field that fixes
+ * it, from the job's own input: no address, and a failed stage among those four.
+ */
+export function ownCopyFailed(job: Pick<AppJob, "tool" | "input" | "status" | "error">): boolean {
+  if (job.tool !== "panoma_video_auto" || job.status !== "failed" || jobAsk(job)?.url) return false;
+  const { code, detail } = faultOf(job.error);
+  return code === "stage-failed" && ["serve", "tour", "record", "plan"].includes(detail ?? "");
+}
+
 /** One retry per distinct request, the newest of each: the list arrives newest first. */
 export function retryable(jobs: AppJob[]): AppJob[] {
   const seen = new Set<string>();

@@ -222,6 +222,15 @@ the latest version the registry reports», with the advice to check again in a m
 later check, install or rollback retires it (`nothingNewer` in `apps-view.ts`), and
 `panoma apps update` prints the same sentence after «Job complete».
 
+And when a production without an address failed on the way from starting the copy to
+planning from it — `serve`, `tour`, `record` or `plan` — the report ends with an information
+notice that says what happened in one breath: the camera filmed a copy the app started
+itself, a product whose data lives outside its folder opens empty there, and the field above
+takes the address of the instance already running (`ownCopyFailed` in `apps-view.ts`, read
+from the job's own input and error, never from the app's prose). It is the sentence the
+owner of this catalog had no way to hear on 13-Sep-2026, four productions in a row, and the
+one an external person would never guess.
+
 Each job in the list says what it asked for, in the words of the form: the kind of video, the
 frame, the languages, and the address the camera pointed at — or «a copy the app started
 itself» (`jobAsk` and `askWords`). It is the difference between a film of the person's catalog
