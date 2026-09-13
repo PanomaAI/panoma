@@ -191,8 +191,14 @@ never made.
 The production screen says what it will use before the button that starts it — the app's
 version, the two requirements, the model, whether narration has a key, the project's identity —
 so a ten-minute run is not the way to find out that the voice was on with no key. The format is
-chosen from three drawn rectangles, vertical, landscape and square, with the ratio last. Under
-them, since 12-Sep-2026, the one field the terminal had and the screen did not: an address
+chosen from three drawn rectangles, vertical, landscape and square, with the ratio last — and
+since `@panoma/video` 0.9.5 the format decides what the camera films: vertical films the phone
+layout, landscape and square the desktop one, so a landscape promotion no longer needs the
+phone take to earn its click, and a cut in another shape later is a new production with its
+own recording. Under them, since 12-Sep-2026, the one field the terminal had and the screen
+did not — with no placeholder in it: it showed this catalog's own address in grey, an empty
+field that read exactly like the value a person meant to type, and four productions went out
+without an address that way on 13-Sep-2026, each filming an empty copy — an address
 already running on this machine, loopback only, which the camera films instead of starting a
 copy of the project. It is there because a product whose data lives outside its folder starts
 empty in the camera's copy — this catalog itself opens on «Nothing scanned yet» there, and a

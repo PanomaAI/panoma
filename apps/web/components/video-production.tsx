@@ -263,6 +263,12 @@ function ProductionForm({ t, locked, onStart }: {
         its folder starts empty in the camera's copy — this very catalog opens on «Nothing
         scanned yet» — and the only honest film of it is the instance already running. Loopback
         only, and the server says so if it is not.
+
+        No placeholder. It showed «http://127.0.0.1:4173», the address of this very catalog, in
+        grey — and an empty field that reads exactly like the value a person means to type is a
+        field they never type into. Four productions in a row went out without an address that
+        way on 13-Sep-2026, each filming an empty copy. What goes here is in the label and the
+        hint under it; the field itself says nothing until someone does.
        */}
       <label className="mt-4 block text-sm">
         {t("apps.jobs.url")}
@@ -270,7 +276,6 @@ function ProductionForm({ t, locked, onStart }: {
           className={SELECT}
           type="url"
           inputMode="url"
-          placeholder="http://127.0.0.1:4173"
           value={url}
           onChange={(event) => setUrl(event.target.value)}
         />

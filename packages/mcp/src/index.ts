@@ -616,7 +616,11 @@ server.registerTool(
       format: z
         .enum(["v", "h", "s"])
         .optional()
-        .describe("The shape of the preview: v vertical 9:16 (default), h landscape 16:9, s square 1:1."),
+        .describe(
+          "The shape of the cut, and what the app films for it: v vertical 9:16 (default) films " +
+            "the phone layout, h landscape 16:9 and s square 1:1 film the desktop one. A cut in " +
+            "another shape later is a new production with its own recording.",
+        ),
       langs: z
         .array(z.enum(["en", "es"]))
         .min(1)
