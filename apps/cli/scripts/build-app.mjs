@@ -25,12 +25,12 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const cli = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const raiz = resolve(cli, "..", "..");
-const web = join(raiz, "apps", "web");
+const root = resolve(cli, "..", "..");
+const web = join(root, "apps", "web");
 const DIST = ".next-bundle";
 
-function aviso(texto) {
-  process.stdout.write(`  ${texto}\n`);
+function notice(text) {
+  process.stdout.write(`  ${text}\n`);
 }
 
 /*
@@ -43,40 +43,40 @@ function aviso(texto) {
   repository, there is usually another session working at the same time, so it is not
   hypothetical.
  */
-const candado = join(web, "app", ".empaquetando.lock");
-let candadoNuestro = false;
+const lock = join(web, "app", ".empaquetando.lock");
+let lockIsOurs = false;
 
-function tomarCandado() {
+function takeLock() {
   try {
-    mkdirSync(candado);
-    writeFileSync(join(candado, "pid"), `${process.pid}\n`);
-    candadoNuestro = true;
+    mkdirSync(lock);
+    writeFileSync(join(lock, "pid"), `${process.pid}\n`);
+    lockIsOurs = true;
   } catch (error) {
     if (error.code !== "EEXIST") throw error;
-    const quien = (() => {
+    const holder = (() => {
       try {
-        return readFileSync(join(candado, "pid"), "utf8").trim();
+        return readFileSync(join(lock, "pid"), "utf8").trim();
       } catch {
-        return "desconocido";
+        return "unknown";
       }
     })();
     process.stderr.write(
-      `\n  Ya hay una compilación del paquete en marcha (pid ${quien}).\n` +
-        `  Dos a la vez se pisan: la segunda devuelve un tsconfig.json rescrito por la\n` +
-        `  primera. Espera a que acabe.\n\n` +
-        `  Si sabes que ese proceso ya no existe:  rm -rf ${candado}\n\n`,
+      `\n  A build of the package is already running (pid ${holder}).\n` +
+        `  Two at once trample each other: the second puts back a tsconfig.json rewritten by the\n` +
+        `  first. Wait for it to finish.\n\n` +
+        `  If you know that process no longer exists:  rm -rf ${lock}\n\n`,
     );
     process.exit(1);
   }
 }
 
-function soltarCandado() {
-  if (!candadoNuestro) return;
-  rmSync(candado, { recursive: true, force: true });
-  candadoNuestro = false;
+function releaseLock() {
+  if (!lockIsOurs) return;
+  rmSync(lock, { recursive: true, force: true });
+  lockIsOurs = false;
 }
 
-tomarCandado();
+takeLock();
 
 /*
   Next, rewrite two files from the repository to point to the types in its output directory, and
@@ -84,31 +84,31 @@ tomarCandado();
   They are two and not one. `tsconfig.json` is committed, so leaving it touched dirties the tree —
   and `prepack` refuses to publish with a dirty tree, meaning that the failure appears at the very
   end without saying why. `next-env.d.ts` is not versioned, but it carries a
-  `/// <reference path="./<salida>/types/routes.d.ts" />` that TypeScript follows even though the
+  `/// <reference path="./<output>/types/routes.d.ts" />` that TypeScript follows even though the
   path is excluded in `tsconfig`, because the references do not go through the `exclude` filter:
   leave it pointing to `.next-bundle` and the next `pnpm -r typecheck` measures the compilation
   types of the package believing it measures those of the everyday one.
  */
-const tocados = [join(web, "tsconfig.json"), join(web, "next-env.d.ts")].map((ruta) => ({
-  ruta,
-  antes: existsSync(ruta) ? readFileSync(ruta, "utf8") : undefined,
+const touched = [join(web, "tsconfig.json"), join(web, "next-env.d.ts")].map((file) => ({
+  file,
+  before: existsSync(file) ? readFileSync(file, "utf8") : undefined,
 }));
 
-let salida = 0;
-let restaurado = false;
+let exitCode = 0;
+let restored = false;
 
-function restaurar() {
-  if (restaurado) return;
-  restaurado = true;
+function restore() {
+  if (restored) return;
+  restored = true;
 
-  for (const { ruta, antes } of tocados) {
-    if (antes === undefined || !existsSync(ruta)) continue;
-    if (readFileSync(ruta, "utf8") === antes) continue;
-    writeFileSync(ruta, antes);
-    aviso(`${basename(ruta)} devuelto a como estaba`);
+  for (const { file, before } of touched) {
+    if (before === undefined || !existsSync(file)) continue;
+    if (readFileSync(file, "utf8") === before) continue;
+    writeFileSync(file, before);
+    notice(`${basename(file)} put back as it was`);
   }
 
-  soltarCandado();
+  releaseLock();
 }
 
 /*
@@ -116,14 +116,14 @@ function restaurar() {
   this process receives SIGINT. Without a handler, Node exits without executing `finally`, and
   `tsconfig.json` stays pointing to `.next-bundle` in the working tree.
  */
-for (const señal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
-  process.on(señal, () => {
-    process.stderr.write(`\n  ${señal}: devuelvo lo tocado antes de salir.\n`);
-    restaurar();
+for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+  process.on(signal, () => {
+    process.stderr.write(`\n  ${signal}: putting back what was touched before exiting.\n`);
+    restore();
     process.exit(130);
   });
 }
-process.on("exit", restaurar);
+process.on("exit", restore);
 
 try {
   /*
@@ -141,7 +141,7 @@ try {
     The previous `standalone`, out of the way before Next writes the new one.
 
     `next build` does not empty that directory: it writes over it. And what it writes are folders
-    of `node_modules/.pnpm` named `paquete@version`, so a dependency that changes version leaves
+    of `node_modules/.pnpm` named `package@version`, so a dependency that changes version leaves
     the old folder there, complete and readable, next to the new one. On 6-Sep-2026 bumping next
     from 15.5.23 to 15.5.25 left both, and `pack-app` refused to package because two versions of
     the same package wanted to travel — which is the guard from the drizzle 0.38.4 episode
@@ -159,19 +159,19 @@ try {
     env: { ...process.env, PANOMA_DIST: DIST, NEXT_TELEMETRY_DISABLED: "1" },
   });
   if (build.error) throw build.error;
-  salida = build.status ?? 1;
+  exitCode = build.status ?? 1;
 } catch (error) {
   process.stderr.write(`\n  ${error instanceof Error ? error.message : String(error)}\n\n`);
-  salida = 1;
+  exitCode = 1;
 } finally {
   // First and without conditions: leave the repository as it was.
-  restaurar();
+  restore();
 }
 
-if (salida !== 0) process.exit(salida);
+if (exitCode !== 0) process.exit(exitCode);
 
-const empaquetar = spawnSync(process.execPath, [join(cli, "scripts", "pack-app.mjs")], {
+const pack = spawnSync(process.execPath, [join(cli, "scripts", "pack-app.mjs")], {
   stdio: "inherit",
   env: { ...process.env, PANOMA_DIST: DIST },
 });
-process.exit(empaquetar.status ?? 1);
+process.exit(pack.status ?? 1);

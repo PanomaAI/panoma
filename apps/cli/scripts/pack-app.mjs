@@ -27,71 +27,71 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const cli = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const raiz = resolve(cli, "..", "..");
-const web = join(raiz, "apps", "web");
+const root = resolve(cli, "..", "..");
+const web = join(root, "apps", "web");
 const dist = process.env["PANOMA_DIST"] ?? ".next";
-const origen = join(web, dist, "standalone");
-const destino = join(cli, "app");
+const source = join(web, dist, "standalone");
+const destination = join(cli, "app");
 
-function aviso(texto) {
-  process.stdout.write(`  ${texto}\n`);
+function print(text) {
+  process.stdout.write(`  ${text}\n`);
 }
 
-function abortar(texto) {
-  process.stderr.write(`\n  ${texto}\n\n`);
+function abort(text) {
+  process.stderr.write(`\n  ${text}\n\n`);
   process.exit(1);
 }
 
-function leerJson(ruta) {
+function readJson(path) {
   try {
-    return JSON.parse(readFileSync(ruta, "utf8"));
+    return JSON.parse(readFileSync(path, "utf8"));
   } catch {
     return undefined;
   }
 }
 
-if (!existsSync(origen)) {
-  abortar(
-    `No hay standalone en ${relative(raiz, origen)}.\n` +
-      `  Ejecuta antes: pnpm --filter panoma run build:app`,
+if (!existsSync(source)) {
+  abort(
+    `There is no standalone in ${relative(root, source)}.\n` +
+      `  Run first: pnpm --filter panoma run build:app`,
   );
 }
 
 /*
   The lockfile, which is the only source of truth about which version should travel.
-  Only the `packages:` section is read, whose keys are clean `nombre@version`. The `snapshots:`
+  Only the `packages:` section is read, whose keys are clean `name@version`. The `snapshots:`
   one has peer suffixes (`pkg@1.0.0(react@19.0.0)`) and is not useful for this.
  */
-function versionesDelLockfile() {
-  const texto = readFileSync(join(raiz, "pnpm-lock.yaml"), "utf8");
-  const lineas = texto.split("\n");
-  const mapa = new Map();
-  let dentro = false;
-  for (const linea of lineas) {
-    if (/^[a-zA-Z]/.test(linea)) {
-      dentro = linea.startsWith("packages:");
+function lockfileVersions() {
+  const text = readFileSync(join(root, "pnpm-lock.yaml"), "utf8");
+  const lines = text.split("\n");
+  const versions = new Map();
+  let inside = false;
+  for (const line of lines) {
+    if (/^[a-zA-Z]/.test(line)) {
+      inside = line.startsWith("packages:");
       continue;
     }
-    if (!dentro) continue;
-    const m = /^ {2}'?(.+?)'?:$/.exec(linea);
+    if (!inside) continue;
+    const m = /^ {2}'?(.+?)'?:$/.exec(line);
     if (!m) continue;
     const spec = m[1];
     const at = spec.lastIndexOf("@");
     if (at <= 0) continue;
-    const nombre = spec.slice(0, at);
+    const name = spec.slice(0, at);
     const version = spec.slice(at + 1);
-    if (!mapa.has(nombre)) mapa.set(nombre, new Set());
-    mapa.get(nombre).add(version);
+    if (!versions.has(name)) versions.set(name, new Set());
+    versions.get(name).add(version);
   }
-  return mapa;
+  return versions;
 }
 
-const enLockfile = versionesDelLockfile();
-if (enLockfile.size === 0) abortar("No pude leer las versiones de pnpm-lock.yaml.");
+const inLockfile = lockfileVersions();
+if (inLockfile.size === 0) abort("I could not read the versions from pnpm-lock.yaml.");
 
-await rm(destino, { recursive: true, force: true });
-await cp(origen, destino, { recursive: true, dereference: false });
-aviso(`copiado el standalone a ${relative(raiz, destino)}`);
+await rm(destination, { recursive: true, force: true });
+await cp(source, destination, { recursive: true, dereference: false });
+print(`copied the standalone to ${relative(root, destination)}`);
 
 /*
   1. The statics.
@@ -99,7 +99,7 @@ aviso(`copiado el standalone a ${relative(raiz, destino)}`);
   on the server— but here the server **is** the CDN: without them the page loads without CSS and
   without JavaScript, which is worse than not loading, because it seems to work.
  */
-await cp(join(web, dist, "static"), join(destino, "apps", "web", dist, "static"), {
+await cp(join(web, dist, "static"), join(destination, "apps", "web", dist, "static"), {
   recursive: true,
 });
 /*
@@ -113,9 +113,9 @@ await cp(join(web, dist, "static"), join(destino, "apps", "web", dist, "static")
   panel, which are indeed Panoma.
  */
 if (existsSync(join(web, "public"))) {
-  await cp(join(web, "public"), join(destino, "apps", "web", "public"), { recursive: true });
+  await cp(join(web, "public"), join(destination, "apps", "web", "public"), { recursive: true });
 }
-aviso("copiados los estáticos y public/");
+print("copied the static files and public/");
 
 /*
   2. A `node_modules` plane, with real copies and not a single symbolic link.
@@ -128,22 +128,22 @@ aviso("copiados los estáticos y public/");
   `app/node_modules`, and `.pnpm` disappears. Node resolves by going up through the
   `node_modules`, so from any point of the tree everything is found.
  */
-const nm = join(destino, "node_modules");
+const nm = join(destination, "node_modules");
 const pnpmBase = join(nm, ".pnpm");
-/** name → { folder, version, origin } of the package that was copied. */
-const vistos = new Map();
-const conflictos = [];
-const fueraDeLockfile = [];
+/** name → { folder, version, source } of the package that was copied. */
+const seen = new Map();
+const conflicts = [];
+const outsideLockfile = [];
 
-for (const carpeta of (await readdir(pnpmBase).catch(() => [])).sort()) {
-  const dentro = join(pnpmBase, carpeta, "node_modules");
-  for (const entrada of await readdir(dentro, { withFileTypes: true }).catch(() => [])) {
+for (const folder of (await readdir(pnpmBase).catch(() => [])).sort()) {
+  const inside = join(pnpmBase, folder, "node_modules");
+  for (const entry of await readdir(inside, { withFileTypes: true }).catch(() => [])) {
     // The scopes (`@scope`) carry the package one level down.
-    const nombres = entrada.name.startsWith("@")
-      ? (await readdir(join(dentro, entrada.name)).catch(() => [])).map((n) => `${entrada.name}/${n}`)
-      : [entrada.name];
-    for (const nombre of nombres) {
-      const origenPaquete = join(dentro, nombre);
+    const names = entry.name.startsWith("@")
+      ? (await readdir(join(inside, entry.name)).catch(() => [])).map((n) => `${entry.name}/${n}`)
+      : [entry.name];
+    for (const name of names) {
+      const packageSource = join(inside, name);
       /*
         Only the package that that `.pnpm` folder has; the rest are its links.
         The `+ "@"` is essential and was hard to find: without it, `startsWith("react")` also hits
@@ -152,61 +152,61 @@ for (const carpeta of (await readdir(pnpmBase).catch(() => [])).sort()) {
         content matches and it is not noticeable; with two, the one the neighbor linked wins.
         There are 25 prefix pairs in this monorepo.
        */
-      if (!carpeta.startsWith(nombre.replace("/", "+") + "@")) continue;
+      if (!folder.startsWith(name.replace("/", "+") + "@")) continue;
 
-      const meta = leerJson(join(origenPaquete, "package.json"));
-      const version = meta?.version ?? "desconocida";
+      const meta = readJson(join(packageSource, "package.json"));
+      const version = meta?.version ?? "unknown";
 
-      const previo = vistos.get(nombre);
-      if (previo) {
+      const previous = seen.get(name);
+      if (previous) {
         /*
           This is where the flattening fell silent. The `continue` on its own kept the first
           folder in reading order — alphabetical — and buried the other without saying anything:
           this is how drizzle 0.38.4 traveled ahead of 0.45.2. Now it is noted and aborted.
          */
-        if (previo.version !== version) {
-          conflictos.push({ nombre, a: previo, b: { carpeta, version } });
+        if (previous.version !== version) {
+          conflicts.push({ name, a: previous, b: { folder, version } });
         }
         continue;
       }
-      vistos.set(nombre, { carpeta, version, origen: origenPaquete });
+      seen.set(name, { folder, version, source: packageSource });
 
       /*
         And the second network: what travels has to be in the lockfile. The orphan folders from
         old installations survive in `.pnpm` and they are not.
        */
-      const conocidas = enLockfile.get(nombre);
-      if (conocidas && !conocidas.has(version)) {
-        fueraDeLockfile.push({ nombre, version, esperadas: [...conocidas].join(", ") });
+      const known = inLockfile.get(name);
+      if (known && !known.has(version)) {
+        outsideLockfile.push({ name, version, expected: [...known].join(", ") });
       }
 
-      await cp(origenPaquete, join(nm, nombre), { recursive: true, dereference: true });
+      await cp(packageSource, join(nm, name), { recursive: true, dereference: true });
     }
   }
 }
 
-if (conflictos.length > 0) {
-  abortar(
-    `Dos versiones del mismo paquete quieren viajar, y no voy a elegir yo:\n\n` +
-      conflictos
+if (conflicts.length > 0) {
+  abort(
+    `Two versions of the same package want to travel, and I am not going to be the one who chooses:\n\n` +
+      conflicts
         .map(
-          ({ nombre, a, b }) =>
-            `    ${nombre}\n      ${a.version}  en ${a.carpeta}\n      ${b.version}  en ${b.carpeta}`,
+          ({ name, a, b }) =>
+            `    ${name}\n      ${a.version}  in ${a.folder}\n      ${b.version}  in ${b.folder}`,
         )
         .join("\n") +
-      `\n\n  Casi siempre son restos de una instalación anterior en node_modules/.pnpm.\n` +
-      `  Se limpian con:  pnpm install --frozen-lockfile\n` +
-      `  Y si insisten:   rm -rf node_modules && pnpm install --frozen-lockfile`,
+      `\n\n  Almost always they are leftovers of an earlier installation in node_modules/.pnpm.\n` +
+      `  They are cleaned with:  pnpm install --frozen-lockfile\n` +
+      `  And if they persist:    rm -rf node_modules && pnpm install --frozen-lockfile`,
   );
 }
 
-if (fueraDeLockfile.length > 0) {
-  abortar(
-    `Estas versiones no están en pnpm-lock.yaml, así que nadie las pidió:\n\n` +
-      fueraDeLockfile
-        .map(({ nombre, version, esperadas }) => `    ${nombre}@${version}  (el lockfile dice ${esperadas})`)
+if (outsideLockfile.length > 0) {
+  abort(
+    `These versions are not in pnpm-lock.yaml, so nobody asked for them:\n\n` +
+      outsideLockfile
+        .map(({ name, version, expected }) => `    ${name}@${version}  (the lockfile says ${expected})`)
         .join("\n") +
-      `\n\n  Son restos huérfanos en node_modules/.pnpm. Límpialos con:\n` +
+      `\n\n  They are orphan leftovers in node_modules/.pnpm. Clean them with:\n` +
       `    pnpm install --frozen-lockfile`,
   );
 }
@@ -219,29 +219,29 @@ if (fueraDeLockfile.length > 0) {
   copied: the built `dist`, manifest, and the migrations of `db`.
  */
 const panoma = [];
-for (const paquete of await readdir(join(raiz, "packages"))) {
-  const fuente = join(raiz, "packages", paquete);
-  const manifiesto = leerJson(join(fuente, "package.json"));
-  if (!manifiesto) continue;
-  if (!existsSync(join(fuente, "dist"))) {
-    abortar(`${paquete} no está construido. Ejecuta antes: pnpm -r build`);
+for (const pkg of await readdir(join(root, "packages"))) {
+  const packageDir = join(root, "packages", pkg);
+  const manifest = readJson(join(packageDir, "package.json"));
+  if (!manifest) continue;
+  if (!existsSync(join(packageDir, "dist"))) {
+    abort(`${pkg} is not built. Run first: pnpm -r build`);
   }
-  const meta = join(nm, "@panoma", paquete);
-  await cp(join(fuente, "dist"), join(meta, "dist"), { recursive: true, dereference: true });
-  await cp(join(fuente, "package.json"), join(meta, "package.json"), { dereference: true });
-  if (existsSync(join(fuente, "migrations"))) {
-    await cp(join(fuente, "migrations"), join(meta, "migrations"), {
+  const target = join(nm, "@panoma", pkg);
+  await cp(join(packageDir, "dist"), join(target, "dist"), { recursive: true, dereference: true });
+  await cp(join(packageDir, "package.json"), join(target, "package.json"), { dereference: true });
+  if (existsSync(join(packageDir, "migrations"))) {
+    await cp(join(packageDir, "migrations"), join(target, "migrations"), {
       recursive: true,
       dereference: true,
     });
   }
-  panoma.push({ nombre: manifiesto.name, fuente, manifiesto });
+  panoma.push({ name: manifest.name, packageDir, manifest });
 }
 
 await rm(pnpmBase, { recursive: true, force: true });
-await rm(join(destino, "packages"), { recursive: true, force: true });
-await rm(join(destino, "apps", "web", "node_modules"), { recursive: true, force: true });
-aviso(`aplanados ${vistos.size} paquetes de npm y ${panoma.length} @panoma/* en copias reales`);
+await rm(join(destination, "packages"), { recursive: true, force: true });
+await rm(join(destination, "apps", "web", "node_modules"), { recursive: true, force: true });
+print(`packages flattened into real copies: ${seen.size} from npm and ${panoma.length} from @panoma/*`);
 
 /*
   And the two manifests that come along inside the standalone and that nobody in there reads.
@@ -270,25 +270,25 @@ aviso(`aplanados ${vistos.size} paquetes de npm y ${panoma.length} @panoma/* en 
   then answers 500 on every route. That is why two paths are deleted here by name and never a
   pattern.
  */
-const manifiestoWeb = leerJson(join(web, "package.json")) ?? {};
-await rm(join(destino, "package.json"), { force: true });
+const webManifest = readJson(join(web, "package.json")) ?? {};
+await rm(join(destination, "package.json"), { force: true });
 await writeFile(
-  join(destino, "apps", "web", "package.json"),
+  join(destination, "apps", "web", "package.json"),
   JSON.stringify(
     {
-      name: manifiestoWeb.name,
-      version: manifiestoWeb.version,
+      name: webManifest.name,
+      version: webManifest.version,
       private: true,
-      type: manifiestoWeb.type ?? "module",
+      type: webManifest.type ?? "module",
       // If they ever appear, they resolve routes and have to travel; today apps/web has neither.
-      ...(manifiestoWeb.imports ? { imports: manifiestoWeb.imports } : {}),
-      ...(manifiestoWeb.exports ? { exports: manifiestoWeb.exports } : {}),
+      ...(webManifest.imports ? { imports: webManifest.imports } : {}),
+      ...(webManifest.exports ? { exports: webManifest.exports } : {}),
     },
     null,
     2,
   ) + "\n",
 );
-aviso("fuera el manifiesto del monorepo, y el de la web se queda en lo que Node lee");
+print("the monorepo manifest is out, and the web one is left with what Node reads");
 
 /*
   3. The dependencies of the `@panoma/*`, which the layout also doesn’t see.
@@ -311,8 +311,8 @@ aviso("fuera el manifiesto del monorepo, y el de la web se queda en lo que Node 
   validator. Do not copy all web dependencies here or prune AJV as an unused HTTP transport;
   the SDK client needs it even though no HTTP server transport is used.
  */
-function raizDelPaquete(nombre, desde) {
-  const req = createRequire(join(desde, "package.json"));
+function packageRoot(name, from) {
+  const req = createRequire(join(from, "package.json"));
 
   /*
     Go up to the manifest for real, and don't trust the first folder that appears.
@@ -321,87 +321,87 @@ function raizDelPaquete(nombre, desde) {
     `dirname` of the `resolve` gave an internal folder and an 'unknown' version. It is uploaded
     until finding the manifest that is called like the package.
    */
-  function subirHasta(punto) {
-    let actual = punto;
+  function climbTo(point) {
+    let current = point;
     for (let i = 0; i < 10; i += 1) {
-      if (leerJson(join(actual, "package.json"))?.name === nombre) return actual;
-      const arriba = dirname(actual);
-      if (arriba === actual) return undefined;
-      actual = arriba;
+      if (readJson(join(current, "package.json"))?.name === name) return current;
+      const up = dirname(current);
+      if (up === current) return undefined;
+      current = up;
     }
     return undefined;
   }
 
-  for (const intento of [
-    () => dirname(req.resolve(`${nombre}/package.json`)),
-    () => dirname(req.resolve(nombre)),
+  for (const attempt of [
+    () => dirname(req.resolve(`${name}/package.json`)),
+    () => dirname(req.resolve(name)),
     /*
       In the pnpm tree, the dependent has a direct link to the package. It is useful for those who
       do not export either their root or their manifest.
      */
-    () => join(desde, "node_modules", nombre),
+    () => join(from, "node_modules", name),
   ]) {
-    let punto;
+    let point;
     try {
-      punto = intento();
+      point = attempt();
     } catch {
       continue;
     }
-    const raizReal = existsSync(punto) ? subirHasta(punto) : undefined;
-    if (raizReal) return raizReal;
+    const realRoot = existsSync(point) ? climbTo(point) : undefined;
+    if (realRoot) return realRoot;
   }
   return undefined;
 }
 
-const pendientes = [];
-for (const { nombre, fuente, manifiesto } of panoma) {
-  for (const dep of Object.keys(manifiesto.dependencies ?? {})) {
+const pending = [];
+for (const { name, packageDir, manifest } of panoma) {
+  for (const dep of Object.keys(manifest.dependencies ?? {})) {
     if (dep.startsWith("@panoma/")) continue;
-    pendientes.push({ dep, desde: fuente, pedidoPor: nombre });
+    pending.push({ dep, from: packageDir, requestedBy: name });
   }
 }
 
-const sinResolver = [];
-let copiadasAparte = 0;
-while (pendientes.length > 0) {
-  const { dep, desde, pedidoPor } = pendientes.shift();
-  if (vistos.has(dep)) continue;
-  const carpeta = raizDelPaquete(dep, desde);
-  if (!carpeta) {
-    sinResolver.push(`${dep} (la pide ${pedidoPor})`);
+const unresolved = [];
+let copiedSeparately = 0;
+while (pending.length > 0) {
+  const { dep, from, requestedBy } = pending.shift();
+  if (seen.has(dep)) continue;
+  const folder = packageRoot(dep, from);
+  if (!folder) {
+    unresolved.push(`${dep} (requested by ${requestedBy})`);
     continue;
   }
-  const meta = leerJson(join(carpeta, "package.json"));
-  const version = meta?.version ?? "desconocida";
-  const conocidas = enLockfile.get(dep);
-  if (conocidas && !conocidas.has(version)) {
-    fueraDeLockfile.push({ nombre: dep, version, esperadas: [...conocidas].join(", ") });
+  const meta = readJson(join(folder, "package.json"));
+  const version = meta?.version ?? "unknown";
+  const known = inLockfile.get(dep);
+  if (known && !known.has(version)) {
+    outsideLockfile.push({ name: dep, version, expected: [...known].join(", ") });
   }
-  vistos.set(dep, { carpeta: `resuelto desde ${pedidoPor}`, version, origen: carpeta });
-  await cp(carpeta, join(nm, dep), { recursive: true, dereference: true });
-  copiadasAparte += 1;
+  seen.set(dep, { folder: `resolved from ${requestedBy}`, version, source: folder });
+  await cp(folder, join(nm, dep), { recursive: true, dereference: true });
+  copiedSeparately += 1;
   for (const sub of Object.keys(meta?.dependencies ?? {})) {
-    if (!vistos.has(sub)) pendientes.push({ dep: sub, desde: carpeta, pedidoPor: dep });
+    if (!seen.has(sub)) pending.push({ dep: sub, from: folder, requestedBy: dep });
   }
 }
 
-if (sinResolver.length > 0) {
-  abortar(
-    `No encuentro dependencias que los @panoma/* necesitan:\n\n` +
-      sinResolver.map((linea) => `    ${linea}`).join("\n") +
-      `\n\n  Sin ellas el paquete se instala y falla al usarse. Ejecuta: pnpm install`,
+if (unresolved.length > 0) {
+  abort(
+    `I cannot find dependencies that the @panoma/* need:\n\n` +
+      unresolved.map((line) => `    ${line}`).join("\n") +
+      `\n\n  Without them the package installs and fails when used. Run: pnpm install`,
   );
 }
-if (fueraDeLockfile.length > 0) {
-  abortar(
-    `Versiones fuera del lockfile entre las dependencias de @panoma/*:\n\n` +
-      fueraDeLockfile
-        .map(({ nombre, version, esperadas }) => `    ${nombre}@${version}  (el lockfile dice ${esperadas})`)
+if (outsideLockfile.length > 0) {
+  abort(
+    `Versions outside the lockfile among the dependencies of @panoma/*:\n\n` +
+      outsideLockfile
+        .map(({ name, version, expected }) => `    ${name}@${version}  (the lockfile says ${expected})`)
         .join("\n"),
   );
 }
-if (copiadasAparte > 0) {
-  aviso(`copiadas ${copiadasAparte} dependencias de los @panoma/* que el trazado no ve`);
+if (copiedSeparately > 0) {
+  print(`dependencies of the @panoma/* that the tracing does not see, copied separately: ${copiedSeparately}`);
 }
 
 /*
@@ -419,55 +419,55 @@ if (copiadasAparte > 0) {
   - The PGlite extension tarballs: 48 Postgres extensions, 5.8 MB. No migration declares them and
   `new PGlite(path)` is built without `extensions`.
  */
-const podas = [];
+const pruned = [];
 
-async function podar(etiqueta, fn) {
-  const antes = await peso(destino);
+async function prune(label, fn) {
+  const before = await sizeOf(destination);
   await fn();
-  const despues = await peso(destino);
-  const ahorro = (antes - despues) / 1048576;
-  if (ahorro > 0.05) podas.push(`${etiqueta} (${ahorro.toFixed(1)} MB)`);
+  const after = await sizeOf(destination);
+  const saved = (before - after) / 1048576;
+  if (saved > 0.05) pruned.push(`${label} (${saved.toFixed(1)} MB)`);
 }
 
-async function borrarPorPatron(base, coincide) {
-  for (const entrada of await readdir(base, { withFileTypes: true }).catch(() => [])) {
-    const hijo = join(base, entrada.name);
-    if (entrada.isDirectory()) await borrarPorPatron(hijo, coincide);
-    else if (coincide(entrada.name)) await rm(hijo, { force: true });
+async function deleteByPattern(base, matches) {
+  for (const entry of await readdir(base, { withFileTypes: true }).catch(() => [])) {
+    const child = join(base, entry.name);
+    if (entry.isDirectory()) await deleteByPattern(child, matches);
+    else if (matches(entry.name)) await rm(child, { force: true });
   }
 }
 
-const FUERA_DE_RUNTIME = new Set(["typescript", "@types", "sharp", "@img", "detect-libc"]);
-await podar("paquetes que no hacen falta en tiempo de ejecución", async () => {
-  for (const entrada of await readdir(nm).catch(() => [])) {
-    if (!FUERA_DE_RUNTIME.has(entrada)) continue;
+const NOT_AT_RUNTIME = new Set(["typescript", "@types", "sharp", "@img", "detect-libc"]);
+await prune("packages not needed at runtime", async () => {
+  for (const entry of await readdir(nm).catch(() => [])) {
+    if (!NOT_AT_RUNTIME.has(entry)) continue;
     /*
       The registry is deleted by package name, not by folder name.
-      `@img` is a folder; in `vistos` the keys are `@img/colour`, `@img/sharp-darwin-arm64`, and
+      `@img` is a folder; in `seen` the keys are `@img/colour`, `@img/sharp-darwin-arm64`, and
       `@img/sharp-libvips-darwin-arm64`. `delete("@img")` did not delete any of the three, so the
       third-party notices and the BUILD-INFO declared three packages that no longer traveled —
       among them libvips, which is LGPL-3.0-or-later. Announcing that you redistribute LGPL when
       you do not is the same kind of falsehood as keeping silent about it when you do. Deleting
       from a Map while iterating over its keys is allowed and the iterator tolerates it.
      */
-    for (const nombre of vistos.keys()) {
-      if (nombre === entrada || nombre.startsWith(entrada + "/")) vistos.delete(nombre);
+    for (const name of seen.keys()) {
+      if (name === entry || name.startsWith(entry + "/")) seen.delete(name);
     }
-    await rm(join(nm, entrada), { recursive: true, force: true });
+    await rm(join(nm, entry), { recursive: true, force: true });
   }
 });
 
-await podar("trazas de compilación (*.nft.json)", () =>
-  borrarPorPatron(join(destino, "apps"), (n) => n.endsWith(".nft.json")),
+await prune("build traces (*.nft.json)", () =>
+  deleteByPattern(join(destination, "apps"), (n) => n.endsWith(".nft.json")),
 );
 
-await podar("mapas de fuente", () => borrarPorPatron(destino, (n) => n.endsWith(".map")));
+await prune("source maps", () => deleteByPattern(destination, (n) => n.endsWith(".map")));
 
-await podar("extensiones de Postgres que el catálogo no declara", () =>
-  borrarPorPatron(join(nm, "@electric-sql"), (n) => n.endsWith(".tar.gz")),
+await prune("Postgres extensions that the catalog does not declare", () =>
+  deleteByPattern(join(nm, "@electric-sql"), (n) => n.endsWith(".tar.gz")),
 );
 
-if (podas.length > 0) aviso(`podado: ${podas.join(", ")}`);
+if (pruned.length > 0) print(`pruned: ${pruned.join(", ")}`);
 
 /*
   5. The license notices of what we redistribute.
@@ -481,44 +481,44 @@ if (podas.length > 0) aviso(`podado: ${podas.join(", ")}`);
   `LICENSE-MIT` is a real name: `ignore` uses it, and the previous form —which only allowed a dot
   at the end— would lose it and treat it as a package without text.
  */
-const NOMBRES_DE_LICENCIA = /^(LICEN[CS]E|COPYING|NOTICE)([-._].*)?$/i;
+const LICENSE_NAMES = /^(LICEN[CS]E|COPYING|NOTICE)([-._].*)?$/i;
 
 /*
   Where the license is read, which is the question that this step had answered incorrectly.
-  `vistos` records the `origen` of each flattened package inside `app/node_modules/.pnpm`, and
-  that folder is deleted in step 2, two hundred lines above. So `leerJson` silently failed,
+  `seen` records the `source` of each flattened package inside `app/node_modules/.pnpm`, and
+  that folder is deleted in step 2, two hundred lines above. So `readJson` silently failed,
   returned `{}`, and the 21 packages coming from the flattening appeared "undeclared." It's not
   that they declared nothing: all 21 carry their `license` field in `package.json`. It's just that
   it was reading a directory that no longer exists. The 8 that did appear correctly were exactly
-  those resolved from the monorepo for the `@panoma/*`, whose `origen` is still intact — hence why
+  those resolved from the monorepo for the `@panoma/*`, whose `source` is still intact — hence why
   the failure seemed random.
   And there is a second reason not to read from what travels: Next's standalone is a *traced*
   copy, and a license is not needed to run it, so Next does not copy it. Of the 26 packages that
   travel, only 6 keep their file; in the pnpm store they have 22. The text is there, but not where
   we were looking.
-  Searching for `nombre@version` exactly —or with the peer suffix, `_react@…` — and it falls back
+  Searching for `name@version` exactly —or with the peer suffix, `_react@…` — and it falls back
   to the copy that travels if it is not there.
  */
-const tienda = join(raiz, "node_modules", ".pnpm");
-const carpetasDeLaTienda = await readdir(tienda).catch(() => []);
-if (carpetasDeLaTienda.length === 0) {
-  abortar(
-    `No encuentro node_modules/.pnpm, y de ahí salen los textos de licencia.\n` +
-      `  Sin la tienda saldría un aviso con los nombres pero sin un solo texto.\n` +
-      `  Ejecuta: pnpm install --frozen-lockfile`,
+const store = join(root, "node_modules", ".pnpm");
+const storeFolders = await readdir(store).catch(() => []);
+if (storeFolders.length === 0) {
+  abort(
+    `I cannot find node_modules/.pnpm, and that is where the license texts come from.\n` +
+      `  Without the store the notice would come out with the names but without a single text.\n` +
+      `  Run: pnpm install --frozen-lockfile`,
   );
 }
 
-function origenDeLaLicencia(nombre, version) {
-  const prefijo = `${nombre.replace("/", "+")}@${version}`;
-  const carpeta = carpetasDeLaTienda.find((c) => c === prefijo || c.startsWith(prefijo + "_"));
-  const enLaTienda = carpeta ? join(tienda, carpeta, "node_modules", nombre) : undefined;
-  return enLaTienda && existsSync(enLaTienda) ? enLaTienda : join(nm, nombre);
+function licenseOrigin(name, version) {
+  const prefix = `${name.replace("/", "+")}@${version}`;
+  const folder = storeFolders.find((c) => c === prefix || c.startsWith(prefix + "_"));
+  const inStore = folder ? join(store, folder, "node_modules", name) : undefined;
+  return inStore && existsSync(inStore) ? inStore : join(nm, name);
 }
 
-async function textoDeLicencia(carpeta) {
-  for (const entrada of await readdir(carpeta, { withFileTypes: true }).catch(() => [])) {
-    if (entrada.isFile() && NOMBRES_DE_LICENCIA.test(entrada.name)) {
+async function licenseText(folder) {
+  for (const entry of await readdir(folder, { withFileTypes: true }).catch(() => [])) {
+    if (entry.isFile() && LICENSE_NAMES.test(entry.name)) {
       /*
         A LF at the door, which is where the foreign text enters.
         Some third-party licenses come with Windows line endings, and those CR traveled all the
@@ -530,11 +530,11 @@ async function textoDeLicencia(carpeta) {
         requiring `PANOMA_PACK_SUCIO=1` in ALL releases, which is exactly the opposite of what it
         protects.
         It is normalized here and not when writing the document because this is where the text
-        stops being someone else's and becomes ours: anyone who reads `avisos[].texto` afterwards
+        stops being someone else's and becomes ours: anyone who reads `notices[].text` afterwards
         receives it already in the house convention.
        */
-      const crudo = await readFile(join(carpeta, entrada.name), "utf8");
-      return crudo.replace(/\r\n?/g, "\n").trim();
+      const raw = await readFile(join(folder, entry.name), "utf8");
+      return raw.replace(/\r\n?/g, "\n").trim();
     }
   }
   return undefined;
@@ -546,29 +546,29 @@ async function textoDeLicencia(carpeta) {
   2015. Today, none of the 26 use the last two — they are read because the day an old dependency
   comes in, the packaging would stop for nothing.
  */
-function licenciaDeclarada(meta) {
+function declaredLicense(meta) {
   if (typeof meta.license === "string" && meta.license.trim()) return meta.license.trim();
   if (typeof meta.license?.type === "string") return meta.license.type;
   if (typeof meta.licenses === "string") return meta.licenses;
   if (Array.isArray(meta.licenses)) {
-    const tipos = meta.licenses.map((l) => (typeof l === "string" ? l : l?.type)).filter(Boolean);
-    if (tipos.length > 0) return tipos.join(" OR ");
+    const types = meta.licenses.map((l) => (typeof l === "string" ? l : l?.type)).filter(Boolean);
+    if (types.length > 0) return types.join(" OR ");
   }
   return undefined;
 }
 
-const avisos = [];
-const sinLicencia = [];
-for (const [nombre, { version }] of [...vistos].sort()) {
-  const carpeta = origenDeLaLicencia(nombre, version);
-  const meta = leerJson(join(carpeta, "package.json")) ?? {};
-  const licencia = licenciaDeclarada(meta);
-  const texto = await textoDeLicencia(carpeta);
-  if (!licencia && !texto) {
-    sinLicencia.push(`${nombre}@${version}  (mirado en ${relative(raiz, carpeta)})`);
+const notices = [];
+const withoutLicense = [];
+for (const [name, { version }] of [...seen].sort()) {
+  const folder = licenseOrigin(name, version);
+  const meta = readJson(join(folder, "package.json")) ?? {};
+  const license = declaredLicense(meta);
+  const text = await licenseText(folder);
+  if (!license && !text) {
+    withoutLicense.push(`${name}@${version}  (looked in ${relative(root, folder)})`);
     continue;
   }
-  avisos.push({ nombre, version, licencia: licencia ?? "solo el texto adjunto", texto });
+  notices.push({ name, version, license: license ?? "only the attached text", text });
 }
 
 /*
@@ -578,12 +578,12 @@ for (const [nombre, { version }] of [...vistos].sort()) {
   the absence of a notice in the form of one. If a license is missing, packaging stops and it is
   checked manually; it takes thirty seconds and happens once per new dependency.
  */
-if (sinLicencia.length > 0) {
-  abortar(
-    `No sé bajo qué licencia viaja esto, y no lo voy a publicar sin saberlo:\n\n` +
-      sinLicencia.map((linea) => `    ${linea}`).join("\n") +
-      `\n\n  Busca la licencia en su repositorio. Si de verdad no declara ninguna, no se puede\n` +
-      `  redistribuir: sin licencia expresa el copyright por defecto lo prohíbe.`,
+if (withoutLicense.length > 0) {
+  abort(
+    `I do not know under which license this travels, and I am not going to publish it without knowing:\n\n` +
+      withoutLicense.map((line) => `    ${line}`).join("\n") +
+      `\n\n  Look for the license in its repository. If it really declares none, it cannot be\n` +
+      `  redistributed: without an express license, copyright forbids it by default.`,
   );
 }
 
@@ -598,16 +598,16 @@ if (sinLicencia.length > 0) {
   one that would trigger the day someone reactivates image optimization without remembering the
   rest.
  */
-const COPYLEFT_FUERTE = /^(A?GPL|LGPL|MPL|EPL|CDDL|CECILL|OSL|EUPL)/i;
-const conCopyleft = avisos.filter(({ licencia }) => COPYLEFT_FUERTE.test(licencia));
-if (conCopyleft.length > 0) {
-  abortar(
-    `Copyleft dentro del paquete, y eso no se resuelve nombrándolo en un resumen:\n\n` +
-      conCopyleft
-        .map(({ nombre, version, licencia }) => `    ${nombre}@${version} — ${licencia}`)
+const STRONG_COPYLEFT = /^(A?GPL|LGPL|MPL|EPL|CDDL|CECILL|OSL|EUPL)/i;
+const withCopyleft = notices.filter(({ license }) => STRONG_COPYLEFT.test(license));
+if (withCopyleft.length > 0) {
+  abort(
+    `Copyleft inside the package, and that is not settled by naming it in a summary:\n\n` +
+      withCopyleft
+        .map(({ name, version, license }) => `    ${name}@${version} — ${license}`)
         .join("\n") +
-      `\n\n  Estas licencias piden su texto completo, y la LGPL además poder reemplazar la\n` +
-      `  biblioteca. O se poda el paquete, o se hace el trabajo entero.`,
+      `\n\n  These licenses ask for their full text, and the LGPL also asks to be able to replace the\n` +
+      `  library. Either the package is pruned, or the whole job is done.`,
   );
 }
 
@@ -623,53 +623,53 @@ if (conCopyleft.length > 0) {
   costs 262 KB over 174 MB.
   `cp` creates the intermediate directories, so nested paths do not need `mkdir`.
  */
-async function licenciasDentro(base, prefijo = "") {
-  const encontradas = [];
-  const aqui = prefijo ? join(base, prefijo) : base;
-  for (const entrada of await readdir(aqui, { withFileTypes: true }).catch(() => [])) {
-    if (entrada.isSymbolicLink()) continue;
-    const rel = prefijo ? `${prefijo}/${entrada.name}` : entrada.name;
-    if (entrada.isDirectory()) encontradas.push(...(await licenciasDentro(base, rel)));
-    else if (NOMBRES_DE_LICENCIA.test(entrada.name)) encontradas.push(rel);
+async function licensesInside(base, prefix = "") {
+  const found = [];
+  const here = prefix ? join(base, prefix) : base;
+  for (const entry of await readdir(here, { withFileTypes: true }).catch(() => [])) {
+    if (entry.isSymbolicLink()) continue;
+    const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) found.push(...(await licensesInside(base, rel)));
+    else if (LICENSE_NAMES.test(entry.name)) found.push(rel);
   }
-  return encontradas;
+  return found;
 }
 
-let devueltas = 0;
-for (const [nombre, { version }] of vistos) {
-  const fuente = origenDeLaLicencia(nombre, version);
-  if (fuente === join(nm, nombre)) continue;
-  for (const rel of await licenciasDentro(fuente)) {
-    const meta = join(nm, nombre, ...rel.split("/"));
-    if (existsSync(meta)) continue;
-    await cp(join(fuente, ...rel.split("/")), meta);
-    devueltas += 1;
+let returned = 0;
+for (const [name, { version }] of seen) {
+  const origin = licenseOrigin(name, version);
+  if (origin === join(nm, name)) continue;
+  for (const rel of await licensesInside(origin)) {
+    const target = join(nm, name, ...rel.split("/"));
+    if (existsSync(target)) continue;
+    await cp(join(origin, ...rel.split("/")), target);
+    returned += 1;
   }
 }
-if (devueltas > 0) aviso(`licencias que el trazado dejó fuera y vuelven dentro: ${devueltas}`);
+if (returned > 0) print(`licenses the tracing left out and that go back inside: ${returned}`);
 
-const notas =
-  `# Avisos de terceros\n\n` +
-  `panoma se distribuye bajo la AGPL-3.0-only. Este paquete incluye copias de los\n` +
-  `programas de abajo, cada uno bajo su propia licencia y con su propio copyright.\n` +
-  `Nada de lo que sigue se ve alterado por la licencia de panoma.\n\n` +
-  `Generado por \`apps/cli/scripts/pack-app.mjs\`; no se edita a mano.\n\n` +
-  `## Resumen\n\n` +
-  avisos.map(({ nombre, version, licencia }) => `- ${nombre}@${version} — ${licencia}`).join("\n") +
-  `\n\n## Textos\n\n` +
-  `Debajo va el aviso tal y como lo publica cada autor. Los ficheros originales viajan\n` +
-  `además dentro del paquete, junto a cada biblioteca, en \`app/node_modules/\`.\n\n` +
-  `Los que no aparecen abajo es porque su autor no publica ningún fichero de licencia:\n` +
-  `declara la suya en el \`package.json\` y no distribuye más texto que ese nombre.\n\n` +
-  avisos
-    .filter(({ texto }) => texto)
-    .map(({ nombre, version, texto }) => `### ${nombre}@${version}\n\n\`\`\`\n${texto}\n\`\`\``)
+const notes =
+  `# Third-party notices\n\n` +
+  `panoma is distributed under the AGPL-3.0-only. This package includes copies of the\n` +
+  `programs below, each under its own license and with its own copyright.\n` +
+  `Nothing that follows is altered by panoma's license.\n\n` +
+  `Generated by \`apps/cli/scripts/pack-app.mjs\`; it is not edited by hand.\n\n` +
+  `## Summary\n\n` +
+  notices.map(({ name, version, license }) => `- ${name}@${version} — ${license}`).join("\n") +
+  `\n\n## Texts\n\n` +
+  `Below goes the notice exactly as each author publishes it. The original files also\n` +
+  `travel inside the package, next to each library, in \`app/node_modules/\`.\n\n` +
+  `The ones that do not appear below are missing because their author publishes no license\n` +
+  `file: they declare theirs in \`package.json\` and distribute no more text than that name.\n\n` +
+  notices
+    .filter(({ text }) => text)
+    .map(({ name, version, text }) => `### ${name}@${version}\n\n\`\`\`\n${text}\n\`\`\``)
     .join("\n\n") +
   `\n`;
 
-await writeFile(join(cli, "THIRD-PARTY-NOTICES.md"), notas);
-const conTexto = avisos.filter((a) => a.texto).length;
-aviso(`paquetes con licencia declarada: ${avisos.length}, de ellos con texto completo: ${conTexto}`);
+await writeFile(join(cli, "THIRD-PARTY-NOTICES.md"), notes);
+const withText = notices.filter((a) => a.text).length;
+print(`packages with a declared license: ${notices.length}, of which with full text: ${withText}`);
 
 /*
   6. The origin, so that `prepack` can refuse to publish a stale package.
@@ -680,27 +680,27 @@ aviso(`paquetes con licencia declarada: ${avisos.length}, de ellos con texto com
  */
 function git(...args) {
   try {
-    return execFileSync("git", args, { cwd: raiz, encoding: "utf8" }).trim();
+    return execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
   } catch {
     return undefined;
   }
 }
 
-const hashLockfile = createHash("sha256")
-  .update(readFileSync(join(raiz, "pnpm-lock.yaml")))
+const lockfileHash = createHash("sha256")
+  .update(readFileSync(join(root, "pnpm-lock.yaml")))
   .digest("hex");
 
 await writeFile(
-  join(destino, "BUILD-INFO.json"),
+  join(destination, "BUILD-INFO.json"),
   JSON.stringify(
     {
-      version: leerJson(join(cli, "package.json"))?.version,
+      version: readJson(join(cli, "package.json"))?.version,
       commit: git("rev-parse", "HEAD"),
       arbolLimpio: git("status", "--porcelain") === "",
-      lockfile: hashLockfile,
+      lockfile: lockfileHash,
       node: process.version,
       plataformaDeCompilacion: `${process.platform}-${process.arch}`,
-      paquetes: Object.fromEntries([...vistos].sort().map(([n, { version }]) => [n, version])),
+      paquetes: Object.fromEntries([...seen].sort().map(([n, { version }]) => [n, version])),
     },
     null,
     2,
@@ -712,22 +712,22 @@ await writeFile(
   A package that is published without the server inside does not fail when published: it fails on
   the machine of the person who installs it, which is the worst place and the latest possible.
  */
-const imprescindibles = [
-  ["apps/web/server.js", "el servidor"],
+const essentials = [
+  ["apps/web/server.js", "the server"],
   ["node_modules/next", "Next"],
-  [`apps/web/${dist}/static`, "los estáticos"],
-  ["node_modules/@panoma/db/dist", "el motor del catálogo"],
-  ["node_modules/@panoma/core", "el núcleo"],
-  ["node_modules/@panoma/db/migrations", "las migraciones"],
-  ["node_modules/@panoma/mcp/dist/index.js", "el servidor MCP"],
+  [`apps/web/${dist}/static`, "the static files"],
+  ["node_modules/@panoma/db/dist", "the catalog engine"],
+  ["node_modules/@panoma/core", "the core"],
+  ["node_modules/@panoma/db/migrations", "the migrations"],
+  ["node_modules/@panoma/mcp/dist/index.js", "the MCP server"],
   ["node_modules/@panoma/apps/dist/index.js", "the app manager"],
   ["node_modules/@panoma/handoff/dist/index.js", "the handoff engine"],
   [`apps/web/${dist}/server/app/api/apps/route.js`, "the apps API and its MCP client"],
-  ["node_modules/@electric-sql/pglite", "la base de datos"],
-  ["node_modules/drizzle-orm", "el acceso a la base"],
+  ["node_modules/@electric-sql/pglite", "the database"],
+  ["node_modules/drizzle-orm", "the database access"],
 ];
-const faltan = imprescindibles.filter(([ruta]) => !existsSync(join(destino, ruta)));
-if (faltan.length) abortar(`Falta en el paquete: ${faltan.map(([, q]) => q).join(", ")}`);
+const missing = essentials.filter(([path]) => !existsSync(join(destination, path)));
+if (missing.length) abort(`Missing from the package: ${missing.map(([, what]) => what).join(", ")}`);
 
 /*
   And the checking of the routes, in both directions.
@@ -745,23 +745,23 @@ if (faltan.length) abortar(`Falta en el paquete: ${faltan.map(([, q]) => q).join
   tomorrow.
   Here and not only in `prepack` because `build:app` does not go through `prepack`.
  */
-const rutasDentro = Object.values(
-  leerJson(join(destino, "apps", "web", dist, "app-path-routes-manifest.json")) ?? {},
+const routesInside = Object.values(
+  readJson(join(destination, "apps", "web", dist, "app-path-routes-manifest.json")) ?? {},
 );
-if (rutasDentro.length === 0) {
-  abortar("El paquete no trae el manifiesto de rutas: no hay forma de saber qué páginas viajan.");
+if (routesInside.length === 0) {
+  abort("The package does not carry the routes manifest: there is no way to know which pages travel.");
 }
-const colado = rutasDentro.filter((ruta) => ruta === "/landing" || ruta === "/docs");
-if (colado.length) {
-  abortar(
-    `El sitio público viajó dentro del paquete: ${colado.join(", ")}\n` +
-      `  El sitio público vive en apps/site: apps/web no debe tener esas rutas.`,
+const leaked = routesInside.filter((route) => route === "/landing" || route === "/docs");
+if (leaked.length) {
+  abort(
+    `The public site traveled inside the package: ${leaked.join(", ")}\n` +
+      `  The public site lives in apps/site: apps/web must not have those routes.`,
   );
 }
-if (!rutasDentro.includes("/")) {
-  abortar(
-    "El paquete no trae la portada del catálogo (`/`).\n" +
-      "  Falta apps/web/app/(app)/page.tsx, o next build no llegó a compilarla.",
+if (!routesInside.includes("/")) {
+  abort(
+    "The package does not carry the catalog cover (`/`).\n" +
+      "  apps/web/app/(app)/page.tsx is missing, or next build never got to compile it.",
   );
 }
 
@@ -779,37 +779,37 @@ if (!rutasDentro.includes("/")) {
   It is resolved from the monorepo and not from what was annotated when flattening: that was
   pointing inside `app/node_modules/.pnpm`, which by now has already been deleted.
  */
-const pgliteOrigen = raizDelPaquete("@electric-sql/pglite", join(raiz, "packages", "db"));
-if (!pgliteOrigen) abortar("No encuentro PGlite en el monorepo para comparar sus binarios.");
+const pgliteSource = packageRoot("@electric-sql/pglite", join(root, "packages", "db"));
+if (!pgliteSource) abort("I cannot find PGlite in the monorepo to compare its binaries.");
 
-const binariosDePglite = (await readdir(join(pgliteOrigen, "dist"), { withFileTypes: true }))
+const pgliteBinaries = (await readdir(join(pgliteSource, "dist"), { withFileTypes: true }))
   .filter((e) => e.isFile() && /\.(wasm|data)$/.test(e.name))
   .map((e) => e.name);
 
-if (binariosDePglite.length === 0) abortar("PGlite no trae ningún .wasm: revisa la versión.");
+if (pgliteBinaries.length === 0) abort("PGlite carries no .wasm at all: check the version.");
 
-const sinCopiar = binariosDePglite.filter(
-  (nombre) => !existsSync(join(nm, "@electric-sql", "pglite", "dist", nombre)),
+const notCopied = pgliteBinaries.filter(
+  (name) => !existsSync(join(nm, "@electric-sql", "pglite", "dist", name)),
 );
-if (sinCopiar.length > 0) {
-  abortar(`PGlite viajó sin ${sinCopiar.join(", ")}: el catálogo no abriría.`);
+if (notCopied.length > 0) {
+  abort(`PGlite traveled without ${notCopied.join(", ")}: the catalog would not open.`);
 }
-aviso(`PGlite lleva sus ${binariosDePglite.length} binarios: ${binariosDePglite.join(", ")}`);
+print(`PGlite carries its binaries, ${pgliteBinaries.length} of them: ${pgliteBinaries.join(", ")}`);
 
-const drizzle = leerJson(join(nm, "drizzle-orm", "package.json"))?.version;
-const esperada = [...(enLockfile.get("drizzle-orm") ?? [])].join(", ");
-if (drizzle !== esperada) {
-  abortar(`drizzle-orm viajó en ${drizzle} y el lockfile dice ${esperada}.`);
+const drizzle = readJson(join(nm, "drizzle-orm", "package.json"))?.version;
+const expected = [...(inLockfile.get("drizzle-orm") ?? [])].join(", ");
+if (drizzle !== expected) {
+  abort(`drizzle-orm traveled as ${drizzle} and the lockfile says ${expected}.`);
 }
 
-async function peso(ruta) {
+async function sizeOf(path) {
   let total = 0;
-  for (const entrada of await readdir(ruta, { withFileTypes: true }).catch(() => [])) {
-    const hijo = join(ruta, entrada.name);
-    if (entrada.isSymbolicLink()) continue;
-    total += entrada.isDirectory() ? await peso(hijo) : (await stat(hijo)).size;
+  for (const entry of await readdir(path, { withFileTypes: true }).catch(() => [])) {
+    const child = join(path, entry.name);
+    if (entry.isSymbolicLink()) continue;
+    total += entry.isDirectory() ? await sizeOf(child) : (await stat(child)).size;
   }
   return total;
 }
 
-aviso(`listo: ${((await peso(destino)) / 1024 / 1024).toFixed(0)} MB en disco`);
+print(`ready: ${((await sizeOf(destination)) / 1024 / 1024).toFixed(0)} MB on disk`);

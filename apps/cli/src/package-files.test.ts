@@ -50,6 +50,6 @@ describe("lo que viaja en el paquete", () => {
    */
   it("y el guardián de prepack lo vigila también", () => {
     const guardian = readFileSync(new URL("../scripts/check-package.mjs", import.meta.url), "utf8");
-    expect(guardian).toMatch(/manifiesto\.files \?\? \[\]\)\.includes\("npm-shrinkwrap\.json"\)/);
+    expect(guardian).toMatch(/manifest\.files \?\? \[\]\)\.includes\("npm-shrinkwrap\.json"\)/);
   });
 });

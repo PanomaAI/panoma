@@ -232,7 +232,7 @@ describe("nadie ofrece un paquete que no se publica", () => {
 
   it("el vigilante del paquete arranca el servidor, no solo comprueba que esté", () => {
     const guard = source("apps/cli/scripts/check-package.mjs");
-    expect(guard, "prepack must spawn the packaged server").toMatch(/spawnSync\(process\.execPath, \[servidorMcp\]/);
+    expect(guard, "prepack must spawn the packaged server").toMatch(/spawnSync\(process\.execPath, \[mcpServer\]/);
     expect(guard, "and read its answer to the protocol's first question").toMatch(/serverInfo/);
   });
 });

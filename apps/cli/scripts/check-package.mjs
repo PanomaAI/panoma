@@ -26,18 +26,18 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const cli = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const raiz = resolve(cli, "..", "..");
+const root = resolve(cli, "..", "..");
 const app = join(cli, "app");
 
-const problemas = [];
+const problems = [];
 
-function pega(titulo, detalle, arreglo) {
-  problemas.push({ titulo, detalle, arreglo });
+function flag(title, detail, fix) {
+  problems.push({ title, detail, fix });
 }
 
-function leerJson(ruta) {
+function readJson(path) {
   try {
-    return JSON.parse(readFileSync(ruta, "utf8"));
+    return JSON.parse(readFileSync(path, "utf8"));
   } catch {
     return undefined;
   }
@@ -45,27 +45,27 @@ function leerJson(ruta) {
 
 /* ── 1. The pieces ────────────────────────────────────────────────────────── */
 
-const requisitos = [
-  ["dist/index.js", "el CLI", "pnpm --filter panoma run build"],
-  ["app/apps/web/server.js", "el servidor del catálogo", "pnpm --filter panoma run build:app"],
-  ["app/apps/web/.next-bundle/static", "los estáticos de la web", "pnpm --filter panoma run build:app"],
+const requirements = [
+  ["dist/index.js", "the CLI", "pnpm --filter panoma run build"],
+  ["app/apps/web/server.js", "the catalog server", "pnpm --filter panoma run build:app"],
+  ["app/apps/web/.next-bundle/static", "the web's static assets", "pnpm --filter panoma run build:app"],
   ["app/node_modules/next", "Next", "pnpm --filter panoma run build:app"],
-  ["app/node_modules/@panoma/core/dist", "el núcleo", "pnpm -r build && pnpm --filter panoma run build:app"],
-  ["app/node_modules/@panoma/db/migrations", "las migraciones", "pnpm --filter panoma run build:app"],
-  ["app/node_modules/@panoma/mcp/dist/index.js", "el servidor MCP", "pnpm --filter panoma run build:app"],
+  ["app/node_modules/@panoma/core/dist", "the core", "pnpm -r build && pnpm --filter panoma run build:app"],
+  ["app/node_modules/@panoma/db/migrations", "the migrations", "pnpm --filter panoma run build:app"],
+  ["app/node_modules/@panoma/mcp/dist/index.js", "the MCP server", "pnpm --filter panoma run build:app"],
   ["app/node_modules/@panoma/apps/dist/index.js", "the app manager", "pnpm --filter @panoma/apps build && pnpm --filter panoma run build:app"],
   ["app/node_modules/@panoma/handoff/dist/index.js", "the handoff engine", "pnpm --filter @panoma/handoff build && pnpm --filter panoma run build:app"],
   ["app/apps/web/.next-bundle/server/app/api/apps/route.js", "the apps API", "pnpm --filter panoma run build:app"],
-  ["app/node_modules/@electric-sql/pglite/dist", "la base de datos", "pnpm --filter panoma run build:app"],
-  ["THIRD-PARTY-NOTICES.md", "los avisos de licencia de terceros", "pnpm --filter panoma run build:app"],
+  ["app/node_modules/@electric-sql/pglite/dist", "the database", "pnpm --filter panoma run build:app"],
+  ["THIRD-PARTY-NOTICES.md", "the third-party license notices", "pnpm --filter panoma run build:app"],
 ];
 
-const faltan = requisitos.filter(([ruta]) => !existsSync(join(cli, ruta)));
-if (faltan.length > 0) {
-  pega(
-    `Falta ${faltan.map(([, que]) => que).join(", ")}`,
-    "Un paquete así se instala sin protestar y falla en la máquina de quien lo descarga.",
-    [...new Set(faltan.map(([, , como]) => como))].join("\n    "),
+const missing = requirements.filter(([path]) => !existsSync(join(cli, path)));
+if (missing.length > 0) {
+  flag(
+    `Missing: ${missing.map(([, what]) => what).join(", ")}`,
+    "A package like that installs without complaint and fails on the machine of whoever downloads it.",
+    [...new Set(missing.map(([, , how]) => how))].join("\n    "),
   );
 }
 
@@ -83,9 +83,9 @@ if (faltan.length > 0) {
   the network before answering would fail here rather than on someone's machine. Twenty seconds is
   far more than the answer takes (measured: well under one), and it is a ceiling, not a wait.
  */
-const servidorMcp = join(app, "node_modules", "@panoma", "mcp", "dist", "index.js");
-if (existsSync(servidorMcp)) {
-  const saludo =
+const mcpServer = join(app, "node_modules", "@panoma", "mcp", "dist", "index.js");
+if (existsSync(mcpServer)) {
+  const greeting =
     JSON.stringify({
       jsonrpc: "2.0",
       id: 1,
@@ -96,21 +96,21 @@ if (existsSync(servidorMcp)) {
         clientInfo: { name: "panoma-prepack", version: "0" },
       },
     }) + "\n";
-  const arranque = spawnSync(process.execPath, [servidorMcp], {
-    input: saludo,
+  const launch = spawnSync(process.execPath, [mcpServer], {
+    input: greeting,
     encoding: "utf8",
     timeout: 20_000,
     env: { ...process.env, PANOMA_API: "http://127.0.0.1:1", PANOMA_KEY: "" },
   });
-  const responde = arranque.status === 0 && /"serverInfo"/.test(arranque.stdout ?? "");
-  if (!responde) {
-    const motivo =
-      arranque.error?.message ??
-      (arranque.signal ? `lo mató la señal ${arranque.signal}` : (arranque.stderr ?? "").trim().split("\n")[0]) ??
-      "no contestó al saludo del protocolo";
-    pega(
-      "El servidor MCP viaja pero no arranca",
-      `Se instala igual y el agente sale sin herramientas, sin decir nada:\n    ${motivo || "no contestó al saludo del protocolo"}`,
+  const answered = launch.status === 0 && /"serverInfo"/.test(launch.stdout ?? "");
+  if (!answered) {
+    const reason =
+      launch.error?.message ??
+      (launch.signal ? `killed by signal ${launch.signal}` : (launch.stderr ?? "").trim().split("\n")[0]) ??
+      "it did not answer the protocol's greeting";
+    flag(
+      "The MCP server travels but does not start",
+      `It installs all the same and the agent comes up without tools, without saying a word:\n    ${reason || "it did not answer the protocol's greeting"}`,
       "pnpm --filter @panoma/mcp build && pnpm --filter panoma run build:app",
     );
   }
@@ -134,7 +134,7 @@ if (existsSync(appManager) && existsSync(appsRoute)) {
     env: { ...process.env, PANOMA_NO_UPDATE_CHECK: "1" },
   });
   if (smoke.status !== 0) {
-    pega(
+    flag(
       "The packaged app manager or MCP client cannot load",
       smoke.error?.message ?? (smoke.stderr ?? "").trim().slice(0, 2_000),
       "pnpm --filter @panoma/apps build && pnpm --filter panoma run build:app",
@@ -149,16 +149,16 @@ if (existsSync(appManager) && existsSync(appsRoute)) {
   under what conditions. This is checked here as well as in the generator because this file is
   committed, and `npm publish` publishes what is on the disk, not what the last build produced.
  */
-const avisosDeTerceros = existsSync(join(cli, "THIRD-PARTY-NOTICES.md"))
+const thirdPartyNotices = existsSync(join(cli, "THIRD-PARTY-NOTICES.md"))
   ? readFileSync(join(cli, "THIRD-PARTY-NOTICES.md"), "utf8").split("\n")
   : [];
-const entradasDelResumen = avisosDeTerceros.filter((linea) => /^- \S+ — /.test(linea));
-const mudas = entradasDelResumen.filter((linea) => /sin declarar|desconocida|unknown/i.test(linea));
-if (mudas.length > 0) {
-  pega(
-    `Entradas sin licencia declarada en THIRD-PARTY-NOTICES.md: ${mudas.length}`,
-    `Un aviso que admite no saber qué distribuye no cumple su función:\n    ` +
-      mudas.slice(0, 5).map((l) => l.trim()).join("\n    "),
+const summaryEntries = thirdPartyNotices.filter((line) => /^- \S+ — /.test(line));
+const silent = summaryEntries.filter((line) => /sin declarar|desconocida|unknown/i.test(line));
+if (silent.length > 0) {
+  flag(
+    `Entries with no declared license in THIRD-PARTY-NOTICES.md: ${silent.length}`,
+    `A notice that admits not knowing what it distributes does not do its job:\n    ` +
+      silent.slice(0, 5).map((l) => l.trim()).join("\n    "),
     "pnpm --filter panoma run build:app",
   );
 }
@@ -169,15 +169,15 @@ if (mudas.length > 0) {
   summary without traveling in the package, because pruning deleted the folder and not the keys
   with scope.
  */
-const copyleft = entradasDelResumen.filter((linea) =>
-  / — (A?GPL|LGPL|MPL|EPL|CDDL|CECILL|OSL|EUPL)/i.test(linea),
+const copyleft = summaryEntries.filter((line) =>
+  / — (A?GPL|LGPL|MPL|EPL|CDDL|CECILL|OSL|EUPL)/i.test(line),
 );
 if (copyleft.length > 0) {
-  pega(
-    `Copyleft anunciado en THIRD-PARTY-NOTICES.md: ${copyleft.length}`,
-    `Piden su texto completo, y la LGPL además poder reemplazar la biblioteca:\n    ` +
+  flag(
+    `Copyleft announced in THIRD-PARTY-NOTICES.md: ${copyleft.length}`,
+    `They demand their full text, and the LGPL on top of that the ability to replace the library:\n    ` +
       copyleft.map((l) => l.trim()).join("\n    "),
-    "o se poda en pack-app.mjs, o se hace el trabajo entero",
+    "either it gets pruned in pack-app.mjs, or the whole job gets done",
   );
 }
 
@@ -195,84 +195,84 @@ if (copyleft.length > 0) {
   It is checked against the manifest of routes, whose values are the URL with the groups already
   removed: this way it does not depend on what the group is called next year.
  */
-const rutasDelPaquete = Object.values(
-  leerJson(join(app, "apps", "web", ".next-bundle", "app-path-routes-manifest.json")) ?? {},
+const packageRoutes = Object.values(
+  readJson(join(app, "apps", "web", ".next-bundle", "app-path-routes-manifest.json")) ?? {},
 );
-if (rutasDelPaquete.length === 0) {
-  pega(
-    "El paquete no trae el manifiesto de rutas",
-    "Sin él no hay forma de saber qué páginas viajan dentro.",
+if (packageRoutes.length === 0) {
+  flag(
+    "The package does not carry the routes manifest",
+    "Without it there is no way to know which pages travel inside.",
     "pnpm --filter panoma run build:app",
   );
 } else {
-  const publicas = rutasDelPaquete.filter((ruta) => ruta === "/landing" || ruta === "/docs");
-  const paginas = rutasDelPaquete.filter((ruta) => !ruta.startsWith("/api"));
-  if (publicas.length > 0) {
-    pega(
-      `El sitio público viajó dentro del paquete: ${publicas.join(", ")}`,
-      "Es la página de venta servida desde el localhost de quien ya instaló panoma.",
-      "el sitio público vive en apps/site: apps/web no debe tener esas rutas",
+  const publicRoutes = packageRoutes.filter((route) => route === "/landing" || route === "/docs");
+  const pages = packageRoutes.filter((route) => !route.startsWith("/api"));
+  if (publicRoutes.length > 0) {
+    flag(
+      `The public site travelled inside the package: ${publicRoutes.join(", ")}`,
+      "It is the sales page, served from the localhost of someone who already installed panoma.",
+      "the public site lives in apps/site: apps/web must not have those routes",
     );
   }
-  if (!rutasDelPaquete.includes("/")) {
-    pega(
-      "El paquete no trae la portada del catálogo",
-      "Se instala, arranca y se declara sano; después sirve un 404 de fábrica en `/`.",
-      "falta apps/web/app/(app)/page.tsx, o next build no llegó a compilarla",
+  if (!packageRoutes.includes("/")) {
+    flag(
+      "The package does not carry the catalog's front page",
+      "It installs, starts and declares itself healthy; then it serves a factory 404 at `/`.",
+      "apps/web/app/(app)/page.tsx is missing, or next build never got as far as compiling it",
     );
   }
-  if (paginas.length < 12) {
-    pega(
-      `Solo ${paginas.length} páginas dentro del paquete`,
-      "Hoy son 20 sin contar /api. Tan pocas significa que falta media aplicación.",
-      "pnpm --filter panoma run build:app, y mira si next build se quejó",
+  if (pages.length < 12) {
+    flag(
+      `Too few pages inside the package: ${pages.length}`,
+      "Today there are 20, not counting /api. So few means half the application is missing.",
+      "pnpm --filter panoma run build:app, and look at whether next build complained",
     );
   }
 }
 
-/* ── 2. La frescura ───────────────────────────────────────────────────────── */
+/* ── 2. Freshness ─────────────────────────────────────────────────────────── */
 
 function git(...args) {
   try {
-    return execFileSync("git", args, { cwd: raiz, encoding: "utf8" }).trim();
+    return execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
   } catch {
     return undefined;
   }
 }
 
-const info = leerJson(join(app, "BUILD-INFO.json"));
+const info = readJson(join(app, "BUILD-INFO.json"));
 if (!info) {
-  pega(
-    "El app/ no dice de dónde salió",
-    "Sin BUILD-INFO.json no hay forma de saber si es de este commit o de hace tres semanas.",
+  flag(
+    "The app/ does not say where it came from",
+    "Without BUILD-INFO.json there is no way to know whether it is from this commit or from three weeks ago.",
     "pnpm --filter panoma run build:app",
   );
 } else {
-  const commitAhora = git("rev-parse", "HEAD");
-  const lockAhora = existsSync(join(raiz, "pnpm-lock.yaml"))
-    ? createHash("sha256").update(readFileSync(join(raiz, "pnpm-lock.yaml"))).digest("hex")
+  const commitNow = git("rev-parse", "HEAD");
+  const lockNow = existsSync(join(root, "pnpm-lock.yaml"))
+    ? createHash("sha256").update(readFileSync(join(root, "pnpm-lock.yaml"))).digest("hex")
     : undefined;
-  const versionAhora = leerJson(join(cli, "package.json"))?.version;
+  const versionNow = readJson(join(cli, "package.json"))?.version;
 
-  if (commitAhora && info.commit && info.commit !== commitAhora) {
-    pega(
-      "El app/ se construyó en otro commit",
-      `Construido en ${info.commit.slice(0, 7)}, estás en ${commitAhora.slice(0, 7)}.\n` +
-        `    El paquete llevaría código que no es el de este árbol.`,
+  if (commitNow && info.commit && info.commit !== commitNow) {
+    flag(
+      "The app/ was built on another commit",
+      `Built on ${info.commit.slice(0, 7)}, you are on ${commitNow.slice(0, 7)}.\n` +
+        `    The package would carry code that is not this tree's.`,
       "pnpm -r build && pnpm --filter panoma run build:app",
     );
   }
-  if (lockAhora && info.lockfile && info.lockfile !== lockAhora) {
-    pega(
-      "El lockfile cambió después de construir el app/",
-      "Las versiones que viajan dentro ya no son las que este árbol declara.",
+  if (lockNow && info.lockfile && info.lockfile !== lockNow) {
+    flag(
+      "The lockfile changed after the app/ was built",
+      "The versions travelling inside are no longer the ones this tree declares.",
       "pnpm install --frozen-lockfile && pnpm --filter panoma run build:app",
     );
   }
-  if (versionAhora && info.version && info.version !== versionAhora) {
-    pega(
-      `El app/ se construyó para la versión ${info.version} y el manifiesto dice ${versionAhora}`,
-      "Publicarías un número de versión con el contenido de otro.",
+  if (versionNow && info.version && info.version !== versionNow) {
+    flag(
+      `The app/ was built for version ${info.version} and the manifest says ${versionNow}`,
+      "You would publish one version number with the contents of another.",
       "pnpm --filter panoma run build:app",
     );
   }
@@ -283,11 +283,11 @@ if (!info) {
     purpose, so that it doesn't sneak into a release by mistake.
    */
   if (info.arbolLimpio === false && process.env["PANOMA_PACK_SUCIO"] !== "1") {
-    pega(
-      "El app/ se construyó con cambios sin commitear",
-      "Lo que viaja dentro no está en ningún commit, así que no se puede reproducir.\n" +
-        "    Para una prueba local:  PANOMA_PACK_SUCIO=1 npm pack",
-      "commitea o descarta, y vuelve a: pnpm --filter panoma run build:app",
+    flag(
+      "The app/ was built with uncommitted changes",
+      "What travels inside is in no commit, so it cannot be reproduced.\n" +
+        "    For a local test:  PANOMA_PACK_SUCIO=1 npm pack",
+      "commit or discard, and go back to: pnpm --filter panoma run build:app",
     );
   }
 }
@@ -304,39 +304,39 @@ if (!info) {
   gone bad: if the manifest asks for a version that the shrinkwrap doesn't lock, or locks a
   different one from what pnpm resolved, it means someone tampered with one and not the other.
  */
-const shrink = leerJson(join(cli, "npm-shrinkwrap.json"));
+const shrink = readJson(join(cli, "npm-shrinkwrap.json"));
 if (!shrink) {
-  pega(
-    "No hay npm-shrinkwrap.json",
-    "Sin él, las dependencias del manifiesto se resuelven con ^ en casa del usuario.",
-    "genéralo con: npm install --package-lock-only  (y renómbralo)",
+  flag(
+    "There is no npm-shrinkwrap.json",
+    "Without it, the manifest's dependencies are resolved with ^ on the user's machine.",
+    "generate it with: npm install --package-lock-only  (and rename it)",
   );
 } else {
-  const manifiesto = leerJson(join(cli, "package.json")) ?? {};
-  const fijadas = new Map(
+  const manifest = readJson(join(cli, "package.json")) ?? {};
+  const pinned = new Map(
     Object.entries(shrink.packages ?? {})
-      .filter(([ruta]) => ruta.startsWith("node_modules/"))
-      .map(([ruta, meta]) => [ruta.slice("node_modules/".length), meta.version]),
+      .filter(([path]) => path.startsWith("node_modules/"))
+      .map(([path, meta]) => [path.slice("node_modules/".length), meta.version]),
   );
 
   /* And against what the monorepo really resolved, which is what it was tested with. */
-  const desajustes = [];
-  for (const dep of Object.keys(manifiesto.dependencies ?? {})) {
-    const enShrink = fijadas.get(dep);
-    if (!enShrink) {
-      desajustes.push(`${dep}: el shrinkwrap no lo fija`);
+  const mismatches = [];
+  for (const dep of Object.keys(manifest.dependencies ?? {})) {
+    const inShrinkwrap = pinned.get(dep);
+    if (!inShrinkwrap) {
+      mismatches.push(`${dep}: the shrinkwrap does not pin it`);
       continue;
     }
-    const real = leerJson(join(raiz, "node_modules", dep, "package.json"))?.version;
-    if (real && real !== enShrink) {
-      desajustes.push(`${dep}: shrinkwrap ${enShrink}, instalado ${real}`);
+    const real = readJson(join(root, "node_modules", dep, "package.json"))?.version;
+    if (real && real !== inShrinkwrap) {
+      mismatches.push(`${dep}: shrinkwrap ${inShrinkwrap}, installed ${real}`);
     }
   }
-  if (desajustes.length > 0) {
-    pega(
-      "El npm-shrinkwrap.json no cuadra con las dependencias",
-      desajustes.join("\n    "),
-      "regenéralo: npm install --package-lock-only  (y renómbralo a npm-shrinkwrap.json)",
+  if (mismatches.length > 0) {
+    flag(
+      "The npm-shrinkwrap.json does not square with the dependencies",
+      mismatches.join("\n    "),
+      "regenerate it: npm install --package-lock-only  (and rename it to npm-shrinkwrap.json)",
     );
   }
 
@@ -349,13 +349,13 @@ if (!shrink) {
     `0.1.9`, and nothing anywhere said so. [release.md](../../docs/release.md) already claimed
     that `prepack` refuses when the two drift apart. Now it does.
    */
-  const versionDelPaquete = leerJson(join(cli, "package.json"))?.version;
-  const enShrink = [shrink.version, shrink.packages?.[""]?.version];
-  if (versionDelPaquete && enShrink.some((v) => v !== versionDelPaquete)) {
-    pega(
-      `El npm-shrinkwrap.json dice ${enShrink.join(" y ")} y el paquete es ${versionDelPaquete}`,
-      "Se regenera a mano, así que una versión nueva lo deja atrás sin protestar.",
-      `pon ${versionDelPaquete} en "version" y en packages[""].version de apps/cli/npm-shrinkwrap.json`,
+  const packageVersion = readJson(join(cli, "package.json"))?.version;
+  const inShrinkwrap = [shrink.version, shrink.packages?.[""]?.version];
+  if (packageVersion && inShrinkwrap.some((v) => v !== packageVersion)) {
+    flag(
+      `The npm-shrinkwrap.json says ${inShrinkwrap.join(" and ")} and the package is ${packageVersion}`,
+      "It is regenerated by hand, so a new version leaves it behind without complaint.",
+      `put ${packageVersion} in "version" and in packages[""].version of apps/cli/npm-shrinkwrap.json`,
     );
   }
 
@@ -370,45 +370,45 @@ if (!shrink) {
     of manifest are resolved with `^` on the day someone installs it. That is, exactly what this
     entire block exists to prevent, without anything turning red.
    */
-  if (!(manifiesto.files ?? []).includes("npm-shrinkwrap.json")) {
-    pega(
-      "El npm-shrinkwrap.json no viaja dentro del paquete",
-      "`files` es una lista blanca y no lo nombra, así que npm lo deja fuera del tarball.",
-      'añade "npm-shrinkwrap.json" a `files`, en apps/cli/package.json',
+  if (!(manifest.files ?? []).includes("npm-shrinkwrap.json")) {
+    flag(
+      "The npm-shrinkwrap.json does not travel inside the package",
+      "`files` is a whitelist and does not name it, so npm leaves it out of the tarball.",
+      'add "npm-shrinkwrap.json" to `files`, in apps/cli/package.json',
     );
   }
 }
 
 /* ── 3. What should not travel ─────────────────────────────────────────────── */
 
-function recorrer(base, visita) {
-  for (const entrada of readdirSync(base, { withFileTypes: true })) {
-    const hijo = join(base, entrada.name);
-    if (entrada.isSymbolicLink()) continue;
-    if (entrada.isDirectory()) recorrer(hijo, visita);
-    else visita(hijo, entrada.name);
+function walk(base, visit) {
+  for (const entry of readdirSync(base, { withFileTypes: true })) {
+    const child = join(base, entry.name);
+    if (entry.isSymbolicLink()) continue;
+    if (entry.isDirectory()) walk(child, visit);
+    else visit(child, entry.name);
   }
 }
 
-const trazas = [];
-const entornos = [];
-const nativos = [];
-const manifiestos = [];
-const anidados = [];
+const traces = [];
+const envFiles = [];
+const natives = [];
+const manifests = [];
+const nested = [];
 let bytes = 0;
-let ficheros = 0;
+let files = 0;
 
 if (existsSync(app)) {
-  recorrer(app, (ruta, nombre) => {
-    ficheros += 1;
-    bytes += statSync(ruta).size;
-    if (nombre.endsWith(".nft.json")) trazas.push(ruta);
-    if (/^\.env($|\.)/.test(nombre)) entornos.push(ruta);
-    if (nombre.endsWith(".node")) nativos.push(ruta);
-    if (nombre !== "package.json") return;
-    const dentro = relative(app, ruta).replace(/\\/g, "/");
-    if (!dentro.split("/").includes("node_modules")) {
-      manifiestos.push(dentro);
+  walk(app, (path, name) => {
+    files += 1;
+    bytes += statSync(path).size;
+    if (name.endsWith(".nft.json")) traces.push(path);
+    if (/^\.env($|\.)/.test(name)) envFiles.push(path);
+    if (name.endsWith(".node")) natives.push(path);
+    if (name !== "package.json") return;
+    const inside = relative(app, path).replace(/\\/g, "/");
+    if (!inside.split("/").includes("node_modules")) {
+      manifests.push(inside);
       return;
     }
     /*
@@ -435,36 +435,36 @@ if (existsSync(app)) {
       `fast-uri/package.json` leaves two segments and `@panoma/mcp/package.json` leaves three
       starting with the scope; anything longer is inside another package's folder.
      */
-    const tramos = dentro.split("/");
-    const resto = tramos.slice(tramos.lastIndexOf("node_modules") + 1);
-    const esSuyo = resto.length === 2 || (resto.length === 3 && resto[0].startsWith("@"));
-    if (!esSuyo && !dentro.includes("node_modules/next/dist/compiled/") && leerJson(ruta)?.name) {
-      anidados.push(dentro);
+    const segments = inside.split("/");
+    const rest = segments.slice(segments.lastIndexOf("node_modules") + 1);
+    const isOwn = rest.length === 2 || (rest.length === 3 && rest[0].startsWith("@"));
+    if (!isOwn && !inside.includes("node_modules/next/dist/compiled/") && readJson(path)?.name) {
+      nested.push(inside);
     }
   });
 }
 
-if (trazas.length > 0) {
-  pega(
-    `${trazas.length} trazas de compilación (*.nft.json) dentro del paquete`,
-    "Solo las usa `next build`; en tiempo de ejecución no las abre nadie, y pesaban 81 MB.",
+if (traces.length > 0) {
+  flag(
+    `Build traces (*.nft.json) inside the package: ${traces.length}`,
+    "Only `next build` uses them; at runtime nobody opens them, and they weighed 81 MB.",
     "pnpm --filter panoma run build:app",
   );
 }
-if (entornos.length > 0) {
-  pega(
-    `${entornos.length} ficheros de entorno dentro del paquete`,
-    `El standalone de Next los copia y npm los publicaría:\n    ` +
-      entornos.map((r) => relative(cli, r)).join("\n    "),
-    "bórralos de apps/web y vuelve a construir el app/",
+if (envFiles.length > 0) {
+  flag(
+    `Environment files inside the package: ${envFiles.length}`,
+    `Next's standalone copies them and npm would publish them:\n    ` +
+      envFiles.map((r) => relative(cli, r)).join("\n    "),
+    "delete them from apps/web and build the app/ again",
   );
 }
-if (nativos.length > 0) {
-  pega(
-    `${nativos.length} binarios nativos (*.node) dentro del paquete`,
-    `Se compilan para una sola plataforma; el paquete se instala en todas:\n    ` +
-      nativos.slice(0, 5).map((r) => relative(cli, r)).join("\n    "),
-    "revisa la poda de pack-app.mjs",
+if (natives.length > 0) {
+  flag(
+    `Native binaries (*.node) inside the package: ${natives.length}`,
+    `They are compiled for a single platform; the package installs on every one:\n    ` +
+      natives.slice(0, 5).map((r) => relative(cli, r)).join("\n    "),
+    "review the pruning in pack-app.mjs",
   );
 }
 /*
@@ -481,51 +481,51 @@ if (nativos.length > 0) {
   admits. Neither failure is visible when packaging: both are visible on the machine of whoever
   installs it.
  */
-if (anidados.length > 0) {
-  pega(
-    `${anidados.length} manifiestos de otro paquete dentro de un paquete`,
-    `Nadie los instala ni los ejecuta, y un escáner los lee como dependencias nuestras:\n    ` +
-      anidados.slice(0, 8).join("\n    "),
-    "poda esa carpeta en pack-app.mjs, o quita de raíz la dependencia que la trae",
+if (nested.length > 0) {
+  flag(
+    `Manifests of another package inside a package: ${nested.length}`,
+    `Nobody installs or runs them, and a scanner reads them as dependencies of ours:\n    ` +
+      nested.slice(0, 8).join("\n    "),
+    "prune that folder in pack-app.mjs, or remove at the root the dependency that brings it in",
   );
 }
 
-const MANIFIESTOS = {
-  "apps/web/package.json": { type: "module", vacío: ["dependencies", "devDependencies", "scripts"] },
-  "apps/web/.next-bundle/package.json": { type: "commonjs", vacío: [] },
+const MANIFESTS = {
+  "apps/web/package.json": { type: "module", empty: ["dependencies", "devDependencies", "scripts"] },
+  "apps/web/.next-bundle/package.json": { type: "commonjs", empty: [] },
 };
 if (existsSync(app)) {
-  const sobran = manifiestos.filter((m) => !(m in MANIFIESTOS));
-  const faltan = Object.keys(MANIFIESTOS).filter((m) => !manifiestos.includes(m));
-  if (sobran.length > 0) {
-    pega(
-      `Manifiestos de más dentro del paquete: ${sobran.join(", ")}`,
-      "Declaran dependencias que no viajan, y quien lea el tarball lee algo que no es cierto.",
+  const extra = manifests.filter((m) => !(m in MANIFESTS));
+  const missing = Object.keys(MANIFESTS).filter((m) => !manifests.includes(m));
+  if (extra.length > 0) {
+    flag(
+      `Surplus manifests inside the package: ${extra.join(", ")}`,
+      "They declare dependencies that do not travel, and whoever reads the tarball reads something that is not true.",
       "pnpm --filter panoma run build:app",
     );
   }
-  if (faltan.length > 0) {
-    pega(
-      `Falta un manifiesto que sí hace falta: ${faltan.join(", ")}`,
-      "Sin él el servidor arranca y contesta 500, o muere en su primer import. No se ve al empaquetar.",
+  if (missing.length > 0) {
+    flag(
+      `A manifest that really is needed is missing: ${missing.join(", ")}`,
+      "Without it the server starts and answers 500, or dies on its first import. It is not visible when packaging.",
       "pnpm --filter panoma run build:app",
     );
   }
-  for (const [ruta, { type, vacío }] of Object.entries(MANIFIESTOS)) {
-    if (faltan.includes(ruta)) continue;
-    const meta = leerJson(join(app, ...ruta.split("/"))) ?? {};
+  for (const [path, { type, empty }] of Object.entries(MANIFESTS)) {
+    if (missing.includes(path)) continue;
+    const meta = readJson(join(app, ...path.split("/"))) ?? {};
     if (meta.type !== type) {
-      pega(
-        `${ruta} viaja con type ${JSON.stringify(meta.type)} y tiene que ser "${type}"`,
-        "Es lo que decide si Node lee ese árbol como ESM o como CommonJS.",
+      flag(
+        `${path} travels with type ${JSON.stringify(meta.type)} and it has to be "${type}"`,
+        "It is what decides whether Node reads that tree as ESM or as CommonJS.",
         "pnpm --filter panoma run build:app",
       );
     }
-    const declarados = vacío.filter((campo) => meta[campo] !== undefined);
-    if (declarados.length > 0) {
-      pega(
-        `${ruta} declara ${declarados.join(", ")} y no debería`,
-        "Nada dentro lo lee, y lo que nombra —react-icons, recharts, seis workspace:*— no viaja.",
+    const declared = empty.filter((field) => meta[field] !== undefined);
+    if (declared.length > 0) {
+      flag(
+        `${path} declares ${declared.join(", ")} and should not`,
+        "Nothing inside reads it, and what it names —react-icons, recharts, six workspace:*— does not travel.",
         "pnpm --filter panoma run build:app",
       );
     }
@@ -543,18 +543,18 @@ const wasms = existsSync(pgliteDist)
   ? readdirSync(pgliteDist).filter((n) => n.endsWith(".wasm"))
   : [];
 if (wasms.length === 0) {
-  pega(
-    "PGlite viaja sin ningún .wasm",
-    "El paquete se instalaría igual y el catálogo no abriría en la máquina del usuario.",
+  flag(
+    "PGlite travels without a single .wasm",
+    "The package would install all the same and the catalog would not open on the user's machine.",
     "pnpm --filter panoma run build:app",
   );
 }
 
-for (const prohibido of ["sharp", "@img"]) {
-  if (existsSync(join(app, "node_modules", prohibido))) {
-    pega(
-      `${prohibido} viaja en el paquete`,
-      "Son 16 MB compilados solo para Apple Silicon, y no se usa: la web va con images.unoptimized.",
+for (const forbidden of ["sharp", "@img"]) {
+  if (existsSync(join(app, "node_modules", forbidden))) {
+    flag(
+      `${forbidden} travels in the package`,
+      "That is 16 MB compiled for Apple Silicon alone, and it is not used: the web runs with images.unoptimized.",
       "pnpm --filter panoma run build:app",
     );
   }
@@ -568,44 +568,44 @@ for (const prohibido of ["sharp", "@img"]) {
   instead of aborting: the real solution is to build the release in a neutral path, and blocking
   `pack` because of this would leave the project unable to package locally.
  */
-const rutaDeCompilacion = raiz;
-let conRuta = 0;
+const buildPath = root;
+let withPath = 0;
 if (existsSync(app)) {
-  recorrer(app, (ruta, nombre) => {
-    if (!/\.(js|json|map)$/.test(nombre)) return;
-    if (statSync(ruta).size > 4_000_000) return;
-    if (readFileSync(ruta, "utf8").includes(rutaDeCompilacion)) conRuta += 1;
+  walk(app, (path, name) => {
+    if (!/\.(js|json|map)$/.test(name)) return;
+    if (statSync(path).size > 4_000_000) return;
+    if (readFileSync(path, "utf8").includes(buildPath)) withPath += 1;
   });
 }
 
-/* ── El veredicto ─────────────────────────────────────────────────────────── */
+/* ── The verdict ──────────────────────────────────────────────────────────── */
 
-const megas = bytes / 1048576;
-const TECHO_MB = 220;
-if (megas > TECHO_MB) {
-  pega(
-    `El app/ pesa ${megas.toFixed(0)} MB y el techo está en ${TECHO_MB}`,
-    "O entró algo que no debía, o el techo se quedó viejo. Míralo antes de subirlo.",
+const megabytes = bytes / 1048576;
+const CEILING_MB = 220;
+if (megabytes > CEILING_MB) {
+  flag(
+    `The app/ weighs ${megabytes.toFixed(0)} MB and the ceiling is at ${CEILING_MB}`,
+    "Either something got in that should not have, or the ceiling has grown stale. Look at it before uploading it.",
     "pnpm --filter panoma run build:app",
   );
 }
 
-if (problemas.length > 0) {
-  process.stderr.write(`\n  No se puede empaquetar. ${problemas.length} cosa(s) que arreglar:\n\n`);
-  for (const { titulo, detalle, arreglo } of problemas) {
-    process.stderr.write(`  ▸ ${titulo}\n    ${detalle}\n    → ${arreglo}\n\n`);
+if (problems.length > 0) {
+  process.stderr.write(`\n  Cannot package. Things to fix: ${problems.length}\n\n`);
+  for (const { title, detail, fix } of problems) {
+    process.stderr.write(`  ▸ ${title}\n    ${detail}\n    → ${fix}\n\n`);
   }
   process.exit(1);
 }
 
 process.stdout.write(
-  `  paquete comprobado: ${ficheros} ficheros, ${megas.toFixed(0)} MB en app/` +
-    (info?.commit ? `, del commit ${info.commit.slice(0, 7)}` : "") +
+  `  package checked: ${files} ${files === 1 ? "file" : "files"}, ${megabytes.toFixed(0)} MB in app/` +
+    (info?.commit ? `, from commit ${info.commit.slice(0, 7)}` : "") +
     `\n`,
 );
-if (conRuta > 0) {
+if (withPath > 0) {
   process.stdout.write(
-    `  aviso: ${conRuta} ficheros llevan grabada la ruta de compilación (${rutaDeCompilacion}).\n` +
-      `  No rompe nada, pero se publica en npm. Se evita compilando la release en una ruta neutra.\n`,
+    `  warning: files that carry the build path (${buildPath}) baked in: ${withPath}.\n` +
+      `  It breaks nothing, but it gets published to npm. It is avoided by building the release in a neutral path.\n`,
   );
 }

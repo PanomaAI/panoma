@@ -67,9 +67,9 @@ anyone.
 
 ```bash
 rm -rf node_modules && pnpm install --frozen-lockfile
-pnpm -r build                              # todo el workspace, `dist` incluido
-pnpm --filter panoma run build:app         # el catálogo que viaja dentro
-npm pack                                   # o npm publish: los dos pasan por prepack
+pnpm -r build                              # the whole workspace, `dist` included
+pnpm --filter panoma run build:app         # the catalog that travels inside
+npm pack                                   # or npm publish: both go through prepack
 ```
 
 The second step is not optional and not a convenience: the packages import each other through
@@ -239,7 +239,11 @@ it again over a really installed tarball.
 
 `apps/cli/scripts/check-package.mjs` runs on `prepack`, so it holds for `npm pack` and for
 `npm publish` alike. It checks three kinds of things, and all three have really failed at some
-point.
+point. What it prints is English, like everything a terminal says here — it spoke Spanish
+until 13-Sep-2026, as did `pack-app.mjs` and `build-app.mjs` beside it, and the
+`THIRD-PARTY-NOTICES.md` the pack generates carried Spanish headings into every published
+package; `release-scripts-language.test.ts` now reads the three scripts as text and refuses
+Spanish in their strings.
 
 **That the pieces are there.** Nine mandatory paths: the CLI, `server.js`, the static assets,
 Next, the core's `dist`, the migrations, `@panoma/mcp/dist/index.js`, PGlite and the license

@@ -116,6 +116,7 @@ convention.
 | Writing a color literal in a stylesheet | `styles.test.ts` | Colors live in `app/styles/tokens.css`; the repository once had 122 loose values and seven unrelated reds. |
 | Reordering the `globals.css` imports | `styles.test.ts` | The order is the rule in five places; alphabetizing it changes the interface without an error. |
 | A loose CLI sentence | `messages.test.ts` | All terminal text goes through `say()` and is English. |
+| Spanish in a release script's strings | `release-scripts-language.test.ts` | `apps/cli/scripts/*.mjs` print to the terminal too, and `npm publish` said a paragraph in Spanish until 13-Sep-2026. |
 | A bare `fetch(` in the CLI | `catalog-fetch.test.ts` | Use `catalogFetch(...)`, which declares the language header. |
 | A Spanish command, or a documented command that does not exist | `commands.test.ts` | The README once taught four dead commands for a full day. |
 | Volatile data in the managed `AGENTS.md` block | `agentsmd-stable.test.ts` | It once included the commit count, making the file dirty after every commit. |

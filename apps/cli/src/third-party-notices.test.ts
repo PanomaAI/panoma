@@ -59,7 +59,7 @@ describe("los avisos de licencia de lo que viaja en el paquete", () => {
 
   it("el generador aborta si no la encuentra, en vez de inventarse una", () => {
     expect(generador).not.toContain('"sin declarar"');
-    expect(generador).toContain("No sé bajo qué licencia viaja esto");
+    expect(generador).toContain("I do not know under which license this travels");
   });
 
   /*

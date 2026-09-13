@@ -22,6 +22,6 @@ it("does not install the video engine or copy the SDK's entire HTTP transport in
   expect(manager.dependencies).not.toHaveProperty("@panoma/video");
   expect(manager.dependencies).not.toHaveProperty("@modelcontextprotocol/sdk");
   const pack = source("../scripts/pack-app.mjs");
-  expect(pack).not.toMatch(/pendientes\.push\([^)]*@modelcontextprotocol\/sdk/);
-  expect(pack).not.toMatch(/FUERA_DE_RUNTIME[^;]*["']ajv["']/);
+  expect(pack).not.toMatch(/pending\.push\([^)]*@modelcontextprotocol\/sdk/);
+  expect(pack).not.toMatch(/NOT_AT_RUNTIME[^;]*["']ajv["']/);
 });
