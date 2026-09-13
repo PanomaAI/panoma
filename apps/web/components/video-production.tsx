@@ -225,18 +225,19 @@ function LanguageSelect({ value, tracks, onChange, label }: {
 function ProductionForm({ t, locked, onStart }: {
   t: Translate;
   locked: boolean;
-  onStart: (options: { goal: string; format: string; language: Locale }) => void;
+  onStart: (options: { goal: string; format: string; language: Locale; url?: string }) => void;
 }) {
   const locale = useLocale();
   const [goal, setGoal] = useState("promo");
   const [format, setFormat] = useState<VideoFormat>("v");
   const [language, setLanguage] = useState<Locale>(locale);
+  const [url, setUrl] = useState("");
   return (
     <form
       className={`mt-7 ${PANEL}`}
       onSubmit={(event) => {
         event.preventDefault();
-        onStart({ goal, format, language });
+        onStart({ goal, format, language, url });
       }}
     >
       <div className="grid gap-4 sm:grid-cols-[1fr_auto_1fr]">
@@ -256,6 +257,24 @@ function ProductionForm({ t, locked, onStart }: {
           label={t("apps.jobs.language")}
         />
       </div>
+      {/*
+        The one field the terminal had and the screen did not. A product whose data lives outside
+        its folder starts empty in the camera's copy — this very catalog opens on «Nothing
+        scanned yet» — and the only honest film of it is the instance already running. Loopback
+        only, and the server says so if it is not.
+       */}
+      <label className="mt-4 block text-sm">
+        {t("apps.jobs.url")}
+        <input
+          className={SELECT}
+          type="url"
+          inputMode="url"
+          placeholder="http://127.0.0.1:4173"
+          value={url}
+          onChange={(event) => setUrl(event.target.value)}
+        />
+        <span className="mt-1 block text-xs text-faint">{t("apps.jobs.urlHint")}</span>
+      </label>
       <button className="apps-button apps-button-primary mt-5" disabled={locked}>
         {t("apps.jobs.start")}
       </button>

@@ -26,6 +26,9 @@ describe("optional apps presentation", () => {
   });
   it("starts a preview in the chosen language without granting providers", () => {
     expect(productionInput({ language: "es", goal: "promo", format: "v" })).toEqual({ goal: "promo", format: "v", langs: ["es"], until: "preview" });
+    // An address already running travels only when the person typed one; blanks are not a field.
+    expect(productionInput({ language: "en", goal: "promo", format: "h", url: "  " })).toEqual({ goal: "promo", format: "h", langs: ["en"], until: "preview" });
+    expect(productionInput({ language: "en", goal: "promo", format: "h", url: " http://127.0.0.1:4173 " })).toEqual({ goal: "promo", format: "h", langs: ["en"], until: "preview", url: "http://127.0.0.1:4173" });
   });
   it("keeps scene edits on the selected production and supports ProductPromo only", () => {
     const job: AppJob = { id: "story-a", appId: "panoma-video", identity: "i", tool: "panoma_video_story", input: {}, status: "done", result: { brief_id: "a" } };

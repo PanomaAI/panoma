@@ -191,7 +191,13 @@ never made.
 The production screen says what it will use before the button that starts it — the app's
 version, the two requirements, the model, whether narration has a key, the project's identity —
 so a ten-minute run is not the way to find out that the voice was on with no key. The format is
-chosen from three drawn rectangles, vertical, landscape and square, with the ratio last. While a
+chosen from three drawn rectangles, vertical, landscape and square, with the ratio last. Under
+them, since 12-Sep-2026, the one field the terminal had and the screen did not: an address
+already running on this machine, loopback only, which the camera films instead of starting a
+copy of the project. It is there because a product whose data lives outside its folder starts
+empty in the camera's copy — this catalog itself opens on «Nothing scanned yet» there, and a
+promotion cannot be planned from an empty catalog — and the only honest film of such a product
+is the instance already running with real content in it. While a
 production runs the twelve stages are listed with the one in progress, the app's last line under
 it, and the time since it started; when it ends without a preview, the same list stays as the
 report, with each stage's own sentence quoted — which is where «could not start the product,

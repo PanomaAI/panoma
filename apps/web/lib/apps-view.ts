@@ -360,8 +360,15 @@ export function artifactUrl(jobId: string, path: string): string {
   return `/api/apps/jobs/${encodeURIComponent(jobId)}/artifact?path=${encodeURIComponent(path)}`;
 }
 
-export function productionInput(options: { language: Locale; format: string; goal: string }): Record<string, unknown> {
-  return { goal: options.goal, format: options.format, langs: [options.language], until: "preview" };
+/**
+ * What the production screen sends. `url`, when the person typed one, is an address already
+ * running on this machine: the camera films it instead of starting a copy of the project, which
+ * is the one way to film a product whose data lives outside its own folder — this catalog, for
+ * one, whose copy starts with «Nothing scanned yet». The server refuses anything but loopback.
+ */
+export function productionInput(options: { language: Locale; format: string; goal: string; url?: string }): Record<string, unknown> {
+  const url = options.url?.trim();
+  return { goal: options.goal, format: options.format, langs: [options.language], until: "preview", ...(url ? { url } : {}) };
 }
 
 export function productionExport(production: AppJob, options: { language: Locale; format: string }): {
