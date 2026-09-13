@@ -814,7 +814,6 @@ export function VideoProduction({ projectId, identity, slug }: {
 
   return (
     <>
-      <AppError error={error} />
       {!identity && (
         <p className="mt-5 rounded border border-edge p-4 text-sm">{t("apps.jobs.noIdentity")}</p>
       )}
@@ -835,6 +834,12 @@ export function VideoProduction({ projectId, identity, slug }: {
         locked={locked}
         onStart={(options) => enqueue("panoma_video_auto", productionInput(options))}
       />
+      {/*
+        The refusal, under the button that met it and not at the head of the page: «Today's app
+        call budget is used up» drew itself under the title while the person was looking at the
+        button two screens below, saw nothing move, and pressed again (12-Sep-2026).
+       */}
+      <AppError error={error} />
       {/*
         The run in progress, whichever tool it is; and when nothing runs, the report of the last
         production if it did not end well — the one thing this page used to say nothing about.

@@ -8,7 +8,7 @@ import type {
   TextareaHTMLAttributes,
 } from "react";
 import type { ProjectState } from "@panoma/db";
-import { HiOutlineCodeBracketSquare } from "react-icons/hi2";
+import { HiOutlineCodeBracketSquare, HiOutlineExclamationTriangle, HiOutlineInformationCircle } from "react-icons/hi2";
 import { t, type Locale } from "@/lib/i18n";
 
 export const STATE_STYLE: Record<ProjectState, { label: string; dot: string; text: string }> = {
@@ -778,6 +778,58 @@ const TAG_SIZE = { sm: "text-[10px]", md: "text-[11px]" } as const;
 const TAG_ALIGN = { center: "items-center gap-1", baseline: "items-baseline gap-1" } as const;
 
 export type TagTone = keyof typeof TAG_TONE;
+
+/*
+  ══ The notice ═════════════════════════════════════════════════════════════════════════════
+  What a screen says when something went wrong, or needs the person before it goes on, drawn
+  so that it reads as a message and not as a paragraph of the page. Until 12-Sep-2026 the app
+  screens wrote their refusals as one muted sentence in a plain box, and «Today's app call
+  budget is used up» sat under the form like a caption: the person read it as text of the
+  screen and pressed the button again. A notice has an icon, an edge in its tone and the
+  paper of that tone, and it announces itself — `alert` when the action failed, `status` when
+  it is only news. The two tones hang from the two hues the theme already names, `fail` and
+  `warn`, at the opacities `twin-path` and the gravity pills already use; `info` is the plain
+  edge with the plain paper. There is no fourth.
+ */
+const NOTICE_TONE = {
+  fail: { frame: "border-fail/30 bg-fail/[0.04]", icon: "text-fail", role: "alert" },
+  warn: { frame: "border-warn/40 bg-warn/[0.04]", icon: "text-warn", role: "status" },
+  info: { frame: "border-edge bg-raised", icon: "text-smoke", role: "status" },
+} as const;
+
+export type NoticeTone = keyof typeof NOTICE_TONE;
+
+export function Notice({
+  tone = "info",
+  title,
+  children,
+  className,
+  ...rest
+}: {
+  tone?: NoticeTone;
+  /** The sentence, in the reader's language. */
+  title: ReactNode;
+  /** What follows the sentence: a quote of the machine's own words, a next step, a link. */
+  children?: ReactNode;
+  /** The margin and the placement, and that's it — the same rule as `ActionButton`. */
+  className?: string;
+} & Omit<HTMLAttributes<HTMLDivElement>, "className" | "children" | "title">) {
+  const style = NOTICE_TONE[tone];
+  const Icon = tone === "info" ? HiOutlineInformationCircle : HiOutlineExclamationTriangle;
+  return (
+    <div
+      role={style.role}
+      {...rest}
+      className={`flex items-start gap-3 rounded-lg border p-3 text-sm ${style.frame}${className ? ` ${className}` : ""}`}
+    >
+      <Icon aria-hidden className={`mt-0.5 size-4 shrink-0 ${style.icon}`} />
+      <div className="min-w-0 flex-1">
+        <p className="font-medium text-chalk">{title}</p>
+        {children}
+      </div>
+    </div>
+  );
+}
 
 export function Tag({
   tone = "neutral",

@@ -227,6 +227,8 @@ export type AppFaultText = {
   key: MessageKey; vars?: Record<string, string>; quote?: string;
   /** A stage of the production the sentence names; the screen translates it and fills `{stage}`. */
   stage?: VideoStage;
+  /** The step the person takes next, with the screen it happens on, for the faults that have one. */
+  next?: { key: MessageKey; href: string };
 };
 
 /**
@@ -236,10 +238,26 @@ export type AppFaultText = {
  * wrote, a transport failure, the app's own prose. Those keep exactly the rendering they had
  * before this table existed — the generic label, and the text quoted whole underneath.
  */
+/**
+ * Where the person goes to lift a refusal, for the three refusals that a person lifts: the
+ * budget on the Spend screen, the model under the app's providers, the install on the app's
+ * page. «Today's app call budget is used up» said the fact and stopped; the person read the
+ * fact five times on 12-Sep-2026 before anyone said where the cap is.
+ */
+const FAULT_NEXT: Readonly<Partial<Record<AppFaultCode, { key: MessageKey; href: string }>>> = {
+  "app-budget-exhausted": { key: "apps.faultNext.budget", href: "/spend" },
+  "provider-not-enabled": { key: "apps.faultNext.provider", href: "/apps/panoma-video#app-providers" },
+  "provider-confirmation-required": { key: "apps.faultNext.provider", href: "/apps/panoma-video#app-providers" },
+  "not-installed": { key: "apps.faultNext.install", href: "/apps/panoma-video" },
+  "app-not-enabled": { key: "apps.faultNext.install", href: "/apps/panoma-video" },
+};
+
 export function appFaultText(value: string | null | undefined): AppFaultText {
   const { code, detail } = faultOf(value);
   if (!code) return { key: "apps.error", ...(value ? { quote: value } : {}) };
   const key = FAULT_KEY[code];
+  const next = FAULT_NEXT[code];
+  if (next) return { key, ...(detail ? { quote: detail } : {}), next };
   /*
     «A stage failed» with `plan` quoted under it is a sentence and a word that only a reader of
     the source could join. Named in the reader's language when the stage is one of the twelve;

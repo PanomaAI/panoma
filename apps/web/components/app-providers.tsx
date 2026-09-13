@@ -91,7 +91,7 @@ export function AppProviders({ app, busy, onSave, step }: {
   }
 
   return (
-    <Card as="section" aria-labelledby="app-providers-title">
+    <Card as="section" id="app-providers" tabIndex={-1} aria-labelledby="app-providers-title" className="scroll-mt-[calc(var(--bar-height)+var(--space-4))]">
       {step}
       <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
         <h2 id="app-providers-title" className="text-base font-semibold">{t("apps.providers")}</h2>

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { HiOutlineFilm } from "react-icons/hi2";
 import { useLocale, useT } from "./i18n-provider";
-import { Card, EmptyState, Tag, formatBytes } from "./primitives";
+import { Card, EmptyState, Notice, Tag, formatBytes } from "./primitives";
 import {
   ACTIVE_JOB_STATES,
   activeOperation,
@@ -91,10 +91,15 @@ export function AppError({ error }: { error: string | null | undefined }) {
   const said = appFaultText(error);
   const vars = said.stage ? { ...said.vars, stage: t(`apps.jobs.stage.${said.stage}`) } : said.vars;
   return (
-    <div className="mt-4 rounded border border-edge bg-raised p-3 text-sm" role="alert">
-      <p className="text-smoke">{t(said.key, vars)}</p>
-      {said.quote && <blockquote className="mt-1 break-words">{said.quote}</blockquote>}
-    </div>
+    <Notice tone="fail" className="mt-4" title={t(said.key, vars)}>
+      {said.quote && <blockquote className="mt-1 break-words text-smoke">{said.quote}</blockquote>}
+      {/* The step, with the screen it happens on: a refusal that names its own remedy is not pressed again. */}
+      {said.next && (
+        <p className="mt-1 text-smoke">
+          <a className="underline" href={said.next.href}>{t(said.next.key)}</a>
+        </p>
+      )}
+    </Notice>
   );
 }
 

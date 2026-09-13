@@ -206,6 +206,15 @@ verdict laid out by kind of video, the kind that was asked for first and the res
 (`stageReport` and `skippedGoals`, both in `apps-view.ts`). Only a production that finished
 offers to export.
 
+A refusal on these screens is drawn as a notice and not as a line of the page: `Notice` in
+`apps/web/components/primitives.tsx` — an icon, an edge and a paper in its tone, `role="alert"`
+for an action that failed — and it stands under the button that met it, not at the head of the
+page. Until 12-Sep-2026 «Today's app call budget is used up» sat under the title in a muted
+sentence while the person looked at the button two screens below, saw nothing move and pressed
+again. And the three refusals a person lifts say where: the budget on the Spend screen (or
+tomorrow, the day being local), the model under Script and voice, the install on the app's page
+(`FAULT_NEXT` in `apps-view.ts`, one key per step in both languages).
+
 Every Apps route checks same origin. Mutation handlers additionally check local operator
 authorization and refuse remote catalogs before reading the request body or opening the
 database. The ten lifecycle operations share one handler and are validated against the same

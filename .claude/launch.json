@@ -29,6 +29,7 @@
       "runtimeArgs": [
         "PANOMA_HOME=/tmp/panoma-sandbox-home",
         "PANOMA_WATCH=0",
+        "PANOMA_APP_BUDGET=0",
         "pnpm",
         "--filter",
         "@panoma/web",

@@ -184,6 +184,18 @@ describe("every failure has a sentence, in both languages", () => {
     }
   });
 
+  it("says where the person lifts a refusal that is theirs to lift, and only for those", () => {
+    // The budget's remedy is on the Spend screen; the fact alone was read five times before anyone pressed there.
+    const budget = appFaultText("app-budget-exhausted");
+    expect(budget.next).toEqual({ key: "apps.faultNext.budget", href: "/spend" });
+    expect(appFaultText("provider-not-enabled").next?.href).toBe("/apps/panoma-video#app-providers");
+    expect(appFaultText("not-installed").next?.href).toBe("/apps/panoma-video");
+    for (const locale of ["es", "en"] as const) expect(t(locale, budget.next!.key)).not.toMatch(/[{}]/);
+    // A fault the app raises mid-run has no screen to go to.
+    expect(appFaultText("stage-failed: plan").next).toBeUndefined();
+    expect(appFaultText("job-not-found").next).toBeUndefined();
+  });
+
   it("names the stage that failed in the reader's language, and quotes one it does not know", () => {
     const said = appFaultText("stage-failed: plan");
     expect(said).toEqual({ key: "apps.fault.stageFailedAt", stage: "plan" });
