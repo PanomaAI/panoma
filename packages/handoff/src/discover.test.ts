@@ -277,6 +277,39 @@ describe("discoverConversations", () => {
     await expect(stores({ home: "/x" })).rejects.toThrow("store-missing");
   });
 
+  it("finds a compaction in the middle of a big file, where neither window reaches, and says nothing of a file without one", async () => {
+    const h = home();
+    const lines = fixtureText("claude.jsonl").trim().split("\n");
+    const filler = JSON.stringify({ type: "attachment", uuid: "f", timestamp: "2026-09-11T10:01:00.000Z", attachment: { type: "environment", snapshot: "x".repeat(2000) } });
+    const fillers = Math.ceil(DISCOVERY_WHOLE_FILE_BYTES / filler.length) + 10;
+    const boundary = JSON.stringify({
+      parentUuid: null,
+      logicalParentUuid: "a1",
+      isSidechain: false,
+      type: "system",
+      subtype: "compact_boundary",
+      content: "Conversation compacted",
+      isMeta: false,
+      level: "info",
+      compactMetadata: { trigger: "manual", preTokens: 1, postTokens: 1 },
+      uuid: "b1",
+      timestamp: "2026-09-11T11:00:00.000Z",
+    });
+    const half = Math.floor(fillers / 2);
+    const padding = Array.from({ length: fillers }, () => filler);
+    /* The marker inside a string carries escaped quotes: a transcript that only talks about compaction is not compacted. */
+    const talk = JSON.stringify({ parentUuid: "a1", isSidechain: false, type: "user", timestamp: "2026-09-11T10:02:00.000Z", uuid: "t1", message: { role: "user", content: 'the record {"subtype":"compact_boundary"} is Claude\'s own' } });
+    const compacted = `${[...lines, ...padding.slice(0, half), boundary, ...padding.slice(half)].join("\n")}\n`;
+    const plain = `${[...lines, talk, ...padding].join("\n")}\n`;
+    const withOne = layClaude(h, compacted);
+    const withNone = layClaude(home(), plain);
+    const found = await discoverConversations({ home: h, env: {} });
+    expect(found.conversations.find((ref) => ref.path === withOne)?.compacted).toBe(true);
+    const other = await discoverConversations({ home: withNone.split("/.claude/")[0]!, env: {} });
+    expect(other.conversations[0]!.bytes).toBeGreaterThan(DISCOVERY_WHOLE_FILE_BYTES);
+    expect(other.conversations[0]!.compacted).toBe(false);
+  });
+
   it("lists a store of five hundred files with a 250 MB one inside in under three hundred milliseconds", async () => {
     const h = home();
     const dir = join(h, ".claude", "projects", FIXTURE_CLAUDE_SLUG);

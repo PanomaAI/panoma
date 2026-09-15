@@ -4,8 +4,18 @@
  * Per store, every candidate file is `stat`ed, the newest `limit` by mtime are opened, and
  * each is read whole only up to `DISCOVERY_WHOLE_FILE_BYTES` — beyond that a head and a tail
  * window of 64 KiB each, parsed with the same reader, give the fields a row needs and leave
- * `turnCount` null. A 250 MB session costs two reads of 64 KiB. The budget test holds this to
- * a store of five hundred files listing in under three hundred milliseconds.
+ * `turnCount` null. The budget test holds this to a store of five hundred files listing in
+ * under three hundred milliseconds.
+ *
+ * One field the windows cannot tell is `compacted`: a compaction sits wherever the agent made
+ * it, and until 15-Sep-2026 a big file got the badge only when one fell inside a window — on
+ * this disk 27 of the 40 newest big Claude transcripts and 34 of 40 Codex rollouts carried a
+ * compaction and the list said so of a handful. Now a big file is scanned once for the
+ * record-level marker (`"subtype":"compact_boundary"`, `"type":"compacted"`; inside a string
+ * the quotes are escaped, so the bare form is the record's), a megabyte at a time, stopping at
+ * the first hit, and the answer is memoized by size and mtime so a list that repeats costs
+ * nothing: the 33 big files of this disk's list (1.4 GB) cost a fresh list 1.4 s once per
+ * server start, and nothing after. A 250 MB session without one costs one sequential read.
  *
  * OpenCode has no files to stat: its sessions are rows, listed by `time_updated`. Gemini's
  * files never say where their project is, so the folders the caller knows (catalog roots, the
@@ -262,6 +272,43 @@ async function readWindows(candidate: Candidate): Promise<Windows> {
   }
 }
 
+/** The record-level marker of a compaction, per store; a string's own copy carries escaped quotes and does not match. */
+const COMPACTION_MARKERS = { "claude-cli": '"subtype":"compact_boundary"', "codex-cli": '"type":"compacted"' } as const;
+const SCAN_CHUNK_BYTES = 1024 * 1024;
+const SCAN_MEMO_LIMIT = 4096;
+const scanMemo = new Map<string, { bytes: number; mtimeMs: number; found: boolean }>();
+
+/** Whether a big file holds the marker anywhere: one sequential read, memoized by size and mtime. */
+async function holdsMarker(candidate: Candidate, marker: string): Promise<boolean> {
+  const known = scanMemo.get(candidate.path);
+  if (known && known.bytes === candidate.bytes && known.mtimeMs === candidate.mtimeMs) return known.found;
+  const needle = Buffer.from(marker, "utf8");
+  const chunk = Buffer.alloc(SCAN_CHUNK_BYTES);
+  let carry = Buffer.alloc(0);
+  let position = 0;
+  let found = false;
+  const handle = await open(candidate.path, "r");
+  try {
+    for (;;) {
+      const { bytesRead } = await handle.read(chunk, 0, chunk.length, position);
+      if (bytesRead === 0) break;
+      const window = carry.length > 0 ? Buffer.concat([carry, chunk.subarray(0, bytesRead)]) : chunk.subarray(0, bytesRead);
+      if (window.indexOf(needle) !== -1) {
+        found = true;
+        break;
+      }
+      // A marker cut by the chunk edge: keep its last bytes for the next read.
+      carry = Buffer.from(window.subarray(Math.max(0, window.length - needle.length + 1)));
+      position += bytesRead;
+    }
+  } finally {
+    await handle.close();
+  }
+  if (scanMemo.size >= SCAN_MEMO_LIMIT) scanMemo.clear();
+  scanMemo.set(candidate.path, { bytes: candidate.bytes, mtimeMs: candidate.mtimeMs, found });
+  return found;
+}
+
 function refOf(conversation: Conversation, turnCount: number | null): ConversationRef {
   const { version: _version, hash: _hash, turns: _turns, compactions: _compactions, dropped: _dropped, ...ref } = conversation;
   return { ...ref, turnCount };
@@ -326,7 +373,9 @@ async function listClaude(options: DiscoverOptions, limit: number, scope: Scope 
         const head = await parseClaudeTranscript(windows.head, input);
         const tail = await parseClaudeTranscript(windows.tail, input);
         const titled = windows.tail.includes('"custom-title"') || windows.tail.includes('"ai-title"');
-        refs.push(mergeWindows(head, tail, titled));
+        const ref = mergeWindows(head, tail, titled);
+        ref.compacted = ref.compacted || (await holdsMarker(candidate, COMPACTION_MARKERS["claude-cli"]));
+        refs.push(ref);
       }
     } catch {
       // A file that vanished or cannot be read between the listing and the open is not a row.
@@ -398,7 +447,7 @@ async function listCodex(options: DiscoverOptions, limit: number, scope: Scope |
         const head = parseCodexRollout(windows.head, input);
         const tail = parseCodexRollout(windows.tail, input);
         const ref = mergeWindows(head, tail, false);
-        ref.compacted = ref.compacted || windows.tail.includes('"type":"compacted"');
+        ref.compacted = ref.compacted || (await holdsMarker(candidate, COMPACTION_MARKERS["codex-cli"]));
         refs.push(ref);
       }
     } catch {

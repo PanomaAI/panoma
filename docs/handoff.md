@@ -444,6 +444,25 @@ until that day the card compared raw strings, so a catalog root kept through a s
 spelled `/var` where the agent wrote `/private/var`— said «no conversations» on the card while
 `/handoff` listed them under that very project.
 
+**A big file is read by two windows, and scanned once for its compaction.** Up to 2 MiB a
+file is read whole; beyond that discovery parses a head and a tail window of 64 KiB each with
+the same reader and leaves `turnCount` null. Every field a row needs comes from those windows
+except one: a compaction sits wherever the agent made it, and until 15-Sep-2026 a big file
+got the «carries its own summary» badge only when the boundary fell inside a window — on this
+disk 27 of the 40 newest big Claude transcripts and 34 of 40 Codex rollouts carried one, and
+the list said so of a handful, while the panel, which reads the file whole, found it and
+behaved on it (the model box off, the source's summary travelling). `holdsMarker` in
+`discover.ts` now reads a big file a megabyte at a time looking for the record-level marker
+—`"subtype":"compact_boundary"`, `"type":"compacted"`; a copy inside a string carries escaped
+quotes and does not match— stops at the first hit, and memoizes the answer by size and mtime,
+so a list that repeats costs nothing until the file grows. Measured here on the 33 big files
+of the list (1.4 GB): a fresh list cost 2,550 ms with the memo cold and 1,161 ms with it warm,
+so the scan is about 1.4 s once per server start and nothing after; a standalone scan of the
+same files with the page cache warm took 320 ms. The budget test's sparse 250 MB session
+still lists under the three hundred milliseconds. OpenCode asks its database the same question with one `LIKE`; Gemini
+has no compaction. `discover.test.ts` holds a boundary in the middle of a big file, and a
+transcript that only talks about one.
+
 The gate is **the operator key, not the twin's consent**, and the difference is on purpose.
 The twin's consent (`panoma twin allow`) is a decision about mining: it lets panoma read your
 history in order to keep something out of it —verdicts, narratives— for months. A handoff
