@@ -292,6 +292,12 @@ describe("discoverConversations", () => {
     writeSync(fd, text);
     ftruncateSync(fd, 250 * 1024 * 1024);
     closeSync(fd);
+    // Five hundred files written in one burst share a modification instant on a filesystem
+    // with a coarse clock, and ties are broken by path, where `ffffffff` sorts last: the sparse
+    // file then falls out of the newest forty and the read below finds nothing. A minute ahead
+    // makes it the newest whatever the clock's grain — on this Mac it already was, by nanoseconds.
+    const ahead = new Date(Date.now() + 60_000);
+    utimesSync(sparse, ahead, ahead);
     const started = performance.now();
     const found = await discoverConversations({ home: h, env: {}, agents: ["claude-cli"] });
     const elapsed = performance.now() - started;
