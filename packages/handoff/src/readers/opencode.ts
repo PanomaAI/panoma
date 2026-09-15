@@ -11,7 +11,8 @@
  * the call stays on the assistant side and the result goes to the user side, which is the
  * shape the other three agents keep; the turn builder splits them. The compaction pair — a
  * user message whose only part is `{type: "compaction"}` and the assistant reply with
- * `summary: true` — is the cut: OpenCode's own replay stops there.
+ * `summary: true` — becomes a `summary` part at its position: OpenCode's own model restarts
+ * there, its transcript does not, and neither does this reader (until 15-Sep-2026 it cut).
  */
 import { readdir, readFile, stat } from "node:fs/promises";
 import { HandoffFault, asHandoffFault } from "../faults";
@@ -335,9 +336,8 @@ function assemble(
       continue;
     }
     if (role === "user") {
+      // The compaction pair is a marker at its position, not a cut: the turns before it stay.
       if (parts.some((p) => p.data["type"] === "compaction")) {
-        builder.reset();
-        compactions.length = 0;
         head.compacted = true;
         pendingSummary = true;
         continue;

@@ -33,6 +33,8 @@ const OPEN_ITEM_HEADING = /^#{0,6}\s*(?:\*\*)?(?:next steps?|open items?|remaini
 const WRITE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch", "edit", "write", "multiedit"]);
 const PATH_KEYS = ["file_path", "path", "notebook_path", "filePath"];
 const PATCH_FILE = /^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm;
+/** The same headers inside a JavaScript string literal, where the newlines are `\n` escapes. */
+const PATCH_FILE_IN_SCRIPT = /\*\*\* (?:Add|Update|Delete) File: ((?:[^"\\]|\\[^n])+)/g;
 const SHELL_TOOLS = new Set(["Bash", "bash", "exec", "shell", "exec_command", "run_shell_command", "shell_command"]);
 
 /**
@@ -130,9 +132,27 @@ export function filesOf(part: Extract<Part, { kind: "tool_call" }>): string[] {
       for (const m of input.matchAll(PATCH_FILE)) found.push(m[1]!.trim());
     }
   }
+  // Codex's `exec` script patches through `tools.apply_patch("*** Begin Patch\n*** Add File: …")`.
+  const script = scriptOf(part);
+  if (script) for (const m of script.matchAll(PATCH_FILE_IN_SCRIPT)) found.push(m[1]!.trim());
   const command = commandOf(part);
   if (command) found.push(...movedFiles(command));
   return found;
+}
+
+/**
+ * Codex's `exec` input is a JavaScript program calling `tools.exec_command`, `tools.apply_patch`
+ * and the rest; the reader keeps a string input under `input`. Either shape is the script.
+ */
+function scriptOf(part: Extract<Part, { kind: "tool_call" }>): string | undefined {
+  if (!SHELL_TOOLS.has(part.name)) return undefined;
+  const input = part.input;
+  if (typeof input === "string") return input;
+  if (typeof input === "object" && input !== null) {
+    const inner = (input as Record<string, unknown>)["input"];
+    if (typeof inner === "string") return inner;
+  }
+  return undefined;
 }
 
 /** `mv a b`, `cp a b`, `touch a`: the arguments that are not flags. The one shell guess this file makes. */
@@ -183,19 +203,20 @@ function shellWords(segment: string): string[] {
 export function commandOf(part: Extract<Part, { kind: "tool_call" }>): string | undefined {
   if (!SHELL_TOOLS.has(part.name)) return undefined;
   const input = part.input;
-  // A string input is Codex's `exec` script: the command is inside it, or there is none.
-  if (typeof input === "string") return commandInScript(input);
-  if (typeof input !== "object" || input === null) return undefined;
-  const record = input as Record<string, unknown>;
-  const direct = record["command"] ?? record["cmd"];
-  if (typeof direct === "string") return oneLine(direct);
-  if (Array.isArray(direct)) return oneLine(direct.map(String).join(" "));
-  return undefined;
+  if (typeof input === "object" && input !== null) {
+    const record = input as Record<string, unknown>;
+    const direct = record["command"] ?? record["cmd"];
+    if (typeof direct === "string") return oneLine(direct);
+    if (Array.isArray(direct)) return oneLine(direct.map(String).join(" "));
+  }
+  // Codex's `exec` script: the first command inside it, or there is none.
+  const script = scriptOf(part);
+  return script ? commandInScript(script) : undefined;
 }
 
-/** Codex's `exec` input is a line of JavaScript with the parameters object inside. */
+/** The parameters object inside the script, with the key quoted (`"cmd":`) or bare (`{cmd:`). */
 function commandInScript(script: string): string | undefined {
-  const match = /"cmd"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(script);
+  const match = /(?:"cmd"|\bcmd)\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(script);
   if (!match) return undefined;
   try {
     return oneLine(JSON.parse(`"${match[1]}"`));

@@ -6,9 +6,12 @@
  * The rest — attachments, queue operations, bridge sessions, file-history snapshots — is the
  * tool's own bookkeeping and says nothing about the conversation.
  *
- * The cut is the last `compact_boundary`: Claude Code itself rebuilds the chain from there, so
- * everything before it is history the model no longer sees. Its summary (the `user` record
- * with `isCompactSummary`) becomes a `summary` part in a turn of its own and a `Compaction`.
+ * A `compact_boundary` is a marker, not a cut: the transcript stays whole and its summary (the
+ * `user` record with `isCompactSummary`) becomes a `summary` part in a turn of its own, at the
+ * position it holds, and a `Compaction`. Claude Code's model restarts from the newest one, and
+ * so will the target's when the writer puts the boundary back; the person's transcript, on
+ * both sides, is everything. Until 15-Sep-2026 the reader cut there, and «everything» at tier
+ * full was the last window only.
  * Assistant records come one per content block sharing `message.id`; grouping by role folds
  * them back into one turn. Thinking blocks never enter, and are counted: Claude's signed ones
  * cannot be reproduced by another agent, and their text is the model's private reasoning. (The
@@ -179,10 +182,7 @@ export async function parseClaudeTranscript(text: string, input: ClaudeParseInpu
     }
     if (type === "system") {
       if (record["subtype"] !== "compact_boundary") continue;
-      builder.reset();
-      compactions.length = 0;
       head.compacted = true;
-      firstUserText = undefined;
       const meta = record["compactMetadata"];
       pending = { at, tokensBefore: isRecord(meta) ? readNumber(meta["preTokens"]) : undefined };
       continue;

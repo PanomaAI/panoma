@@ -132,10 +132,32 @@ message that made a tool call read back at least twice and its thought was count
 `fixtures/gemini.jsonl` carries that shape. A Codex `compacted` record here —333 checked, Codex
 0.115 to 0.153.4— has an empty `message` and closes its history with an encrypted `compaction`
 item only Codex can open: it is counted in `dropped.other`, `compactions` stays empty for such
-a rollout and `compacted` stays true, so the digest has no `summary` for a Codex source cut by
-a compaction (`fixtures/codex-compacted.jsonl`); the header said the summary travelled as text.
+a rollout and `compacted` stays true, so the digest has no `summary` for a Codex source that
+was compacted (`fixtures/codex-compacted.jsonl`); the header said the summary travelled as text.
 Thinking is a real loss and not a formality: 14,772 of 32,997 blocks over the 60 newest Claude
 transcripts carry text, and the reader header no longer says they are empty on disk.
+
+**A compaction is a marker, not a cut.** Until 15-Sep-2026 the three readers that know one
+—Claude's `compact_boundary`, Codex's `compacted`, OpenCode's compaction pair— threw away every
+turn before the newest and started again from its summary, on the reasoning that the source
+agent's own model restarts there. The person who reported it had handed a Codex conversation
+compacted five times to Claude Code at tier `full` and found their twenty-one prompts glued
+into one turn at the top and only the last window's answers under it: Codex's `replacement_history`
+is the earlier prompts verbatim plus an encrypted summary, and replaying it after the reset
+produced exactly that. The reasoning was wrong on both sides. What the source agent shows on
+its own resume is the whole transcript —the compaction only changes what its model is sent—,
+and `full` promises «every message and every tool call, as they are». Now every turn stays
+where the transcript has it and the summary is a `summary` part at its position; the Claude
+writer turns that part into a `compact_boundary` at the same place, so the target's model
+restarts there exactly as the source's did (verified on 2.1.258: a copy with the boundary
+in the middle resumed and answered from the summary and what followed, and did not know the
+turn before it), while the transcript on both sides is everything. Codex's history is replayed
+only when the rollout opens on the `compacted` record —a file with no other copy of those
+prompts— and its encrypted item is counted once. The `compact` tier drops the source's summary
+turns from its window instead of skipping one at the window's start: the newest is inside the
+digest, and a summary kept in the window would become the target's own boundary and hide the
+digest from its model. `readers.test.ts` holds the three shapes and the opening-record case;
+`compact.test.ts` the window.
 
 Everything else —Cursor, Copilot, Windsurf, Aider, Amp, Goose, cloud sessions— gets a
 document and not a conversation. Their stores were not read, and a target that cannot resume
@@ -298,7 +320,7 @@ not panoma's: the screen says both in one line each, and neither can be undone f
 
 | tier | what travels | for whom |
 | --- | --- | --- |
-| `full` | every turn, the tool calls and their results, the source's own summary and the title | a native target; the default |
+| `full` | every turn, the tool calls and their results, the source's own summaries at their positions and the title | a native target; the default |
 | `compact` | one `summary` part rendering the digest, plus the newest turns whole (twelve by default, `--keep` and `keepTurns` change it) | a native target when the source is large; preselected over 16 MiB |
 | `brief` | a Markdown document with the digest and the last exchange, to paste as the first message | any agent; the only tier for a document-only one |
 
@@ -592,9 +614,9 @@ reader had covered them —no reader redacts; the readers only count `redacted_t
 key in a «next steps» line reached the provider bare while the same line inside the turns
 block was masked; `handoff-digest.test.ts` holds the lists inside a block with the secret
 masked. The «first message» is chosen as the engine chooses the digest's `goal`: the first
-user turn's text part that is not a slash-command marker, never a `summary` part —every reader
-opens a compacted conversation with the previous summary as a user turn, and until that day
-the prompt took that turn whole, so a compacted source sent its summary twice, once labelled as
+user turn's text part that is not a slash-command marker, never a `summary` part —a compacted
+conversation carries each summary as a user turn at its position, and until that day the prompt
+took the first such turn whole, so a compacted source sent its summary twice, once labelled as
 the first message. The digest cuts its goal to 600 characters and the prompt keeps 1,500,
 which is why `apps/web/lib/handoff-digest.ts` selects the text itself with a local copy of the
 engine's `COMMAND_MARKER`, and the test holds both selections to the same answer.

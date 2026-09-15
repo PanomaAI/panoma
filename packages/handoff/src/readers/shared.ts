@@ -75,11 +75,6 @@ export class TurnBuilder {
     if (at) turn.at = at;
     this.turns.push(turn);
   }
-
-  /** Everything read so far is behind a compaction: the turns start again. */
-  reset(): void {
-    this.turns.length = 0;
-  }
 }
 
 /** The transcript whole, or a fault: too large, unreadable, or gone. */

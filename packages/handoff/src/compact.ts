@@ -20,10 +20,11 @@ export function compactConversation(
   options: CompactOptions = {},
 ): Conversation {
   const keep = Math.max(1, Math.floor(options.keepTurns ?? KEEP_TURNS_DEFAULT));
-  const source = conversation.turns;
+  // The summaries the source already carried do not travel: the newest is inside the digest and
+  // the older ones are behind it. Kept in the window, one would become the target's own
+  // compaction boundary and hide the digest from its model.
+  const source = conversation.turns.filter((turn) => !turn.parts.every((part) => part.kind === "summary"));
   let start = Math.max(0, source.length - keep);
-  // The summary the source already carried is inside the digest; it does not travel twice.
-  while (start < source.length && source[start]!.parts.every((part) => part.kind === "summary")) start += 1;
   const first = source[start];
   if (start > 0 && first && first.role === "user" && first.parts.some((part) => part.kind === "tool_result")) {
     start -= 1;

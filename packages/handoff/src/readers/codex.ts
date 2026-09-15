@@ -6,14 +6,19 @@
  * `event_msg` mirrors the messages for the UI and carries the token counts — read here only
  * for the rate-limit state. `turn_context`, `token_usage_record`, `world_state` are metadata.
  *
- * The cut is the newest `compacted` record: Codex rebuilds from its `replacement_history` and
- * replays what follows, so this reader does the same. Its `message` is the summary when the
- * version filled it, and no version on this disk does: every `compacted` record here (0.99.0-alpha.23 to
- * 0.153.4, 333 of them, checked 12-Sep-2026) leaves `message` empty and closes the replacement
- * history with a `{type: "compaction", encrypted_content}` item, the summary in a form only
- * Codex can open. It cannot be read, so it is counted in `dropped.other` and `compactions`
- * stays empty; the user messages before it are the earlier prompts verbatim and replay as
- * text. Encrypted reasoning cannot be read either and is counted as thinking.
+ * A `compacted` record is a marker, not a cut. Codex itself keeps the whole rollout and shows
+ * it whole on resume; only its model restarts from the `replacement_history`, which is the
+ * earlier prompts verbatim, the client's developer blocks, and a `{type: "compaction",
+ * encrypted_content}` item — the summary in a form only Codex can open. Until 15-Sep-2026 this
+ * reader reset at that record and replayed the history, and a conversation compacted five
+ * times travelled as twenty-one prompts glued into one turn followed by the last window's
+ * answers: what the person saw in the target was their questions stacked at the top and most
+ * of the agent's work gone. Now every item stays where the transcript has it; the encrypted
+ * summary is counted in `dropped.other` and `compactions` stays empty unless a version fills
+ * `message` (none on this disk does: 0.99.0-alpha.23 to 0.153.4, 333 records, checked
+ * 12-Sep-2026). The history is replayed only when the rollout starts with it — a file that
+ * opens on a `compacted` record has no other copy of those prompts. Encrypted reasoning cannot
+ * be read either and is counted as thinking.
  *
  * The client also speaks with the person's role. Two shapes, both measured here and both cut
  * as the history reader in `packages/core/src/history/codex.ts` cuts them: a whole block —
@@ -166,9 +171,8 @@ export function parseCodexRollout(text: string, input: CodexParseInput): Convers
       continue;
     }
     if (type === "compacted") {
-      builder.reset();
-      compactions.length = 0;
       head.compacted = true;
+      const opens = builder.turns.length === 0;
       const summary = readString(payload["message"]);
       if (summary) {
         builder.open("user", [{ kind: "summary", text: summary }], at);
@@ -177,10 +181,13 @@ export function parseCodexRollout(text: string, input: CodexParseInput): Convers
         compactions.push(compaction);
       }
       const history = payload["replacement_history"];
-      if (Array.isArray(history)) {
-        for (const item of history) {
-          if (isRecord(item)) replayItem(item, builder, dropped, at, (t) => { firstUserText ??= t; });
-        }
+      if (!Array.isArray(history)) continue;
+      // The history is the prompts already read, with the encrypted summary closing it: only a
+      // rollout that opens on this record has nothing else, and replays it.
+      for (const item of history) {
+        if (!isRecord(item)) continue;
+        if (opens) replayItem(item, builder, dropped, at, (t) => { firstUserText ??= t; });
+        else if (item["type"] === "compaction") dropped.other += 1;
       }
       continue;
     }
@@ -247,6 +254,11 @@ function replayItem(
   }
   if (kind === "reasoning") {
     dropped.thinking += 1;
+    return;
+  }
+  // The desktop app's multi-agent mode: what a subagent sent the root, encrypted like the reasoning.
+  if (kind === "agent_message") {
+    dropped.subagents += 1;
     return;
   }
   // `compaction` — the encrypted summary that closes a replacement history — lands here: it is

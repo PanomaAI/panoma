@@ -102,6 +102,14 @@ describe("digestConversation", () => {
     expect(filesOf({ kind: "tool_call", id: "x", name: "Edit", input: "not an object" })).toEqual([]);
   });
 
+  it("reads Codex's exec script as the desktop app writes it: a bare cmd key, the string under input, the patch inside the string", () => {
+    const script = 'const r = await Promise.allSettled([\ntools.exec_command({cmd:"pnpm test --filter core",max_output_tokens:5000}),\n]);\ntext(await tools.apply_patch("*** Begin Patch\\n*** Add File: /repo/docs/memory-next.md\\n+# Title\\n*** Update File: /repo/apps/web/lib/i18n.ts\\n*** End Patch"));';
+    const source = conversation([user("go"), call("exec", { input: script }), call("exec", '{"cmd": "ls -la"}', "c2")]);
+    const d = digestConversation(source);
+    expect(d.commandsRun).toEqual(["pnpm test --filter core", "ls -la"]);
+    expect(d.filesTouched).toEqual(["/repo/docs/memory-next.md", "/repo/apps/web/lib/i18n.ts"]);
+  });
+
   it("open items are the next steps of the last answer, and the last exchange is both ends", () => {
     const last = "All done.\n\nNext steps:\n- add taxes\n- send the ledger\n\nTODO: name the stand.\nUnrelated closing line.";
     const d = digestConversation(conversation([user("first"), assistant("early"), user("last question"), assistant(last)]));
@@ -152,5 +160,22 @@ describe("compactConversation", () => {
     const compact = compactConversation(source, digestConversation(source), { keepTurns: 12 });
     expect(compact.turns.map((t) => t.parts.map((p) => (p.kind === "summary" ? "summary" : (p as { text: string }).text)).join())).toEqual(["summary", "one", "two"]);
     expect(compact.turns[0]!.parts[0]!.kind === "summary" && compact.turns[0]!.parts[0]!.text).toContain("## Summary\n\nold summary");
+  });
+
+  it("drops the source's summary turns wherever the window holds them: kept, one would become the target's own boundary", () => {
+    const turns: Turn[] = [
+      user("one"),
+      assistant("two"),
+      { role: "user", parts: [{ kind: "summary", text: "older summary" }] },
+      user("three"),
+      assistant("four"),
+      { role: "user", parts: [{ kind: "summary", text: "newest summary" }] },
+      user("five"),
+      assistant("six"),
+    ];
+    const source = conversation(turns, { compactions: [{ text: "older summary" }, { text: "newest summary" }] });
+    const compact = compactConversation(source, digestConversation(source), { keepTurns: 4 });
+    expect(compact.turns.map((t) => t.parts.map((p) => (p.kind === "summary" ? "summary" : (p as { text: string }).text)).join())).toEqual(["summary", "three", "four", "five", "six"]);
+    expect(compact.turns[0]!.parts[0]!.kind === "summary" && compact.turns[0]!.parts[0]!.text).toContain("newest summary");
   });
 });

@@ -122,7 +122,7 @@ describe("Claude Code", () => {
     expect(surfaceOfEntrypoint("claude-desktop")).toBe("app");
   });
 
-  it("cuts at the last compact_boundary and keeps its summary as a part and a compaction", async () => {
+  it("keeps the turns before a compact_boundary and its summary as a part at its position, and a compaction", async () => {
     const h = home();
     const lines = [
       rec("user", "old prompt", { uuid: "u1", parentUuid: null }),
@@ -156,13 +156,13 @@ describe("Claude Code", () => {
     ];
     const c = await readClaudeConversation(layClaude(h, jsonl(lines)), options(h));
     expect(c.compacted).toBe(true);
-    expect(c.turns.map((t) => t.parts.map((p) => p.kind).join("+"))).toEqual(["summary", "text", "text"]);
+    expect(c.turns.map((t) => `${t.role}:${t.parts.map((p) => p.kind).join("+")}`)).toEqual(["user:text", "assistant:text", "user:summary", "user:text", "assistant:text"]);
     expect(c.compactions).toEqual([
       { at: "2026-09-11T11:00:00.000Z", text: "This session is being continued from a previous conversation. Summary: lemonade.", tokensBefore: 586328 },
     ]);
-    // The title falls back to the first prompt after the cut, cut to a line — the person's,
-    // not the `/compact` echo that precedes it.
-    expect(c.title).toBe("and now?");
+    // The title is the first prompt of the whole transcript — the person's, never the
+    // `/compact` echo, which is cut out as the client's own text.
+    expect(c.title).toBe("old prompt");
     expect(c.dropped.other).toBe(3);
   });
 
@@ -392,7 +392,7 @@ describe("Codex CLI", () => {
     expect(c.limit).toEqual({ at: "2026-09-11T13:52:01.500Z", kind: "rate_limit_reached", resetsAt: "2026-09-11T13:53:25.000Z" });
   });
 
-  it("starts after the newest compacted record: its message is the summary, its history the base", async () => {
+  it("keeps everything around a compacted record: its message is the summary at its position, its history is not replayed", async () => {
     const h = home();
     const meta = JSON.parse(fixtureText("codex.jsonl").split("\n")[0]!) as Record<string, unknown>;
     const item = (role: string, text: string) => ({
@@ -422,6 +422,19 @@ describe("Codex CLI", () => {
     expect(c.compacted).toBe(true);
     expect(c.compactions).toEqual([{ at: "2026-09-11T13:53:00.000Z", text: "Summary so far: lemonade." }]);
     expect(c.turns.map((t) => t.parts.map((p) => (p.kind === "text" || p.kind === "summary" ? `${p.kind}:${p.text}` : p.kind)).join("|"))).toEqual([
+      "text:first",
+      "text:one",
+      "summary:Summary so far: lemonade.",
+      "text:after",
+      "text:two",
+    ]);
+    // The app's multi-agent mode writes what a subagent sent, encrypted: counted as a subagent run.
+    const withAgent = await readCodexConversation(layCodex(h, jsonl([meta, item("user", "first"), { timestamp: "2026-09-11T13:52:30.000Z", type: "response_item", payload: { type: "agent_message", author: "/root/worker", recipient: "/root", content: [{ type: "encrypted_content", encrypted_content: "gAAAA" }] } }, item("assistant", "one")])), options(h));
+    expect(withAgent.dropped.subagents).toBe(1);
+    expect(withAgent.turns).toHaveLength(2);
+    // A rollout that opens on the record has no other copy of the prompts: the history is the base.
+    const opening = await readCodexConversation(layCodex(h, jsonl([meta, lines[3]!, item("user", "after"), item("assistant", "two")])), options(h));
+    expect(opening.turns.map((t) => t.parts.map((p) => (p.kind === "text" || p.kind === "summary" ? `${p.kind}:${p.text}` : p.kind)).join("|"))).toEqual([
       "summary:Summary so far: lemonade.",
       "text:kept from history|text:after",
       "text:two",
@@ -476,23 +489,26 @@ describe("Codex CLI", () => {
     What the disk holds: every `compacted` record here (Codex 0.115 to 0.153.4, 333 of them on
     12-Sep-2026) has `message: ""` and closes its replacement history with an encrypted
     `compaction` item. The summary cannot be read, so it is counted and `compactions` stays
-    empty; the earlier prompts in the history replay as text and the cut still holds.
+    empty; the transcript stays whole, and the prompts the history repeats are not read twice.
    */
-  it("reads the on-disk compaction: an empty message, the summary encrypted and counted, the history's prompts as text", async () => {
+  it("reads the on-disk compaction: an empty message, the summary encrypted and counted, the transcript whole and nothing twice", async () => {
     const h = home();
     const c = await readCodexConversation(layCodex(h, fixtureText("codex-compacted.jsonl")), options(h));
     expect(c.compacted).toBe(true);
     expect(c.compactions).toEqual([]);
     expect(c.turns.map((t) => t.parts.map((p) => (p.kind === "text" || p.kind === "summary" ? `${p.kind}:${p.text}` : p.kind)).join("|"))).toEqual([
-      "text:Lemonade ledger: add Day 2, 9 cups at $2 and $3 of ice.|text:and Day 3?",
+      "text:Lemonade ledger: add Day 2, 9 cups at $2 and $3 of ice.",
+      "text:Day 2 added: 9 x $2 = $18, minus $3 of ice, $15 of profit. Running total: $37.",
+      "text:and Day 3?",
       "text:Day 3 is not in the ledger yet.",
     ]);
     expect(c.title).toBe("Lemonade ledger: add Day 2, 9 cups at $2 and $3 of ice.");
-    // The environment block before the cut and in the history, the developer message, and
-    // the encrypted summary: four things counted, none of them thinking.
-    expect(c.dropped.other).toBe(4);
+    // The environment block before the record, and the encrypted summary in the history: two
+    // things counted, none of them thinking; the history's prompts and developer block are
+    // not counted because they are not read.
+    expect(c.dropped.other).toBe(2);
     expect(c.dropped.thinking).toBe(0);
-    expect(c.turnCount).toBe(2);
+    expect(c.turnCount).toBe(4);
   });
 
   it("gives every tool call an object input: a string, arguments that are not JSON, a missing input, all wrapped under `input`", async () => {
@@ -609,7 +625,10 @@ describe("OpenCode", () => {
     const c = await readOpencodeConversation({ path: dataRoot, sessionId: id }, options(h));
     expect(c.compacted).toBe(true);
     expect(c.compactions).toEqual([{ at: "2026-09-11T13:53:51.000Z", text: "SUMMARY OF WORK COMPLETED: the price is $3." }]);
-    expect(c.turns.map((t) => t.parts.map((p) => p.kind).join("+"))).toEqual(["summary", "text"]);
+    // The turns before the pair stay; the summary sits where the pair was.
+    const kinds = c.turns.map((t) => t.parts.map((p) => p.kind).join("+"));
+    expect(kinds.slice(-2)).toEqual(["summary", "text"]);
+    expect(kinds.length).toBeGreaterThan(2);
     expect(c.limit).toEqual({ at: "2026-09-11T13:54:01.000Z", kind: "rate-limit" });
   });
 });
