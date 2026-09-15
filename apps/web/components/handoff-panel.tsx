@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { createPortal } from "react-dom";
 import type { IconType } from "react-icons";
 import { HiOutlineCheckCircle, HiOutlineSparkles, HiOutlineXMark } from "react-icons/hi2";
@@ -48,7 +49,7 @@ import { BRAND_ICONS } from "./brand-icons";
 import { inFolder, type Shell } from "./command";
 import { CopyCommand } from "./copy-button";
 import { useCliName, useLocale, useT } from "./i18n-provider";
-import { ActionButton, ActionError, Check, Tag } from "./primitives";
+import { ActionButton, ActionError, Check, Notice, Tag } from "./primitives";
 import { useCopied } from "./use-copied";
 import { useFocusTrap } from "./use-focus-trap";
 
@@ -533,7 +534,16 @@ export function HandoffPanel({
                       >
                         {t("handoff.digestModel")}
                       </Check>
-                      <p className="pl-6 font-mono text-[11px] text-smoke">{t(modelChoice.key, modelChoice.params)}</p>
+                      {modelChoice.door && digestNeeded ? (
+                        /* The model would have written this digest and cannot: said as a warning, with the door beside it. */
+                        <Notice tone="warn" title={t(modelChoice.key, modelChoice.params)} className="mt-1">
+                          <Link href={modelChoice.door} className="mt-1 inline-block text-xs underline underline-offset-4">
+                            {t(modelChoice.door === "/ai" ? "handoff.digestDoorAi" : "handoff.digestDoorSpend")}
+                          </Link>
+                        </Notice>
+                      ) : (
+                        <p className="pl-6 font-mono text-[11px] text-smoke">{t(modelChoice.key, modelChoice.params)}</p>
+                      )}
                     </div>
 
                     <FidelityTable tier={effectiveTier} dropped={dropped} />

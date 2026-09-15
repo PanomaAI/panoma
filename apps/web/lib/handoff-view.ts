@@ -552,6 +552,12 @@ export interface ModelDigestChoice {
   /** The line under the box, with the gaps it needs. */
   key: MessageKey;
   params: TranslationVars;
+  /**
+   * The box would have been on and cannot be: the sentence is a warning with the door beside
+   * it — the AI screen when no model is connected, the Spend screen when the family stops it —
+   * and not a dim line. Absent when the source's own summary makes the model optional.
+   */
+  door?: "/ai" | "/spend";
 }
 
 /**
@@ -576,14 +582,22 @@ export function modelDigestDefault(input: {
   summaryReadable: boolean;
 }): ModelDigestChoice {
   const { tier, connected, cap, left, calls, summaryReadable } = input;
-  const off = (key: MessageKey, params: TranslationVars = {}): ModelDigestChoice => ({ on: false, disabled: true, key, params });
   const full = tier === "full";
-  if (!connected) return off("handoff.digestNoModel");
+  /* A cause is a warning only where the model would have been the default: a digest tier and no summary the source made. */
+  const wanted = !full && !summaryReadable;
+  const off = (key: MessageKey, door: "/ai" | "/spend", params: TranslationVars = {}): ModelDigestChoice => ({
+    on: false,
+    disabled: true,
+    key,
+    params,
+    ...(wanted ? { door } : {}),
+  });
+  if (!connected) return off(wanted ? "handoff.digestNoModelNeeded" : "handoff.digestNoModel", "/ai");
   /* A cap of zero is the family paused or disabled in Spend, not a day's worth spent. */
-  if (cap <= 0) return off("handoff.digestPaused");
-  if (left <= 0) return off("handoff.digestSpent", { cap });
+  if (cap <= 0) return off("handoff.digestPaused", "/spend");
+  if (left <= 0) return off("handoff.digestSpent", "/spend", { cap });
   if (calls === undefined) return { on: false, disabled: full, key: "handoff.digestLeft", params: { n: left, cap } };
-  if (calls > left) return off("handoff.digestNeeds", { n: calls, m: left, cap });
+  if (calls > left) return off("handoff.digestNeeds", "/spend", { n: calls, m: left, cap });
   if (summaryReadable) return { on: false, disabled: full, key: "handoff.digestSourceSummary", params: { n: calls } };
   return { on: !full, disabled: full, key: "handoff.digestNoSourceSummary", params: { n: calls, m: left, cap } };
 }

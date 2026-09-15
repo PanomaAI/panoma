@@ -470,16 +470,25 @@ describe("the model digest's box", () => {
     expect(modelDigestDefault({ ...base, tier: "brief" }).on).toBe(true);
   });
 
-  it("names the cause where the count would be, in the order a person acts on", () => {
-    expect(modelDigestDefault({ ...base, connected: false })).toEqual({ on: false, disabled: true, key: "handoff.digestNoModel", params: {} });
+  it("names the cause where the count would be, in the order a person acts on, with the door beside it", () => {
+    /* Where the model would have been the default, the cause is a warning with its door: the AI screen, or Spend. */
+    expect(modelDigestDefault({ ...base, connected: false })).toEqual({ on: false, disabled: true, key: "handoff.digestNoModelNeeded", params: {}, door: "/ai" });
     /* A cap of zero is the family paused or disabled in Spend, not a day's worth spent. */
-    expect(modelDigestDefault({ ...base, cap: 0, left: 0 })).toEqual({ on: false, disabled: true, key: "handoff.digestPaused", params: {} });
-    expect(modelDigestDefault({ ...base, left: 0 })).toEqual({ on: false, disabled: true, key: "handoff.digestSpent", params: { cap: 10 } });
+    expect(modelDigestDefault({ ...base, cap: 0, left: 0 })).toEqual({ on: false, disabled: true, key: "handoff.digestPaused", params: {}, door: "/spend" });
+    expect(modelDigestDefault({ ...base, left: 0 })).toEqual({ on: false, disabled: true, key: "handoff.digestSpent", params: { cap: 10 }, door: "/spend" });
     /* Something left, but fewer calls than the chain needs: the 429 the write would answer, said before the click. */
-    expect(modelDigestDefault({ ...base, calls: 8 })).toEqual({ on: false, disabled: true, key: "handoff.digestNeeds", params: { n: 8, m: 7, cap: 10 } });
+    expect(modelDigestDefault({ ...base, calls: 8 })).toEqual({ on: false, disabled: true, key: "handoff.digestNeeds", params: { n: 8, m: 7, cap: 10 }, door: "/spend" });
     /* No model wins over everything, and a summary the model could read changes nothing about the price. */
     expect(modelDigestDefault({ ...base, connected: false, calls: 8, summaryReadable: true }).key).toBe("handoff.digestNoModel");
     expect(modelDigestDefault({ ...base, calls: 8, summaryReadable: true }).key).toBe("handoff.digestNeeds");
+  });
+
+  /* The warning is for the case the model would have taken: with the source's own summary, or at tier full, the same cause is a dim line without a door. */
+  it("keeps the cause a dim line when the model was optional anyway", () => {
+    expect(modelDigestDefault({ ...base, connected: false, summaryReadable: true })).toEqual({ on: false, disabled: true, key: "handoff.digestNoModel", params: {} });
+    expect(modelDigestDefault({ ...base, connected: false, tier: "full" }).door).toBeUndefined();
+    expect(modelDigestDefault({ ...base, left: 0, summaryReadable: true }).door).toBeUndefined();
+    expect(modelDigestDefault({ ...base, calls: 8, summaryReadable: true }).door).toBeUndefined();
   });
 
   /* A catalog older than the chain answers no `modelDigest`: the box behaves as it did before, off with the «left today» line. */
@@ -493,6 +502,7 @@ describe("the model digest's box", () => {
       base,
       { ...base, summaryReadable: true },
       { ...base, connected: false },
+      { ...base, connected: false, summaryReadable: true },
       { ...base, cap: 0, left: 0 },
       { ...base, left: 0 },
       { ...base, calls: 8 },

@@ -776,6 +776,22 @@ unticked, and the write sends `digestBy` only when the box is ticked and enabled
 moved on the way: the first draft's «en {n} llamadas» glued an inflected noun to a figure,
 and every line now closes its clause with the number, as the house rule says.
 
+**A cause that takes the model away is a warning, with its door beside it — where the model
+would have written the digest.** The same afternoon the owner asked what happens with no model
+connected: the answer was a dim line, «Sin modelo conectado — elige uno en IA», with no link and
+no word about what travels instead. Now `modelDigestDefault` marks the choice with a `door`
+—`/ai` when no model is connected, `/spend` when the family is paused, spent or shorter than
+the chain— and only when the model would have been the default: a digest tier and a source
+with no readable summary. The panel paints that choice as a `Notice` of tone `warn` with the
+sentence and a link («Conectar un modelo en IA», «Abrir Gasto»), and the no-model sentence
+says what travels then: «Sin modelo conectado, el resumen que viaja es el mecánico: meta,
+ficheros, comandos y el último intercambio» (`digestNoModelNeeded`). Where the model was
+optional anyway —the source's own summary travels inside the digest, or tier `full`— the same
+cause stays a dim line without a door, as it was. The rule is the house's own from
+13-Sep-2026: if something is necessary, the product says so where it fails and points at the
+field. `handoff-view.test.ts` holds the door per cause and its absence; the screen is
+`.panoma/shots/handoff-panel-no-model.png`, a 907-turn Codex source on a catalog with no model.
+
 The engine's free refusals come before the paid call. `@panoma/handoff` exports
 `checkHandoff(input)` since 12-Sep-2026 —the refusals `handoff()` raises, in its order, and no
 file; both run one `prepare()`, so they cannot disagree— and `POST /api/handoff` with
