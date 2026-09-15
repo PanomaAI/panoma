@@ -7,7 +7,7 @@ import {
   type TasteTopic,
 } from "@panoma/core";
 import { getProject, modelSpendToday, type ModelSpend } from "@panoma/db";
-import { db } from "@/lib/db";
+import { db, memoryQuarantine } from "@/lib/db";
 import { localOperatorOnly, sameOrigin } from "@/lib/guard";
 import { cliName } from "@/lib/cli-name";
 import { formatBytes } from "@/lib/format-bytes";
@@ -25,6 +25,7 @@ import {
 import { LOOK_KIND, runLook, type LookImage } from "@/lib/look-run";
 import { pickShot } from "@/lib/shots";
 import { capFor, shotPolicy } from "@/lib/spend-settings";
+import { memoryFence, MemoryUnavailableError, memoryUnavailableResponse } from "@/lib/memory-availability";
 
 /**
  * Look at a screen and it says what is wrong, quoting what you had already said.
@@ -103,6 +104,7 @@ const KIND = LOOK_KIND;
 export async function GET(request: Request) {
   const blocked = sameOrigin(request);
   if (blocked) return blocked;
+  if ((await memoryQuarantine()).quarantined) return Response.json({ code: "unavailable", error: "Memory is quarantined." }, { status: 503, headers: { "Cache-Control": "no-store" } });
 
   const locale = localeFrom(request);
   const slug = new URL(request.url).searchParams.get("slug");
@@ -194,8 +196,11 @@ export async function POST(request: Request) {
     const far = localOperatorOnly(request);
     if (far) return far;
   }
+  if ((await memoryQuarantine()).quarantined) return Response.json({ code: "unavailable", error: "Memory is quarantined." }, { status: 503, headers: { "Cache-Control": "no-store" } });
 
   const { db: database } = await db();
+  let memoryCurrent: () => Promise<void>;
+  try { memoryCurrent = await memoryFence(database); } catch { return memoryUnavailableResponse(); }
   const data = await getProject(database, body.slug);
   if (!data) return Response.json({ error: t(locale, "api.noProject") }, { status: 404 });
 
@@ -442,6 +447,7 @@ export async function POST(request: Request) {
 
   let receipt;
   try {
+    await memoryCurrent();
     receipt = await runLook(database, {
       subject,
       image: picture,
@@ -452,6 +458,7 @@ export async function POST(request: Request) {
       locale,
     });
   } catch (error) {
+    if (error instanceof MemoryUnavailableError) return memoryUnavailableResponse();
     return failure(locale, error, { budget: bare(spent, cap) });
   }
 

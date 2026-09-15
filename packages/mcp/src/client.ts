@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { readAccessKey } from "@panoma/core";
+import { readAccessKey, type MemoryKind, type MemoryOperation } from "@panoma/core";
+import { z } from "zod";
 
 const run = promisify(execFile);
 
@@ -186,6 +187,12 @@ export function checkConversationId(id: string): string {
  * not found — and `hint` is the one English sentence a route adds for the model. The message
  * keeps the shape the tools have always shown; the fields exist so that a formatter can turn a
  * code into a sentence and keep the detail, which the message alone dropped.
+ *
+ * The memory routes (14-Sep-2026) write a third shape, `{ code, error, hint?, retryable }`, where
+ * `code` is the word a program branches on (`stale_cursor`, `not_found`…) and `error` the
+ * sentence a person reads. There `code` becomes this `code`, and the sentence travels ahead of
+ * the hint so that the message still says what happened: `stale_cursor. The continuation is
+ * stale. Restart the read.` A route without a `code` field is read exactly as before.
  */
 export class CatalogError extends Error {
   constructor(
@@ -302,11 +309,246 @@ export class CatalogClient {
     const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
     if (!response.ok) {
       const text = (field: string) => (typeof payload[field] === "string" ? (payload[field] as string) : undefined);
-      throw new CatalogError(response.status, text("error") ?? (response.statusText || undefined), text("detail"), text("hint"));
+      const code = text("code");
+      if (code === undefined) {
+        throw new CatalogError(response.status, text("error") ?? (response.statusText || undefined), text("detail"), text("hint"));
+      }
+      const said = [text("error"), text("hint")].filter((part) => part !== undefined).join(" ");
+      throw new CatalogError(response.status, code, text("detail"), said || undefined);
     }
 
     return payload as T;
   }
+}
+
+// ── The memory contract, version 2: what is asked and how the catalog is asked for it ────────
+
+/**
+ * Which memory contract the catalog speaks: `1` is the legacy briefing, `2` the versioned
+ * contract of 14-Sep-2026 with full reads by id and continuations.
+ */
+export type MemoryVersion = 1 | 2;
+
+/** What `POST /api/agent/hello` answers; `memory` is absent on a catalog older than the contract. */
+export interface HelloAnswer {
+  ok: boolean;
+  agent: string;
+  memory?: { versions?: number[]; features?: string[]; profiles?: string[] };
+}
+
+/** The version a hello answer enables. Anything that is not a list naming 2 is the legacy catalog. */
+export function memoryVersionOf(answer: unknown): MemoryVersion {
+  if (answer === null || typeof answer !== "object") return 1;
+  const memory = (answer as { memory?: unknown }).memory;
+  if (memory === null || typeof memory !== "object") return 1;
+  const versions = (memory as { versions?: unknown }).versions;
+  return Array.isArray(versions) && versions.includes(2) ? 2 : 1;
+}
+
+/**
+ * The hello, kept.
+ *
+ * The server has said «I am here» to the catalog since 0.10 — after `connect`, fire and forget,
+ * because a catalog that is slow or absent must not delay the channel with the agent. The
+ * answer was thrown away. Now it is the negotiation: a catalog that lists version 2 in
+ * `memory.versions` gets the versioned contract on every brief, and one that does not — or that
+ * did not answer — is treated as legacy for the life of this process. **Without a second
+ * query.** A failed hello is not retried on the next tool call: the agent's first call would
+ * pay for the retry, and the legacy answer is a complete answer, not a degraded one. The agent
+ * that wants the contract anyway says so with `memoryVersion: 2`, which is a request, not a
+ * retry.
+ *
+ * A tool call that arrives while the hello is still in flight waits for it: it is the same
+ * catalog the call is about to ask, so the wait costs nothing the call would not have paid.
+ * Before `start()` — before `connect` — there is no hello to wait for, and the answer is legacy.
+ */
+export class MemoryNegotiation {
+  private outcome: Promise<MemoryVersion> | undefined;
+
+  constructor(private readonly client: CatalogClient) {}
+
+  /** Send the hello once. Nothing is reported: on stdio, noise is not a message anybody reads. */
+  start(): void {
+    this.outcome ??= this.client.post<HelloAnswer>("/api/agent/hello", {}).then(memoryVersionOf, () => 1);
+  }
+
+  version(): Promise<MemoryVersion> {
+    return this.outcome ?? Promise.resolve(1);
+  }
+}
+
+/*
+  What the two memory tools accept, beside the bodies they become.
+
+  The shapes live here and not in `index.ts` for one reason: `index.ts` connects to stdio when it
+  is imported, so nothing in it can be tested, and the rule that spans fields — `memoryId` needs
+  `memoryKind` and `revision`, and excludes `query` and `entryId` — is exactly the kind of rule
+  that is written once and drifts. It cannot be expressed in the raw shape the SDK publishes to
+  the agent either: a refined object has no `.shape`, and the SDK then advertises the tool with
+  an empty input schema. So the raw shape is what the SDK sees, and `checkRecallInput` runs the
+  refinement on what it parsed.
+ */
+
+/**
+ * The operations a brief may declare: the tuple is what `z.enum` needs, the vocabulary is core's.
+ * `satisfies` refuses a word core does not know; the test refuses a word of core's missing here.
+ */
+const OPERATION_WORDS = ["read", "edit", "test", "build", "deploy", "review", "other"] as const satisfies readonly MemoryOperation[];
+
+/**
+ * What a read by id may name: the three unit kinds of the contract, and — since delivery C — an
+ * open commitment of the project or the case of one of its tasks. A case is a projection with
+ * no revision of its own, so `revision` may be left out for it and is 1 (plan §9.4, §23.4).
+ */
+export type MemoryReadKind = MemoryKind | "commitment" | "case";
+const READ_KINDS = ["note", "criterion", "decision", "commitment", "case"] as const satisfies readonly MemoryReadKind[];
+const CASE_REVISION = 1;
+
+/** An id as the catalog issues them: nothing that could choose a route or carry a sentence. */
+const OPAQUE_ID = /^[A-Za-z0-9_-]{1,128}$/;
+
+export const CONTEXT_MEMORY_INPUT = {
+  memoryVersion: z.literal(2).optional()
+    .describe(
+      "Ask for the memory contract, version 2, even if the catalog did not announce it when this " +
+      "server started. Omit it: the contract is used whenever the catalog speaks it.",
+    ),
+  operation: z.enum(OPERATION_WORDS).optional()
+    .describe("What you are about to do: read, edit, test, build, deploy, review or other. Pair it with task."),
+  contextId: z.string().regex(OPAQUE_ID).optional()
+    .describe("The context id a previous brief of this same session gave. Keeps its deliveries attributed to one context."),
+  contextGeneration: z.number().int().positive().optional()
+    .describe("The generation that came with that context id, copied verbatim."),
+  continuation: z.string().min(1).max(4096).optional()
+    .describe("The continuation a previous brief gave when more units may exist, with the same files and task."),
+};
+
+export const RECALL_INPUT = {
+  query: z.string().min(1).max(1000).optional().describe("Search words or a quoted phrase. Omit when opening an entryId."),
+  cursor: z.string().max(4096).optional().describe("The nextCursor of a search, copied verbatim with the same query."),
+  entryId: z.string().max(128).optional().describe("An ID returned by this project's journal search. Opens the original."),
+  offset: z.number().int().nonnegative().optional().describe("The nextOffset returned by an original entry read."),
+  memoryKind: z.enum(READ_KINDS).optional()
+    .describe(
+      "With memoryId and revision: the kind of the memory unit to read whole, as a brief listed it — " +
+      "note, criterion or decision; or commitment (an open obligation of this project, by its id) " +
+      "or case (the decision case of one task of this project, by the task id; revision may be omitted).",
+    ),
+  memoryId: z.string().regex(OPAQUE_ID).optional()
+    .describe("The id of a memory unit a brief listed, of an open commitment, or of a task for its case. Reads that unit whole; not with query or entryId."),
+  revision: z.number().int().positive().optional()
+    .describe("The revision of that unit, as the brief listed it. The read keeps that revision, current or not. A case has none: omit it."),
+  continuation: z.string().min(1).max(4096).optional()
+    .describe("The continuation a partial memory read gave, with the same memoryKind, memoryId and revision."),
+};
+
+export interface MemoryReadAsk {
+  memoryKind: MemoryReadKind;
+  memoryId: string;
+  revision: number;
+  continuation?: string;
+}
+
+export interface JournalAsk {
+  query?: string;
+  cursor?: string;
+  entryId?: string;
+  offset?: number;
+}
+
+export type RecallAsk = { read: MemoryReadAsk } | { journal: JournalAsk };
+
+const RECALL_RULES = z.object(RECALL_INPUT).superRefine((input, report) => {
+  const memoryFields = (["memoryKind", "memoryId", "revision", "continuation"] as const).filter((key) => input[key] !== undefined);
+  if (memoryFields.length === 0) return;
+  if (input.memoryId === undefined) {
+    report.addIssue({ code: z.ZodIssueCode.custom, message: `${memoryFields.join(", ")} only make sense with memoryId: name the unit a brief listed.` });
+    return;
+  }
+  // A case is read at revision 1 whether or not the caller says so: a projection has no other.
+  const missing = (["memoryKind", "revision"] as const).filter((key) => input[key] === undefined && !(key === "revision" && input.memoryKind === "case"));
+  if (missing.length > 0) {
+    report.addIssue({ code: z.ZodIssueCode.custom, message: `memoryId needs memoryKind and revision, exactly as the brief listed them; missing: ${missing.join(", ")}.` });
+  }
+  const journalFields = (["query", "cursor", "entryId", "offset"] as const).filter((key) => input[key] !== undefined);
+  if (journalFields.length > 0) {
+    report.addIssue({ code: z.ZodIssueCode.custom, message: `A memory read by id is one call and a journal search another: drop ${journalFields.join(", ")} or drop memoryId.` });
+  }
+});
+
+/**
+ * Sort a `panoma_recall` call into the read it is: a memory unit by id, or the journal as always.
+ * Throws with the rule that was broken, in the words the agent can act on.
+ */
+export function checkRecallInput(input: z.input<typeof RECALL_RULES>): RecallAsk {
+  const checked = RECALL_RULES.safeParse(input);
+  if (!checked.success) throw new Error(checked.error.issues.map((issue) => issue.message).join(" "));
+  const { memoryKind, memoryId, revision, continuation, ...journal } = checked.data;
+  if (memoryId !== undefined && memoryKind !== undefined) {
+    const asked = revision ?? (memoryKind === "case" ? CASE_REVISION : undefined);
+    if (asked !== undefined) return { read: { memoryKind, memoryId, revision: asked, ...(continuation !== undefined ? { continuation } : {}) } };
+  }
+  return { journal };
+}
+
+export interface ContextAsk {
+  files?: string[];
+  task?: string;
+  memoryVersion?: 2;
+  operation?: MemoryOperation;
+  contextId?: string;
+  contextGeneration?: number;
+  continuation?: string;
+}
+
+/**
+ * The body of a brief request.
+ *
+ * Without the contract it is the body the tool has always sent — location, `files`, `task` —
+ * byte for byte, so a legacy catalog sees nothing new. With it, `memory` is added and nothing
+ * else moves: the mode is `action` as soon as the agent named files or a task, because a rule
+ * that sleeps on a path or a decision conditioned on an operation is then being asked about a
+ * concrete step, and `orientation` otherwise. The contract travels when the hello enabled it or
+ * when the agent asked for it by name: a legacy catalog ignores the key and answers as before.
+ */
+export function contextRequest(where: Location, ask: ContextAsk, negotiated: MemoryVersion): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    ...where,
+    ...(ask.files !== undefined ? { files: ask.files } : {}),
+    ...(ask.task !== undefined ? { task: ask.task } : {}),
+  };
+  if (ask.memoryVersion !== 2 && negotiated !== 2) return body;
+  return {
+    ...body,
+    memory: {
+      version: 2,
+      mode: ask.files !== undefined || ask.task !== undefined ? "action" : "orientation",
+      ...(ask.operation !== undefined ? { operation: ask.operation } : {}),
+      ...(ask.contextId !== undefined ? { contextId: ask.contextId } : {}),
+      ...(ask.contextGeneration !== undefined ? { contextGeneration: ask.contextGeneration } : {}),
+      ...(ask.continuation !== undefined ? { continuation: ask.continuation } : {}),
+    },
+  };
+}
+
+/**
+ * The body of a full read by id: the location and `memory.read`, and nothing of a brief — no
+ * task, no files, no mode. The route refuses the mix, and a read must never enrol a project or
+ * patrol its sentinels, which are the two things a brief does on the way.
+ */
+export function memoryReadRequest(where: Location, read: MemoryReadAsk): Record<string, unknown> {
+  return {
+    ...where,
+    memory: {
+      version: 2,
+      read: {
+        kind: read.memoryKind,
+        id: read.memoryId,
+        revision: read.revision,
+        ...(read.continuation !== undefined ? { continuation: read.continuation } : {}),
+      },
+    },
+  };
 }
 
 export interface Location {

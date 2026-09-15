@@ -30,6 +30,18 @@ import { panomaPath } from "@panoma/core";
   A value that cannot be read falls to the factory value and never to "no limit": the contract of
   every brake in this repository, stated in `docs/budgets.md`. Zero is a value, and it switches
   the organ off.
+
+  ── The storage quota, beside the caps and not one of them ────────────────────────────────
+  Since delivery E (plan §25.3) the same file also carries the quota on derived memory content:
+  how many mebibytes of photographs, offers, typed facts and staged answers the catalog and each
+  project may hold before new automatic retention pauses. It is read here because it is the same
+  kind of thing as a cap — a preference of this machine, moved without a migration — and it
+  follows the same precedence without the pause: the variable, then the file, then the factory
+  value. The pause is a brake on spending and says nothing about storage. Two things differ from
+  a cap on purpose. Zero and a negative number are refused, not applied: a cap of zero switches
+  an organ off, but a quota of zero would refuse every write, the owner's included, and a quota
+  is never "none". And the patch the Spend screen sends does not move it yet: `spend.json` is
+  written by hand or by the variable, and the route's fault table stays as it was.
  */
 
 /**
@@ -109,6 +121,25 @@ export function familyOf(kind: string): BudgetFamily | undefined {
 /** A cap above this is a typo, not a decision. */
 export const MAX_CAP = 100_000;
 
+// ── The storage quota of plan §25.3 ─────────────────────────────────────────────────────────
+
+export type QuotaScope = "catalog" | "project";
+
+/** Out of the box, in mebibytes: 256 per catalog and 64 per project, the plan's own figures. */
+export const FACTORY_QUOTA_MB: Record<QuotaScope, number> = { catalog: 256, project: 64 };
+
+/** The variable that overrides each scope, in mebibytes. */
+export const QUOTA_ENV: Record<QuotaScope, string> = {
+  catalog: "PANOMA_MEMORY_QUOTA_MB",
+  project: "PANOMA_PROJECT_QUOTA_MB",
+};
+
+/** One mebibyte: the quota is spelled in MiB and compared in bytes. */
+export const MIB = 1024 * 1024;
+
+/** A quota above a tebibyte is a typo, not a decision; the accounting is logical and never that large. */
+export const MAX_QUOTA_MB = 1024 * 1024;
+
 export const DEFAULT_CURRENCY = "USD";
 
 /**
@@ -150,6 +181,16 @@ export type ShotPolicy = "full" | "fit";
  */
 export const SHOT_MAX_EDGE = 1_568;
 
+/**
+ * The storage quota as the file spells it, in mebibytes: an absent scope falls to the variable
+ * or the factory value. Present on the settings only when the file names at least one, so the
+ * receipts and fixtures that pin the shape of a settings object without a quota stay as they were.
+ */
+export interface QuotaSettings {
+  catalogMb?: number;
+  projectMb?: number;
+}
+
 export interface SpendSettings {
   /** Absent families fall to the environment or the factory value. */
   caps: Partial<Record<BudgetFamily, number>>;
@@ -161,6 +202,8 @@ export interface SpendSettings {
   paused: boolean;
   /** What the critic is shown. `full` is what panoma has always done. */
   shots: ShotPolicy;
+  /** The storage quota of plan §25.3, when the owner has chosen one. */
+  quota?: QuotaSettings;
 }
 
 export function emptySpendSettings(): SpendSettings {
@@ -185,6 +228,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isCap(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= MAX_CAP;
+}
+
+/** A quota in mebibytes: a positive integer up to {@link MAX_QUOTA_MB}. Zero is refused, never "none". */
+function isQuotaMb(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value > 0 && value <= MAX_QUOTA_MB;
 }
 
 function isRate(value: unknown): value is ModelRate {
@@ -222,6 +270,13 @@ export function parseSpendSettings(raw: unknown): SpendSettings | undefined {
   if (typeof raw["currency"] === "string" && CURRENCY.test(raw["currency"])) settings.currency = raw["currency"];
   if (raw["paused"] === true) settings.paused = true;
   if (raw["shots"] === "fit") settings.shots = "fit";
+  if (isRecord(raw["quota"])) {
+    // A zero or a negative number is dropped here, not applied: the resolver never sees it.
+    const quota: QuotaSettings = {};
+    if (isQuotaMb(raw["quota"]["catalogMb"])) quota.catalogMb = raw["quota"]["catalogMb"];
+    if (isQuotaMb(raw["quota"]["projectMb"])) quota.projectMb = raw["quota"]["projectMb"];
+    if (quota.catalogMb !== undefined || quota.projectMb !== undefined) settings.quota = quota;
+  }
   return settings;
 }
 
@@ -255,7 +310,7 @@ export async function writeSpendSettings(settings: SpendSettings): Promise<void>
   await rename(tempPath, target);
 }
 
-export type SettingsFault = "body" | "caps" | "rates" | "currency" | "paused" | "shots";
+export type SettingsFault = "body" | "caps" | "rates" | "currency" | "paused" | "shots" | "quota";
 
 /**
  * Apply what a form sent over the settings on disk. Strict: any field that is present and wrong
@@ -276,6 +331,7 @@ export function patchSpendSettings(
     currency: current.currency,
     paused: current.paused,
     shots: current.shots,
+    ...(current.quota !== undefined ? { quota: { ...current.quota } } : {}),
   };
   if (patch["caps"] !== undefined) {
     if (!isRecord(patch["caps"])) return { fault: "caps" };
@@ -312,6 +368,18 @@ export function patchSpendSettings(
   if (patch["shots"] !== undefined) {
     if (patch["shots"] !== "full" && patch["shots"] !== "fit") return { fault: "shots" };
     next.shots = patch["shots"];
+  }
+  if (patch["quota"] !== undefined) {
+    if (!isRecord(patch["quota"])) return { fault: "quota" };
+    const quota = { ...next.quota };
+    for (const [key, value] of Object.entries(patch["quota"])) {
+      if (key !== "catalogMb" && key !== "projectMb") return { fault: "quota" };
+      if (value === null) delete quota[key];
+      else if (isQuotaMb(value)) quota[key] = value;
+      else return { fault: "quota" };
+    }
+    if (Object.keys(quota).length) next.quota = quota;
+    else delete next.quota;
   }
   return { settings: next };
 }
@@ -379,4 +447,57 @@ export async function capsFor(): Promise<Record<BudgetFamily, DailyCap>> {
   return Object.fromEntries(
     BUDGET_FAMILIES.map((family) => [family, resolveCap(family, process.env, settings)]),
   ) as Record<BudgetFamily, DailyCap>;
+}
+
+/**
+ * The quota's contract, which is not the cap's: empty → the fallback; not a positive integer, or
+ * above `MAX_QUOTA_MB` → the fallback. Zero is refused, because a quota of zero would refuse
+ * every automatic write from the first byte and a quota is never "none"; the notation is not
+ * judged — `1e3` is a thousand.
+ */
+export function quotaFrom(value: string | undefined, fallback: number): number {
+  if (value === undefined || value.trim() === "") return fallback;
+  const limit = Number(value.trim());
+  if (!isQuotaMb(limit)) return fallback;
+  return limit;
+}
+
+export type QuotaSource = "factory" | "variable" | "file";
+
+export interface MemoryQuota {
+  /** The catalog's limit, in bytes. */
+  catalogBytes: number;
+  /** Every project's limit, in bytes. */
+  projectBytes: number;
+  /**
+   * Who decided, summarised over the two scopes by precedence: `variable` when a variable
+   * decided either limit, `file` when the file decided one and no variable did, else `factory`.
+   * `sources` says it per scope, for a screen that wants to name the variable.
+   */
+  source: QuotaSource;
+  sources: Record<QuotaScope, QuotaSource>;
+}
+
+/** Pure: the precedence in the header — variable, file, factory — with every input in hand. */
+export function resolveQuota(env: Record<string, string | undefined>, settings: SpendSettings): MemoryQuota {
+  const one = (scope: QuotaScope): { mb: number; source: QuotaSource } => {
+    const raw = env[QUOTA_ENV[scope]];
+    if (raw !== undefined && raw.trim() !== "") return { mb: quotaFrom(raw, FACTORY_QUOTA_MB[scope]), source: "variable" };
+    const chosen = scope === "catalog" ? settings.quota?.catalogMb : settings.quota?.projectMb;
+    if (chosen !== undefined && isQuotaMb(chosen)) return { mb: chosen, source: "file" };
+    return { mb: FACTORY_QUOTA_MB[scope], source: "factory" };
+  };
+  const catalog = one("catalog");
+  const project = one("project");
+  const sources = { catalog: catalog.source, project: project.source };
+  const source: QuotaSource = catalog.source === "variable" || project.source === "variable"
+    ? "variable"
+    : catalog.source === "file" || project.source === "file" ? "file" : "factory";
+  return { catalogBytes: catalog.mb * MIB, projectBytes: project.mb * MIB, source, sources };
+}
+
+/** What the writers and the worker ask before charging: reads the environment and the file at request time. */
+export async function memoryQuota(): Promise<MemoryQuota> {
+  const { settings } = await readSpendSettings();
+  return resolveQuota(process.env, settings);
 }

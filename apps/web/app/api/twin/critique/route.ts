@@ -8,7 +8,7 @@ import {
   resolveProject,
   type StoredCritique,
 } from "@panoma/db";
-import { db } from "@/lib/db";
+import { db, memoryQuarantine } from "@/lib/db";
 import { sameOrigin } from "@/lib/guard";
 import { localeFrom, t } from "@/lib/i18n";
 import { briefFromCritique } from "@/lib/critique-brief";
@@ -54,6 +54,7 @@ import { briefFromCritique } from "@/lib/critique-brief";
 export async function POST(request: Request) {
   const blocked = sameOrigin(request);
   if (blocked) return blocked;
+  if ((await memoryQuarantine()).quarantined) return Response.json({ code: "unavailable", error: "Memory is quarantined." }, { status: 503, headers: { "Cache-Control": "no-store" } });
 
   const locale = localeFrom(request);
   const body = (await request.json().catch(() => ({}))) as {

@@ -39,6 +39,10 @@ function observation(extra: Partial<ObservationRow> = {}): ObservationRow {
     model: "prueba/modelo",
     at: new Date("2026-08-20T10:00:00.000Z"),
     createdAt: new Date("2026-08-21T10:00:00.000Z"),
+    memoryRev: 1,
+    caseOriginKey: null,
+    kind: null,
+    referent: null,
     ...extra,
   };
 }
@@ -117,6 +121,21 @@ describe("cuánta evidencia sostiene una creencia", () => {
     ]);
     expect(support.observations).toBe(2);
     expect(standsUp(support)).toBe(false);
+  });
+
+  it("T25: «with» and «without» are two pieces of evidence that neither fuse nor stand in for each other", () => {
+    const WITH = citation({ verdictId: "v-with", quote: "Run the migration with the tests before a release.", at: "2026-03-01T12:00:00Z" });
+    const WITHOUT = citation({ verdictId: "v-without", quote: "Run the migration without the tests when the schema did not change.", at: "2026-03-01T12:00:00Z" });
+    const withRow = observation({ id: "o-with", identity: "git:uno", citations: [WITH] });
+    const withoutRow = observation({ id: "o-without", identity: "git:uno", citations: [WITHOUT] });
+    // Two bundles: a belief that cites both counts two, the same afternoon and the same project notwithstanding.
+    expect(supportOf([withRow, withoutRow])).toEqual({ observations: 2, projects: 1, days: 1 });
+    // A belief that cites one of them gains nothing from the other: its support is what it cites.
+    expect(supportOf([withRow])).toEqual({ observations: 1, projects: 1, days: 1 });
+    expect(citationsFor([withRow]).map((cite) => cite.observationId)).toEqual(["o-with"]);
+    expect(citationsFor([withRow]).some((cite) => cite.quote.includes("without"))).toBe(false);
+    // And the wording is the evidence: a second observation quoting the «with» case again is one bundle, not a third.
+    expect(supportOf([withRow, withoutRow, observation({ id: "o-with-again", citations: [{ ...WITH, verdictId: "v-with-copy" }] })])).toEqual({ observations: 2, projects: 1, days: 1 });
   });
 
   it("an empty observation cannot supply corroboration, a project, or a day", () => {

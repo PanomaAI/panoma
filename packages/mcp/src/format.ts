@@ -1,3 +1,4 @@
+import type { MemoryContractV2 } from "@panoma/core";
 import { neutralizeInline, wrapUntrusted } from "@panoma/core/untrusted";
 
 /**
@@ -87,6 +88,13 @@ export interface Context {
   pending?: Pending[];
   /** Present only when the project has entered the catalog in this same call. */
   enrolled?: { root: string; at: string };
+  /**
+   * The memory contract, version 2: present only when the request carried `memory` and the
+   * catalog speaks it. Its `presentation.text` is the memory as the catalog rendered it, fences
+   * and receipt markers included; `formatContextV2` serves it in place of the memory sections
+   * above, and a catalog that does not send it gets the legacy briefing, byte for byte.
+   */
+  memoryContract?: MemoryContractV2;
 }
 
 export interface Decision {
@@ -212,6 +220,31 @@ const REASON_WINDOW: Record<Delta["reason"], string> = {
 };
 
 export function formatContext(context: Context): string {
+  return composeContext(context, undefined);
+}
+
+/**
+ * The briefing with the memory contract in the place of the memory sections.
+ *
+ * Everything around it is the legacy briefing, byte for byte: the same header, the same
+ * background sections in the same order, the same cap. What changes is the middle. The catalog
+ * rendered the memory once — units whole, fences written, receipt markers at both ends, every
+ * byte range of every unit recorded against the offer — and that text is served **verbatim**:
+ * not trimmed, not re-wrapped, not passed through `wrapUntrusted` a second time, because a
+ * single byte moved is a receipt that will never match the offer. Only what a program needs to
+ * act on the contract follows it: the status, when it is not `ready`, the continuation when
+ * there is one, and the context to name on the next call.
+ *
+ * The cap treats the contract as the legacy formatter treats memory — reserved first, background
+ * dropped whole around it — with one difference: there is no refusal. The catalog already bounded
+ * the text to the channel's profile; a briefing that runs past the cap because of it is a
+ * briefing with its contract whole and its background gone, never a contract cut or withheld.
+ */
+export function formatContextV2(context: Context, contract: MemoryContractV2): string {
+  return composeContext(context, contract);
+}
+
+function composeContext(context: Context, contract: MemoryContractV2 | undefined): string {
   const { project } = context;
   const background: string[][] = [];
 
@@ -282,123 +315,8 @@ export function formatContext(context: Context): string {
     patrolTold = true;
   };
 
-  if (context.notes && context.notes.length > 0) {
-    const usage = context.noteUsage
-      ? ` [${Math.round((context.noteUsage.used / Math.max(context.noteUsage.budget, 1)) * 100)}% — ${context.noteUsage.used}/${context.noteUsage.budget} chars]`
-      : "";
-    const body = context.notes
-      .map((note) => `- ${neutralizeInline(note.body, 500)} — ${neutralizeInline(note.createdBy, 60)}`)
-      .join("\n");
-    lines.push(
-      `## Project memory${usage}`,
-      /*
-        The cap cannot cut what the budget guaranteed in full: the bodies are already limited by
-        the 2,000 from the report and each line by neutralizeInline, so the limit grows with the
-        material — 4,000 fixed silently truncated just above the budget plus its vignetting.
-       */
-      wrapUntrusted(body, { origin: "notes", limit: Math.max(4000, body.length), includeNote: false }),
-      "",
-      "Owner-approved durable facts. Respect them before acting; if you learn something " +
-        "durable that is missing here, propose it with panoma_remember.",
-    );
-    if (context.noteUsage && context.noteUsage.pending > 0) {
-      lines.push(`(${context.noteUsage.pending} proposed and awaiting the owner's review.)`);
-    }
-    /* The sleepy ones are announced by number, never by body: they are served on their route, not here. */
-    if (context.noteUsage?.sleeping) {
-      lines.push(
-        `(${context.noteUsage.sleeping} more sleep on path triggers. Retrieve them before editing with panoma_context and files, or with task.)`,
-      );
-    }
-    tellPatrol();
-    lines.push("");
-  } else if (context.noteUsage && (context.noteUsage.pending > 0 || context.noteUsage.sleeping)) {
-    const bits: string[] = [];
-    if (context.noteUsage.pending > 0) bits.push(`${context.noteUsage.pending} proposed and awaiting review`);
-    if (context.noteUsage.sleeping) bits.push(`${context.noteUsage.sleeping} asleep on path triggers`);
-    lines.push(`No always-on project memory (${bits.join("; ")}).`);
-    tellPatrol();
-    lines.push("");
-  }
-
-  if (context.pathNotes && context.pathNotes.length > 0) {
-    tellPatrol();
-    const body = context.pathNotes.map((note) => {
-      /*
-        The reason it is here: the first file that woke it, and how many more did. Skipped when
-        the trigger is that very file — an exact path says it already — and capped like the
-        trigger, because thirty of these are paid for out of the same indivisible block.
-       */
-      const [first, ...rest] = note.files;
-      const reason = first === undefined || first === note.trigger
-        ? ""
-        : ` — matches ${neutralizeInline(first, 120)}${rest.length > 0 ? ` (+${rest.length} more)` : ""}`;
-      return `- ${neutralizeInline(note.trigger, 120)}${reason}\n${note.body}`;
-    }).join("\n\n");
-    lines.push(
-      "## Project memory for the requested files",
-      wrapUntrusted(body, { origin: "notes", limit: body.length, includeNote: false }),
-      "Owner-approved rules whose path triggers match the files you supplied. Read each complete rule before editing.",
-      "",
-    );
-  } else if (context.memoryFiles && context.memoryFiles.length > 0) {
-    lines.push("No approved path-specific rules match the requested files.", "");
-  }
-
-  /*
-    What the words of the task woke up. Inside the indivisible block, and before the owner's
-    recency decisions, for the same reason the path rules are: it is what the agent asked for by
-    name, and a rule delivered for a reason is read before one delivered by date. Every line
-    carries the words that matched it, and the lead sentence says what a matched word is — a
-    reason to read, not proof that the rule applies. The agent that reads "matched “build”" on a
-    rule about a different build knows to move on; without the reason, it would apply it.
-   */
-  if (context.taskNotes !== undefined || context.taskDecisions !== undefined) {
-    tellPatrol();
-    const taskNotes = context.taskNotes ?? [];
-    const taskDecisions = context.taskDecisions ?? [];
-    lines.push("## Project memory for your task");
-    if (taskNotes.length === 0 && taskDecisions.length === 0) {
-      lines.push("Nothing approved matches the words of your task.");
-    } else {
-      const body = [
-        ...taskNotes.map((note) =>
-          `- ${neutralizeInline(note.body, 500)} — ${matchedIn(note)}; sleeps on ${neutralizeInline(note.trigger, 120)}`,
-        ),
-        ...taskDecisions.map((one) => `${renderDecision(one)} — matched ${quoted(one.matched)} in decision`),
-      ].join("\n");
-      lines.push(
-        wrapUntrusted(body, { origin: "notes", limit: Math.max(4000, body.length), includeNote: false }),
-        "",
-        "Owner-approved rules and decisions whose words overlap your task. The matched words are " +
-          "the reason they are here, not proof they apply; read each one against what you are doing.",
-      );
-    }
-    const left = omittedSentence(context.taskOmitted);
-    if (left) lines.push(left);
-    lines.push("");
-  }
-
-  /*
-    The owner's decisions go right after the memory, and for the same reason it goes up: they are
-    rules to read before acting, not state. Each one carries its reasons and its exceptions
-    because that is the whole point of keeping an episode instead of a preference — an agent that
-    knows when a decision does not apply can tell the person, instead of applying it anyway.
-    Owner-written, so no `createdBy`; wrapped all the same, because the wrapper bounds where the
-    part that is not the instruction starts and ends, it does not classify who wrote it.
-   */
-  if (context.decisions && context.decisions.length > 0) {
-    const body = context.decisions.map(renderDecision).join("\n");
-    lines.push(
-      "## Owner decisions",
-      wrapUntrusted(body, { origin: "notes", limit: Math.max(4000, body.length), includeNote: false }),
-      "",
-      "Decisions the owner recorded in their own words, with their reasons. Follow them where " +
-        "their conditions hold; where an exception applies or a condition is not met, say so and " +
-        "ask before deviating.",
-      "",
-    );
-  }
+  if (contract) contractMemory(contract, lines);
+  else legacyMemory(context, lines, tellPatrol);
 
   // Collect each background section whole, including its heading and all data wrappers.
   const memoryEnd = lines.length;
@@ -545,15 +463,22 @@ export function formatContext(context: Context): string {
   }
   finishBackgroundSection();
 
-  const required = lines.join("\n").trimEnd();
+  /*
+    The contract's text is never trimmed, not even at the end of the document: with a contract the
+    memory lines end on the text or on the sentences that follow it, and the join is kept as is.
+   */
+  const required = contract ? lines.join("\n") : lines.join("\n").trimEnd();
   const sections = background.map((section) => section.join("\n").trim()).filter(Boolean);
   const complete = [required, ...sections].join("\n\n");
   if (complete.length <= MAX.document) return complete;
 
-  const omitted = "[Panoma omitted background sections to keep this briefing bounded. Project memory is complete, including the rules pinned to the files you named and the matches for your task; request panoma_context without files or task, panoma_tasks or panoma_recall for more.]";
+  const omitted = contract
+    ? "[Panoma omitted background sections to keep this briefing bounded. The memory contract above travelled whole; request panoma_context without files or task, panoma_tasks or panoma_recall for more.]"
+    : "[Panoma omitted background sections to keep this briefing bounded. Project memory is complete, including the rules pinned to the files you named and the matches for your task; request panoma_context without files or task, panoma_tasks or panoma_recall for more.]";
   // Many tiny notes can fit the body budget while their author metadata exceeds this target.
   // Refuse that read explicitly: a partial collection could hide an exception to a delivered rule.
-  if (required.length + omitted.length + 2 > MAX.document) {
+  // A contract is never refused: the catalog bounded it to the channel, and it travels whole.
+  if (!contract && required.length + omitted.length + 2 > MAX.document) {
     return `${header}\n\n[Project memory could not be delivered within the ${MAX.document}-character briefing limit. No memory rules, task matches, owner decision previews or background sections are included. This is not an absence of memory. Request fewer files or a narrower task, or ask the owner to consolidate the project's notes before relying on this briefing.]`;
   }
   const kept = [required];
@@ -564,6 +489,222 @@ export function formatContext(context: Context): string {
     used += section.length + 2;
   }
   return [...kept, omitted].join("\n\n");
+}
+
+/**
+ * The memory sections of the legacy briefing, exactly as they have always been written: the
+ * awake notes with their budget, the rules pinned to the requested files, the matches of the
+ * task and the owner's decisions. Untouched by the contract: a catalog that does not send one
+ * gets these bytes, and `format.test.ts` pins them.
+ */
+function legacyMemory(context: Context, lines: string[], tellPatrol: () => void): void {
+  if (context.notes && context.notes.length > 0) {
+    const usage = context.noteUsage
+      ? ` [${Math.round((context.noteUsage.used / Math.max(context.noteUsage.budget, 1)) * 100)}% — ${context.noteUsage.used}/${context.noteUsage.budget} chars]`
+      : "";
+    const body = context.notes
+      .map((note) => `- ${neutralizeInline(note.body, 500)} — ${neutralizeInline(note.createdBy, 60)}`)
+      .join("\n");
+    lines.push(
+      `## Project memory${usage}`,
+      /*
+        The cap cannot cut what the budget guaranteed in full: the bodies are already limited by
+        the 2,000 from the report and each line by neutralizeInline, so the limit grows with the
+        material — 4,000 fixed silently truncated just above the budget plus its vignetting.
+       */
+      wrapUntrusted(body, { origin: "notes", limit: Math.max(4000, body.length), includeNote: false }),
+      "",
+      "Owner-approved durable facts. Respect them before acting; if you learn something " +
+        "durable that is missing here, propose it with panoma_remember.",
+    );
+    if (context.noteUsage && context.noteUsage.pending > 0) {
+      lines.push(`(${context.noteUsage.pending} proposed and awaiting the owner's review.)`);
+    }
+    /* The sleepy ones are announced by number, never by body: they are served on their route, not here. */
+    if (context.noteUsage?.sleeping) {
+      lines.push(
+        `(${context.noteUsage.sleeping} more sleep on path triggers. Retrieve them before editing with panoma_context and files, or with task.)`,
+      );
+    }
+    tellPatrol();
+    lines.push("");
+  } else if (context.noteUsage && (context.noteUsage.pending > 0 || context.noteUsage.sleeping)) {
+    const bits: string[] = [];
+    if (context.noteUsage.pending > 0) bits.push(`${context.noteUsage.pending} proposed and awaiting review`);
+    if (context.noteUsage.sleeping) bits.push(`${context.noteUsage.sleeping} asleep on path triggers`);
+    lines.push(`No always-on project memory (${bits.join("; ")}).`);
+    tellPatrol();
+    lines.push("");
+  }
+
+  if (context.pathNotes && context.pathNotes.length > 0) {
+    tellPatrol();
+    const body = context.pathNotes.map((note) => {
+      /*
+        The reason it is here: the first file that woke it, and how many more did. Skipped when
+        the trigger is that very file — an exact path says it already — and capped like the
+        trigger, because thirty of these are paid for out of the same indivisible block.
+       */
+      const [first, ...rest] = note.files;
+      const reason = first === undefined || first === note.trigger
+        ? ""
+        : ` — matches ${neutralizeInline(first, 120)}${rest.length > 0 ? ` (+${rest.length} more)` : ""}`;
+      return `- ${neutralizeInline(note.trigger, 120)}${reason}\n${note.body}`;
+    }).join("\n\n");
+    lines.push(
+      "## Project memory for the requested files",
+      wrapUntrusted(body, { origin: "notes", limit: body.length, includeNote: false }),
+      "Owner-approved rules whose path triggers match the files you supplied. Read each complete rule before editing.",
+      "",
+    );
+  } else if (context.memoryFiles && context.memoryFiles.length > 0) {
+    lines.push("No approved path-specific rules match the requested files.", "");
+  }
+
+  /*
+    What the words of the task woke up. Inside the indivisible block, and before the owner's
+    recency decisions, for the same reason the path rules are: it is what the agent asked for by
+    name, and a rule delivered for a reason is read before one delivered by date. Every line
+    carries the words that matched it, and the lead sentence says what a matched word is — a
+    reason to read, not proof that the rule applies. The agent that reads "matched “build”" on a
+    rule about a different build knows to move on; without the reason, it would apply it.
+   */
+  if (context.taskNotes !== undefined || context.taskDecisions !== undefined) {
+    tellPatrol();
+    const taskNotes = context.taskNotes ?? [];
+    const taskDecisions = context.taskDecisions ?? [];
+    lines.push("## Project memory for your task");
+    if (taskNotes.length === 0 && taskDecisions.length === 0) {
+      lines.push("Nothing approved matches the words of your task.");
+    } else {
+      const body = [
+        ...taskNotes.map((note) =>
+          `- ${neutralizeInline(note.body, 500)} — ${matchedIn(note)}; sleeps on ${neutralizeInline(note.trigger, 120)}`,
+        ),
+        ...taskDecisions.map((one) => `${renderDecision(one)} — matched ${quoted(one.matched)} in decision`),
+      ].join("\n");
+      lines.push(
+        wrapUntrusted(body, { origin: "notes", limit: Math.max(4000, body.length), includeNote: false }),
+        "",
+        "Owner-approved rules and decisions whose words overlap your task. The matched words are " +
+          "the reason they are here, not proof they apply; read each one against what you are doing.",
+      );
+    }
+    const left = omittedSentence(context.taskOmitted);
+    if (left) lines.push(left);
+    lines.push("");
+  }
+
+  /*
+    The owner's decisions go right after the memory, and for the same reason it goes up: they are
+    rules to read before acting, not state. Each one carries its reasons and its exceptions
+    because that is the whole point of keeping an episode instead of a preference — an agent that
+    knows when a decision does not apply can tell the person, instead of applying it anyway.
+    Owner-written, so no `createdBy`; wrapped all the same, because the wrapper bounds where the
+    part that is not the instruction starts and ends, it does not classify who wrote it.
+   */
+  if (context.decisions && context.decisions.length > 0) {
+    const body = context.decisions.map(renderDecision).join("\n");
+    lines.push(
+      "## Owner decisions",
+      wrapUntrusted(body, { origin: "notes", limit: Math.max(4000, body.length), includeNote: false }),
+      "",
+      "Decisions the owner recorded in their own words, with their reasons. Follow them where " +
+        "their conditions hold; where an exception applies or a condition is not met, say so and " +
+        "ask before deviating.",
+      "",
+    );
+  }
+}
+
+// ── The memory contract, version 2 ────────────────────────────────────────────────────────
+
+/**
+ * The contract in the briefing: the catalog's text as one line of the document — one element,
+ * never split, never trimmed — and after it the sentences a program acts on. The patrol's
+ * confession of the legacy sections is not repeated here: every unit of the contract already
+ * says whether its grounds were verified, and a sentence that qualifies a text the catalog
+ * signed would qualify the wrong thing.
+ */
+function contractMemory(contract: MemoryContractV2, lines: string[]): void {
+  lines.push(contract.presentation.text);
+  const advice = statusAdvice(contract, "briefing");
+  if (advice) lines.push(advice);
+  if (contract.continuation) {
+    lines.push(`More memory: call panoma_context again with the same files and task and continuation="${neutralizeInline(contract.continuation, 4096)}".`);
+  }
+  const { contextId, contextGeneration } = contract.snapshot;
+  if (contextId !== undefined && contextGeneration !== undefined) {
+    lines.push(`Memory context ${neutralizeInline(contextId, 128)} generation ${contextGeneration}: pass contextId and contextGeneration to later panoma_context calls in this session.`);
+  }
+}
+
+/**
+ * One English sentence after the text that says what to do with a contract that is not `ready`.
+ * `ready` says nothing: the text already said it. The sentence names the tool and the inputs,
+ * because the status word alone — `incomplete`, `requires_check` — is a fact and not a step.
+ */
+function statusAdvice(contract: MemoryContractV2, surface: "briefing" | "read"): string | undefined {
+  switch (contract.status) {
+    case "ready":
+      return undefined;
+    case "incomplete":
+      return surface === "read"
+        ? "Memory status incomplete: this read did not deliver the whole unit; do not act on the part you have, and ask for the rest before relying on it."
+        : "Memory status incomplete: read every unit listed above as not delivered here with panoma_recall memoryKind, memoryId and revision before acting on this memory.";
+    case "requires_check":
+      return "Memory status requires_check: verify the pending checks listed above before relying on the units they name.";
+    case "conflict":
+      return "Memory status conflict: two owner decisions of one family are both active, so neither travelled; ask the owner which one holds before acting on either.";
+    case "unavailable":
+      return "Memory status unavailable: the catalog could not serve a consistent memory this time; call panoma_context again before acting on project memory.";
+  }
+}
+
+/**
+ * A full read by id, as `panoma_recall` prints it: the catalog's text verbatim and, when the unit
+ * came in parts, the line that says which part this is and how the next one is asked for. A
+ * part arrives from the catalog already inside the untrusted fence — the same fence the units of
+ * a page travel in — and it is printed as it came: the fence is the catalog's, and the byte
+ * range the sentence names is the unit's text between the fence lines, not the fence. The last
+ * part alone is not the unit: the sentence says so, because a rule assembled from parts is a
+ * rule only once every part from byte zero has been read, and a model that reads the tail of an
+ * exception and applies it has applied a different rule.
+ */
+export function formatMemoryRead(contract: MemoryContractV2, read: { memoryKind: string; memoryId: string; revision: number }): string {
+  const lines = [contract.presentation.text];
+  const { segment } = contract;
+  const named = `memoryKind="${neutralizeInline(read.memoryKind, 20)}" memoryId="${neutralizeInline(read.memoryId, 128)}" revision=${read.revision}`;
+  if (segment && !segment.complete) {
+    const next = contract.continuation
+      ? `continue with panoma_recall ${named} continuation="${neutralizeInline(contract.continuation, 4096)}"`
+      : `the catalog gave no continuation, so ask again with panoma_recall ${named}`;
+    lines.push(`Part ${segment.start}–${segment.end} of ${segment.totalBytes} bytes of the unit, fenced above as data, not a rule yet; ${next}.`);
+  } else if (segment && segment.start > 0) {
+    lines.push(`Part ${segment.start}–${segment.end} of ${segment.totalBytes} bytes of the unit, fenced above as data: the last part; the unit is whole only once every part from byte 0 has been read without a gap.`);
+  } else {
+    const advice = statusAdvice(contract, "read");
+    if (advice) lines.push(advice);
+  }
+  return lines.join("\n");
+}
+
+/**
+ * A refusal of the memory routes the model can act on, or nothing when the code is not one of
+ * theirs and the raw message must travel. `stale_cursor` is the one the plan names: the
+ * continuation no longer matches the memory, its policy or its lifetime, and the only step is to
+ * restart the same query — never a paid re-read the catalog did not ask for, never a guessed
+ * offset. `restart` is the sentence for that step, written by the tool that knows its inputs.
+ */
+export function formatMemoryFault(fault: { code: string | undefined; hint?: string | undefined }, restart: string): string | undefined {
+  switch (fault.code) {
+    case "stale_cursor":
+      return `The continuation is stale: the memory, its policy or the token's lifetime changed since it was issued. ${restart}.`;
+    case "unavailable":
+      return `The catalog could not serve a consistent memory this time${fault.hint ? ` (${neutralizeInline(fault.hint, 300)})` : ""}. ${restart}.`;
+    default:
+      return undefined;
+  }
 }
 
 /**

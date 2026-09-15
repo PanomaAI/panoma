@@ -16,11 +16,14 @@ import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   consentState,
+  grantFor,
   isAllowed,
   publishesInferred,
   readConsent,
   setConsent,
+  setGrant,
   setInferredConsent,
+  type ConsentGrant,
   type TwinConsent,
 } from "./consent";
 import type { HistorySourceId } from "./inventory";
@@ -193,6 +196,9 @@ describe("guardar una decisión", () => {
     // The folder Panoma did not exist: the first permission is the first thing that is saved.
     expect(existsSync(join(home, "twin.json"))).toBe(true);
     expect(onDisk(home)["sources"]).toEqual({ "claude-code": true });
+    // A file that never held a grant keeps the shape it had before grants existed.
+    expect(onDisk(home)).not.toHaveProperty("grants");
+    expect(Object.keys(onDisk(home)).sort()).toEqual(["sources", "updatedAt"]);
   });
 
   it("y se vuelve a encontrar en una lectura nueva", async () => {
@@ -421,5 +427,267 @@ describe("la situación de una historia respecto del permiso", () => {
    */
   it("la que no está y además no tiene lector se queda callada, no medida", () => {
     expect(consentState({ present: false }, false, false)).toBe("absent");
+  });
+});
+
+/**
+ * The second layer of the same file: a purpose on top of a source. The promises here are the
+ * plan's (§7.1, §25.1) and each has the failure it prevents: a grant that does not have the closed
+ * shape is dropped like an unknown source — an invalid edit denies, it never falls back to a
+ * factory permission; the generation moves only when `enabled` flips, because the catalog's
+ * cursors are bound to it and a frontier that moved on every save would lose coverage for
+ * nothing; and the explicit project decision beats the global one, `false` included (T75), so
+ * that turning memory on for everything and off for one client's project means exactly that.
+ */
+describe("grants: a purpose on top of a source", () => {
+  const GRANT_ID = /^grant_[0-9a-f]{12}$/;
+
+  function grant(overrides: Partial<ConsentGrant>): ConsentGrant {
+    return {
+      grantId: "grant_0123456789ab",
+      generation: 1,
+      source: "claude-code",
+      purpose: "memoryCapture",
+      scope: "global",
+      scopeKeys: ["*"],
+      enabled: true,
+      noticeVersion: 1,
+      activatedAt: "2026-09-14T09:00:00.000Z",
+      ...overrides,
+    };
+  }
+
+  it("a file without grants reads as before, and a grant is written under its own key with the closed shape", async () => {
+    const home = newHome('{"sources":{"claude-code":true}}');
+    expect((await readConsent()).grants).toBeUndefined();
+
+    const before = Date.now();
+    const { consent, grant: saved } = await setGrant({ source: "claude-code", purpose: "memoryCapture", scope: "global", scopeKeys: ["*"], enabled: true, noticeVersion: 1 });
+
+    expect(saved.grantId).toMatch(GRANT_ID);
+    expect(saved).toMatchObject({ generation: 1, source: "claude-code", purpose: "memoryCapture", scope: "global", scopeKeys: ["*"], enabled: true, noticeVersion: 1 });
+    expect(Date.parse(saved.activatedAt)).toBeGreaterThanOrEqual(before - 1);
+    expect(consent.grants).toEqual([saved]);
+    expect(isAllowed(consent, "claude-code"), "the source permission is untouched").toBe(true);
+
+    const disk = onDisk(home);
+    expect(disk["grants"]).toEqual([saved]);
+    expect(Object.keys(saved).sort()).toEqual(["activatedAt", "enabled", "generation", "grantId", "noticeAcceptedAt", "noticeVersion", "purpose", "scope", "scopeKeys", "source"]);
+    // Still the one file, still owner-only, still no temporaries.
+    expect(readdirSync(home)).toEqual(["twin.json"]);
+    await soloSuDueno(join(home, "twin.json"));
+    expect((await readConsent()).grants).toEqual([saved]);
+  });
+
+  it("a notice upgrade records its own acceptance and unrelated permission writes preserve it", async () => {
+    newHome('{"sources":{"claude-code":true}}');
+    const input = { source: "claude-code" as const, purpose: "memoryCapture" as const, scope: "global" as const, scopeKeys: ["*"], enabled: true };
+    const first = (await setGrant({ ...input, noticeVersion: 1 })).grant;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const accepted = (await setGrant({ ...input, noticeVersion: 2 })).grant;
+    expect(Date.parse(accepted.noticeAcceptedAt!)).toBeGreaterThan(Date.parse(first.noticeAcceptedAt!));
+    expect(accepted.activatedAt).toBe(first.activatedAt);
+    await setGrant({ ...input, purpose: "memoryExtract", noticeVersion: 1 });
+    expect((await readConsent()).grants!.find((grant) => grant.grantId === accepted.grantId)!.noticeAcceptedAt).toBe(accepted.noticeAcceptedAt);
+  });
+
+  it("saving the same decision again keeps the id and the generation; a raised notice version travels without a new generation", async () => {
+    newHome();
+    const first = (await setGrant({ source: "codex", purpose: "memoryCapture", scope: "project", scopeKeys: ["git:b", "git:a", "git:a"], enabled: true, noticeVersion: 1 })).grant;
+    expect(first.scopeKeys, "the set, sorted and without repeats").toEqual(["git:a", "git:b"]);
+
+    // Same key spelled in another order: the same grant.
+    const again = (await setGrant({ source: "codex", purpose: "memoryCapture", scope: "project", scopeKeys: ["git:a", "git:b"], enabled: true, noticeVersion: 2 })).grant;
+    expect(again.grantId).toBe(first.grantId);
+    expect(again.generation).toBe(1);
+    expect(again.noticeVersion).toBe(2);
+    expect(again.activatedAt).toBe(first.activatedAt);
+    expect((await readConsent()).grants).toHaveLength(1);
+
+    // A different set of keys is another grant.
+    const other = (await setGrant({ source: "codex", purpose: "memoryCapture", scope: "project", scopeKeys: ["git:a"], enabled: true, noticeVersion: 2 })).grant;
+    expect(other.grantId).not.toBe(first.grantId);
+    expect((await readConsent()).grants).toHaveLength(2);
+  });
+
+  it("revoking keeps the grant with enabled false and a higher generation; enabling again raises it once more and stamps the activation", async () => {
+    newHome();
+    const on = (await setGrant({ source: "claude-code", purpose: "memoryCapture", scope: "global", scopeKeys: ["*"], enabled: true, noticeVersion: 1 })).grant;
+    const off = (await setGrant({ source: "claude-code", purpose: "memoryCapture", scope: "global", scopeKeys: ["*"], enabled: false, noticeVersion: 1 })).grant;
+
+    expect(off.grantId).toBe(on.grantId);
+    expect(off.enabled).toBe(false);
+    expect(off.generation).toBe(2);
+    expect(off.activatedAt, "a revoke is not an activation").toBe(on.activatedAt);
+    const consent = await readConsent();
+    expect(consent.grants).toEqual([off]);
+    expect(grantFor({ ...consent, sources: { "claude-code": true } }, "claude-code", "memoryCapture", "git:x")).toBeUndefined();
+
+    // Revoking twice is not a flip.
+    const still = (await setGrant({ source: "claude-code", purpose: "memoryCapture", scope: "global", scopeKeys: ["*"], enabled: false, noticeVersion: 1 })).grant;
+    expect(still.generation).toBe(2);
+
+    const back = (await setGrant({ source: "claude-code", purpose: "memoryCapture", scope: "global", scopeKeys: ["*"], enabled: true, noticeVersion: 1 })).grant;
+    expect(back.generation).toBe(3);
+    expect(back.activatedAt >= on.activatedAt).toBe(true);
+  });
+
+  it("neither a grant touches the source decisions, nor a source decision touches the grants", async () => {
+    newHome();
+    await setConsent("claude-code", true);
+    await setInferredConsent(true);
+    const { grant: saved } = await setGrant({ source: "claude-code", purpose: "memoryCapture", scope: "global", scopeKeys: ["*"], enabled: true, noticeVersion: 1 });
+    await setConsent("codex", true);
+    await setInferredConsent(false);
+
+    const consent = await readConsent();
+    expect(consent.sources).toEqual({ "claude-code": true, codex: true });
+    expect(consent.inferred).toBe(false);
+    expect(consent.grants).toEqual([saved]);
+  });
+
+  it("a source floor that comes back raises the generation of its enabled grants, and only theirs", async () => {
+    newHome();
+    await setConsent("claude-code", true);
+    await setConsent("codex", true);
+    const claude = (await setGrant({ source: "claude-code", purpose: "memoryCapture", scope: "global", scopeKeys: ["*"], enabled: true, noticeVersion: 1 })).grant;
+    const off = (await setGrant({ source: "claude-code", purpose: "memoryExtract", scope: "global", scopeKeys: ["*"], enabled: false, noticeVersion: 1 })).grant;
+    const codex = (await setGrant({ source: "codex", purpose: "memoryCapture", scope: "global", scopeKeys: ["*"], enabled: true, noticeVersion: 1 })).grant;
+
+    // Off and on again: the interval in between was never authorized, so the frontier moves.
+    await setConsent("claude-code", false);
+    const revived = await setConsent("claude-code", true);
+    const byId = new Map(revived.grants?.map((grant) => [grant.grantId, grant]));
+    expect(byId.get(claude.grantId)?.generation).toBe(claude.generation + 1);
+    expect(byId.get(off.grantId)?.generation).toBe(off.generation);
+    expect(byId.get(codex.grantId)?.generation).toBe(codex.generation);
+
+    // Saying yes to a source that already had it moves nothing.
+    const same = await setConsent("claude-code", true);
+    expect(same.grants?.find((grant) => grant.grantId === claude.grantId)?.generation).toBe(claude.generation + 1);
+  });
+
+  it("refuses a caller that did not validate its request", async () => {
+    newHome();
+    await expect(setGrant({ source: "claude-code", purpose: "memoryCapture", scope: "global", scopeKeys: ["git:a"], enabled: true, noticeVersion: 1 })).rejects.toThrow(TypeError);
+    await expect(setGrant({ source: "claude-code", purpose: "memoryCapture", scope: "project", scopeKeys: ["*"], enabled: true, noticeVersion: 1 })).rejects.toThrow(TypeError);
+    await expect(setGrant({ source: "claude-code", purpose: "memoryCapture", scope: "project", scopeKeys: [], enabled: true, noticeVersion: 1 })).rejects.toThrow(TypeError);
+    await expect(setGrant({ source: "gemini" as HistorySourceId, purpose: "memoryCapture", scope: "global", scopeKeys: ["*"], enabled: true, noticeVersion: 1 })).rejects.toThrow(TypeError);
+    await expect(setGrant({ source: "claude-code", purpose: "everything" as ConsentGrant["purpose"], scope: "global", scopeKeys: ["*"], enabled: true, noticeVersion: 1 })).rejects.toThrow(TypeError);
+    await expect(setGrant({ source: "claude-code", purpose: "memoryCapture", scope: "global", scopeKeys: ["*"], enabled: true, noticeVersion: 0 })).rejects.toThrow(TypeError);
+    // Nothing was written by a refused call.
+    expect((await readConsent()).grants).toBeUndefined();
+  });
+
+  it("a grant that does not have the closed shape is dropped on read and lost on the next write; the well-formed ones survive", async () => {
+    const good = grant({ grantId: "grant_00000000000a" });
+    const malformed = [
+      grant({ grantId: "grant_00000000000b", purpose: "readEverything" as ConsentGrant["purpose"] }),
+      grant({ grantId: "grant_00000000000c", source: "gemini" as HistorySourceId }),
+      grant({ grantId: "grant_00000000000d", scope: "global", scopeKeys: ["git:a"] }),
+      grant({ grantId: "grant_00000000000e", scope: "project", scopeKeys: ["*"] }),
+      grant({ grantId: "grant_00000000000f", scope: "project", scopeKeys: ["git:a", "*"] }),
+      grant({ grantId: "grant_000000000010", scope: "project", scopeKeys: [] }),
+      grant({ grantId: "grant_000000000011", generation: 0 }),
+      grant({ grantId: "grant_000000000012", generation: 1.5 }),
+      grant({ grantId: "grant_000000000013", enabled: "yes" as unknown as boolean }),
+      grant({ grantId: "grant_000000000014", activatedAt: "yesterday" }),
+      grant({ grantId: "grant_000000000015", noticeVersion: 0 }),
+      grant({ grantId: "not-a-grant-id" }),
+      { ...grant({ grantId: "grant_000000000016" }), activatedAt: undefined },
+      "grant_000000000017",
+      null,
+      42,
+    ];
+    const home = newHome(JSON.stringify({ sources: { "claude-code": true }, grants: [...malformed, good] }));
+
+    const consent = await readConsent();
+    expect(consent.grants).toEqual([good]);
+    expect(grantFor(consent, "claude-code", "memoryCapture", "git:a")).toEqual(good);
+
+    await setConsent("codex", true);
+    expect(onDisk(home)["grants"]).toEqual([good]);
+  });
+
+  it("a `grants` that is not a list, or is empty, is no grant at all and is not written back", async () => {
+    for (const raro of ["{}", '"grant_0123456789ab"', "null", "[]"]) {
+      const home = newHome(`{"sources":{"claude-code":true},"grants":${raro}}`);
+      expect((await readConsent()).grants, raro).toBeUndefined();
+      await setConsent("codex", true);
+      expect(onDisk(home), raro).not.toHaveProperty("grants");
+    }
+  });
+
+  it("two entries with the same id or the same key are one decision: the first stays", async () => {
+    const first = grant({ grantId: "grant_00000000000a", enabled: true });
+    const sameKey = grant({ grantId: "grant_00000000000b", enabled: false });
+    const sameId = grant({ grantId: "grant_00000000000a", scope: "project", scopeKeys: ["git:z"], enabled: false });
+    newHome(JSON.stringify({ sources: { "claude-code": true }, grants: [first, sameKey, sameId] }));
+    expect((await readConsent()).grants).toEqual([first]);
+  });
+
+  describe("grantFor: what governs one purpose for one key", () => {
+    const global = grant({ grantId: "grant_00000000000a", scope: "global", scopeKeys: ["*"] });
+    const project = grant({ grantId: "grant_00000000000b", scope: "project", scopeKeys: ["git:a", "git:b"] });
+    const denied = grant({ grantId: "grant_00000000000c", scope: "project", scopeKeys: ["git:a"], enabled: false });
+
+    it("the source permission is the floor: with it revoked, every grant of that source is dead", () => {
+      expect(grantFor({ sources: {}, grants: [global] }, "claude-code", "memoryCapture", "git:a")).toBeUndefined();
+      expect(grantFor({ sources: { "claude-code": false }, grants: [global] }, "claude-code", "memoryCapture", "git:a")).toBeUndefined();
+      expect(grantFor({ sources: { "claude-code": true }, grants: [global] }, "claude-code", "memoryCapture", "git:a")).toEqual(global);
+      // And a grant of another source says nothing about this one.
+      expect(grantFor({ sources: { codex: true }, grants: [global] }, "codex", "memoryCapture", "git:a")).toBeUndefined();
+    });
+
+    it("absence is a no; a global grant answers for every key", () => {
+      expect(grantFor({ sources: { "claude-code": true } }, "claude-code", "memoryCapture", "git:a")).toBeUndefined();
+      expect(grantFor({ sources: { "claude-code": true }, grants: [] }, "claude-code", "memoryCapture", "git:a")).toBeUndefined();
+      expect(grantFor({ sources: { "claude-code": true }, grants: [global] }, "claude-code", "memoryCapture", "git:anything")).toEqual(global);
+      expect(grantFor({ sources: { "claude-code": true }, grants: [global] }, "claude-code", "memoryCapture", "*")).toEqual(global);
+    });
+
+    it("T75: an explicit project false beats a global true for that project, and only for it", () => {
+      const consent: TwinConsent = { sources: { "claude-code": true }, grants: [global, denied] };
+      expect(grantFor(consent, "claude-code", "memoryCapture", "git:a")).toBeUndefined();
+      expect(grantFor(consent, "claude-code", "memoryCapture", "git:b")).toEqual(global);
+    });
+
+    it("a project true stands on its own when the global one is off or absent", () => {
+      const offGlobal = grant({ grantId: "grant_00000000000d", scope: "global", scopeKeys: ["*"], enabled: false });
+      expect(grantFor({ sources: { "claude-code": true }, grants: [offGlobal, project] }, "claude-code", "memoryCapture", "git:b")).toEqual(project);
+      expect(grantFor({ sources: { "claude-code": true }, grants: [offGlobal, project] }, "claude-code", "memoryCapture", "git:c")).toBeUndefined();
+      expect(grantFor({ sources: { "claude-code": true }, grants: [project] }, "claude-code", "memoryCapture", "git:a")).toEqual(project);
+    });
+
+    it("two project grants naming the same key: one disabled among them is a no", () => {
+      expect(grantFor({ sources: { "claude-code": true }, grants: [project, denied] }, "claude-code", "memoryCapture", "git:a")).toBeUndefined();
+      expect(grantFor({ sources: { "claude-code": true }, grants: [project, denied] }, "claude-code", "memoryCapture", "git:b")).toEqual(project);
+    });
+
+    it("a semantic purpose needs an enabled memoryCapture resolved the same way", () => {
+      const extract = grant({ grantId: "grant_00000000000e", purpose: "memoryExtract", scope: "global", scopeKeys: ["*"] });
+      const learn = grant({ grantId: "grant_00000000000f", purpose: "twinAutoLearn", scope: "project", scopeKeys: ["git:a"] });
+
+      // Without capture, neither means anything.
+      expect(grantFor({ sources: { "claude-code": true }, grants: [extract, learn] }, "claude-code", "memoryExtract", "git:a")).toBeUndefined();
+      expect(grantFor({ sources: { "claude-code": true }, grants: [extract, learn] }, "claude-code", "twinAutoLearn", "git:a")).toBeUndefined();
+      // With a global capture, both do — and the grant returned is the purpose's own.
+      expect(grantFor({ sources: { "claude-code": true }, grants: [global, extract, learn] }, "claude-code", "memoryExtract", "git:a")).toEqual(extract);
+      expect(grantFor({ sources: { "claude-code": true }, grants: [global, extract, learn] }, "claude-code", "twinAutoLearn", "git:a")).toEqual(learn);
+      // The capture prerequisite follows the same precedence: a project false on capture turns the semantic purpose off there.
+      expect(grantFor({ sources: { "claude-code": true }, grants: [global, denied, extract, learn] }, "claude-code", "memoryExtract", "git:a")).toBeUndefined();
+      expect(grantFor({ sources: { "claude-code": true }, grants: [global, denied, extract, learn] }, "claude-code", "memoryExtract", "git:b")).toEqual(extract);
+      // The two semantic purposes are independent of each other.
+      expect(grantFor({ sources: { "claude-code": true }, grants: [global, learn] }, "claude-code", "memoryExtract", "git:a")).toBeUndefined();
+      expect(grantFor({ sources: { "claude-code": true }, grants: [global, learn] }, "claude-code", "twinAutoLearn", "git:a")).toEqual(learn);
+    });
+
+    it("is pure: it never reads the disk", async () => {
+      const home = newHome();
+      await setConsent("claude-code", true);
+      const { consent } = await setGrant({ source: "claude-code", purpose: "memoryCapture", scope: "global", scopeKeys: ["*"], enabled: true, noticeVersion: 1 });
+      rmSync(home, { recursive: true, force: true });
+      expect(grantFor(consent, "claude-code", "memoryCapture", "git:a")?.grantId).toMatch(GRANT_ID);
+    });
   });
 });

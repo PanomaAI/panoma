@@ -2,14 +2,29 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { CatalogClient, CatalogError, checkConversationId, describeLocation } from "./client";
+import type { MemoryContractV2 } from "@panoma/core";
+import {
+  CONTEXT_MEMORY_INPUT,
+  CatalogClient,
+  CatalogError,
+  MemoryNegotiation,
+  RECALL_INPUT,
+  checkConversationId,
+  checkRecallInput,
+  contextRequest,
+  describeLocation,
+  memoryReadRequest,
+} from "./client";
 import {
   formatApps,
   formatContext,
+  formatContextV2,
   formatConversations,
   formatHandoff,
   formatHandoffFault,
   formatJournalEntry,
+  formatMemoryFault,
+  formatMemoryRead,
   formatRecall,
   formatTasks,
   formatVideoFault,
@@ -42,6 +57,8 @@ import {
 
 const api = process.env["PANOMA_API"] ?? "http://localhost:4173";
 const client = new CatalogClient(api, process.env["PANOMA_KEY"]);
+/** The hello's answer, kept: which memory contract the catalog speaks. Started after `connect`. */
+const memory = new MemoryNegotiation(client);
 
 const server = new McpServer({ name: "panoma", version: "0.1.0" });
 
@@ -83,7 +100,10 @@ server.registerTool(
       "in every connected client. Before starting a job, or when you are stuck on an error, " +
       "pass task — one sentence saying what you are about to do or what you are looking at — " +
       "and the rules and owner decisions whose words overlap it come back with the matched " +
-      "words as the reason.",
+      "words as the reason. When the catalog speaks the memory contract, the memory comes as " +
+      "one signed block with every unit whole, its status, and the units that did not fit " +
+      "named by kind, id and revision so that panoma_recall can read them whole; a " +
+      "continuation, when given, asks for more with the same files and task.",
     inputSchema: {
       ...location,
       files: z.array(z.string().min(1).max(2048)).max(30).optional()
@@ -94,17 +114,21 @@ server.registerTool(
           "approved rules and owner decisions whose words overlap it, with the matched words as the " +
           "reason. Pair it with files.",
         ),
+      ...CONTEXT_MEMORY_INPUT,
     },
   },
-  async ({ path, files, task }) =>
-    tool(async () => {
-      const where = await describeLocation(path);
-      const context = await client.post<Context & { projectId: string }>(
-        "/api/agent/context",
-        { ...where, ...(files !== undefined ? { files } : {}), ...(task !== undefined ? { task } : {}) },
-      );
-      return formatContext(context);
-    })(),
+  async ({ path, files, task, memoryVersion, operation, contextId, contextGeneration, continuation }) =>
+    tool(() =>
+      askMemoryRoute(async () => {
+        const where = await describeLocation(path);
+        const version = await memory.version();
+        const context = await client.post<Context & { projectId: string }>(
+          "/api/agent/context",
+          contextRequest(where, { files, task, memoryVersion, operation, contextId, contextGeneration, continuation }, version),
+        );
+        return context.memoryContract ? formatContextV2(context, context.memoryContract) : formatContext(context);
+      }, "Call panoma_context again with the same files and task and without continuation"),
+    )(),
 );
 
 server.registerTool(
@@ -205,26 +229,47 @@ server.registerTool(
       "what was logged, in the language it was logged in. Results include matched excerpts and " +
       "entry IDs. Pass entryId to read a complete original in bounded segments; continue with " +
       "its nextOffset. Continue a search with its nextCursor and the same query. For durable " +
-      "rules use panoma_context, with files for rules attached to specific paths.",
+      "rules use panoma_context, with files for rules attached to specific paths. To read one " +
+      "memory unit whole — a rule, a decision or a criterion a brief listed as not delivered, " +
+      "or one you need entire before applying it — pass memoryKind, memoryId and revision " +
+      "exactly as the brief listed them, without query or entryId; a long unit comes in " +
+      "parts, continued with its continuation, and is a rule only once every part is read. " +
+      "memoryKind commitment reads an open obligation of this project by its id; memoryKind " +
+      "case reads the decision case of a task by the task id (revision may be omitted).",
     inputSchema: {
       ...location,
-      query: z.string().min(1).max(1000).optional().describe("Search words or a quoted phrase. Omit when opening an entryId."),
-      cursor: z.string().max(4096).optional().describe("The nextCursor of a search, copied verbatim with the same query."),
-      entryId: z.string().max(128).optional().describe("An ID returned by this project's journal search. Opens the original."),
-      offset: z.number().int().nonnegative().optional().describe("The nextOffset returned by an original entry read."),
+      ...RECALL_INPUT,
     },
   },
-  async ({ path, query, cursor, entryId, offset }) =>
-    tool(async () => {
-      const where = await describeLocation(path);
-      const result = await client.post<{
-        project: string;
-        query: string;
-        matches: Parameters<typeof formatRecall>[1];
-        nextCursor?: string | null;
-        entry?: RecallEntry;
-      }>("/api/agent/journal", { ...where, query, cursor, entryId, offset });
-      return result.entry ? formatJournalEntry(result.entry) : formatRecall(result.query, result.matches, result.nextCursor);
+  async ({ path, ...asked }) =>
+    tool(() => {
+      /*
+        The restart sentence is chosen before the call, from the inputs, so that a stale
+        continuation is answered with the exact call to repeat and never with a guessed offset.
+       */
+      const restart = asked.memoryId !== undefined
+        ? `Restart this read with panoma_recall memoryKind="${asked.memoryKind ?? ""}" memoryId="${asked.memoryId}" revision=${asked.revision ?? ""} and without continuation`
+        : "Call panoma_recall again with the same query and without cursor";
+      return askMemoryRoute(async () => {
+        const ask = checkRecallInput(asked);
+        const where = await describeLocation(path);
+        if ("read" in ask) {
+          const result = await client.post<{ projectId: string; memoryContract: MemoryContractV2 }>(
+            "/api/agent/context",
+            memoryReadRequest(where, ask.read),
+          );
+          return formatMemoryRead(result.memoryContract, ask.read);
+        }
+        const { query, cursor, entryId, offset } = ask.journal;
+        const result = await client.post<{
+          project: string;
+          query: string;
+          matches: Parameters<typeof formatRecall>[1];
+          nextCursor?: string | null;
+          entry?: RecallEntry;
+        }>("/api/agent/journal", { ...where, query, cursor, entryId, offset });
+        return result.entry ? formatJournalEntry(result.entry) : formatRecall(result.query, result.matches, result.nextCursor);
+      }, restart);
     })(),
 );
 
@@ -394,6 +439,23 @@ async function askHandoffRoute(call: () => Promise<string>): Promise<string> {
     const said = error instanceof CatalogError && error.code !== undefined
       ? formatHandoffFault({ code: error.code, detail: error.detail, hint: error.hint })
       : undefined;
+    if (said === undefined) throw error;
+    return said;
+  }
+}
+
+/**
+ * Ask a memory route — a brief or a read by id — and let a stale continuation reach the model
+ * as the one step that fixes it. A `409 stale_cursor` is not an error a retry fixes and not a
+ * reason to re-read anything on the catalog's account: it is the same query, restarted from the
+ * beginning, and `restart` is that sentence. Every other refusal is still an error, with the
+ * route's own words in it.
+ */
+async function askMemoryRoute(call: () => Promise<string>, restart: string): Promise<string> {
+  try {
+    return await call();
+  } catch (error) {
+    const said = error instanceof CatalogError ? formatMemoryFault({ code: error.code, hint: error.hint }, restart) : undefined;
     if (said === undefined) throw error;
     return said;
   }
@@ -746,5 +808,11 @@ await server.connect(new StdioServerTransport());
   moment the catalog returns, and the only cost is a badge that stays honest about not having seen
   it yet. Announcing that failure on stdio would be worse than the silence: this transport carries
   the protocol, and noise on it is not a message anybody reads.
+
+  Since 14-Sep-2026 the answer is kept instead of thrown away: it says whether the catalog
+  speaks the memory contract, and `panoma_context` reads it before every brief. A hello that
+  failed means a legacy catalog for the life of this process, without a second hello — the
+  agent's first call is not the place to retry — and `memoryVersion: 2` on the call is how the
+  agent asks for the contract regardless. See `MemoryNegotiation`.
  */
-void client.post("/api/agent/hello", {}).catch(() => undefined);
+memory.start();

@@ -36,6 +36,21 @@ const decision = {
   exceptions: "Use a confirmation step for destructive actions.",
 };
 
+describe("owner decision predicates", () => {
+  it("accepts a closed typed patch by memory revision and rejects a stale or malformed patch", async () => {
+    const saved = await POST(request({ fields: decision }));
+    expect(saved.status).toBe(200);
+    const { episode } = await saved.json();
+    const predicate = { schemaVersion: 1, expression: { kind: "operation_is", operation: "edit" } };
+    const patched = await POST(request({ id: episode.id, expectedRevision: episode.memoryRev, conditionsPredicate: predicate }));
+    expect(patched.status).toBe(200);
+    expect((await patched.json()).episode.conditionsPredicate).toEqual(predicate);
+    expect((await POST(request({ id: episode.id, expectedRevision: episode.memoryRev, conditionsPredicate: null }))).status).toBe(409);
+    expect((await POST(request({ id: episode.id, expectedRevision: episode.memoryRev + 1, conditionsPredicate: { schemaVersion: 1, expression: {} } }))).status).toBe(400);
+    expect((await decisionEpisodeById(database, episode.id))?.conditionsPredicate).toEqual(predicate);
+  });
+});
+
 function request(body: unknown, crossSite = false, path = "episodes") {
   return new Request(`http://localhost:4173/api/twin/${path}`, {
     method: "POST",

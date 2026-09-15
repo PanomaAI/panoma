@@ -1,7 +1,14 @@
-import { redactSecrets } from "@panoma/core";
+import { canonicalJson, redactSecrets } from "@panoma/core";
 import { and, asc, desc, eq, getTableColumns, inArray, isNull, sql, type SQLWrapper } from "drizzle-orm";
 import type { Database } from "./client";
+import { CHECKS_MAX, checkOf, validatePredicateShape, type Predicate } from "./commitments";
 import { idFor } from "./ingest";
+import type { Check } from "./memory-checks";
+import { memoryReadBarrier } from "./memory-purge";
+import {
+  decisionAuthority, decisionPayload, latestRevision, recordRevision, scopeKindFor, scopeOf,
+  type RevisionReason, type RevisionScopeKind,
+} from "./memory-revisions";
 import * as t from "./schema";
 
 export const EPISODE_FIELDS = [
@@ -41,6 +48,25 @@ export interface NewDecisionEpisode {
    * `valid_until` in the schema for why the end of the day, and why it is a column.
    */
   validUntil?: Date | null;
+  /**
+   * Omitted: derived from the identity — a project when there is one, global when there is none,
+   * which is what a null identity always meant here. A caller that knows the identity could not
+   * be resolved to a name says `unresolved`, and that row never reaches another project. Outside
+   * the identifier, like `validUntil`, so a retry of the same testimony finds its row.
+   */
+  scopeKind?: RevisionScopeKind;
+  /**
+   * The typed conditions and exceptions of delivery C (`{ schemaVersion: 1, expression }`, plan
+   * §20.3), beside the narrative `conditions`/`exceptions` fields and never instead of them. Like
+   * `validUntil`, outside the identifier: a retry of the same testimony finds its row and keeps
+   * the predicates that row already has; they are changed on purpose through
+   * `setDecisionEpisodePredicates`. Omitted or null means none was declared, never that the
+   * narrative was checked.
+   */
+  conditionsPredicate?: unknown;
+  exceptionsPredicate?: unknown;
+  /** The checks of this decision, in the closed shape of `memory-checks.ts`; at most six. */
+  checks?: unknown;
 }
 
 export interface DecisionEpisode extends NewDecisionEpisode {
@@ -50,6 +76,28 @@ export interface DecisionEpisode extends NewDecisionEpisode {
   validUntil: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  /** The delivery revision: the block at the top of `schema.ts`, and `memory-revisions.ts`. */
+  memoryRev: number;
+  scopeKind: RevisionScopeKind;
+  conditionsPredicate: Predicate | null;
+  exceptionsPredicate: Predicate | null;
+  checks: Check[];
+}
+
+/** The typed columns of delivery C as a writer takes them, validated structurally before any write. */
+function typedColumns(input: { conditionsPredicate?: unknown; exceptionsPredicate?: unknown; checks?: unknown }): {
+  conditionsPredicate: Predicate | null; exceptionsPredicate: Predicate | null; checks: Check[];
+} {
+  const predicate = (value: unknown) => value === undefined || value === null ? null : validatePredicateShape(value);
+  let checks: Check[] = [];
+  if (input.checks !== undefined) {
+    if (!Array.isArray(input.checks)) throw new TypeError("The checks of a decision are an array.");
+    if (input.checks.length > CHECKS_MAX) throw new TypeError(`A decision carries at most ${CHECKS_MAX} checks.`);
+    checks = input.checks.map((check) => checkOf(check));
+    if (checks.some((check) => check.purpose === "completion")) throw new TypeError("Only a commitment has completion criteria.");
+    if (new Set(checks.map((check) => check.checkId)).size !== checks.length) throw new TypeError("A check id appears once per decision.");
+  }
+  return { conditionsPredicate: predicate(input.conditionsPredicate), exceptionsPredicate: predicate(input.exceptionsPredicate), checks };
 }
 
 const CHUNK = 500;
@@ -71,6 +119,23 @@ async function episodeWrite<T>(db: Database, work: (tx: Database) => Promise<T>)
   return db.transaction(async (tx) => {
     await tx.execute(sql`lock table ${t.decisionEpisodes} in share row exclusive mode`);
     return work(tx);
+  });
+}
+
+/** The revision moves in the statement that changes the row; see the same constant in `notes.ts`. */
+const NEXT_REV = sql`${t.decisionEpisodes.memoryRev} + 1`;
+
+/** The photograph of an episode at the revision the statement just produced, under the same lock. */
+async function photograph(tx: Database, row: typeof t.decisionEpisodes.$inferSelect, reason: RevisionReason): Promise<void> {
+  await recordRevision(tx, {
+    kind: "decision",
+    objectId: row.id,
+    rev: row.memoryRev,
+    ...scopeOf(row.scopeKind, row.identity),
+    authority: decisionAuthority(row),
+    disposition: row.status,
+    payload: decisionPayload(row),
+    reason,
   });
 }
 
@@ -268,7 +333,11 @@ async function saveEpisodesLocked(
       const previous = await decisionEpisodeById(db, input.supersedesId);
       if (!previous || previous.identity !== input.identity) throw new Error("A revision must reference an existing episode in the same project scope.");
     }
-    const row = { ...input, fields: cleanFields(input) };
+    const scopeKind = input.scopeKind ?? scopeKindFor(input.identity);
+    if (scopeKind === "global" && input.identity !== null) throw new Error("A global decision episode has no project identity.");
+    if (scopeKind === "project" && input.identity === null) throw new Error("A project decision episode names its project identity.");
+    // The typed predicates and checks are validated with the rest of the batch, before its first write.
+    const row = { ...input, scopeKind, fields: cleanFields(input), ...typedColumns(input) };
     unique.set(episodeId(row), row);
   }
   const narrativeIds = [...unique.values()].flatMap((row) => Object.values(row.fields).flatMap((field) => field.narrativeId ? [field.narrativeId] : []));
@@ -298,21 +367,43 @@ async function saveEpisodesLocked(
       }
       if (await activeSuccessor(db, row.supersedesId)) throw new DecisionEpisodeConflict("activeSuccessor");
     }
-    const [inserted] = await db.insert(t.decisionEpisodes).values({ id, ...row }).onConflictDoNothing().returning();
+    /*
+      The id is the testimony, so a record forgotten with its narrative and extracted again is the
+      same row born twice. Its photographs outlived the deletion on purpose —an offer may cite
+      them— and the numbering continues where they stopped instead of colliding with them.
+     */
+    const photographed = await latestRevision(db, "decision", id);
+    const [inserted] = await db.insert(t.decisionEpisodes)
+      .values({
+        id, ...row,
+        conditionsPredicate: row.conditionsPredicate as Json | null,
+        exceptionsPredicate: row.exceptionsPredicate as Json | null,
+        checks: row.checks as unknown as Json[],
+        ...(photographed ? { memoryRev: photographed.rev + 1 } : {}),
+      })
+      .onConflictDoNothing().returning();
     if (inserted) {
+      await photograph(db, inserted, "create");
       if (row.supersedesId) {
-        await db.update(t.decisionEpisodes).set({ status: "dismissed", updatedAt: sql`greatest(current_timestamp, ${t.decisionEpisodes.updatedAt} + interval '1 millisecond')` })
-          .where(eq(t.decisionEpisodes.id, row.supersedesId));
+        const touch = sql`greatest(current_timestamp, ${t.decisionEpisodes.updatedAt} + interval '1 millisecond')`;
+        // Dismissing the active predecessor is its own revision; one already dismissed only gets its stamp moved.
+        const [dismissed] = await db.update(t.decisionEpisodes).set({ status: "dismissed", updatedAt: touch, memoryRev: NEXT_REV })
+          .where(and(eq(t.decisionEpisodes.id, row.supersedesId), eq(t.decisionEpisodes.status, "active"))).returning();
+        if (dismissed) await photograph(db, dismissed, "supersede");
+        else await db.update(t.decisionEpisodes).set({ status: "dismissed", updatedAt: touch }).where(eq(t.decisionEpisodes.id, row.supersedesId));
       }
       saved.push(asEpisode(inserted));
       continue;
     }
     // A re-extraction may repair a remapped scope. The existing owner dismissal always survives.
     if (row.origin === "history") {
-      await db.update(t.decisionEpisodes).set({ identity: row.identity, updatedAt: new Date() }).where(and(
-        eq(t.decisionEpisodes.id, id),
-        sql`${t.decisionEpisodes.identity} is distinct from ${row.identity}`,
-      ));
+      const [remapped] = await db.update(t.decisionEpisodes)
+        .set({ identity: row.identity, scopeKind: row.scopeKind, updatedAt: new Date(), memoryRev: NEXT_REV })
+        .where(and(
+          eq(t.decisionEpisodes.id, id),
+          sql`${t.decisionEpisodes.identity} is distinct from ${row.identity}`,
+        )).returning();
+      if (remapped) await photograph(db, remapped, "scope");
     }
     const replayed = await decisionEpisodeById(db, id);
     if (replayed) saved.push(replayed);
@@ -320,8 +411,17 @@ async function saveEpisodesLocked(
   return saved;
 }
 
+type Json = Record<string, unknown>;
+
 function asEpisode(row: typeof t.decisionEpisodes.$inferSelect): DecisionEpisode {
-  return { ...row, fields: row.fields as EpisodeFields };
+  return {
+    ...row,
+    fields: row.fields as EpisodeFields,
+    scopeKind: row.scopeKind as RevisionScopeKind,
+    conditionsPredicate: (row.conditionsPredicate as unknown as Predicate | null) ?? null,
+    exceptionsPredicate: (row.exceptionsPredicate as unknown as Predicate | null) ?? null,
+    checks: Array.isArray(row.checks) ? (row.checks as unknown as Check[]) : [],
+  };
 }
 
 /** Source reattribution or deletion immediately makes stale extracted evidence ineligible. */
@@ -392,6 +492,7 @@ export async function listDecisionEpisodes(
   const needle = options.query?.trim() ?? "";
   const pattern = `%${needle.replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
   const query = db.select().from(t.decisionEpisodes).where(and(
+    await memoryReadBarrier(db, "decision", t.decisionEpisodes.id),
     validEvidence(),
     options.identity === undefined ? undefined : options.identity === null ? isNull(t.decisionEpisodes.identity) : eq(t.decisionEpisodes.identity, options.identity),
     options.status === undefined ? undefined : eq(t.decisionEpisodes.status, options.status),
@@ -439,6 +540,7 @@ export async function listConflictingEpisodeFamilies(db: Database): Promise<Deci
         and ${validEvidence(CANDIDATE)}
     )`,
   }).from(t.decisionEpisodes).where(and(
+    await memoryReadBarrier(db, "decision", t.decisionEpisodes.id),
     eq(t.decisionEpisodes.status, "active"),
     validEvidence(),
     competingActive(),
@@ -453,7 +555,7 @@ export async function listConflictingEpisodeFamilies(db: Database): Promise<Deci
 }
 
 export async function decisionEpisodeById(db: Database, id: string): Promise<DecisionEpisode | undefined> {
-  const [row] = await db.select().from(t.decisionEpisodes).where(and(eq(t.decisionEpisodes.id, id), validEvidence())).limit(1);
+  const [row] = await db.select().from(t.decisionEpisodes).where(and(eq(t.decisionEpisodes.id, id), validEvidence(), await memoryReadBarrier(db, "decision", t.decisionEpisodes.id))).limit(1);
   return row ? asEpisode(row) : undefined;
 }
 
@@ -472,6 +574,7 @@ function familyIds(id: string | ReturnType<typeof sql>) {
 /** The other active member of this revision family, regardless of its distance or direction. */
 export async function activeSuccessor(db: Database, id: string): Promise<DecisionEpisode | undefined> {
   const [row] = await db.select().from(t.decisionEpisodes).where(and(
+    await memoryReadBarrier(db, "decision", t.decisionEpisodes.id),
     sql`${t.decisionEpisodes.id} in (${familyIds(id)})`,
     sql`${t.decisionEpisodes.id} <> ${id}`,
     eq(t.decisionEpisodes.status, "active"),
@@ -517,12 +620,14 @@ export async function setDecisionEpisodeStatus(
       throw new DecisionEpisodeConflict("stale");
     }
     if (status === "active" && await activeSuccessor(tx, id)) throw new DecisionEpisodeConflict("activeSuccessor");
-    const rows = await tx.update(t.decisionEpisodes).set({ status, updatedAt: sql`greatest(current_timestamp, ${t.decisionEpisodes.updatedAt} + interval '1 millisecond')` }).where(and(
+    const rows = await tx.update(t.decisionEpisodes).set({ status, updatedAt: sql`greatest(current_timestamp, ${t.decisionEpisodes.updatedAt} + interval '1 millisecond')`, memoryRev: NEXT_REV }).where(and(
       eq(t.decisionEpisodes.id, id),
       validEvidence(),
       eq(t.decisionEpisodes.status, existing.status),
-    )).returning({ id: t.decisionEpisodes.id });
-    return rows.length > 0;
+    )).returning();
+    if (rows.length === 0) return false;
+    await photograph(tx, rows[0]!, "policy");
+    return true;
   });
 }
 
@@ -552,10 +657,68 @@ export async function setDecisionEpisodeValidUntil(
     if (options.expectedUpdatedAt && existing.updatedAt.getTime() !== options.expectedUpdatedAt.getTime()) {
       throw new DecisionEpisodeConflict("stale");
     }
-    const rows = await tx.update(t.decisionEpisodes).set({ validUntil, updatedAt: sql`greatest(current_timestamp, ${t.decisionEpisodes.updatedAt} + interval '1 millisecond')` }).where(and(
+    const rows = await tx.update(t.decisionEpisodes).set({ validUntil, updatedAt: sql`greatest(current_timestamp, ${t.decisionEpisodes.updatedAt} + interval '1 millisecond')`, memoryRev: NEXT_REV }).where(and(
       eq(t.decisionEpisodes.id, id),
       validEvidence(),
-    )).returning({ id: t.decisionEpisodes.id });
-    return rows.length > 0;
+    )).returning();
+    if (rows.length === 0) return false;
+    await photograph(tx, rows[0]!, "policy");
+    return true;
+  });
+}
+
+/**
+ * Set, replace or clear the typed conditions, exceptions and checks of a decision (delivery C)
+ * without touching a word of its testimony. A key left out of `patch` keeps what the row has;
+ * `null` clears a predicate. The same lock and stale guard as the expiry, plus a compare-and-set
+ * on `memory_rev` for the callers that read the revision rather than the stamp; a patch that
+ * changes nothing is a successful retry. A change is a revision of its own under `edit`, and its
+ * photograph carries both predicates and the checks. The check definitions themselves are
+ * validated structurally here; `putCheck` in `memory-checks.ts` is the door for one at a time.
+ */
+export async function setDecisionEpisodePredicates(
+  db: Database,
+  id: string,
+  patch: { conditionsPredicate?: unknown; exceptionsPredicate?: unknown; checks?: unknown },
+  options: { expectedUpdatedAt?: Date; expectedMemoryRev?: number } = {},
+): Promise<boolean> {
+  if (typeof patch !== "object" || patch === null || Array.isArray(patch)) throw new TypeError("A predicate patch is an object.");
+  for (const key of Object.keys(patch)) {
+    if (!["conditionsPredicate", "exceptionsPredicate", "checks"].includes(key)) throw new TypeError(`A predicate patch has an unknown key: ${key}.`);
+  }
+  if (options.expectedMemoryRev !== undefined && (!Number.isSafeInteger(options.expectedMemoryRev) || options.expectedMemoryRev < 1)) {
+    throw new TypeError("The expected revision is a positive integer.");
+  }
+  const typed = typedColumns(patch);
+  return episodeWrite(db, async (tx) => {
+    const existing = await decisionEpisodeById(tx, id);
+    if (!existing) return false;
+    if (options.expectedUpdatedAt && existing.updatedAt.getTime() !== options.expectedUpdatedAt.getTime()) {
+      throw new DecisionEpisodeConflict("stale");
+    }
+    if (options.expectedMemoryRev !== undefined && existing.memoryRev !== options.expectedMemoryRev) {
+      throw new DecisionEpisodeConflict("stale");
+    }
+    const next = {
+      conditionsPredicate: patch.conditionsPredicate === undefined ? existing.conditionsPredicate : typed.conditionsPredicate,
+      exceptionsPredicate: patch.exceptionsPredicate === undefined ? existing.exceptionsPredicate : typed.exceptionsPredicate,
+      checks: patch.checks === undefined ? existing.checks : typed.checks,
+    };
+    const current = { conditionsPredicate: existing.conditionsPredicate, exceptionsPredicate: existing.exceptionsPredicate, checks: existing.checks };
+    if (canonicalJson(next) === canonicalJson(current)) return false;
+    const rows = await tx.update(t.decisionEpisodes).set({
+      conditionsPredicate: next.conditionsPredicate as Json | null,
+      exceptionsPredicate: next.exceptionsPredicate as Json | null,
+      checks: next.checks as unknown as Json[],
+      updatedAt: sql`greatest(current_timestamp, ${t.decisionEpisodes.updatedAt} + interval '1 millisecond')`,
+      memoryRev: NEXT_REV,
+    }).where(and(
+      eq(t.decisionEpisodes.id, id),
+      eq(t.decisionEpisodes.memoryRev, existing.memoryRev),
+      validEvidence(),
+    )).returning();
+    if (rows.length === 0) return false;
+    await photograph(tx, rows[0]!, "edit");
+    return true;
   });
 }

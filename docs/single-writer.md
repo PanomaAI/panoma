@@ -79,16 +79,24 @@ of 6-Sep-2026 reproduced two notes accepted at once over a full budget — becau
 read the count in one statement and wrote in the next. Since then the check and the write
 are one transaction that holds a lock in the database itself: `SELECT … FOR UPDATE` on the
 project's row for every note cap (`lockNoteProject`, `packages/db/src/notes.ts`), and
-`LOCK TABLE … IN SHARE ROW EXCLUSIVE MODE` on `decision_episodes` for revisions and on
-`memory_jobs` for claiming work. They are short, they nest inside a caller's transaction,
+`LOCK TABLE … IN SHARE ROW EXCLUSIVE MODE` on `decision_episodes` for revisions, on
+`memory_jobs` for claiming work, and on `app_jobs` at the four sites in
+`packages/db/src/apps.ts` — enqueue, claim, the budget recheck and the spend receipt
+([apps.md](apps.md)). They are short, they nest inside a caller's transaction,
 and — unlike the queue — they also hold across processes, which is exactly the case
 `DATABASE_URL` opens: with a real server two web processes can share one catalog, and a lock
 that lives in one process is no lock at all. `packages/db/src/notes.test.ts`,
-`episodes.test.ts` and `memory-jobs.test.ts` race them on purpose. The one check the locks do
-not cover is the distiller's daily cap (`runDistillation`, `apps/web/lib/memory-distill.ts`):
-it is read per process before the model call, not held through it, so N processes over one
-catalog would exceed the cap by at most N−1 calls a day —a bound chosen over a lock that would
-sit open for the length of a model call.
+`episodes.test.ts` and `memory-jobs.test.ts` race them on purpose. Until delivery B the one
+check the locks did not cover was the distiller's daily cap (`runDistillation`,
+`apps/web/lib/memory-distill.ts`): it was read per process before the model call, not held
+through it, so N processes over one catalog could exceed the cap by at most N−1 calls a day —a
+bound chosen over a lock that would sit open for the length of a model call. Since
+14-Sep-2026 the `memory` family reserves its row under a database lock before the call
+(`reserveModelCall`, the row below), and delivery D moved `read` — its three routes with
+origin `manual`, the Twin's learning with origin `automatic` under a subquota, both under one
+lock — and `episodes` the same day ([twin-learning.md](twin-learning.md)); the bound holds
+only for the families that have not moved — `look`, `ask`, `rehearse`, `card`, `handoff` —
+and `app` reserves in its own table.
 
 Nobody pays that bound today, and it is worth saying why so the lock above does not read as
 dead weight. Since 6-Sep-2026 the worker that drains `memory_jobs` starts only against a local
@@ -97,6 +105,51 @@ what the table lock is for— but because the model key that would pay is the se
 every project it serves ([memory.md](memory.md)). The lock stays exactly as it is. It costs
 nothing to hold, `memory-jobs.test.ts` races it, and it is what the whole thing rests on the
 day the owner decides that spending is worth it.
+
+The memory contract of 14-Sep-2026 added its small writers with the same discipline, each
+holding a lock in the database rather than a turn in the queue, and each raced by the test
+beside its module ([memory-contract.md](memory-contract.md)):
+
+| writer | the lock | what it protects |
+| --- | --- | --- |
+| `resolveContext` (`memory-contexts.ts`) | `pg_advisory_xact_lock` on a hash of the recipient tuple, then `SELECT … FOR UPDATE` on the row found; the generation rises by compare-and-set on `rev` | two hooks arriving together for one session end with one context row and one generation, not two (A19/T09) |
+| `claimCursor` (`memory-sources.ts`) | `LOCK TABLE memory_source_cursors IN SHARE ROW EXCLUSIVE MODE`, a random lease token on the row; `advanceCursor` and `blockCursor` are compare-and-set on `rev` **and** the token | one reader per stream; a stale reader's receptions roll back with its cursor advance, never inserted twice |
+| `replaceSourceGeneration` (`memory-sources.ts`) | `SELECT … FOR UPDATE` on the previous generation's row | a truncated or rewritten transcript opens exactly one new generation |
+| the belief writers (`queries.ts`) | `SELECT … FOR UPDATE` on the belief inside the transaction that decides whether anything changed | a revision is photographed once per real change, and `memory_rev = memory_rev + 1` moves in the same statement as the edit |
+| `reconcileCriteriaWithFile` (`apps/web/lib/select-memory.ts`) | the vetoes and signatures `TASTE.md` dictates go through those same belief writers, under `queueWrite` and one short transaction of their own, outside the selection's reads and under a 300 ms budget | a line the owner deleted or rewrote by hand is applied once, before any criterion is served, and a selection is never a long transaction |
+| `ensureDeliveryModes` (`memory-revisions.ts`) | pages of 500 belief ids under `SELECT … FOR UPDATE`, one short transaction per page, the predicate repeated under the lock | the core is seeded from `published_as` at startup without one long lock, and a row `markPublished` fixed meanwhile is left alone |
+| `addDependencies` (`memory-dependencies.ts`) | `SELECT … FOR UPDATE` on the dependent revisions and offers | one mode per dependency group, across a batch and against stored rows |
+| `beginDeletion` and the batches (`memory-purge.ts`) | the journal has no database lock, on purpose: appends to one file are serialized in-process by a chain per path on `globalThis` (`panomaDeletionJournalChains`), the next sequence is the file's last line plus one, the line is fsync'd, and only then does a short transaction insert the row, with `UNIQUE (journal_id, sequence)` as the net against another process; the caller's `expectedGeneration` is compared under that same chain, after the intent-id check, and a moved generation is `{ refused: "stale" }`; every progress write is `SELECT … FOR UPDATE` on the operation's row and compare-and-set on `rev` | one sequence per operation, the journal line on disk before the row and no file operation inside any transaction (§22.1/§22.7), two confirmations at one generation ending as one operation and one refusal (§25.4), and a crashed batch resumed without cleaning twice (T88) |
+| `recordOffer` and `recordReception` (`memory-offers.ts`) | no lock: `INSERT … ON CONFLICT DO NOTHING` on the request key and the event key, then a re-read of the winner | the same request key yields one offer and a different content under it a `stale_revision`; the same native event yields one reception |
+| `reserveModelCall` and `markSent` (`model-reservations.ts`, delivery B) | `pg_advisory_xact_lock(hashtext('model_calls:<family>:<day>'))` on the family and the local day, the day's count read under it, the row inserted in the state `reserved`; every later move — sent, completed, uncertain, released — is compare-and-set on `reservation_rev`; a send after midnight takes the new day's lock and counts again | five callers competing for one family and day end with exactly what the cap and the subquota allow (B14/T44/T68), and a reservation that crosses midnight is charged to the day it is sent on or refused (T86) — [memory-capture.md](memory-capture.md) |
+| `claimJob` (`memory-jobs.ts`, delivery B) | `LOCK TABLE memory_jobs IN SHARE ROW EXCLUSIVE MODE`, the same lock as the legacy claim, with the sweep of expired leases under it; `stageJob`, `publishJob` (`SELECT … FOR UPDATE` on the row, the lease's clock checked) and `finishJob` are compare-and-set on `(lease_token, rev)` | one worker owns a window at a time; a late worker's write finds nothing to update, a staged answer survives its worker and is published by the next claim without paying (B11/T43, T77) |
+| the capture pass (`apps/web/lib/memory-capture.ts`, delivery B) | the same cursor lease as the receipt reader — `claimCursor` under the table lock — and one short transaction per stream read under `queueWrite`: the permission read again from `twin.json`, `recordFacts` (all-or-nothing, `ON CONFLICT DO NOTHING` on the fact identity), the cursor advance by compare-and-set on `rev` and the token, the generation's fingerprint | a cursor never claims bytes whose facts were not written, and a retried pass lands on the unique index instead of inserting twice (T34) |
+| `obsoleteJobs` (`memory-purge.ts`, delivery B) | no lease held: compare-and-set on the status alone, from every state that is not final, `rev` bumped | the operator's barrier finishes a job the worker still holds, and the worker's next write on the old pair is refused (B12/T54, T76) |
+| `putCheck` and `removeCheck` (`memory-checks.ts`, delivery C) | the domain row's own lock, in the domain's own order so the two writers never wait on each other: the project row then the note (`decideNote`'s order), `SELECT … FOR UPDATE` on a belief or a commitment, `LOCK TABLE decision_episodes IN SHARE ROW EXCLUSIVE MODE` first on a decision (`episodeWrite`'s lock); the caller's `memory_rev` compared twice, as a pre-check under the lock and as `memory_rev = expected` in the `UPDATE` itself; the row's photograph and the `check` revision in the same transaction | a definition changes once per revision the person read, and a check's revision never moves without the item's; observing writes nothing here ([memory-checks.md](memory-checks.md)) |
+| `decideNote` with `supersedesId` (`notes.ts`, delivery C) | under the project's row lock, the predecessor moved first by `UPDATE … WHERE status = 'approved' AND memory_rev = <expected>`, zero rows → `stale_revision` and nothing written; the successor moved second, and a successor that could not move rolls the whole transaction back | a successor is approved only against the predecessor text the person read, never behind their back (T52) |
+| `createCommitment`, `reviseCommitment`, `fulfilCommitment`, `cancelCommitment` (`commitments.ts`, delivery C) | `SELECT … FOR UPDATE` on the row, every refusal (`stale_revision`, `closed`, `not_open`, `checks_incomplete`) decided under it before any write, `memory_rev` compare-and-set, the photograph under the kind `commitment` in the same transaction; a closure by checks re-reads each observation handed over under that lock | an obligation moves once per revision read, is closed by exactly one actor, and is never reopened (C04/T49/T50, T51) |
+| `judgeIncident` (`memory-outcomes.ts`, delivery C) | no lock: one `UPDATE … WHERE id = … AND kind = 'incident' AND verdict_rev = <expected>` | two verdicts on one incident end with one applied and one refused, which the door answers as `409 stale_revision`; an observation's id moves nothing |
+| the patrol (`apps/web/lib/memory-patrol.ts`, delivery C) | the disk is read **outside any transaction** — one check is one unit of work, the clock consulted before each — and each item's observations and effects are written in one short transaction under `queueWrite`, with `challengeNote` nested inside it as a savepoint under the note's `decidedAt` compare-and-set | a look never holds the catalog while a parser runs, and a note is challenged only at the approval the patrol read; what the budget did not reach gets no row at all |
+| `signBeliefByRevision`, `vetoBeliefByRevision`, `setBeliefScopeByRevision`, `resolveProposalByRevision` (`queries.ts`, delivery D) | `SELECT … FOR UPDATE` on the belief, the caller's `memory_rev` compared under the lock and repeated as `memory_rev = <expected>` in the `UPDATE` itself; a stale one answers `{ conflict, reason: stale_revision }` with nothing written, a gesture that changes nothing answers the current number without a bump; the taste door's version-2 body runs every gesture of one request inside one `inTransaction`, so the first refusal rolls the others back | a person signs the text and the tree they read, never one a synthesis or another tab moved meanwhile; a request is applied whole or not at all, and the file's cap — measured inside the transaction over the file read before it — leaves no signature half-made ([twin-learning.md](twin-learning.md)) |
+| `setObservationTopics` (`queries.ts`, delivery D) | one short transaction per row: the row locked, a no-op when the topic is already the filed one, else `memory_rev` bumped by compare-and-set and the row photographed with reason `edit` | reclassifying never duplicates evidence, and a re-filing under the same topic moves no revision (D04/T66) |
+| the learning stages (`apps/web/lib/twin-learn.ts`, delivery D) | the same `claimJob`/`stageJob`/`publishJob` as the extractor; the prompt built and the provider called **outside any transaction**; inside `publishJob` the consent read before the transaction and the grant ids and generations re-checked, the topic's fingerprint recomputed and the standing beliefs compared at `memory_rev` and state, the next stage enqueued in the same transaction | a signature, a veto, a scope gesture or a revocation during the call makes the staged answer `obsolete` instead of overwriting the human state (D05/T69), and a chain stopped by the budget keeps its paid stages (T67) |
+| the publication outbox (`apps/web/lib/taste-publish.ts`, delivery D) | two steps that cannot be one act, in a fixed order: the file compared with the plan's `baseFileHash` and written whole by temp-and-rename **outside any transaction**, its bytes read back, and only then one short `publishJob` transaction marking the beliefs published and closing the job; a claim that finds a staged answer whose `renderedHash` equals the file's hash confirms without writing | a crash between the write and the row is recovered by hash, a file that moved is `deferred` with `file_changed` and never a veto, and no file operation happens inside a database transaction (§22.1, §22.10) |
+
+Three things the table shares with the older locks. They nest inside a caller's transaction
+as savepoints and open a real one on their own. They hold across processes, which the queue
+does not — the journal chain is the one exception, and its net across processes is the unique
+index, not the chain. And the confirmation of an offer — reading the publication permission
+again, then every selected revision and the deletion generation, before writing — still runs
+under `queueWrite` **and** a short transaction, because it is a write that reads first, which
+is exactly the shape the audit of 6-Sep-2026 caught. The receipt reader's publish is the same
+shape and reads `twin.json` again inside it, so a grant gone during the read publishes nothing;
+the capture pass and the extractor's publication do the same, and so does the patrol, which
+reads the disk with no transaction open and writes each item's looks in one short one.
+What none of them covers, and is said in the contract's record: the
+continuation tokens, the plan cache of a purge or a backfill, the pointer queues and the
+extractor's planning memos live in process memory on `globalThis`, so with two web processes
+over one catalog a token issued by one is `stale_cursor` to the other — which is the intended
+answer, not a lost write.
 
 ## The three nets of `panoma up`, in order of reach
 

@@ -1,6 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { readConfig, providersByAuth } from "@panoma/ai";
+import { MANAGED_EVENTS, hookStateOf, type HookState } from "@panoma/core";
 import { listProjectRoots, bridgeCounts, type Database } from "@panoma/db";
 import { watchState } from "@/lib/watch";
 
@@ -16,12 +17,6 @@ import { watchState } from "@/lib/watch";
   looking at the already loaded configuration. Nothing starts processes or pays for calls — a
   health screen that costs health does not open twice.
  */
-
-/**
- * The same brand that `panoma hooks` plant: see their comment — it is being looked for, it does
- * not look alike.
- */
-const HOOKS_BRAND = "# panoma-hooks";
 
 export interface BridgeReport {
   catalog: { projects: number; watcherActive: boolean };
@@ -79,16 +74,68 @@ async function hooksDirOf(root: string): Promise<string> {
   return join(gitDir, "hooks");
 }
 
-/** Does this project have the hook on? The card shows it next to its memory. */
-export async function hookInstalledAt(root: string): Promise<boolean> {
+/** What the bridge knows about one project's hooks: the core reading, plus where it read from. */
+export interface ProjectHookState extends HookState {
+  /** A Claude Code settings file exists here — the only place the four events can be written. */
+  settingsFile: boolean;
+}
+
+/**
+ * The Claude Code settings the installer would write to, read the way it reads them:
+ * `settings.local.json` first, `settings.json` second, a broken JSON as if it were not there.
+ */
+async function claudeSettingsAt(root: string): Promise<Record<string, unknown> | undefined> {
+  for (const name of ["settings.local.json", "settings.json"]) {
+    const raw = await readFile(join(root, ".claude", name), "utf8").catch(() => undefined);
+    if (raw === undefined) continue;
+    try {
+      const content = JSON.parse(raw) as unknown;
+      return typeof content === "object" && content !== null && !Array.isArray(content)
+        ? (content as Record<string, unknown>)
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The state of one project's hooks, read from the disk and judged by @panoma/core.
+ *
+ * Three evidences kept apart, because until 14-Sep-2026 the bridge collapsed them into one: the
+ * brand appears in the post-commit; each of the four events carries our entry with its current
+ * identity, an older one of ours, or nothing; and the command those entries name still exists on
+ * this disk. The third is what the 556 silent failures lacked — a hook with the brand, pointing
+ * at a name that only the interactive PATH knew. `durable` is `null` when there is nothing of
+ * ours to judge. Nothing runs: the bridge promises that looking is free.
+ */
+export async function hookStateAt(root: string): Promise<ProjectHookState> {
+  let postCommit: string | undefined;
   try {
-    const hook = await readFile(join(await hooksDirOf(root), "post-commit"), "utf8");
-    return hook.includes(HOOKS_BRAND);
+    postCommit = await readFile(join(await hooksDirOf(root), "post-commit"), "utf8");
   } catch {
     // Without a hook, without .git, or without permission: for the bridge they are the same — it is
     // not there.
-    return false;
   }
+  const settings = await claudeSettingsAt(root);
+  return { ...hookStateOf({ postCommit, settings }), settingsFile: settings !== undefined };
+}
+
+/**
+ * Whether everything that can be installed here is installed, and can run.
+ *
+ * The post-commit with our brand and a durable command; and, where a Claude Code settings file
+ * exists, the four events with their current identity. A project without a settings file is
+ * judged on the post-commit alone: the installer never creates `.claude/` for anyone, so counting
+ * the events against such a project would be a denominator nobody can reach — the exact number
+ * this screen once showed as «44 of 76», for ever. An older entry of ours counts as installable
+ * and not installed: `--install` upgrades it in place.
+ */
+export function hooksReady(state: ProjectHookState): boolean {
+  if (!state.postCommit || state.durable !== true) return false;
+  if (!state.settingsFile) return true;
+  return MANAGED_EVENTS.every((event) => state.events[event] === "installed");
 }
 
 /**
@@ -127,16 +174,19 @@ export async function hooksInstalledIn(
   roots: string[],
 ): Promise<{ checked: number; installed: number; installable: number }> {
   const readings = await Promise.all(
-    roots.map(async (root) => ({
-      installed: await hookInstalledAt(root),
-      possible: await couldHaveHook(root),
-    })),
+    roots.map(async (root) => {
+      const state = await hookStateAt(root);
+      return { installed: hooksReady(state), branded: state.postCommit, possible: await couldHaveHook(root) };
+    }),
   );
   return {
     checked: roots.length,
     installed: readings.filter((r) => r.installed).length,
-    /* A hook that is already there proves its own possibility, whatever the config says. */
-    installable: readings.filter((r) => r.possible || r.installed).length,
+    /*
+      A hook that is already there proves its own possibility, whatever the config says — an older
+      one of ours included: it is installable, not installed, and `--install` upgrades it.
+     */
+    installable: readings.filter((r) => r.possible || r.branded).length,
   };
 }
 

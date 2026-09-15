@@ -92,16 +92,16 @@ because the screen itself calls it too, from its own open buttons.
 | --- | --- | --- |
 | `/` | what is on the disk and what moved | `watch` · `project` · `roots` · `open` |
 | `/p/[slug]` | everything about a project, in ten views | twenty-one routes, listed below |
-| `/bridge` | four setup steps, memory activity and system status | `hooks` |
+| `/bridge` | four setup steps, memory activity and system status; since 14-Sep-2026 the hooks step counts the four Claude Code events per project and whether their command exists on disk, and a «Memory delivered» card reads offers, attempts and receipts, the reader's queues and the quarantine | `hooks`; the page itself reads `memoryStatus` in process and links to `GET /api/memory/status` as the machine-readable record |
 | `/runs` | which agent proposals are waiting for a decision | none: it is a read |
 | `/runs/[id]` | one proposal with its steps and its patch | `runs/{id}` (PATCH) |
 | `/unsaved` | what work can be lost, and the command that saves it | `open` |
 | `/agents` | which agents there are and what they did | `agent/mcp` · `agent/keys` · `open` |
 | `/handoff` | which conversations the coding agents kept on this disk, grouped by project, and how to continue one in another agent — or in the same one with another account, after signing out and back in; the receipts of what was handed on so far. The two desktop apps are targets and labelled sources too: a row reads «Claude (app)» when the app kept the conversation, and an app target gets the same file with a link as its door and the terminal line as the fallback | `handoff` (GET the list, POST the write) · `handoff/{id}` (the preview) · `handoff/launch`; the page itself reads `listHandoffs` and `stat`s each target file ([handoff.md](handoff.md)) |
-| `/twin` | the portrait: beliefs, corpus and spend | nine `twin/*` routes, below |
+| `/twin` | the portrait: beliefs, corpus and spend; under the histories card, since 14-Sep-2026, the receipt-reading switch of each allowed source that the snapshot marks `captureSupported` (`claude-code` alone in A, `codex` beside it since delivery B; the others get one quiet sentence instead of a switch the door would refuse) — five sentences before the yes: what is read, what is kept, from which byte, how to revoke, and that the scope is global — which posts the grant alternative of `twin/sources` and translates its refusal by code (`captureRefusalKey`), the English sentence of the body shown only for a code it does not know; and, since delivery B, two more decisions per source drawn the same way, the version-2 facts notice of the capture and the paid extraction with its own notice, told in [memory-capture.md](memory-capture.md); since delivery D a fourth, the Twin learning on its own, with its own notice, and under the card the learning block — active or paused per source and project, what waits, the automatic spend, the reason of waiting, pause per row — and on the portrait each criterion's conditions and exceptions as sentences, the families behind an inference and the publication state, told below and in [twin-learning.md](twin-learning.md) | nine `twin/*` routes, below |
 | `/twin/look` | screenshots and findings | `twin/{shot,look,assign}` · `assignments/launch` |
 | `/ai` | which model Panoma thinks with and where the credential comes from | `ai` |
-| `/spend` | provider usage today and over the last thirty days, with estimates distinguished from missing pricing or token measurements; eight functions pair their purpose, usage and daily cap; model rates, currency, screenshot size and pause share one settings form | `spend` (the form POSTs; the page itself reads the ledger and `spend.json` through `lib/spend-report.ts`, the same assembly `GET /api/spend` answers with) |
+| `/spend` | provider usage today and over the last thirty days, with estimates distinguished from missing pricing or token measurements; eight functions pair their purpose, usage and daily cap; model rates, currency, screenshot size and pause share one settings form; storage controls show catalog and project quotas, current usage and available physical disk space | `spend` (the form POSTs; the page itself reads the ledger and `spend.json` through `lib/spend-report.ts`, the same assembly `GET /api/spend` answers with) |
 | `/packages` | which dependencies the portfolio shares | none: it is a read |
 | `/search` | where a text shows up in everybody's code | `search` · `open` |
 | `/credentials` | which secrets are written on the disk | `secrets` |
@@ -115,6 +115,96 @@ The twenty-one of the card, which is the screen that concentrates almost everyth
 `notes`, `open`, `open/all`, `project`, `rescan`, `runs`, `tasks` and `twin/critique`. And the nine of the
 portrait: `twin/sources`, `twin/mine`, `twin/distill`, `twin/classify`, `twin/synthesize`,
 `twin/taste`, `twin/episodes`, `twin/episodes/learn` and `twin/rehearse`.
+
+The card's Memory view carries two blocks the twenty-one do not serve either, both read in
+process since 14-Sep-2026: under the hooks line, the four Claude Code events of this project
+as installed, legacy or missing with the delivery counters beside them (`ProjectHooks`), and at
+the foot, «Deliveries» — the newest ten offers made to this project as references only, the
+kind, id and revision of every unit that travelled or was left in the manifest, the omissions
+by reason, the last attempt and the last reception with its intact units, each unit linking to
+its own record (`/p/<slug>#memory`, `/twin#portrait`, `/twin?episode=<id>#episode-<id>`) and
+never the rendered text. `lib/memory-view.ts` shapes both and its test pins that no text,
+payload or rendered bytes survive into a view; the whole record is one link away in
+`GET /api/memory/status?slug=`. Delivery B added two more blocks to the same view, shaped by the
+same module: «Extraction jobs» — the `capacityLimited` notice naming `/spend`, the backlog of
+unpublished intervals, the captured bytes not yet windowed and the oldest pending, then one row
+per job with its state in a person's words (queued, running, saved but not yet added, deferred,
+failed, added, cancelled, invalidated), processor and origin, attempts, paid calls, ranges, the
+reason as a sentence, the retry due and the published counts, with Retry for a failed or
+deferred job and Cancel for any that is not final, each posting `POST /api/memory/jobs` with the
+row's revision, and a link to `GET /api/memory/jobs?slug=` — and «Captured facts» by kind, counts
+only; the test pins that no staged output, manifest, prompt or revision id survives into a view
+([memory-capture.md](memory-capture.md)).
+
+Delivery C added what the disk showed, to the same view and through the same module
+([memory-checks.md](memory-checks.md)). The page now reads the notes in every state —
+approved, proposed, challenged and superseded, the expired ones included — the patrol's looks
+of the project (up to five pages of 200 occurrences, their freshness computed on the server),
+the owner's decisions in force in the selector's own eligibility, and the newest 50 commitments
+with the `derived_from` succession between their photographs; each of the three reads
+degrades on its own, so a block that could not be read says so instead of blanking the
+others. Under every rule, every decision in force and every commitment, the checks it defines
+with the newest look at each — `pass`, `fail` or `unknown` with the evaluator's reason, «not
+recent» past ten minutes, «not observed yet» when nobody looked, and whether the look was
+taken at an earlier revision of the item or of the definition; a first-generation anchor is
+drawn as one of purpose `grounds`. A note that was replaced or expired stays under its own
+heading with its state and a link to the rule that took its place, and an approved one says
+when it expires and which one it replaced. «Commitments» draws each obligation with its state
+and its observations apart, the two verbs the door takes from a person — fulfil and cancel,
+posted to `POST /api/memory/commitments` with the row's revision, nothing for a closed one —
+and a link to `GET /api/memory/commitments?slug=`; «Incidents» draws every fail the patrol
+recorded against a rule that stays in force, with what the look could and could not cover and
+whether the revision had been delivered before, and offers exactly two words,
+`memory.outcomeConfirmed` and `memory.falsePositive`, posted to `POST /api/memory/outcomes`
+with the incident's verdict revision, and a link to `GET /api/memory/outcomes?slug=`. The
+words obeyed and ignored do not exist on the card.
+
+The card's assignments view carries the **decision cases** (`ProjectCase`,
+`apps/web/components/project-case.tsx`): the tasks of the project with what was asked and how
+many commitments name each, and, on demand and fresh on every open, the four columns of one
+task from `GET /api/memory/cases?slug=&id=` — asked, decided, declared, checked — with the
+word `unknown` for a half the projection could not fill and the field-level gaps listed by
+name; a closing report in the third column never stands in for a look in the fourth. The
+refusal of the door is translated by code (`memoryRefusalKey`); its English sentence is shown
+only for a code the screen does not know.
+
+Delivery D reaches `/twin` and not the card ([twin-learning.md](twin-learning.md)). The
+histories card (`twin-sources.tsx`) draws a third switch per open source under the receipts
+and the extraction — «Learn your preferences» — on top of the receipts only,
+with a notice of seven sentences before the yes (what travels: the new messages of the allowed
+range, redacted, in batches, a copy marked as a copy and supporting nothing; what is kept:
+observations with their exact quote and where they came from, and the criteria proposed; what
+it costs, with the day's subquota as a figure; that it publishes nothing and the publication
+permission is another switch; from where it reads; how it is taken back and what stays; that
+it stops with the capture), posting the grant alternative with `purpose: "twinAutoLearn"`,
+`noticeVersion: 1` and the generation it was drawn with. A new block, «Continuous learning»
+(`twin-learning.tsx`, shaped by `learningView` in `lib/memory-view.ts` from the report the
+page reads — the same object the status document nests as `queue.twin`), says whether the
+learning is working or waiting and why — one of seven reasons, each a sentence about a fact
+and none a verdict —, the automatic calls of the day against the subquota and the cap, what
+waits to be read, the last range processed, the batches by state, one row per source and
+project with a «Pause» that posts the revocation of exactly that grant with its generation and
+says back how many paid jobs it invalidated (resuming a global grant is the histories card;
+a project-scoped one, the terminal), and the newest 8 observations with their kind and the tag
+that says an ambiguous reaction founds nothing. The consent card flips the inferred switch with
+`version: 2` and the publication generation it read, so a stale tab is refused as
+`publication_conflict`, and a portrait that does not fit refuses the yes before saving it; the
+teach form posts `version: 2` with an explicit scope and optional conditions and exceptions.
+The predicate controls combine operation, path and task kind with all/any and per-row negation;
+environment and check predicates remain available through the API. The criteria list
+(`belief-editor.tsx`) draws per criterion the conditions and exceptions as localized sentences
+(`predicateLabel`; the brief keeps core's English `renderPredicate`), the independent
+cases behind an inference against the floor of 3, the kind of every quote read by id from the
+observations the citations name, the proposals grouped by the criteria they would replace, and
+sends every gesture as the version-2 body with `expectedRevision` in batches of 20, restating
+the trees it shows when a signature would otherwise clear them. The file card shows the
+publication state — not planned, pending with its job, written, failed with its reason, or in
+conflict as the reconciliation notice (`memory.publicationConflict`) with «Reconcile now»,
+which is one more plan through the same door. Two rules the screen keeps whatever it draws:
+never a question per batch and never a notification per observation, and no internal word —
+`staged`, `lease` — on an owner's control. The screenshots `twin-learning-en-desktop.png`,
+`twin-criteria-conditions-en-desktop.png` and `twin-publication-en-desktop.png` in
+`.panoma/shots/` are the evidence of what landed.
 
 The card's «pick it up again» view also carries a block the twenty-one do not serve: the newest
 five conversations Claude Code, Codex, OpenCode and Gemini CLI kept in that folder, read in
@@ -331,6 +421,7 @@ code with nobody to defend it**. That is why every piece with rules of its own i
 | `lib/spend-view.ts` | the sums, the local-day buckets, the family lines, and the price of a window |
 | `lib/spend-format.ts` | the client-safe half: money and token formatting, the cost of one row, usage detail and missing-measurement checks, the dictionary keys of families, kinds and sources — it exists because `spend-settings.ts` reads a file and the client form cannot import it |
 | `lib/spend-report.ts` | the whole answer of the spend screen, assembled once for the page, `GET /api/spend` and `POST /api/spend` |
+| `lib/memory-view.ts` | the memory contract as the screens read it: the hooks per event with their tones, the delivery counters with the number last in both languages, an offer as references and counts, the bridge and project readings of the status document, the capture grants per source with `CAPTURE_SOURCES` (the sources the receipt reader reads, shared with the `twin/sources` route because a route file cannot export a value) and `captureRefusalKey`, the door's codes as dictionary keys — client-safe, type-only imports, and never a payload or a rendered text; since delivery C also the check states with their result, reason and freshness words, the commitment and decision rows, the incident looks with the verdict words, and the case view with its `unknown` halves; since delivery D the third grant of a source, `autoLearn`, beside `capture` and `extract` in `sourceGrantViews` |
 
 And out of that comes the odd shape of the accessibility and structure tests too: **they read
 the text of the code instead of rendering it**. What they check —that an attribute is present,

@@ -2,6 +2,9 @@ import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { redactSecrets } from "@panoma/core";
 import type { Database } from "./client";
 import { newId } from "./agents";
+import type { CheckExpected, CheckPurpose, CheckShape } from "./memory-checks";
+import { memoryReadBarrier } from "./memory-purge";
+import { noteAuthority, notePayload, recordRevision, type RevisionReason } from "./memory-revisions";
 import * as t from "./schema";
 
 /**
@@ -91,8 +94,23 @@ export interface ProjectNote {
   createdBy: string;
   createdAt: Date;
   trigger: string | null;
+  /** The delivery revision: the block at the top of `schema.ts`, and `memory-revisions.ts`. */
+  memoryRev: number;
   challenge?: unknown;
   sentinels?: unknown;
+  /** The owner's explicit expiry (delivery C); null, and read as never, on a row without one. */
+  validUntil?: Date | null;
+  /** The note this one replaced when it was approved (delivery C). */
+  supersedesId?: string | null;
+}
+
+/**
+ * The instant from which an approved note no longer travels: the stored expiry is the boundary
+ * and reaching it is expiring — the same reading as `valid_until` on a decision, because the
+ * plan forbids a second interpretation of dates (§9.2). Rows without an expiry never expire.
+ */
+function stillValidAt(now: Date) {
+  return sql`(${t.notes.validUntil} is null or ${t.notes.validUntil} > ${now.toISOString()}::timestamptz)`;
 }
 
 /** The no of `proposeNote`, with the reason in data so that each surface can say it in its language. */
@@ -104,6 +122,50 @@ export type NoteRefusal =
 /** All note capacity checks share this lock, including helpers called outside the web routes. */
 async function lockNoteProject(db: Database, projectId: string): Promise<void> {
   await db.select({ id: t.projects.id }).from(t.projects).where(eq(t.projects.id, projectId)).for("update");
+}
+
+/**
+ * The revision moves in the same statement as the change, never as a read followed by a write:
+ * two transactions that touch one note serialize on its row, and the second one adds to the
+ * number the first one left. `returning()` then hands back the row as it is at that number.
+ */
+const NEXT_REV = sql`${t.notes.memoryRev} + 1`;
+
+/**
+ * The `sentinels` column holds two generations since delivery C: the first-generation anchors
+ * customs extracts at approval (`{ kind, target, expected }`, no `schemaVersion`) and the owner's
+ * checks (`{ schemaVersion: 1, checkId, … }`, written by `memory-checks.ts`). Re-anchoring a note
+ * replaces the anchors and keeps the checks: a yes at the gate must never erase a check the
+ * owner defined by hand.
+ */
+function reanchored(existing: unknown, anchors: Sentinel[]): unknown[] {
+  const kept = Array.isArray(existing)
+    ? existing.filter((entry) => entry !== null && typeof entry === "object" && "schemaVersion" in (entry as Record<string, unknown>))
+    : [];
+  return [...anchors, ...kept];
+}
+
+/** The photograph of a note at the revision the statement just produced, in the same transaction. */
+async function photograph(tx: Database, row: typeof t.notes.$inferSelect, reason: RevisionReason): Promise<void> {
+  await recordRevision(tx, {
+    kind: "note",
+    objectId: row.id,
+    rev: row.memoryRev,
+    scopeKind: "project",
+    scopeRef: row.projectId,
+    authority: noteAuthority(row),
+    disposition: row.status,
+    payload: notePayload(row),
+    reason,
+  });
+}
+
+/** Thrown inside the succession transaction so the predecessor's move is rolled back with the rest. */
+class SuccessionRollback extends Error {
+  constructor() {
+    super("The successor moved while its predecessor was being replaced.");
+    this.name = "SuccessionRollback";
+  }
 }
 
 /**
@@ -134,13 +196,14 @@ export async function proposeNote(
     if (pending >= NOTE_PENDING_MAX) return { refused: "pendingFull", max: NOTE_PENDING_MAX };
 
     const id = newId("note");
-    await tx.insert(t.notes).values({
+    const [note] = await tx.insert(t.notes).values({
       id,
       projectId: input.projectId,
       body,
       createdBy: input.createdBy,
       trigger: trigger || null,
-    });
+    }).returning();
+    await photograph(tx, note!, "create");
     return { id, pending: pending + 1 };
   });
 }
@@ -172,7 +235,7 @@ export async function addHumanNote(
     }
 
     const id = newId("note");
-    await tx.insert(t.notes).values({
+    const [row] = await tx.insert(t.notes).values({
       id,
       projectId: input.projectId,
       body,
@@ -181,7 +244,8 @@ export async function addHumanNote(
       createdBy: "human",
       decidedAt: new Date(),
       sentinels: input.sentinels ?? [],
-    });
+    }).returning();
+    await photograph(tx, row!, "create");
     return { id, body };
   });
 }
@@ -198,20 +262,42 @@ export async function addHumanNote(
  * In both cases, the `where` requires the initial state — just like `discardTask` only moves
  * alive: if two tabs decide at the same time, the second one finds out that it arrived late
  * instead of stepping silently.
+ *
+ * ── Succession and expiry (delivery C) ──────────────────────────────────────────────
+ *
+ * An approval may name the note it replaces (`supersedesId`) together with the revision of that
+ * note the person was looking at (`expectedPredecessorRev`). Both rows move in this one
+ * transaction, each by compare-and-set on its own `memory_rev`: the predecessor goes
+ * `superseded` only if it is still approved at that exact revision, and the successor is
+ * approved only after that. If the predecessor moved meanwhile — someone challenged, discarded
+ * or already replaced it — the answer is `stale_revision` and **nothing** is approved (T52): the
+ * successor is not quietly approved as a rule of its own with the link dropped (plan §11.3),
+ * because the person decided a replacement, not an addition. The budget is measured after the
+ * swap: what the predecessor gave back is what the successor may take. `validUntil` is the
+ * owner's expiry, stored as they gave it; `null` clears one, `undefined` leaves it alone.
  */
-export async function decideNote(
-  db: Database,
-  noteId: string,
-  decision: "approved" | "discarded",
-  options: { projectId?: string; sentinels?: Sentinel[] } = {},
-): Promise<
+export type NoteDecision =
   /**
    * Upon approval, `body` and `trigger` travel back: the anchoring customs anchor what is stored,
    * not what the customer says.
    */
   | { decided: true; body?: string; trigger?: string | null }
   | { decided: false; reason: "gone" | "overBudget" | "sleepingFull"; used?: number; budget?: number }
-> {
+  /** The predecessor is not approved at the expected revision any more: nothing was decided. */
+  | { decided: false; reason: "stale_revision" };
+
+export async function decideNote(
+  db: Database,
+  noteId: string,
+  decision: "approved" | "discarded",
+  options: {
+    projectId?: string;
+    sentinels?: Sentinel[];
+    supersedesId?: string;
+    expectedPredecessorRev?: number;
+    validUntil?: Date | null;
+  } = {},
+): Promise<NoteDecision> {
   /*
     Approving part of a proposal or a challenged one — re-approving IS the verdict of the lawsuit
     that opens a sentinel and clears the evidence: the current basis is that of the last yes.
@@ -221,8 +307,19 @@ export async function decideNote(
     by sneaking in.
    */
   const from = decision === "approved" ? ["proposed", "challenged"] : ["proposed", "approved", "challenged"];
+  const supersedesId = options.supersedesId;
+  if (supersedesId !== undefined) {
+    if (decision !== "approved") throw new TypeError("Only an approval names the note it replaces.");
+    if (typeof supersedesId !== "string" || supersedesId === "" || supersedesId === noteId) throw new TypeError("A successor names another note.");
+    if (!Number.isSafeInteger(options.expectedPredecessorRev) || (options.expectedPredecessorRev as number) < 1) {
+      throw new TypeError("Replacing a note requires the revision of the predecessor that was read.");
+    }
+  }
+  if (options.validUntil !== undefined && options.validUntil !== null && !Number.isFinite(options.validUntil.getTime())) {
+    throw new TypeError("A note expiry must be a valid instant.");
+  }
 
-  return db.transaction(async (tx) => {
+  return db.transaction(async (tx): Promise<NoteDecision> => {
     const [owner] = await tx.select({ projectId: t.notes.projectId }).from(t.notes).where(and(
       eq(t.notes.id, noteId),
       options.projectId === undefined ? undefined : eq(t.notes.projectId, options.projectId),
@@ -230,21 +327,47 @@ export async function decideNote(
     if (!owner) return { decided: false, reason: "gone" };
     await lockNoteProject(tx, owner.projectId);
     const [note] = await tx
-      .select({ body: t.notes.body, trigger: t.notes.trigger, decidedAt: t.notes.decidedAt })
+      .select({ body: t.notes.body, trigger: t.notes.trigger, decidedAt: t.notes.decidedAt, sentinels: t.notes.sentinels })
       .from(t.notes)
-      .where(and(eq(t.notes.id, noteId), eq(t.notes.projectId, owner.projectId), inArray(t.notes.status, from)))
+      .where(and(eq(t.notes.id, noteId), eq(t.notes.projectId, owner.projectId), inArray(t.notes.status, from), await memoryReadBarrier(tx, "note", t.notes.id)))
       .limit(1);
     if (!note) return { decided: false, reason: "gone" };
+
+    // The predecessor as it stands under the project lock: what it gives back to the budget.
+    const predecessor = supersedesId === undefined ? undefined : (await tx
+      .select({ body: t.notes.body, trigger: t.notes.trigger, status: t.notes.status, memoryRev: t.notes.memoryRev })
+      .from(t.notes)
+      .where(and(eq(t.notes.id, supersedesId), eq(t.notes.projectId, owner.projectId)))
+      .limit(1))[0];
+    if (supersedesId !== undefined && (!predecessor || predecessor.status !== "approved" || predecessor.memoryRev !== options.expectedPredecessorRev)) {
+      return { decided: false, reason: "stale_revision" };
+    }
 
     if (decision === "approved") {
       // A sleeping note pays a slot; only awake notes pay the briefing's character budget.
       const usage = await noteUsage(tx, owner.projectId);
-      if (note.trigger === null && usage.used + note.body.length > NOTE_BUDGET) {
+      const freedChars = predecessor && predecessor.trigger === null ? predecessor.body.length : 0;
+      const freedSlots = predecessor && predecessor.trigger !== null ? 1 : 0;
+      if (note.trigger === null && usage.used - freedChars + note.body.length > NOTE_BUDGET) {
         return { decided: false, reason: "overBudget", used: usage.used, budget: NOTE_BUDGET };
       }
-      if (note.trigger !== null && usage.sleeping >= NOTE_SLEEPING_MAX) {
+      if (note.trigger !== null && usage.sleeping - freedSlots >= NOTE_SLEEPING_MAX) {
         return { decided: false, reason: "sleepingFull", used: usage.sleeping, budget: NOTE_SLEEPING_MAX };
       }
+    }
+
+    if (supersedesId !== undefined) {
+      // The first half of the swap, by compare-and-set: still approved, still at that revision.
+      const [replaced] = await tx
+        .update(t.notes)
+        .set({ status: "superseded", memoryRev: NEXT_REV })
+        .where(and(
+          eq(t.notes.id, supersedesId), eq(t.notes.projectId, owner.projectId),
+          eq(t.notes.status, "approved"), eq(t.notes.memoryRev, options.expectedPredecessorRev as number),
+        ))
+        .returning();
+      if (!replaced) return { decided: false, reason: "stale_revision" };
+      await photograph(tx, replaced, "supersede");
     }
 
     // A new approval gets a distinct revision even within one millisecond or after a clock change.
@@ -253,26 +376,45 @@ export async function decideNote(
       .update(t.notes)
       .set({
         status: decision, decidedAt,
+        memoryRev: NEXT_REV,
         ...(decision === "approved" ? { challenge: null } : {}),
-        ...(decision === "approved" && options.sentinels !== undefined ? { sentinels: options.sentinels } : {}),
+        ...(decision === "approved" && options.sentinels !== undefined ? { sentinels: reanchored(note.sentinels, options.sentinels) } : {}),
+        ...(supersedesId !== undefined ? { supersedesId } : {}),
+        ...(decision === "approved" && options.validUntil !== undefined ? { validUntil: options.validUntil } : {}),
       })
       .where(and(eq(t.notes.id, noteId), eq(t.notes.projectId, owner.projectId), inArray(t.notes.status, from)))
-      .returning({ id: t.notes.id, body: t.notes.body, trigger: t.notes.trigger });
-    if (moved.length === 0) return { decided: false, reason: "gone" };
+      .returning();
+    if (moved.length === 0) {
+      // Under the project lock the row read above cannot have moved; if it did, the swap must not stand.
+      if (supersedesId !== undefined) throw new SuccessionRollback();
+      return { decided: false, reason: "gone" };
+    }
+    // A discarded note is photographed too: the no is a state with a number, not an erasure.
+    await photograph(tx, moved[0]!, decision === "approved" ? "approve" : "veto");
     return decision === "approved"
       ? { decided: true, body: moved[0]?.body, trigger: moved[0]?.trigger ?? null }
       : { decided: true };
+  }).catch((error: unknown): NoteDecision => {
+    if (error instanceof SuccessionRollback) return { decided: false, reason: "gone" };
+    throw error;
   });
 }
 
 /**
  * The notes of a project, the newest first and with a stable tiebreaker — the same reason as the
  * tasks of the context: two identical calls return the same order.
+ *
+ * An expired note is left out unless the caller says `includeExpired`: this reader is what every
+ * delivery to an agent, the selector and the path readers call, and «an expired note is not
+ * eligible and travels nowhere» is the rule they all inherit from here (delivery C). The owner's
+ * own screen, the decision door and the distiller's duplicate check ask for the whole archive.
+ * A `superseded` note is a status of its own and comes only when named in `statuses`.
  */
 export async function listProjectNotes(
   db: Database,
   projectId: string,
   statuses: string[] = ["approved"],
+  options: { includeExpired?: boolean; now?: Date } = {},
 ): Promise<ProjectNote[]> {
   return db
     .select({
@@ -282,15 +424,23 @@ export async function listProjectNotes(
       createdBy: t.notes.createdBy,
       createdAt: t.notes.createdAt,
       trigger: t.notes.trigger,
+      memoryRev: t.notes.memoryRev,
       /*
         The lawsuit travels with the row: the card shows the diff of the basis. It does not reach
         the agents' channel — `getAgentContext` chooses its fields and this is not among them.
        */
       challenge: t.notes.challenge,
       sentinels: t.notes.sentinels,
+      validUntil: t.notes.validUntil,
+      supersedesId: t.notes.supersedesId,
     })
     .from(t.notes)
-    .where(and(eq(t.notes.projectId, projectId), inArray(t.notes.status, statuses)))
+    .where(and(
+      eq(t.notes.projectId, projectId),
+      inArray(t.notes.status, statuses),
+      await memoryReadBarrier(db, "note", t.notes.id),
+      options.includeExpired ? undefined : stillValidAt(options.now ?? new Date()),
+    ))
     .orderBy(desc(t.notes.createdAt), asc(t.notes.id));
 }
 
@@ -331,7 +481,7 @@ export async function noteUsage(
  * triggers are at most thirty and `triggerMatches` are two comparisons — a globs engine in SQL
  * would be more machine than problem.
  */
-export async function notesAt(db: Database, projectId: string, path: string): Promise<ProjectNote[]> {
+export async function notesAt(db: Database, projectId: string, path: string, options: { now?: Date } = {}): Promise<ProjectNote[]> {
   const sleeping = await db
     .select({
       id: t.notes.id,
@@ -340,14 +490,54 @@ export async function notesAt(db: Database, projectId: string, path: string): Pr
       createdBy: t.notes.createdBy,
       createdAt: t.notes.createdAt,
       trigger: t.notes.trigger,
+      memoryRev: t.notes.memoryRev,
+      validUntil: t.notes.validUntil,
+      supersedesId: t.notes.supersedesId,
     })
     .from(t.notes)
     .where(
-      and(eq(t.notes.projectId, projectId), eq(t.notes.status, "approved"), sql`${t.notes.trigger} is not null`),
+      // A sign whose date has passed is taken down: the same eligibility as the briefing.
+      and(eq(t.notes.projectId, projectId), eq(t.notes.status, "approved"), sql`${t.notes.trigger} is not null`, stillValidAt(options.now ?? new Date()), await memoryReadBarrier(db, "note", t.notes.id)),
     )
     .orderBy(desc(t.notes.createdAt), asc(t.notes.id));
 
   return sleeping.filter((note) => note.trigger !== null && triggerMatches(note.trigger, path));
+}
+
+/**
+ * Set or clear the owner's expiry on a living note, by compare-and-set on the revision the
+ * owner read. The date is stored as given — the schema says why it is never re-interpreted —
+ * and a change is a revision of its own under `policy`, like the expiry of a decision; asking
+ * for the date the row already carries is a successful retry that bumps nothing.
+ */
+export async function setValidUntil(
+  db: Database,
+  noteId: string,
+  expected: { memoryRev: number },
+  validUntil: Date | null,
+): Promise<{ revision: number } | { conflict: true }> {
+  if (validUntil !== null && !Number.isFinite(validUntil.getTime())) throw new TypeError("A note expiry must be a valid instant.");
+  if (!Number.isSafeInteger(expected?.memoryRev) || expected.memoryRev < 1) throw new TypeError("The expected revision is a positive integer.");
+  const alive = ["proposed", "approved", "challenged"];
+  return db.transaction(async (tx) => {
+    // The project lock first, then the row: the same order as `decideNote`, so the two never wait on each other.
+    const [owner] = await tx.select({ projectId: t.notes.projectId }).from(t.notes)
+      .where(and(eq(t.notes.id, noteId), inArray(t.notes.status, alive))).limit(1);
+    if (!owner) return { conflict: true };
+    await lockNoteProject(tx, owner.projectId);
+    const [current] = await tx.select({ validUntil: t.notes.validUntil, memoryRev: t.notes.memoryRev }).from(t.notes)
+      .where(and(eq(t.notes.id, noteId), inArray(t.notes.status, alive))).limit(1);
+    if (!current || current.memoryRev !== expected.memoryRev) return { conflict: true };
+    if ((current.validUntil?.getTime() ?? null) === (validUntil?.getTime() ?? null)) return { revision: current.memoryRev };
+    const [row] = await tx
+      .update(t.notes)
+      .set({ validUntil, memoryRev: NEXT_REV })
+      .where(and(eq(t.notes.id, noteId), inArray(t.notes.status, alive), eq(t.notes.memoryRev, expected.memoryRev)))
+      .returning();
+    if (!row) return { conflict: true };
+    await photograph(tx, row, "policy");
+    return { revision: row.memoryRev };
+  });
 }
 
 // ── The Sentinels ────────────────────────────────────────────────────────────
@@ -361,11 +551,24 @@ export interface Sentinel {
   expected: string | boolean;
 }
 
-/** The evidence of a gunshot: which sentinel, what was observed, and when. */
+/**
+ * The evidence of a gunshot: which sentinel, what was observed, and when. Since delivery C the
+ * patrol fires the same gate for a typed check of any of the seven kinds: `sentinel` then carries
+ * the check's shape (the two fields the screen reads, `target` and `observed`, keep their place)
+ * and `check` names the definition, so a challenge can be told from an anchor's without guessing.
+ */
 export interface Challenge {
   at: string;
-  sentinel: Sentinel;
+  sentinel: Sentinel | ChallengedCheck;
   observed: string;
+  check?: { checkId: string; revision: number; purpose: CheckPurpose; kind: CheckShape["kind"] };
+}
+
+/** The shape of a typed check as a challenge records it: its kind, its target and what it expected. */
+export interface ChallengedCheck {
+  kind: CheckShape["kind"];
+  target: string;
+  expected: CheckExpected;
 }
 
 /**
@@ -374,10 +577,23 @@ export interface Challenge {
  * the normal case.
  */
 export async function setSentinels(db: Database, noteId: string, sentinels: Sentinel[]): Promise<void> {
-  await db
-    .update(t.notes)
-    .set({ sentinels })
-    .where(and(eq(t.notes.id, noteId), inArray(t.notes.status, ["proposed", "approved", "challenged"])));
+  const alive = ["proposed", "approved", "challenged"];
+  await db.transaction(async (tx) => {
+    // The project lock first, then the row: the same order as `decideNote`, so the two never wait on each other.
+    const [owner] = await tx.select({ projectId: t.notes.projectId }).from(t.notes)
+      .where(and(eq(t.notes.id, noteId), inArray(t.notes.status, alive))).limit(1);
+    if (!owner) return;
+    await lockNoteProject(tx, owner.projectId);
+    // Read again under the lock: the checks kept beside the anchors are the row's current ones.
+    const [current] = await tx.select({ sentinels: t.notes.sentinels }).from(t.notes).where(eq(t.notes.id, noteId)).limit(1);
+    const [row] = await tx
+      .update(t.notes)
+      .set({ sentinels: reanchored(current?.sentinels, sentinels), memoryRev: NEXT_REV })
+      .where(and(eq(t.notes.id, noteId), inArray(t.notes.status, alive)))
+      .returning();
+    // The grounds are part of what the note claims: a new basis is a new revision.
+    if (row) await photograph(tx, row, "edit");
+  });
 }
 
 /**
@@ -394,15 +610,24 @@ export async function challengeNote(
   challenge: Challenge,
   expectedDecidedAt?: Date | null,
 ): Promise<boolean> {
-  const moved = await db
-    .update(t.notes)
-    .set({ status: "challenged", challenge })
-    .where(and(
-      eq(t.notes.id, noteId), eq(t.notes.status, "approved"),
-      expectedDecidedAt === undefined ? undefined : sql`${t.notes.decidedAt} is not distinct from ${expectedDecidedAt}`,
-    ))
-    .returning({ id: t.notes.id });
-  return moved.length > 0;
+  return db.transaction(async (tx) => {
+    const [owner] = await tx.select({ projectId: t.notes.projectId }).from(t.notes)
+      .where(and(eq(t.notes.id, noteId), eq(t.notes.status, "approved"))).limit(1);
+    if (!owner) return false;
+    await lockNoteProject(tx, owner.projectId);
+    const moved = await tx
+      .update(t.notes)
+      .set({ status: "challenged", challenge, memoryRev: NEXT_REV })
+      .where(and(
+        eq(t.notes.id, noteId), eq(t.notes.status, "approved"),
+        expectedDecidedAt === undefined ? undefined : sql`${t.notes.decidedAt} is not distinct from ${expectedDecidedAt}`,
+      ))
+      .returning();
+    if (moved.length === 0) return false;
+    // The disk changed the note's standing without anyone's yes; that is still a revision, under `policy`.
+    await photograph(tx, moved[0]!, "policy");
+    return true;
+  });
 }
 
 /** What the patrolman needs: the approved ones with sentries posted, and nothing more. */
@@ -413,7 +638,7 @@ export async function listSentinels(
   const rows = await db
     .select({ id: t.notes.id, body: t.notes.body, sentinels: t.notes.sentinels, decidedAt: t.notes.decidedAt })
     .from(t.notes)
-    .where(and(eq(t.notes.projectId, projectId), eq(t.notes.status, "approved")));
+    .where(and(eq(t.notes.projectId, projectId), eq(t.notes.status, "approved"), await memoryReadBarrier(db, "note", t.notes.id)));
   return rows
     .map((row) => ({ id: row.id, body: row.body, sentinels: (row.sentinels as Sentinel[]) ?? [], decidedAt: row.decidedAt }))
     .filter((row) => row.sentinels.length > 0);

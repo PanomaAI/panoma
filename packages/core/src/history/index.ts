@@ -36,14 +36,90 @@ export type { Narrative } from "./shared";
 
 
 
-export type { TwinConsent } from "./consent";
+export type { ConsentGrant, GrantInput, GrantPurpose, GrantScope, TwinConsent } from "./consent";
 export {
+  grantFor,
   isAllowed,
+  isGrantPurpose,
   publishesInferred,
   readConsent,
   setConsent,
+  setGrant,
   setInferredConsent,
 } from "./consent";
 
 export type { MineOutcome } from "./mine";
 export { hasReader, mineHistory, readableSources } from "./mine";
+
+/*
+  The receipt reader is the third door, and it is a different door: it returns coordinates and
+  hook output, never a person's words, and it is gated by a grant on top of the source permission
+  (`grantFor`), not by `isAllowed` alone. It is exported whole because the worker that owns the
+  cursors lives in the web application and needs the parser, the anchor and the path gate.
+ */
+export type {
+  ReadEnd,
+  ReadGap,
+  ReadOptions,
+  ReadResult,
+  ReceiptEntrypoint,
+  ReceiptEvent,
+  ReceiptEventKind,
+} from "./receipts";
+export {
+  RECEIPT_PARSER_VERSION,
+  anchorHashAt,
+  claudeCodeStreamKey,
+  claudeCodeTranscriptPath,
+  isClaudeCodeTranscript,
+  readReceipts,
+} from "./receipts";
+
+/*
+  Delivery B: the typed facts a program's own record yields — what was read, edited or run, what a
+  test said, what failed — and the owner's turns, redacted and capped, for the extractor. Two
+  readers, one per harness; the Codex names are its own so that neither shadows the other.
+ */
+export {
+  CLAUDE_FACTS_PARSER_VERSION,
+  COMMAND_FAMILIES,
+  COMMAND_FAMILY_NAMES,
+  FACT_KINDS,
+  HUMAN_TURN_CODE_POINTS,
+  LOOKBACK_BYTES,
+  MAX_FACT_PATHS,
+  OUTSIDE,
+  REDACTED_CREDENTIAL,
+  classifyCommand,
+  locateInterval,
+  readFacts,
+  readHumanTurns,
+  testResult,
+} from "./facts";
+export type {
+  CommandFamily,
+  CommandFactPayload,
+  CommitFactPayload,
+  EditFactPayload,
+  EditKind,
+  FactEvent,
+  FactKind,
+  FactPayload,
+  FactReadOptions,
+  FactReadResult,
+  FailureFactPayload,
+  FailureKind,
+  HumanTurn,
+  HumanTurnOptions,
+  HumanTurnResult,
+  IntervalOptions,
+  IntervalResult,
+  LifecycleEvent,
+  LifecycleFactPayload,
+  ReadFactPayload,
+  ReceiptSeenFactPayload,
+  RecipientKey,
+  TestOutcome,
+  TestResultFactPayload,
+} from "./facts";
+export { CODEX_FACTS_PARSER_VERSION, readCodexFacts, readCodexHumanTurns } from "./facts-codex";

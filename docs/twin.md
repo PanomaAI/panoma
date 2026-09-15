@@ -59,17 +59,19 @@ of disk, so without a row the question cannot even be asked.
 | Organ | The work | What fires it | Where it lands |
 |---|---|---|---|
 | **Inventory** | `inventoryHistory` (core) | `panoma twin sources` · `GET /api/twin/sources` · the card on `/twin` | nothing: it returns the four sources and measures with `stat` the three that have a path, without opening a single file |
-| **Consent** | `setConsent` · `isAllowed` (core) | `panoma twin allow/revoke` · `POST /api/twin/sources` | `~/.panoma/twin.json` |
-| **Direct teaching** | `lib/teach.ts` · `TwinTeach` | the signed criterion form on `/twin` · `POST /api/twin/taste` with `teach` | a signed `beliefs` row and `TASTE.md`, in the same publication transaction |
+| **Consent** | `setConsent` · `isAllowed` (core); since 14-Sep-2026 also `setGrant` · `grantFor`, the capture grant on top of the base permission | `panoma twin allow/revoke` · `POST /api/twin/sources`, and its grant alternative with `purpose: "memoryCapture"` · the receipt-reading switch under the histories card on `/twin`, drawn only for a source the snapshot marks `captureSupported` (the `CAPTURE_SOURCES` set of `lib/memory-view.ts`, `claude-code` alone in A and `codex` beside it since delivery B; the others get one quiet sentence, `twin.captureUnsupported`), and its refusals translated by code through `captureRefusalKey` — `twin.grantConsentRequired`, `twin.grantUnsupportedSource`, `twin.grantStale`, `twin.grantStalePolicy`, `twin.grantInvalid`, `twin.grantLocalOnly` —, the door's `{ code, error }` staying machine English. Since delivery B the same card draws two more decisions per source, each with its own notice and posted with the `permissionRevision` the card was drawn with: the version-2 notice of the capture — the typed facts of each session, reads, edits, command families, test outcomes, failures, commits, lifecycle, never a line of text, from the end of each file at acceptance, closing with the receipts — as its own acceptance (`noticeVersion: 2` on the enabled grant, a re-consent that moves no generation), drawn only while the receipts are on; and the paid extraction (`purpose: "memoryExtract"`, a grant of its own on top of the capture), whose notice says what travels to the provider (the owner's new messages of the allowed range, redacted, and the facts), what is kept (quotes per proposal: 3 at most, characters per quote: 2,000 at most), what it costs (`min(4, memory cap)` automatic calls a day and 2 per conversation, figures read from the processor's constants and today's cap), from which byte, how it is taken back, that it stops with the capture and that the scope is global; the extraction box stays drawn while the receipts are off, granted but stopped — it can be unticked then and cannot be ticked — because a permission that is not seen is not revoked, and re-enabling the receipts posts notice 1 whatever the stored grant kept — what a person accepts is the notice on the screen ([memory-capture.md](memory-capture.md)). The consent card says in one more sentence that the publication yes is neither capture nor extraction. Since delivery D the same door takes a third purpose, `twinAutoLearn` — the Twin learning from the new turns on its own, granted only on top of an enabled capture of the same scope, at notice 1, never touching the inferred switch —, which the terminal writes with `panoma memory allow <source> twin` and the histories card reports beside the other two; and `panoma twin allow|revoke` post the legacy body to this door when a catalog answers, so a revocation typed in the terminal fences the jobs in flight like one clicked on the screen ([twin-learning.md](twin-learning.md)) | `~/.panoma/twin.json`: the base yes per source, and `grants` — purpose, scope, generation, notice version, activation instant — which is what the receipt reader, the capture pass, the extractor and the Twin's learning check before opening a transcript ([memory-contract.md](memory-contract.md), [memory-capture.md](memory-capture.md)) |
+| **Direct teaching** | `lib/teach.ts` · `TwinTeach` | the signed criterion form on `/twin` · `POST /api/twin/taste` with `teach` | a signed `beliefs` row and `TASTE.md`, in the same publication transaction on the legacy body; since delivery D the version-2 body also takes typed `conditions` and `exceptions` with the lesson, writes the row by compare-and-set and hands the file to the outbox ([twin-learning.md](twin-learning.md)) |
+| **Continuous learning** | `lib/twin-learn.ts` (`planTwinBatches` · `runTwinJob` · `runTwinPass`) | **the worker**, every heartbeat after the extraction pass, for every source and scope with an enabled `twinAutoLearn` grant — `panoma memory allow <source> twin` or the grant alternative of `POST /api/twin/sources`; never a button | the same three tables the buttons write — `observations` with the origin key, the kind and the referent of each quote, `observations.topic`, `beliefs` with `support_evidence` and `synthesis_passes` with the job and the fingerprint — through three jobs of `memory_jobs` per batch (`twin_distill` → `twin_classify` → one `twin_synthesize` per topic), paid from the `read` family under one subquota of `min(6, cap)` a day; with `publishInferred` on, a synthesis that left publishable inferences plans a publication ([twin-learning.md](twin-learning.md)) |
+| **The publication outbox** | `lib/taste-publish.ts` (`planPublication` · `runPublication` · `runPublicationPass`) | `POST /api/twin/taste` with `version: 2`, inline after the gestures commit · **the worker**, right after the learning job of the heartbeat | `~/.panoma/TASTE.md`, or the managed block of one project's `AGENTS.md` or `CLAUDE.md`, written whole after the file's hash was compared with the one the plan froze and read back before `beliefs.published_as` is touched; a file that moved is `deferred` with `file_changed` and never a veto ([twin-learning.md](twin-learning.md)) |
 | **Decision memory** | `TwinMemory` · `lib/episode-learning.ts` | `/twin` · `GET/POST /api/twin/episodes` · `POST /api/twin/episodes/learn` | scoped episodes with goals, alternatives, reasons, conditions, outcomes, source quotations and owner revisions, and the owner's decisions in every agent's briefing |
 | **Narrative capture** | `captureNarratives` · `toNarratives` | `POST /api/twin/mine`, after source consent | `narratives`: opening goals, structured briefs and reactions, with assistant context kept separate |
 | **Decision rehearsal** | `lib/consult.ts` · `TwinLab` | `/twin` · `POST /api/twin/rehearse`, with optional project and local evidence preview | a cited preview or abstention; paid calls enter the `rehearse` ledger, and rehearsals never enter training evidence |
-| **Decisions to agents** | `lib/decision-brief.ts` · `formatContext` (mcp) | `POST /api/agent/context` · `panoma_context` | the "Owner decisions" section of the briefing: owner-authored, active, with a decision; six at most, 240 characters a field, 1,500 in all; no model call |
+| **Decisions to agents** | `lib/decision-brief.ts` · `formatContext` (mcp); since 14-Sep-2026 `lib/select-memory.ts` · `lib/memory-delivery.ts` when the client speaks the memory contract | `POST /api/agent/context` · `panoma_context` · `POST /api/hook/context` for the `SessionStart` brief | the "Owner decisions" section of the briefing: owner-authored, active, with a decision; six at most, 240 characters a field, 1,500 in all; no model call. Under the contract the same eligibility, without the recency cut of fifty: the whole eligible archive is searched, a decision with conditions travels `conditional` with its checks, and the offer is written down ([memory-contract.md](memory-contract.md)) |
 | **Mining** | `mineHistory` (core) | `panoma twin mine --save` → `POST /api/twin/verdicts` · `POST /api/twin/mine` in-process · the `/twin` button · the decision-memory «capture» button, which is the SAME call | `verdicts` **and** `narratives` tables: the route hard-codes `captureNarratives: true`, so one reading always saves both, and since 9-Sep-2026 both buttons report both halves instead of each naming the one it was built for |
-| **Distilling** | `lib/distill.ts` | `panoma twin distill` · `POST /api/twin/distill` · the `/twin` button | `observations` table |
-| **Sorting by topic** | `lib/classify.ts` | `POST /api/twin/classify`, chained off the synthesize button | `observations.topic` |
-| **Synthesis** | `lib/synthesize.ts` · `lib/beliefs.ts` | `panoma twin synthesize` · `POST /api/twin/synthesize` · the `/twin` button | `beliefs` and `synthesis_passes` tables |
-| **Publishing** | `lib/publishable.ts` · `writeTaste` (core) | `POST /api/twin/taste` · the `/twin` editor | `~/.panoma/TASTE.md` |
+| **Distilling** | `lib/distill.ts` | `panoma twin distill` · `POST /api/twin/distill` · the `/twin` button · the worker's `twin_distill` job, which builds the same prompt with two options of its own (a kind and a referent per observation, one quote enough) | `observations` table; since delivery D every paid call, manual or automatic, is reserved in the ledger before it leaves (family `read`, origin `manual` or `automatic`), so the button and the worker compete under one lock |
+| **Sorting by topic** | `lib/classify.ts` | `POST /api/twin/classify`, chained off the synthesize button · the worker's `twin_classify` job, over the observations of a batch the distiller left without a topic and no other | `observations.topic`, with `memory_rev` bumped and the row photographed on a real move |
+| **Synthesis** | `lib/synthesize.ts` · `lib/beliefs.ts` | `panoma twin synthesize` · `POST /api/twin/synthesize` · the `/twin` button · the worker's `twin_synthesize` job, one per topic, which pays only when the topic's fingerprint moved | `beliefs` and `synthesis_passes` tables; since delivery D a belief carries `support_evidence` — the families of independent origin behind it — and a pass carries its `job_id` and `input_hash`; the manual route and the worker read the admissible observations only, never an ambiguous reaction |
+| **Publishing** | `lib/publishable.ts` · `writeTaste` (core) | `POST /api/twin/taste` · the `/twin` editor | `~/.panoma/TASTE.md`; a belief whose scope nobody can name is `unresolved` — left out of the file and of every delivery, counted back as `unresolved` in the route's answer — because absence of a name grants no scope. Since delivery D a criterion's line carries its conditions and exceptions as `Applies when: …. Except when: ….` and pays for them against the cap (`fileStatement`), and the legacy body is the only road that still writes the file inline: the version-2 body goes through the outbox row above |
 | **Handout to agents** | `tasteDigest` · `renderPanomaBlock` (core) | `panoma md init/sync` · the watcher on every commit (`syncManagedDoc`) | the `AGENTS.md` block of each project |
 | **Mechanical critic** | `critic.ts` (core) · `lib/review-run.ts` | `panoma review` · **the watcher**, behind every re-analysis with a commit newer than the last review · and its straggler: every heartbeat, a handful of the folders that have never been reviewed (`backfillReviews`) | `reviews` table → the assignment on the project page and the movement in the report |
 | **Critic with eyes** | `lib/look.ts` · `lib/look-run.ts` | `panoma twin look` · `POST /api/twin/look` · the `/twin/look` screen · **the watcher**, when something shows up in `.panoma/shots` | `looks` table and the spend ledger |
@@ -104,12 +106,18 @@ in amber when it is zero.
 **There is one writer.** The CLI never writes to PGlite: it sends over HTTP to the catalog.
 A shortcut from the CLI does not give you an error, it leaves the data directory half done.
 
-**The watcher fires three.** The `AGENTS.md` block on every commit, the mechanical critic
-behind every re-analysis, and the critic with eyes on every new screenshot. They are the only
-three places where Twin does something without anyone asking, and only the last one spends
-money: that is why it has a reserve of its own (`autoLookCap`, half the day) and why the
-critic screen says so in its header. The mechanical one calls nobody — it reads files — so
-it runs on every project and not only on the ones with a mailbox.
+**The watcher fires three, and since delivery D the worker fires two more.** The `AGENTS.md`
+block on every commit, the mechanical critic behind every re-analysis, and the critic with
+eyes on every new screenshot. They were the only three places where Twin did something
+without anyone asking, and only the last one spends money: that is why it has a reserve of
+its own (`autoLookCap`, half the day) and why the critic screen says so in its header. The
+mechanical one calls nobody — it reads files — so it runs on every project and not only on
+the ones with a mailbox. The memory worker added the fourth and the fifth on 14-Sep-2026:
+the continuous learning, which spends and therefore has a reserve of its own too —
+`min(6, cap)` automatic attempts a day across its three stages, 4 per scope — and runs only
+where a person switched `twinAutoLearn` on; and the publication outbox, which spends nothing
+and writes the portrait's file when a synthesis earned it under the inferred switch. Neither
+asks a question per batch; the Twin screen says what they did.
 
 **There are four sources, and they do not all do the same thing.** `HistorySourceId` names
 them: `claude-code`, `codex`, `cursor` and `aider`. Three are measured at a fixed path on the
@@ -338,26 +346,61 @@ start of its evidence read, so evidence arriving while the model answers remains
 An understood response that changes nothing still closes that read; unreadable responses do
 not. Existing installations without a pass for a topic perform one initial pass.
 
+## The portrait learns on its own, and a criterion has limits
+
+Since 14-Sep-2026 the three read stages have a second caller that is not a person. Under a
+third permission of the histories door — `twinAutoLearn`, on top of the capture of the same
+scope — the memory worker freezes the owner's new turns of a scope into a batch once the
+conversation has been quiet for 30 minutes, or 4 hours after its first pending turn, and
+pays for one stage at a time through three jobs of the shared queue: distil into
+observations, classify only what came back without a topic, synthesize each topic whose
+inputs moved. The gate that stops the cycle from feeding itself is a fingerprint per topic —
+the admissible evidence, the criteria a person signed, vetoed, narrowed or moved, the scopes,
+the grant generations, the versions — recorded in `synthesis_passes.input_hash`; the
+synthesis' own output is left out of it, so a wake that finds the same fingerprint pays
+nothing. What it spends comes from the `read` family under a subquota of `min(6, cap)`
+attempts a day shared by the three stages, and the buttons reserve under the same lock with
+origin `manual`, so a button and the worker never both spend the day's last call.
+
+Two things changed in what a belief is. A criterion now carries typed `conditions` and
+`exceptions` — the predicate of delivery C, the same six leaves, `all`/`any`/`not`, 4 deep
+and 20 leaves — that the selector judges in three values with the facts of the request, that
+the brief prints as `Applies when:` and `Except when:` inside the unit, and that the file
+carries at the end of the line and pays for against the cap: a criterion never goes down
+without its exceptions. And the support behind an inference is counted by the origin of the
+case: every observation names where its quotes came from, a copy or a relay founds no
+family, and a new or revised inference publishes on its own only with the legacy floor and 3
+families of known origin. Learning and publishing stay two acts: with `publishInferred` off
+the inferences wait in the Twin as `inferred` rows; with it on, a synthesis that earned a
+publication plans one and the outbox writes the file. The version-2 body of
+`POST /api/twin/taste` names the revision of every belief a gesture touches and the
+generation of the publication a flip of the switch was read against, and `GET /api/twin/taste`
+answers both — `publication: { revision, status, pendingJobId? }` and `revisions` — so the
+screen sends back what it read. The whole of it, with its limits, is in
+[twin-learning.md](twin-learning.md).
+
 ## The brakes, in one place
 
 | Brake | How much | Where |
 |---|---|---|
-| History reads per day | 300 calls | family `read` in `lib/spend-settings.ts` — the Spend screen or `PANOMA_READ_BUDGET` |
-| Decision-memory extraction per day | 20 calls, at most two per request | family `episodes` — the Spend screen or `PANOMA_EPISODE_BUDGET` |
+| History reads per day | 300 calls | family `read` in `lib/spend-settings.ts` — the Spend screen or `PANOMA_READ_BUDGET`; since delivery D every call, from a button or from the worker, is reserved in the ledger before it leaves |
+| Of those, automatic — the Twin learning on its own | `min(6, cap)` attempts a day across distill, classify and synthesize, 4 per scope and day, 3 per stage job | `AUTOMATIC_SUBQUOTA`, `PER_SCOPE_MAX`, `PAID_ATTEMPTS_PER_STAGE` in `lib/twin-learn.ts` — [twin-learning.md](twin-learning.md) |
+| Decision-memory extraction per day | 20 calls, at most two per request | family `episodes` — the Spend screen or `PANOMA_EPISODE_BUDGET`; reserved before the call since delivery D, with no automatic origin |
 | Rehearsals per day | 20 calls | family `rehearse` — the Spend screen or `PANOMA_REHEARSE_BUDGET` |
 | Looks per day | 20 calls | family `look` — the Spend screen or `PANOMA_LOOK_BUDGET` |
 | Of those, automatic | half | `autoLookCap` in `lib/look.ts`, over the cap `capFor` returns |
 | Portrait size | 3,000 characters of the worst block | `TASTE_CAP` · `worstBlock` |
 | Floor for a belief | 3 observations and 2 days or 2 projects | `SUPPORT_FLOOR` · `standsUp` |
+| Gate to publish a new or revised inference on its own | the floor above **and** 3 families of known origin — copies, relays and the system's own output never found one | `SUPPORT_FAMILIES_FLOOR` · `publishableByPolicy` in `packages/db/src/support-families.ts`; a legacy inference keeps the floor alone |
 | Image that can travel to the model | 3.5 MB | `MAX_SCREENSHOT_BYTES` |
 | Image that can be opened off the disk, when it is going to be reduced first | 16 MB | `MAX_FITTABLE_BYTES`, picked by `readCeiling` |
 
-The first five rows are the day's budget — four caps and the reserve carved out of one of
+The first six rows are the day's budget — four caps and the two reserves carved out of two of
 them — and they count **calls and not tokens**: with a `cli` provider there are no tokens to
 count, and a brake by tokens would let through exactly the runaway-loop case. Since
 6-Sep-2026 every one of the four is asked of `capFor(family)` at request time, with the
 precedence pause → variable → `spend.json` → factory, and the `/twin` page paints them from
-the same call (`capsFor`) and links to `/spend`, where they are moved. The last four do not
+the same call (`capsFor`) and links to `/spend`, where they are moved. The last five do not
 count calls: they are caps on shape — how much text, how much evidence, how many bytes — and
 they hold as well on day one as on day one thousand. The last two of those are bytes and they
 are **two ceilings over two different acts**, separated on 6-Sep-2026: what a provider accepts
@@ -424,6 +467,16 @@ the wrong topic it reads wrong and is never seen.
 name and not by identity because a person opens this: `only in veloria:` reads and gets
 corrected, `only in git:0516a71734…:` does not. A renamed project leaves the sentence
 applying nowhere instead of applying in the wrong place, which is the right side to fail on.
+And since 14-Sep-2026 a belief whose identity has no catalog name is not written at all:
+until then `publishable` dropped the scope and the line went down without one, which the
+file reads as "in everything you do" — one extra global line, the reasoning went, is a
+mistake you see and fix with a click. The memory contract measured the other side: the same
+row feeds every agent of every project, so a rule the owner limited to one repository reached
+the others the day that repository was renamed or removed, and nobody clicked because nothing
+said it had happened. `beliefScope` in `lib/publishable.ts` now answers `unresolved` for such
+a row — or for one whose `scope_kind` says so — and an unresolved belief stays out of the
+file, out of every delivery, and is counted back to the owner by `POST /api/twin/taste` as
+`unresolved`: a scope to resolve, not a scope to widen (plan case A05/T23).
 The name is capped at sixty characters, because past that it is no longer a folder name but a
 sentence that happened to start with "only in". And the scope is what makes the cap stop
 pinching: what an agent reads is the general block plus the block for **its** project, and
@@ -464,6 +517,25 @@ everybody else's taste.
 The route does not rebuild `TASTE.md` from the database. `reconcileTaste` crosses it with the
 beliefs and decides line by line, and out of that come the two gestures you can make without
 opening any screen: **deleting a line vetoes that belief and rewriting it signs it.**
+
+Since 14-Sep-2026 those two gestures are heard before a criterion reaches an agent, not only
+when this route runs. The computation is `reconcileWithFile` in `apps/web/lib/publishable.ts`
+— the route's, lifted to a pure function that the route and the memory selector both call —
+and `apps/web/lib/select-memory.ts` runs it before selecting the criteria or reading one
+whole: a published line that is gone buries the belief through the same writers (`vetoBelief`,
+then `markPublished(null)`), a line rewritten by hand signs it with the file's words, and
+the text served is the file's. The publication outbox of delivery D runs the same
+reconciliation before it freezes what it will write, and a file that changed between that
+plan and the write is a conflict to show and never a veto to record
+([twin-learning.md](twin-learning.md)). An absent file is a reset and withdraws nothing; a file that
+cannot be read, or a reconciliation that does not settle inside 300 ms, leaves every criterion
+out of that delivery with the omission `taste_unreconciled`, and a read by id answers
+`unavailable`. The file also decides the **core**: `markPublished` sets `delivery_mode` to
+`core` when it writes a line and back to `contextual` when it withdraws one, `ensureDeliveryModes`
+seeds the column from `published_as` at every start, and a signature alone never puts a
+belief in the core — signing is your word on the text, not a decision that every task must
+carry it. What that means for the contract an agent receives is in
+[memory-contract.md](memory-contract.md).
 
 The piece that makes it possible is `beliefs.published_as`: what was written for each belief
 the last time. With that the three questions have an answer — it was never there, it was there
@@ -557,6 +629,11 @@ moves by changing a product decision or by waiting for something outside to happ
   gave up on at number nineteen. The writer that existed with no door
   (`setVerdictAccepted`) was retired; the read stays because it is honest — almost everything
   is going to live in `pending` forever, and the filter says so instead of hiding it.
+- **An unresolved scope has a count and no screen yet.** `POST /api/twin/taste` answers how
+  many publishable beliefs it left out for lacking a project to name, and the selector counts
+  them in the contract's omissions as `unresolved_scope`; nothing on `/twin` lists them by
+  name, so resolving one — renaming the project back, or re-teaching the criterion under the
+  project's current name — is done knowing the number and not the row.
 - **The Lab's answer cannot be labeled or signed, and that is a decision.**
   `POST /api/consultations` grades the double's shadow drafts `backed` or `vetoed`; nothing
   grades a rehearsal, and the drafted answer offers one gesture —teach a criterion— as the

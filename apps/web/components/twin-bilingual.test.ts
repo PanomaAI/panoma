@@ -36,6 +36,14 @@ const BILINGUAL = [
   "twin-lab.tsx",
   "twin-teach.tsx",
   "../app/(app)/twin/page.tsx",
+  // Delivery C: the project card's memory blocks and the case view read the same way.
+  "project-memory.tsx",
+  "project-case.tsx",
+  // Delivery D: the histories card's third switch, the learning block, the consent card and the criteria list.
+  "twin-sources.tsx",
+  "twin-learning.tsx",
+  "twin-consent.tsx",
+  "belief-editor.tsx",
 ];
 
 const read = (file: string) => readFileSync(new URL(file, HERE), "utf8");

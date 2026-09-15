@@ -1,6 +1,8 @@
 import { revalidatePath } from "next/cache";
-import { redactSecrets } from "@panoma/core";
+import { isRevision, redactSecrets } from "@panoma/core";
 import { addHumanNote, decideNote, listProjectNotes, resolveProject, validTrigger } from "@panoma/db";
+import { memoryRefusal } from "@/lib/agent-channel";
+import { EpisodeInputError, episodeValidUntil } from "@/lib/episode-learning";
 import { extractNoteAnchors } from "@/lib/sentinels";
 import { db } from "@/lib/db";
 import { sameOrigin } from "@/lib/guard";
@@ -17,6 +19,19 @@ import { localeFrom, t } from "@/lib/i18n";
  *
  * The cutoff for `DATABASE_URL` is that of `/api/tasks` and for the same reason: in hosted mode,
  * one would have to ask whose project it is before writing a report to them.
+ *
+ * Since delivery C (14-Sep-2026) an approval may also say what it replaces and until when it
+ * holds. `supersedesId` names the approved note this one succeeds, with `expectedRevision` the
+ * revision of that predecessor the person read: `decideNote` moves both rows in one transaction
+ * by compare-and-set on each `memory_rev`, and a predecessor that moved meanwhile answers `409
+ * stale_revision` with nothing approved (T52) — the person reads again and decides again, and
+ * never approves a successor of a text they did not see. `validUntil` is the owner's explicit
+ * expiry, a calendar day read as its last instant in UTC exactly as a decision's is
+ * (`episodeValidUntil`), or null for none; an expired note is not eligible and travels nowhere.
+ * The three keys are the approval's; a discard with any of them is refused. The legacy body and
+ * its answers are untouched: the review screen keeps working word for word, and the new
+ * refusals carry the machine shape of the memory doors (`{ code, error, retryable }`) because a
+ * person acts on the code through `t()` while the legacy sentences stay translated here.
  */
 export async function POST(request: Request) {
   const blocked = sameOrigin(request);
@@ -38,6 +53,10 @@ export async function POST(request: Request) {
     id?: string;
     body?: string;
     where?: string;
+    /** Delivery C: the note this approval replaces, the revision of it the person read, and the owner's expiry. */
+    supersedesId?: unknown;
+    expectedRevision?: unknown;
+    validUntil?: unknown;
   };
 
   if (!body || typeof body !== "object" || typeof body.slug !== "string" || !body.slug) return Response.json({ error: t(locale, "api.missingProject") }, { status: 400 });
@@ -67,8 +86,11 @@ export async function POST(request: Request) {
     case "approve":
     case "discard": {
       if (typeof body.id !== "string" || !body.id) return Response.json({ error: t(locale, "notes.gone") }, { status: 400 });
+      const succession = successionOf(body);
+      if (succession instanceof Response) return succession;
       // Read the immutable body within this project before calculating its replacement anchors.
-      const notes = await listProjectNotes(database, project.id, ["approved", "proposed", "challenged"]);
+      // The whole archive, expired notes included: an expired approved note can still be discarded here.
+      const notes = await listProjectNotes(database, project.id, ["approved", "proposed", "challenged"], { includeExpired: true });
       const note = notes.find((item) => item.id === body.id);
       if (!note) return Response.json({ error: t(locale, "notes.gone") }, { status: 409 });
       const sentinels = body.action === "approve"
@@ -77,8 +99,12 @@ export async function POST(request: Request) {
       const result = await decideNote(database, body.id, body.action === "approve" ? "approved" : "discarded", {
         projectId: project.id,
         ...(sentinels ? { sentinels } : {}),
+        ...succession,
       });
       if (!result.decided) {
+        if (result.reason === "stale_revision") {
+          return memoryRefusal("stale_revision", "The note this one replaces is no longer approved at the revision you read; nothing was approved.", 409, "Read the notes again before deciding.");
+        }
         if (result.reason === "overBudget" || result.reason === "sleepingFull") {
           return refusal(locale, { refused: result.reason, used: result.used ?? 0, budget: result.budget ?? 0 });
         }
@@ -89,6 +115,37 @@ export async function POST(request: Request) {
     default:
       return Response.json({ error: t(locale, "notes.gone") }, { status: 400 });
   }
+}
+
+/**
+ * The delivery C half of an approval — what it replaces, at which revision, until when — as
+ * `decideNote` takes it, or the refusal that stands in for it. Nothing for a body that says
+ * nothing about it, so the legacy shape reaches the writer exactly as before.
+ */
+function successionOf(body: { action?: string; id?: string; supersedesId?: unknown; expectedRevision?: unknown; validUntil?: unknown }):
+  | { supersedesId?: string; expectedPredecessorRev?: number; validUntil?: Date | null }
+  | Response {
+  const { supersedesId, expectedRevision, validUntil } = body;
+  if (supersedesId === undefined && expectedRevision === undefined && validUntil === undefined) return {};
+  if (body.action !== "approve") return memoryRefusal("invalid_input", "supersedesId, expectedRevision and validUntil belong to an approval.", 400);
+  const succession: { supersedesId?: string; expectedPredecessorRev?: number; validUntil?: Date | null } = {};
+  if (supersedesId !== undefined || expectedRevision !== undefined) {
+    if (typeof supersedesId !== "string" || supersedesId.length === 0 || supersedesId === body.id) {
+      return memoryRefusal("invalid_input", "supersedesId names the approved note this one replaces.", 400);
+    }
+    if (!isRevision(expectedRevision)) return memoryRefusal("invalid_input", "expectedRevision must be the revision of the replaced note you read.", 400);
+    succession.supersedesId = supersedesId;
+    succession.expectedPredecessorRev = expectedRevision;
+  }
+  if (validUntil !== undefined) {
+    try {
+      succession.validUntil = episodeValidUntil(validUntil) ?? null;
+    } catch (error) {
+      if (error instanceof EpisodeInputError) return memoryRefusal("invalid_input", "validUntil is the last day the note holds, as YYYY-MM-DD, or null.", 400);
+      throw error;
+    }
+  }
+  return succession;
 }
 
 /** The same no, said in the language of the token, comes from whatever path it comes. */

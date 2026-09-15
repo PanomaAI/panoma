@@ -5,10 +5,23 @@ import { useRouter } from "next/navigation";
 import { HiOutlinePencilSquare } from "react-icons/hi2";
 import { useT } from "./i18n-provider";
 import { ActionButton, ActionError, Select, TextArea } from "./primitives";
+import { tasteRefusalKey } from "@/lib/memory-view";
 import { TOPIC_NAME } from "@/lib/taste-view";
 import { TEACH_MAX } from "@/lib/twin-limits";
+import { PredicateFields, predicateFromDraft, type PredicateDraft } from "./predicate-fields";
 
-/** Direct teaching gives a new Twin usable criteria without a history read or a model call. */
+/**
+ * Direct teaching gives a new Twin usable criteria without a history read or a model call.
+ *
+ * Since delivery D the form posts the revisioned body (`version: 2`) with the scope said in so
+ * many words — `global`, or `project` with the slug — because the door refuses a slug alone:
+ * a scope that is implied is a scope somebody will get wrong. The answer is 200 when the file
+ * was written inline and 202 when the outbox still has to write it; both carry `beliefId` and
+ * both are a saved criterion. A refusal is said by its code in the reader's language when the
+ * form knows it, and by the door's translated sentence otherwise (a portrait that does not fit).
+ * Context conditions and exceptions are explicit choices. Their trees travel with the signature;
+ * the portrait and the selector display the same stored predicates.
+ */
 export function TwinTeach({ projects, omitted }: {
   projects: { slug: string; label: string }[];
   /**
@@ -27,6 +40,8 @@ export function TwinTeach({ projects, omitted }: {
   const [statement, setStatement] = useState("");
   const [topic, setTopic] = useState("workflow");
   const [slug, setSlug] = useState("");
+  const [conditions, setConditions] = useState<PredicateDraft>({ mode: "all", rows: [] });
+  const [exceptions, setExceptions] = useState<PredicateDraft>({ mode: "any", rows: [] });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedId, setSavedId] = useState<string | null>(null);
@@ -43,14 +58,22 @@ export function TwinTeach({ projects, omitted }: {
       const response = await fetch("/api/twin/taste", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ teach: { statement, topic, ...(slug ? { slug } : {}) } }),
+        body: JSON.stringify({
+          version: 2,
+          teach: { statement, topic, ...(slug ? { scope: "project", slug } : { scope: "global" }),
+            conditions: predicateFromDraft(conditions), exceptions: predicateFromDraft(exceptions) },
+        }),
       });
-      const receipt = await response.json() as { error?: string; beliefId?: string };
+      const receipt = (await response.json().catch(() => ({}))) as { code?: string; error?: string; beliefId?: string };
       if (!response.ok || !receipt.beliefId) {
-        setError(receipt.error ?? translate("twinTeach.failed"));
+        /* A malformed criterion is the form's own sentence; the other codes the door answers have theirs. */
+        const key = receipt.code === "invalid_input" ? "twinTeach.invalid" : tasteRefusalKey(receipt.code);
+        setError(key ? translate(key) : receipt.error ?? translate("twinTeach.failed"));
         return;
       }
       setStatement("");
+      setConditions({ mode: "all", rows: [] });
+      setExceptions({ mode: "any", rows: [] });
       setSavedId(receipt.beliefId);
       router.refresh();
     } catch {
@@ -111,6 +134,12 @@ export function TwinTeach({ projects, omitted }: {
               )}
             </div>
           </div>
+          <details className="mt-4">
+            <summary className="cursor-pointer text-sm">{translate("twinTeach.contextRules")}</summary>
+            <p className="mt-2 text-xs leading-relaxed text-smoke">{translate("twinTeach.contextHint")}</p>
+            <PredicateFields label={translate("twinTeach.conditions")} value={conditions} onChange={setConditions} disabled={saving} />
+            <PredicateFields label={translate("twinTeach.exceptions")} value={exceptions} onChange={setExceptions} disabled={saving} />
+          </details>
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <ActionButton type="submit" tone="accent" busy={saving} busyLabel={translate("twinTeach.saving")}
               disabled={saving || !statement.trim()}>{translate("twinTeach.save")}</ActionButton>

@@ -10,6 +10,7 @@ import {
   type Database,
   type Sentinel,
 } from "@panoma/db";
+import { requestPatrol } from "./memory-patrol";
 
 /*
   The sentinels: the memory that watches over its own foundations.
@@ -28,6 +29,15 @@ import {
   notes, and a scale nearby is measuring how much each interruption of the person costs.
   The watcher checks during reanalysis, and memory delivery checks again before serving. Nested
   changes may fall outside the watcher subscription, so its last pass is not a freshness promise.
+  ── Two generations in one column ──────────────────────────────────────────────
+  Since delivery C `notes.sentinels` also holds the owner's checks in the new shape (a purpose,
+  a `chk_` id, a revision), and those belong to `memory-patrol.ts`: it evaluates them in the
+  worker's free passes, writes observations and applies the effect the purpose names. This
+  file keeps the first generation's job and nothing more — an anchor without a version is
+  compared here, an entry with one is left alone, because reading a new-shape check with the
+  three-kind reader below would call a `manifest_script` «absent» and challenge a healthy note.
+  What this patrol still does on every visit is ask for the project's turn (`requestPatrol`),
+  so a delivery hands the new checks to the worker without waiting for it.
  */
 
 /** Anchors by note, at most. More than this and the note would be challenged for anything. */
@@ -180,6 +190,13 @@ async function rootOnThisDisk(root: string): Promise<boolean> {
   }
 }
 
+/** A first-generation anchor: `{ kind, target, expected }` and no version. A new-shape check is the patrol's. */
+export function isLegacyAnchor(entry: unknown): entry is Sentinel {
+  if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return false;
+  const record = entry as Record<string, unknown>;
+  return !("schemaVersion" in record) && !("checkId" in record) && typeof record["kind"] === "string" && typeof record["target"] === "string";
+}
+
 /**
  * The patrol: reevaluates the sentinels of the approved notes of a project and challenges those
  * whose basis is contradictory. A single fallen sentinel is enough—a note with two anchors and one
@@ -202,7 +219,8 @@ export async function patrolSentinels(
   }
 
   for (const note of guarded) {
-    for (const sentinel of note.sentinels) {
+    // The first generation only: the new-shape checks beside them are the patrol's (`memory-patrol.ts`).
+    for (const sentinel of note.sentinels.filter(isLegacyAnchor)) {
       const reading = await evaluateSentinel(project.root, sentinel);
       if (reading.holds) continue;
 
@@ -269,8 +287,13 @@ export async function extractNoteAnchors(
  * is local and the volume or the folder is simply gone. Only the watcher stays off remotely: a
  * patrol is one look at the moment of serving, a watcher is a standing subscription to a disk
  * that, with a remote catalog, is usually somewhere else.
+ *
+ * The new-shape checks are not looked at here: the visit leaves a request and the worker's
+ * next free pass serves it (`runPatrolPass`), so no hook or route ever waits for the disk
+ * beyond the anchors above.
  */
 export async function refreshProjectMemory(database: Database, project: { id: string; root: string }): Promise<PatrolResult> {
+  requestPatrol(project.id);
   const result = await patrolSentinels(database, project);
   if (result.skipped === "root-missing" && process.env["DATABASE_URL"]) return { ...result, skipped: "remote" };
   return result;

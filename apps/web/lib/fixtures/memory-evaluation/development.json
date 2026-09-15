@@ -1,0 +1,738 @@
+[
+  {
+    "id": "atlas-archive",
+    "split": "development",
+    "sourceFamily": "atlas-archive",
+    "project": "atlas",
+    "language": "EN",
+    "scenario": "archive",
+    "critical": false,
+    "objective": "What must change in ATLAS_01 for catalogue?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "ATLAS_01: Keep the catalogue journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "ATLAS_01: Keep the catalogue journal append-only until the migration finishes.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "atlas-spanish",
+    "split": "development",
+    "sourceFamily": "atlas-spanish",
+    "project": "atlas",
+    "language": "ES",
+    "scenario": "spanish",
+    "critical": false,
+    "objective": "¿Qué regla rige ATLAS_02 en catalogue?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "ATLAS_02: Conserva los cambios de catalogue en un registro hasta terminar la migración.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "ATLAS_02: Conserva los cambios de catalogue en un registro hasta terminar la migración.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "atlas-mixed",
+    "split": "development",
+    "sourceFamily": "atlas-mixed",
+    "project": "atlas",
+    "language": "mixed",
+    "scenario": "mixed",
+    "critical": false,
+    "objective": "Revisa ATLAS_03 before editing catalogue.",
+    "operation": "edit",
+    "fixture": {
+      "decision": "ATLAS_03: Keep the catalogue audit log; no elimines las entradas anteriores.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "ATLAS_03: Keep the catalogue audit log; no elimines las entradas anteriores.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "atlas-condition_applies",
+    "split": "development",
+    "sourceFamily": "atlas-condition_applies",
+    "project": "atlas",
+    "language": "mixed",
+    "scenario": "condition_applies",
+    "critical": true,
+    "objective": "What must change in ATLAS_04 for catalogue?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "ATLAS_04: Keep the catalogue journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "ATLAS_04: Keep the catalogue journal append-only until the migration finishes.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "atlas-condition_unknown",
+    "split": "development",
+    "sourceFamily": "atlas-condition_unknown",
+    "project": "atlas",
+    "language": "mixed",
+    "scenario": "condition_unknown",
+    "critical": true,
+    "objective": "What must change in ATLAS_05 for catalogue?",
+    "operation": null,
+    "fixture": {
+      "decision": "ATLAS_05: Keep the catalogue journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "conditional",
+      "decision": "ATLAS_05: Keep the catalogue journal append-only until the migration finishes.",
+      "exceptions": null,
+      "answerRequirement": "Explain that context is missing before applying this decision."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "atlas-exception_blocks",
+    "split": "development",
+    "sourceFamily": "atlas-exception_blocks",
+    "project": "atlas",
+    "language": "mixed",
+    "scenario": "exception_blocks",
+    "critical": true,
+    "objective": "What must change in ATLAS_06 for catalogue?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "ATLAS_06: Keep the catalogue journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": false,
+      "applicability": "applies",
+      "decision": null,
+      "exceptions": null,
+      "answerRequirement": "Do not apply this decision."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "atlas-expired",
+    "split": "development",
+    "sourceFamily": "atlas-expired",
+    "project": "atlas",
+    "language": "mixed",
+    "scenario": "expired",
+    "critical": true,
+    "objective": "What must change in ATLAS_07 for catalogue?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "ATLAS_07: Keep the catalogue journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": false,
+      "applicability": "applies",
+      "decision": null,
+      "exceptions": null,
+      "answerRequirement": "Do not apply this decision."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "atlas-unconfirmed",
+    "split": "development",
+    "sourceFamily": "atlas-unconfirmed",
+    "project": "atlas",
+    "language": "mixed",
+    "scenario": "unconfirmed",
+    "critical": true,
+    "objective": "What must change in ATLAS_08 for catalogue?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "ATLAS_08: Keep the catalogue journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": false,
+      "applicability": "applies",
+      "decision": null,
+      "exceptions": null,
+      "answerRequirement": "Do not apply this decision."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "brisa-archive",
+    "split": "development",
+    "sourceFamily": "brisa-archive",
+    "project": "brisa",
+    "language": "ES",
+    "scenario": "archive",
+    "critical": false,
+    "objective": "What must change in BRISA_01 for formularios?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "BRISA_01: Keep the formularios journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "BRISA_01: Keep the formularios journal append-only until the migration finishes.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "brisa-spanish",
+    "split": "development",
+    "sourceFamily": "brisa-spanish",
+    "project": "brisa",
+    "language": "ES",
+    "scenario": "spanish",
+    "critical": false,
+    "objective": "¿Qué regla rige BRISA_02 en formularios?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "BRISA_02: Conserva los cambios de formularios en un registro hasta terminar la migración.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "BRISA_02: Conserva los cambios de formularios en un registro hasta terminar la migración.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "brisa-mixed",
+    "split": "development",
+    "sourceFamily": "brisa-mixed",
+    "project": "brisa",
+    "language": "mixed",
+    "scenario": "mixed",
+    "critical": false,
+    "objective": "Revisa BRISA_03 before editing formularios.",
+    "operation": "edit",
+    "fixture": {
+      "decision": "BRISA_03: Keep the formularios audit log; no elimines las entradas anteriores.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "BRISA_03: Keep the formularios audit log; no elimines las entradas anteriores.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "brisa-condition_applies",
+    "split": "development",
+    "sourceFamily": "brisa-condition_applies",
+    "project": "brisa",
+    "language": "mixed",
+    "scenario": "condition_applies",
+    "critical": true,
+    "objective": "What must change in BRISA_04 for formularios?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "BRISA_04: Keep the formularios journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "BRISA_04: Keep the formularios journal append-only until the migration finishes.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "brisa-condition_unknown",
+    "split": "development",
+    "sourceFamily": "brisa-condition_unknown",
+    "project": "brisa",
+    "language": "mixed",
+    "scenario": "condition_unknown",
+    "critical": true,
+    "objective": "What must change in BRISA_05 for formularios?",
+    "operation": null,
+    "fixture": {
+      "decision": "BRISA_05: Keep the formularios journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "conditional",
+      "decision": "BRISA_05: Keep the formularios journal append-only until the migration finishes.",
+      "exceptions": null,
+      "answerRequirement": "Explain that context is missing before applying this decision."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "brisa-exception_blocks",
+    "split": "development",
+    "sourceFamily": "brisa-exception_blocks",
+    "project": "brisa",
+    "language": "mixed",
+    "scenario": "exception_blocks",
+    "critical": true,
+    "objective": "What must change in BRISA_06 for formularios?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "BRISA_06: Keep the formularios journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": false,
+      "applicability": "applies",
+      "decision": null,
+      "exceptions": null,
+      "answerRequirement": "Do not apply this decision."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "brisa-expired",
+    "split": "development",
+    "sourceFamily": "brisa-expired",
+    "project": "brisa",
+    "language": "mixed",
+    "scenario": "expired",
+    "critical": true,
+    "objective": "What must change in BRISA_07 for formularios?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "BRISA_07: Keep the formularios journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": false,
+      "applicability": "applies",
+      "decision": null,
+      "exceptions": null,
+      "answerRequirement": "Do not apply this decision."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "brisa-unconfirmed",
+    "split": "development",
+    "sourceFamily": "brisa-unconfirmed",
+    "project": "brisa",
+    "language": "mixed",
+    "scenario": "unconfirmed",
+    "critical": true,
+    "objective": "What must change in BRISA_08 for formularios?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "BRISA_08: Keep the formularios journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": false,
+      "applicability": "applies",
+      "decision": null,
+      "exceptions": null,
+      "answerRequirement": "Do not apply this decision."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "cobre-archive",
+    "split": "development",
+    "sourceFamily": "cobre-archive",
+    "project": "cobre",
+    "language": "mixed",
+    "scenario": "archive",
+    "critical": false,
+    "objective": "What must change in COBRE_01 for deployment?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "COBRE_01: Keep the deployment journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "COBRE_01: Keep the deployment journal append-only until the migration finishes.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "cobre-spanish",
+    "split": "development",
+    "sourceFamily": "cobre-spanish",
+    "project": "cobre",
+    "language": "ES",
+    "scenario": "spanish",
+    "critical": false,
+    "objective": "¿Qué regla rige COBRE_02 en deployment?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "COBRE_02: Conserva los cambios de deployment en un registro hasta terminar la migración.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "COBRE_02: Conserva los cambios de deployment en un registro hasta terminar la migración.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "cobre-mixed",
+    "split": "development",
+    "sourceFamily": "cobre-mixed",
+    "project": "cobre",
+    "language": "mixed",
+    "scenario": "mixed",
+    "critical": false,
+    "objective": "Revisa COBRE_03 before editing deployment.",
+    "operation": "edit",
+    "fixture": {
+      "decision": "COBRE_03: Keep the deployment audit log; no elimines las entradas anteriores.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "COBRE_03: Keep the deployment audit log; no elimines las entradas anteriores.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "cobre-condition_applies",
+    "split": "development",
+    "sourceFamily": "cobre-condition_applies",
+    "project": "cobre",
+    "language": "mixed",
+    "scenario": "condition_applies",
+    "critical": true,
+    "objective": "What must change in COBRE_04 for deployment?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "COBRE_04: Keep the deployment journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "COBRE_04: Keep the deployment journal append-only until the migration finishes.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "cobre-condition_unknown",
+    "split": "development",
+    "sourceFamily": "cobre-condition_unknown",
+    "project": "cobre",
+    "language": "mixed",
+    "scenario": "condition_unknown",
+    "critical": true,
+    "objective": "What must change in COBRE_05 for deployment?",
+    "operation": null,
+    "fixture": {
+      "decision": "COBRE_05: Keep the deployment journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "conditional",
+      "decision": "COBRE_05: Keep the deployment journal append-only until the migration finishes.",
+      "exceptions": null,
+      "answerRequirement": "Explain that context is missing before applying this decision."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "cobre-exception_blocks",
+    "split": "development",
+    "sourceFamily": "cobre-exception_blocks",
+    "project": "cobre",
+    "language": "mixed",
+    "scenario": "exception_blocks",
+    "critical": true,
+    "objective": "What must change in COBRE_06 for deployment?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "COBRE_06: Keep the deployment journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": false,
+      "applicability": "applies",
+      "decision": null,
+      "exceptions": null,
+      "answerRequirement": "Do not apply this decision."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "cobre-expired",
+    "split": "development",
+    "sourceFamily": "cobre-expired",
+    "project": "cobre",
+    "language": "mixed",
+    "scenario": "expired",
+    "critical": true,
+    "objective": "What must change in COBRE_07 for deployment?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "COBRE_07: Keep the deployment journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": false,
+      "applicability": "applies",
+      "decision": null,
+      "exceptions": null,
+      "answerRequirement": "Do not apply this decision."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "cobre-unconfirmed",
+    "split": "development",
+    "sourceFamily": "cobre-unconfirmed",
+    "project": "cobre",
+    "language": "mixed",
+    "scenario": "unconfirmed",
+    "critical": true,
+    "objective": "What must change in COBRE_08 for deployment?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "COBRE_08: Keep the deployment journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": false,
+      "applicability": "applies",
+      "decision": null,
+      "exceptions": null,
+      "answerRequirement": "Do not apply this decision."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "delta-archive",
+    "split": "development",
+    "sourceFamily": "delta-archive",
+    "project": "delta",
+    "language": "EN",
+    "scenario": "archive",
+    "critical": false,
+    "objective": "What must change in DELTA_01 for cache?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "DELTA_01: Keep the cache journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "DELTA_01: Keep the cache journal append-only until the migration finishes.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "delta-spanish",
+    "split": "development",
+    "sourceFamily": "delta-spanish",
+    "project": "delta",
+    "language": "ES",
+    "scenario": "spanish",
+    "critical": false,
+    "objective": "¿Qué regla rige DELTA_02 en cache?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "DELTA_02: Conserva los cambios de cache en un registro hasta terminar la migración.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "DELTA_02: Conserva los cambios de cache en un registro hasta terminar la migración.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "delta-mixed",
+    "split": "development",
+    "sourceFamily": "delta-mixed",
+    "project": "delta",
+    "language": "mixed",
+    "scenario": "mixed",
+    "critical": false,
+    "objective": "Revisa DELTA_03 before editing cache.",
+    "operation": "edit",
+    "fixture": {
+      "decision": "DELTA_03: Keep the cache audit log; no elimines las entradas anteriores.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "DELTA_03: Keep the cache audit log; no elimines las entradas anteriores.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "delta-condition_applies",
+    "split": "development",
+    "sourceFamily": "delta-condition_applies",
+    "project": "delta",
+    "language": "mixed",
+    "scenario": "condition_applies",
+    "critical": true,
+    "objective": "What must change in DELTA_04 for cache?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "DELTA_04: Keep the cache journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "DELTA_04: Keep the cache journal append-only until the migration finishes.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "delta-condition_unknown",
+    "split": "development",
+    "sourceFamily": "delta-condition_unknown",
+    "project": "delta",
+    "language": "mixed",
+    "scenario": "condition_unknown",
+    "critical": true,
+    "objective": "What must change in DELTA_05 for cache?",
+    "operation": null,
+    "fixture": {
+      "decision": "DELTA_05: Keep the cache journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "conditional",
+      "decision": "DELTA_05: Keep the cache journal append-only until the migration finishes.",
+      "exceptions": null,
+      "answerRequirement": "Explain that context is missing before applying this decision."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "delta-exception_blocks",
+    "split": "development",
+    "sourceFamily": "delta-exception_blocks",
+    "project": "delta",
+    "language": "mixed",
+    "scenario": "exception_blocks",
+    "critical": true,
+    "objective": "What must change in DELTA_06 for cache?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "DELTA_06: Keep the cache journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": false,
+      "applicability": "applies",
+      "decision": null,
+      "exceptions": null,
+      "answerRequirement": "Do not apply this decision."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "delta-expired",
+    "split": "development",
+    "sourceFamily": "delta-expired",
+    "project": "delta",
+    "language": "mixed",
+    "scenario": "expired",
+    "critical": true,
+    "objective": "What must change in DELTA_07 for cache?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "DELTA_07: Keep the cache journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": false,
+      "applicability": "applies",
+      "decision": null,
+      "exceptions": null,
+      "answerRequirement": "Do not apply this decision."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "delta-unconfirmed",
+    "split": "development",
+    "sourceFamily": "delta-unconfirmed",
+    "project": "delta",
+    "language": "mixed",
+    "scenario": "unconfirmed",
+    "critical": true,
+    "objective": "What must change in DELTA_08 for cache?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "DELTA_08: Keep the cache journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": false,
+      "applicability": "applies",
+      "decision": null,
+      "exceptions": null,
+      "answerRequirement": "Do not apply this decision."
+    },
+    "budgetImpossible": false
+  }
+]

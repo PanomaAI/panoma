@@ -3,9 +3,11 @@ import {
   modelSpendByKind,
   modelSpendByModel,
   startOfDay,
+  quotaState,
   type Database,
   type KindSpend,
   type ModelSpendRow,
+  type QuotaState,
 } from "@panoma/db";
 import {
   BUDGET_FAMILIES,
@@ -13,11 +15,19 @@ import {
   rateKey,
   readSpendSettings,
   resolveCap,
+  resolveQuota,
+  FACTORY_QUOTA_MB,
+  QUOTA_ENV,
+  MIB,
+  MAX_QUOTA_MB,
   type BudgetFamily,
   type DailyCap,
   type ModelRate,
   type ShotPolicy,
+  type QuotaScope,
+  type QuotaSource,
 } from "./spend-settings";
+import { memoryDisk, type MemoryDisk } from "./memory-disk";
 import {
   costOf,
   familyLines,
@@ -60,6 +70,12 @@ export interface ModelLine extends ModelSpendRow {
 }
 
 export interface SpendReport {
+  storage: {
+    state: QuotaState;
+    disk: MemoryDisk;
+    maximumMb: number;
+    scopes: { scope: QuotaScope; chosenMb: number | null; effectiveMb: number; factoryMb: number; source: QuotaSource; variable: string }[];
+  };
   /** `DATABASE_URL` is set: the caps are the server's, which is where the calls are made from. */
   remote: boolean;
   /** `spend.json` exists and could not be read as settings; factory values are shown. */
@@ -95,6 +111,8 @@ export async function spendReport(database: Database, now: Date = new Date()): P
   const caps = Object.fromEntries(
     BUDGET_FAMILIES.map((family) => [family, resolveCap(family, process.env, settings)]),
   ) as Record<BudgetFamily, DailyCap>;
+  const quota = resolveQuota(process.env, settings);
+  const [storageState, disk] = await Promise.all([quotaState(database, quota), memoryDisk()]);
 
   const today = startOfDay(now);
   // Thirty local days including today: the window starts at midnight twenty-nine days back.
@@ -113,6 +131,14 @@ export async function spendReport(database: Database, now: Date = new Date()): P
   });
 
   return {
+    storage: {
+      state: storageState, disk, maximumMb: MAX_QUOTA_MB,
+      scopes: (["catalog", "project"] as const).map((scope) => ({
+        scope, chosenMb: settings.quota?.[scope === "catalog" ? "catalogMb" : "projectMb"] ?? null,
+        effectiveMb: (scope === "catalog" ? quota.catalogBytes : quota.projectBytes) / MIB,
+        factoryMb: FACTORY_QUOTA_MB[scope], source: quota.sources[scope], variable: QUOTA_ENV[scope],
+      })),
+    },
     remote: Boolean(process.env["DATABASE_URL"]),
     broken,
     paused: settings.paused,

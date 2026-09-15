@@ -1,0 +1,922 @@
+[
+  {
+    "id": "estuario-archive",
+    "split": "evaluation",
+    "sourceFamily": "estuario-archive",
+    "project": "estuario",
+    "language": "ES",
+    "scenario": "archive",
+    "critical": false,
+    "objective": "What must change in ESTUARIO_01 for facturación?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "ESTUARIO_01: Keep the facturación journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "ESTUARIO_01: Keep the facturación journal append-only until the migration finishes.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "estuario-spanish",
+    "split": "evaluation",
+    "sourceFamily": "estuario-spanish",
+    "project": "estuario",
+    "language": "ES",
+    "scenario": "spanish",
+    "critical": false,
+    "objective": "¿Qué regla rige ESTUARIO_02 en facturación?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "ESTUARIO_02: Conserva los cambios de facturación en un registro hasta terminar la migración.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "ESTUARIO_02: Conserva los cambios de facturación en un registro hasta terminar la migración.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "estuario-mixed",
+    "split": "evaluation",
+    "sourceFamily": "estuario-mixed",
+    "project": "estuario",
+    "language": "mixed",
+    "scenario": "mixed",
+    "critical": false,
+    "objective": "Revisa ESTUARIO_03 before editing facturación.",
+    "operation": "edit",
+    "fixture": {
+      "decision": "ESTUARIO_03: Keep the facturación audit log; no elimines las entradas anteriores.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "ESTUARIO_03: Keep the facturación audit log; no elimines las entradas anteriores.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "estuario-condition_applies",
+    "split": "evaluation",
+    "sourceFamily": "estuario-condition_applies",
+    "project": "estuario",
+    "language": "mixed",
+    "scenario": "condition_applies",
+    "critical": true,
+    "objective": "What must change in ESTUARIO_04 for facturación?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "ESTUARIO_04: Keep the facturación journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "ESTUARIO_04: Keep the facturación journal append-only until the migration finishes.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "estuario-condition_unknown",
+    "split": "evaluation",
+    "sourceFamily": "estuario-condition_unknown",
+    "project": "estuario",
+    "language": "mixed",
+    "scenario": "condition_unknown",
+    "critical": true,
+    "objective": "What must change in ESTUARIO_05 for facturación?",
+    "operation": null,
+    "fixture": {
+      "decision": "ESTUARIO_05: Keep the facturación journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "conditional",
+      "decision": "ESTUARIO_05: Keep the facturación journal append-only until the migration finishes.",
+      "exceptions": null,
+      "answerRequirement": "Explain that context is missing before applying this decision."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "estuario-exception_blocks",
+    "split": "evaluation",
+    "sourceFamily": "estuario-exception_blocks",
+    "project": "estuario",
+    "language": "mixed",
+    "scenario": "exception_blocks",
+    "critical": true,
+    "objective": "What must change in ESTUARIO_06 for facturación?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "ESTUARIO_06: Keep the facturación journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": false,
+      "applicability": "applies",
+      "decision": null,
+      "exceptions": null,
+      "answerRequirement": "Do not apply this decision."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "estuario-expired",
+    "split": "evaluation",
+    "sourceFamily": "estuario-expired",
+    "project": "estuario",
+    "language": "mixed",
+    "scenario": "expired",
+    "critical": true,
+    "objective": "What must change in ESTUARIO_07 for facturación?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "ESTUARIO_07: Keep the facturación journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": false,
+      "applicability": "applies",
+      "decision": null,
+      "exceptions": null,
+      "answerRequirement": "Do not apply this decision."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "estuario-unconfirmed",
+    "split": "evaluation",
+    "sourceFamily": "estuario-unconfirmed",
+    "project": "estuario",
+    "language": "mixed",
+    "scenario": "unconfirmed",
+    "critical": true,
+    "objective": "What must change in ESTUARIO_08 for facturación?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "ESTUARIO_08: Keep the facturación journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": false,
+      "applicability": "applies",
+      "decision": null,
+      "exceptions": null,
+      "answerRequirement": "Do not apply this decision."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "estuario-global",
+    "split": "evaluation",
+    "sourceFamily": "estuario-global",
+    "project": "estuario",
+    "language": "mixed",
+    "scenario": "global",
+    "critical": false,
+    "objective": "What must change in ESTUARIO_09 for facturación?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "ESTUARIO_09: Keep the facturación journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "ESTUARIO_09: Keep the facturación journal append-only until the migration finishes.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "estuario-long_exception",
+    "split": "evaluation",
+    "sourceFamily": "estuario-long_exception",
+    "project": "estuario",
+    "language": "mixed",
+    "scenario": "long_exception",
+    "critical": true,
+    "objective": "What must change in ESTUARIO_10 for facturación?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "ESTUARIO_10: Keep the facturación journal append-only until the migration finishes.",
+      "exceptions": "Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete. Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete. Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete. Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete. Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete."
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "conditional",
+      "decision": "ESTUARIO_10: Keep the facturación journal append-only until the migration finishes.",
+      "exceptions": "Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete. Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete. Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete. Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete. Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete.",
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "faro-archive",
+    "split": "evaluation",
+    "sourceFamily": "faro-archive",
+    "project": "faro",
+    "language": "mixed",
+    "scenario": "archive",
+    "critical": false,
+    "objective": "What must change in FARO_01 for accessibility?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "FARO_01: Keep the accessibility journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "FARO_01: Keep the accessibility journal append-only until the migration finishes.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "faro-spanish",
+    "split": "evaluation",
+    "sourceFamily": "faro-spanish",
+    "project": "faro",
+    "language": "ES",
+    "scenario": "spanish",
+    "critical": false,
+    "objective": "¿Qué regla rige FARO_02 en accessibility?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "FARO_02: Conserva los cambios de accessibility en un registro hasta terminar la migración.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "FARO_02: Conserva los cambios de accessibility en un registro hasta terminar la migración.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "faro-mixed",
+    "split": "evaluation",
+    "sourceFamily": "faro-mixed",
+    "project": "faro",
+    "language": "mixed",
+    "scenario": "mixed",
+    "critical": false,
+    "objective": "Revisa FARO_03 before editing accessibility.",
+    "operation": "edit",
+    "fixture": {
+      "decision": "FARO_03: Keep the accessibility audit log; no elimines las entradas anteriores.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "FARO_03: Keep the accessibility audit log; no elimines las entradas anteriores.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "faro-condition_applies",
+    "split": "evaluation",
+    "sourceFamily": "faro-condition_applies",
+    "project": "faro",
+    "language": "mixed",
+    "scenario": "condition_applies",
+    "critical": true,
+    "objective": "What must change in FARO_04 for accessibility?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "FARO_04: Keep the accessibility journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "FARO_04: Keep the accessibility journal append-only until the migration finishes.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "faro-condition_unknown",
+    "split": "evaluation",
+    "sourceFamily": "faro-condition_unknown",
+    "project": "faro",
+    "language": "mixed",
+    "scenario": "condition_unknown",
+    "critical": true,
+    "objective": "What must change in FARO_05 for accessibility?",
+    "operation": null,
+    "fixture": {
+      "decision": "FARO_05: Keep the accessibility journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "conditional",
+      "decision": "FARO_05: Keep the accessibility journal append-only until the migration finishes.",
+      "exceptions": null,
+      "answerRequirement": "Explain that context is missing before applying this decision."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "faro-exception_blocks",
+    "split": "evaluation",
+    "sourceFamily": "faro-exception_blocks",
+    "project": "faro",
+    "language": "mixed",
+    "scenario": "exception_blocks",
+    "critical": true,
+    "objective": "What must change in FARO_06 for accessibility?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "FARO_06: Keep the accessibility journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": false,
+      "applicability": "applies",
+      "decision": null,
+      "exceptions": null,
+      "answerRequirement": "Do not apply this decision."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "faro-expired",
+    "split": "evaluation",
+    "sourceFamily": "faro-expired",
+    "project": "faro",
+    "language": "mixed",
+    "scenario": "expired",
+    "critical": true,
+    "objective": "What must change in FARO_07 for accessibility?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "FARO_07: Keep the accessibility journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": false,
+      "applicability": "applies",
+      "decision": null,
+      "exceptions": null,
+      "answerRequirement": "Do not apply this decision."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "faro-unconfirmed",
+    "split": "evaluation",
+    "sourceFamily": "faro-unconfirmed",
+    "project": "faro",
+    "language": "mixed",
+    "scenario": "unconfirmed",
+    "critical": true,
+    "objective": "What must change in FARO_08 for accessibility?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "FARO_08: Keep the accessibility journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": false,
+      "applicability": "applies",
+      "decision": null,
+      "exceptions": null,
+      "answerRequirement": "Do not apply this decision."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "faro-global",
+    "split": "evaluation",
+    "sourceFamily": "faro-global",
+    "project": "faro",
+    "language": "mixed",
+    "scenario": "global",
+    "critical": false,
+    "objective": "What must change in FARO_09 for accessibility?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "FARO_09: Keep the accessibility journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "FARO_09: Keep the accessibility journal append-only until the migration finishes.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "faro-long_exception",
+    "split": "evaluation",
+    "sourceFamily": "faro-long_exception",
+    "project": "faro",
+    "language": "mixed",
+    "scenario": "long_exception",
+    "critical": true,
+    "objective": "What must change in FARO_10 for accessibility?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "FARO_10: Keep the accessibility journal append-only until the migration finishes.",
+      "exceptions": "Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete. Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete. Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete. Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete. Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete."
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "conditional",
+      "decision": "FARO_10: Keep the accessibility journal append-only until the migration finishes.",
+      "exceptions": "Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete. Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete. Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete. Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete. Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete.",
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "granito-archive",
+    "split": "evaluation",
+    "sourceFamily": "granito-archive",
+    "project": "granito",
+    "language": "EN",
+    "scenario": "archive",
+    "critical": false,
+    "objective": "What must change in GRANITO_01 for migrations?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "GRANITO_01: Keep the migrations journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "GRANITO_01: Keep the migrations journal append-only until the migration finishes.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "granito-spanish",
+    "split": "evaluation",
+    "sourceFamily": "granito-spanish",
+    "project": "granito",
+    "language": "ES",
+    "scenario": "spanish",
+    "critical": false,
+    "objective": "¿Qué regla rige GRANITO_02 en migrations?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "GRANITO_02: Conserva los cambios de migrations en un registro hasta terminar la migración.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "GRANITO_02: Conserva los cambios de migrations en un registro hasta terminar la migración.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "granito-mixed",
+    "split": "evaluation",
+    "sourceFamily": "granito-mixed",
+    "project": "granito",
+    "language": "mixed",
+    "scenario": "mixed",
+    "critical": false,
+    "objective": "Revisa GRANITO_03 before editing migrations.",
+    "operation": "edit",
+    "fixture": {
+      "decision": "GRANITO_03: Keep the migrations audit log; no elimines las entradas anteriores.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "GRANITO_03: Keep the migrations audit log; no elimines las entradas anteriores.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "granito-condition_applies",
+    "split": "evaluation",
+    "sourceFamily": "granito-condition_applies",
+    "project": "granito",
+    "language": "mixed",
+    "scenario": "condition_applies",
+    "critical": true,
+    "objective": "What must change in GRANITO_04 for migrations?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "GRANITO_04: Keep the migrations journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "GRANITO_04: Keep the migrations journal append-only until the migration finishes.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "granito-condition_unknown",
+    "split": "evaluation",
+    "sourceFamily": "granito-condition_unknown",
+    "project": "granito",
+    "language": "mixed",
+    "scenario": "condition_unknown",
+    "critical": true,
+    "objective": "What must change in GRANITO_05 for migrations?",
+    "operation": null,
+    "fixture": {
+      "decision": "GRANITO_05: Keep the migrations journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "conditional",
+      "decision": "GRANITO_05: Keep the migrations journal append-only until the migration finishes.",
+      "exceptions": null,
+      "answerRequirement": "Explain that context is missing before applying this decision."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "granito-exception_blocks",
+    "split": "evaluation",
+    "sourceFamily": "granito-exception_blocks",
+    "project": "granito",
+    "language": "mixed",
+    "scenario": "exception_blocks",
+    "critical": true,
+    "objective": "What must change in GRANITO_06 for migrations?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "GRANITO_06: Keep the migrations journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": false,
+      "applicability": "applies",
+      "decision": null,
+      "exceptions": null,
+      "answerRequirement": "Do not apply this decision."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "granito-expired",
+    "split": "evaluation",
+    "sourceFamily": "granito-expired",
+    "project": "granito",
+    "language": "mixed",
+    "scenario": "expired",
+    "critical": true,
+    "objective": "What must change in GRANITO_07 for migrations?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "GRANITO_07: Keep the migrations journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": false,
+      "applicability": "applies",
+      "decision": null,
+      "exceptions": null,
+      "answerRequirement": "Do not apply this decision."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "granito-unconfirmed",
+    "split": "evaluation",
+    "sourceFamily": "granito-unconfirmed",
+    "project": "granito",
+    "language": "mixed",
+    "scenario": "unconfirmed",
+    "critical": true,
+    "objective": "What must change in GRANITO_08 for migrations?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "GRANITO_08: Keep the migrations journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": false,
+      "applicability": "applies",
+      "decision": null,
+      "exceptions": null,
+      "answerRequirement": "Do not apply this decision."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "granito-global",
+    "split": "evaluation",
+    "sourceFamily": "granito-global",
+    "project": "granito",
+    "language": "mixed",
+    "scenario": "global",
+    "critical": false,
+    "objective": "What must change in GRANITO_09 for migrations?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "GRANITO_09: Keep the migrations journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "GRANITO_09: Keep the migrations journal append-only until the migration finishes.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "granito-long_exception",
+    "split": "evaluation",
+    "sourceFamily": "granito-long_exception",
+    "project": "granito",
+    "language": "mixed",
+    "scenario": "long_exception",
+    "critical": true,
+    "objective": "What must change in GRANITO_10 for migrations?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "GRANITO_10: Keep the migrations journal append-only until the migration finishes.",
+      "exceptions": "Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete. Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete. Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete. Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete. Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete."
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "conditional",
+      "decision": "GRANITO_10: Keep the migrations journal append-only until the migration finishes.",
+      "exceptions": "Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete. Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete. Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete. Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete. Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete.",
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "hiedra-archive",
+    "split": "evaluation",
+    "sourceFamily": "hiedra-archive",
+    "project": "hiedra",
+    "language": "ES",
+    "scenario": "archive",
+    "critical": false,
+    "objective": "What must change in HIEDRA_01 for búsqueda?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "HIEDRA_01: Keep the búsqueda journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "HIEDRA_01: Keep the búsqueda journal append-only until the migration finishes.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "hiedra-spanish",
+    "split": "evaluation",
+    "sourceFamily": "hiedra-spanish",
+    "project": "hiedra",
+    "language": "ES",
+    "scenario": "spanish",
+    "critical": false,
+    "objective": "¿Qué regla rige HIEDRA_02 en búsqueda?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "HIEDRA_02: Conserva los cambios de búsqueda en un registro hasta terminar la migración.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "HIEDRA_02: Conserva los cambios de búsqueda en un registro hasta terminar la migración.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "hiedra-mixed",
+    "split": "evaluation",
+    "sourceFamily": "hiedra-mixed",
+    "project": "hiedra",
+    "language": "mixed",
+    "scenario": "mixed",
+    "critical": false,
+    "objective": "Revisa HIEDRA_03 before editing búsqueda.",
+    "operation": "edit",
+    "fixture": {
+      "decision": "HIEDRA_03: Keep the búsqueda audit log; no elimines las entradas anteriores.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "HIEDRA_03: Keep the búsqueda audit log; no elimines las entradas anteriores.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "hiedra-condition_applies",
+    "split": "evaluation",
+    "sourceFamily": "hiedra-condition_applies",
+    "project": "hiedra",
+    "language": "mixed",
+    "scenario": "condition_applies",
+    "critical": true,
+    "objective": "What must change in HIEDRA_04 for búsqueda?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "HIEDRA_04: Keep the búsqueda journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "HIEDRA_04: Keep the búsqueda journal append-only until the migration finishes.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "hiedra-condition_unknown",
+    "split": "evaluation",
+    "sourceFamily": "hiedra-condition_unknown",
+    "project": "hiedra",
+    "language": "mixed",
+    "scenario": "condition_unknown",
+    "critical": true,
+    "objective": "What must change in HIEDRA_05 for búsqueda?",
+    "operation": null,
+    "fixture": {
+      "decision": "HIEDRA_05: Keep the búsqueda journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "conditional",
+      "decision": "HIEDRA_05: Keep the búsqueda journal append-only until the migration finishes.",
+      "exceptions": null,
+      "answerRequirement": "Explain that context is missing before applying this decision."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "hiedra-exception_blocks",
+    "split": "evaluation",
+    "sourceFamily": "hiedra-exception_blocks",
+    "project": "hiedra",
+    "language": "mixed",
+    "scenario": "exception_blocks",
+    "critical": true,
+    "objective": "What must change in HIEDRA_06 for búsqueda?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "HIEDRA_06: Keep the búsqueda journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": false,
+      "applicability": "applies",
+      "decision": null,
+      "exceptions": null,
+      "answerRequirement": "Do not apply this decision."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "hiedra-expired",
+    "split": "evaluation",
+    "sourceFamily": "hiedra-expired",
+    "project": "hiedra",
+    "language": "mixed",
+    "scenario": "expired",
+    "critical": true,
+    "objective": "What must change in HIEDRA_07 for búsqueda?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "HIEDRA_07: Keep the búsqueda journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": false,
+      "applicability": "applies",
+      "decision": null,
+      "exceptions": null,
+      "answerRequirement": "Do not apply this decision."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "hiedra-unconfirmed",
+    "split": "evaluation",
+    "sourceFamily": "hiedra-unconfirmed",
+    "project": "hiedra",
+    "language": "mixed",
+    "scenario": "unconfirmed",
+    "critical": true,
+    "objective": "What must change in HIEDRA_08 for búsqueda?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "HIEDRA_08: Keep the búsqueda journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": false,
+      "applicability": "applies",
+      "decision": null,
+      "exceptions": null,
+      "answerRequirement": "Do not apply this decision."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "hiedra-global",
+    "split": "evaluation",
+    "sourceFamily": "hiedra-global",
+    "project": "hiedra",
+    "language": "mixed",
+    "scenario": "global",
+    "critical": false,
+    "objective": "What must change in HIEDRA_09 for búsqueda?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "HIEDRA_09: Keep the búsqueda journal append-only until the migration finishes.",
+      "exceptions": null
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "applies",
+      "decision": "HIEDRA_09: Keep the búsqueda journal append-only until the migration finishes.",
+      "exceptions": null,
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  },
+  {
+    "id": "hiedra-long_exception",
+    "split": "evaluation",
+    "sourceFamily": "hiedra-long_exception",
+    "project": "hiedra",
+    "language": "mixed",
+    "scenario": "long_exception",
+    "critical": true,
+    "objective": "What must change in HIEDRA_10 for búsqueda?",
+    "operation": "edit",
+    "fixture": {
+      "decision": "HIEDRA_10: Keep the búsqueda journal append-only until the migration finishes.",
+      "exceptions": "Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete. Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete. Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete. Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete. Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete."
+    },
+    "expected": {
+      "visible": true,
+      "applicability": "conditional",
+      "decision": "HIEDRA_10: Keep the búsqueda journal append-only until the migration finishes.",
+      "exceptions": "Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete. Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete. Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete. Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete. Unless the operator has explicitly approved the recovery procedure after verifying a complete backup, preserve the journal and report that the migration is incomplete.",
+      "answerRequirement": "Preserve the complete decision and its exception."
+    },
+    "budgetImpossible": false
+  }
+]

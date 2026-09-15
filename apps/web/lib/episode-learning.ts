@@ -1,22 +1,28 @@
+import { randomUUID } from "node:crypto";
 import { complete, resolveCredential } from "@panoma/ai";
 import { redactSecrets, wrapUntrusted } from "@panoma/core";
 import {
   EPISODE_FIELDS,
+  completeReservation,
   listNarratives,
   markNarrativesFailed,
   markNarrativesRead,
+  markSent,
+  markUncertain,
   modelSpendToday,
   narrativeCount,
   narrativesByIds,
   queueWrite,
+  releaseReservation,
+  reserveModelCall,
   saveDecisionEpisodes,
-  saveModelCall,
   type Database,
   type EpisodeFields,
   type Narrative,
   type NewDecisionEpisode,
+  type ReservationPolicy,
 } from "@panoma/db";
-import { capFor } from "./spend-settings";
+import { FAMILY_KINDS, capFor } from "./spend-settings";
 
 export const EPISODE_KIND = "episodes";
 /** What the owner may type into one field of the form. */
@@ -344,8 +350,16 @@ export interface LearningReceipt {
 async function runLearning(database: Database, dryRun: boolean): Promise<LearningReceipt> {
   const coverage = await narrativeCount(database);
   const spent = await modelSpendToday(database, EPISODE_KIND);
-  const { cap } = await capFor("episodes");
+  const budget = await capFor("episodes");
+  const { cap } = budget;
   const remainingCalls = Math.max(0, cap - spent.calls);
+  /*
+    Since delivery D every call of this family is reserved before it leaves (plan §22.11, D06):
+    the counter above is the preview and the brake; the reservation under the family's lock is
+    what makes two callers in one second share one cap instead of each reading the same room.
+    The family keeps its factory cap and has no automatic origin, so no subquota applies.
+   */
+  const policy: ReservationPolicy = { family: "episodes", kinds: FAMILY_KINDS.episodes, caps: { family: cap, paused: budget.source === "paused" } };
   const rows = await listNarratives(database, { unread: true, limit: 300 });
   const { silent, material } = splitSilent(rows);
   const batches = planEpisodeBatches(material).slice(0, remainingCalls);
@@ -368,9 +382,12 @@ async function runLearning(database: Database, dryRun: boolean): Promise<Learnin
   }
   const credential = await resolveCredential();
   if (dryRun) return { ...base, provider: credential.provider.id, model: credential.model || "session" };
+  const model = credential.model || "session";
+  const attemptBase = `manual:${EPISODE_KIND}:${randomUUID()}`;
   let stored = 0;
   let processed = silent.length;
   let dropped = 0;
+  let paid = 0;
   let failed: LearningReceipt["failed"];
   let lastFailure: EpisodeExtractionError | undefined;
   for (let i = 0; i < batches.length; i++) {
@@ -378,11 +395,37 @@ async function runLearning(database: Database, dryRun: boolean): Promise<Learnin
     // Earlier calls can take minutes. Recheck before transmission, not only before saving.
     // The provider call stays outside the write queue so forgetting is never blocked by it.
     await assertCurrentNarratives(database, batch, "before");
-    const answer = await complete({ ...prompts[i]!, maxTokens: EPISODE_OUTPUT_TOKENS });
+    const reservation = await queueWrite(() => reserveModelCall(database, {
+      ...policy, kind: EPISODE_KIND, provider: credential.provider.id, model, origin: "manual", identity: batch[0]!.identity,
+      attemptKey: `${attemptBase}:${i + 1}`,
+    }));
+    if (!reservation.reserved) {
+      // Another caller filled the day between the preview and this batch: refused before the first call, the pass is the budget's no; later, the pass stops with what it read.
+      if (paid === 0) throw new EpisodeBudgetError("The daily decision-memory budget is exhausted.");
+      break;
+    }
+    const reserved = { reservationRev: reservation.reservationRev };
+    if (!(await queueWrite(() => markSent(database, reservation.id, reserved, new Date(), policy)))) {
+      // Midnight passed and the new day has no room: nothing left the process.
+      await queueWrite(() => releaseReservation(database, reservation.id, reserved));
+      if (paid === 0) throw new EpisodeBudgetError("The daily decision-memory budget is exhausted.");
+      break;
+    }
+    const sent = { reservationRev: reserved.reservationRev + 1 };
+    let answer: Awaited<ReturnType<typeof complete>>;
+    try {
+      answer = await complete({ ...prompts[i]!, maxTokens: EPISODE_OUTPUT_TOKENS });
+    } catch (error) {
+      // Sent, nothing readable back: the attempt keeps counting until it is reconciled (T68).
+      paid += 1;
+      await queueWrite(() => markUncertain(database, reservation.id, sent, "provider_failed"));
+      throw error;
+    }
+    paid += 1;
     // Record paid output before parsing. Invalid output consumes budget but never consumes evidence.
-    await queueWrite(() => saveModelCall(database, {
-      kind: EPISODE_KIND, provider: answer.provider, model: answer.model, identity: batch[0]!.identity,
-      ...(answer.usage ? { input: answer.usage.input, output: answer.usage.output } : {}),
+    await queueWrite(() => completeReservation(database, reservation.id, sent, {
+      inputTokens: answer.usage?.input ?? null, outputTokens: answer.usage?.output ?? null,
+      provider: answer.provider, model: answer.model,
     }));
     let read: EpisodeExtraction;
     try {
@@ -415,6 +458,6 @@ async function runLearning(database: Database, dryRun: boolean): Promise<Learnin
   if (lastFailure && failed && failed.batches === batches.length) throw lastFailure;
   return {
     ...base, stored, processed, dropped, remaining: (await narrativeCount(database)).pending,
-    remainingCalls: remainingCalls - batches.length, ...(failed ? { failed } : {}),
+    remainingCalls: remainingCalls - paid, ...(failed ? { failed } : {}),
   };
 }

@@ -103,7 +103,7 @@ vi.mock("@panoma/ai", async (importOriginal) => ({
   complete: (...args: unknown[]) => completeMock(...args),
   resolveCredential: async () => ({ provider: { id: "test" }, model: "test-eye" }),
 }));
-vi.mock("@/lib/db", () => ({ db: async () => ({ db: database }) }));
+vi.mock("@/lib/db", () => ({ db: async () => ({ db: database }), memoryQuarantine: async () => ({ quarantined: false }) }));
 const { POST } = await import("./route");
 
 let home: string;
@@ -484,3 +484,28 @@ function chunk(name: string, data: Uint8Array): Uint8Array {
   new DataView(out.buffer).setUint32(body.length + 4, crc32(Buffer.from(body)));
   return out;
 }
+
+/*
+  The fence: a catalog whose deletion journal is missing is quarantined, and a paid route sends
+  nothing while it is — the door answers `503 unavailable`, the provider is never called, and
+  the journal is put back afterwards. Pinned here for each paid door since 14-Sep-2026; the
+  route tests above mock the quarantine away, so without this the fence guarded nothing a test
+  could see.
+ */
+describe("the fence", () => {
+  it("sends nothing and answers 503 unavailable while the deletion journal is missing", async () => {
+    const { ensureDeletionJournal, deletionJournalPath } = await import("@panoma/db");
+    const { rename } = await import("node:fs/promises");
+    await ensureDeletionJournal(database, home);
+    const path = deletionJournalPath(home);
+    await rename(path, `${path}.held`);
+    try {
+      const response = await POST(request({ slug: "look", image: BIG, mediaType: "image/png" }));
+      expect(response.status).toBe(503);
+      expect(await response.json()).toMatchObject({ code: "unavailable" });
+      expect(completeMock).not.toHaveBeenCalled();
+    } finally {
+      await rename(`${path}.held`, path);
+    }
+  });
+});

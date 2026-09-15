@@ -16,21 +16,22 @@ documentation never teaches dead commands, but its list is fixed —`README.md`,
 | package | what it is | depends on |
 | --- | --- | --- |
 | `@panoma/core` | The engine: it reads the disk and returns facts. | — |
-| `@panoma/db` | The catalog: 32 Drizzle tables over PGlite. | core |
+| `@panoma/db` | The catalog: 49 Drizzle tables over PGlite. | core |
 | `@panoma/enrich` | Seven public registries and OSV.dev. | core, db |
 | `@panoma/runner` | `run` and `check`: worktree, isolation, proposals. | core, db, enrich |
 | `@panoma/ai` | The 27 model providers and `~/.panoma/ai.json`. | core |
 | `@panoma/mcp` | The MCP server: 15 tools over stdio. | core |
 | `@panoma/apps` | Official app packages, versioned installation and restricted child environments. | core |
 | `@panoma/handoff` | Handoff: reads the four agents' own stores and writes one new conversation the target's resume finds. No network, no model, no child process. | core |
-| `apps/cli` (`panoma`) | The binary: 26 verbs and the no-command case. | core, ai, handoff |
+| `apps/cli` (`panoma`) | The binary: 27 verbs and the no-command case. | core, ai, handoff |
 | `apps/web` (`@panoma/web`) | The catalog, watcher and durable app supervisor. | all eight |
 
-The numbers in the table, with their sources: `packages/db/migrations` holds 63 files
-(`0000`–`0062`) and `packages/db/src/schema.ts` declares 39 tables;
-`packages/ai/src/providers.ts` lists 27 providers; `packages/mcp/src/index.ts` registers 11
-tools; the dispatcher in `apps/cli/src/index.ts` recognizes 26 verbs; and under
-`apps/web/app/api` there are 79 route files with 98 exported handlers. `@panoma/core` does no
+The numbers in the table, with their sources: `packages/db/migrations` holds 69 files
+(`0000`–`0068`) and `packages/db/src/schema.ts` declares 49 tables;
+`packages/ai/src/providers.ts` lists 27 providers; `packages/mcp/src/index.ts` registers 15
+tools; the dispatcher in `apps/cli/src/index.ts` recognizes 27 verbs; and under
+`apps/web/app/api` there are 94 route files with 120 exported handlers (counted
+14-Sep-2026, after delivery D, which added no route file). `@panoma/core` does no
 networking, calls no model and writes into nobody's folders; `@panoma/handoff` shares the
 first two rules and adds a third, no child process, and it does write —one new file, into the
 folder an agent keeps its own conversations in, never into a project.
@@ -57,7 +58,9 @@ formatter (`packages/mcp/src/format.ts`).
 
 **The CLI is ephemeral.** `panoma <verb>` starts, asks, paints and dies. It does real local
 work where the catalog cannot reach —`up`/`down` start and stop the server, `hooks` installs
-the hooks, `signal` is one of them and hands over the sleeping notes, `ai` saves
+the hooks, `signal` is one of them and hands over the sleeping notes, `brief` and
+`memory session` are the other two Claude Code runs (the memory contract into a new context,
+and the pointer to the transcript when it closes), `ai` saves
 `~/.panoma/ai.json`, `agent-key --install` writes the MCP configuration and `md` writes the
 `AGENTS.md` block— and in the scan, which analyzes the folders in its own process. Everything
 else is a facade over the catalog, spoken over HTTP.
@@ -83,7 +86,7 @@ the database either: its `CatalogClient` calls the catalog over HTTP just like t
         │                        │                            │
  ┌──────▼───────┐        ┌───────▼──────┐          ┌──────────▼──────────┐
  │  apps/cli    │        │   pestaña    │          │  @panoma/mcp·stdio  │
- │  efímero     │        │              │          │  9 herramientas     │
+ │  efímero     │        │              │          │  15 herramientas    │
  └──────┬───────┘        └───────┬──────┘          └──────────┬──────────┘
         │ HTTP                   │ HTTP                       │ HTTP
         │ x-panoma-operator      │ cookies panoma-access      │ Authorization: Bearer
@@ -175,11 +178,24 @@ database**.
 7. **Three reads in parallel** (`getAgentContext`, `getProject`, `listProjectRuns`), the
    `delta` built out of `projects.recent_commits` —never by running `git log` over a path the
    caller sends—, and the stopped proposals filtered out of the last 50 runs. Memory delivery
-   goes through the ablation scale, which ships switched off.
+   goes through the ablation scale, which ships switched off. When the client's hello found
+   the memory contract (since 14-Sep-2026) the body also carries `memory`, and the route
+   selects over the whole eligible archive, packs whole units for the `mcp-memory-v2`
+   profile, hashes the payload, writes the offer under one short transaction and answers
+   `memoryContract` beside every legacy field ([memory-contract.md](memory-contract.md)).
+   Since delivery C the same road judges a decision's typed conditions in three values against
+   the last patrol's observations, leaves a request for the patrol instead of waiting for it,
+   and reads an open commitment or a task's case by id ([memory-checks.md](memory-checks.md)).
+   Since delivery D it judges a criterion's typed conditions and exceptions the same way and
+   prints them inside the unit as `Applies when:` and `Except when:`, and a criterion widened
+   from one project to all travels with its sentences and never its evidence
+   ([twin-learning.md](twin-learning.md)).
 8. **The MCP writes it up.** `formatContext` puts the untrusted-material warning in once and up
    front, applies the sixteen section and field caps from `MAX`, sorts every list with a total
    tie-break —without it, two identical calls would give different text— and, if the document
-   goes past the seventeenth cap, the 24,000-character one, it truncates and **says so**.
+   goes past the seventeenth cap, the 24,000-character one, it truncates and **says so**. With
+   a contract, the memory sections are its `presentation.text` verbatim and the cap drops
+   background first.
 
 ## Why there is one writer
 
@@ -220,19 +236,32 @@ Who may call what is decided in four independent places, and the detail is in
 ## What it does not do / known limits
 
 - **It is not a map of the interface or of the schema.** The screens and the ten views of a
-  project's page are in [web-app.md](web-app.md); the 39 tables, one by one, in
+  project's page are in [web-app.md](web-app.md); the 49 tables, one by one, in
   [database.md](database.md); the contract of every verb in [cli.md](cli.md) and that of every
   route in [http-api.md](http-api.md).
-- **The counts are today's, and no test ties them to this page.** The 79 route files and their
-  98 handlers are the ones under `apps/web/app/api`; outside that there is one more `route.ts`,
-  the icon's. That count and the rest —11 MCP tools, 26 verbs, 39 tables, 63 migrations, 27
-  providers— were checked with `grep` on 12-Sep-2026. `twin.md` does have a test watching it;
+- **The counts are today's, and no test ties them to this page.** The 94 route files and their
+  120 handlers are the ones under `apps/web/app/api`; outside that there is one more `route.ts`,
+  the icon's. That count and the rest —15 MCP tools, 27 verbs, 49 tables, 69 migrations, 27
+  providers— were checked with `grep` on 14-Sep-2026, after delivery D of the memory plan. `twin.md` does have a test watching it;
   this one does not.
 - **The drawing lies by omission in one case: `DATABASE_URL`.** With the catalog on another
   machine, the handlers that need this disk refuse to do the local work —by grep on
-  12-Sep-2026 the variable is consulted in route files to the number of twenty-three— and
-  the watcher does not exist ("the server cannot see the user's disk"). That mode has a
-  different shape, and it is not drawn here.
+  14-Sep-2026 the variable is consulted in route files to the number of thirty-six,
+  thirty-four of which cut— and the watcher does not exist ("the server cannot see the user's disk").
+  That mode has a different shape, and it is not drawn here.
+- **The drawing does not show the hooks' processes.** Four Claude Code events and git's
+  `post-commit` start the CLI as a child of another program, with no PATH and no key, and talk
+  to the same server through `sameOrigin` and the operator's file; the receipt reader that
+  answers them runs inside the web process on the worker's heartbeat, and since delivery B so
+  do the capture pass that reads the same transcripts for typed facts and the paid extraction
+  that freezes windows of the owner's turns for the model, and since delivery C the patrol
+  that looks at each project's disk for the checks its memory carries — a pass no hook waits
+  for — and since delivery D the Twin's continuous learning, which freezes the owner's new
+  turns into batches under a permission of its own and pays for one stage at a time, and the
+  publication outbox that writes the portrait's file after it. All of it is told in
+  [hooks.md](hooks.md), [memory-contract.md](memory-contract.md),
+  [memory-capture.md](memory-capture.md), [memory-checks.md](memory-checks.md) and
+  [twin-learning.md](twin-learning.md).
 - **`@panoma/mcp` is not published on npm.** The configuration points at a local path
   (`packages/mcp/dist/index.js` in the monorepo, `app/node_modules/@panoma/mcp/dist/index.js`
   once installed) and only falls back to `npx -y @panoma/mcp` with a warning that that package

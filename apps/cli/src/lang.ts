@@ -52,6 +52,24 @@ ${say("apps.doctorHelp")}
   panoma md sync               regenerate that block (needs the catalog up)
   panoma memory export <project>  the project's memory as one JSON file: its notes in every
                                state, its decisions and the extraction receipts (--out <file>)
+  panoma memory status         what the memory delivery did: offers, receipts, the reader's
+                               cursors and which programs are verified (--json for all of it)
+  panoma memory purge <source> what deleting a transcript source would reach, and what would
+                               stay; nothing is deleted until that plan is confirmed with --yes
+  panoma memory withdraw <source>  the same preview, but confirming only blocks its use: the
+                               content stays
+  panoma memory allow <source> capture|extract|twin  let the reader open that history
+                               (capture; --notice 2 also keeps typed facts), let new messages
+                               reach the model to propose project memory (extract), or let the
+                               Twin learn from them on its own (twin), for --project <slug> or,
+                               said with all the letters, --all
+  panoma memory revoke <source> capture|extract|twin  take one back: what was approved stays,
+                               and the terminal says what stops with it
+  panoma memory backfill <source>  read a range written before a permission existed: --from
+                               and --until as ISO instants, --purpose capture|extract|twin,
+                               the scope, and a preview until that plan is confirmed with --yes
+  panoma memory jobs           the extraction's batches: status, attempts, paid calls, the
+                               reason of a deferral (jobs retry|cancel <id> acts on one)
 
 ${pc.bold("DIAGNOSTICS")} ${pc.dim("(first-day questions)")}
   panoma disk                  how much disk the catalog takes and how much regenerates itself
@@ -93,7 +111,9 @@ ${pc.bold("YOUR TWIN")} ${pc.dim("(what your agents already know about you)")}
                                the latest from the .panoma/shots inbox your agents fill)
 
 ${pc.bold("OPTIONS")}
-  --json                       print the raw analysis as JSON
+  --json                       print the raw analysis as JSON; with memory status, the whole
+                               report; with memory purge, withdraw and backfill, the plan or
+                               the receipt; with memory jobs, the page as the catalog sent it
   --out <file>                 with scan and memory export, write the JSON to a file;
                                with handoff, where the document or the bundle goes
   --verbose, -v                show dependencies and the health breakdown
@@ -103,7 +123,9 @@ ${pc.bold("OPTIONS")}
   --folder                     with open, reveal the folder in the file browser
   --terminal                   with open, open a terminal already in the project
   --all                        with open, open everything the project's plan lists: links,
-                               terminal, editor, agent; with twin distill, chain passes
+                               terminal, editor, agent; with twin distill, chain passes;
+                               with memory allow, revoke and backfill, every project — said
+                               with all the letters, because a scope is never assumed
   --install                    with agent-key, write this folder's .mcp.json;
                                with hooks, set up the passive capture
   --remove                     with hooks, undo what --install left behind
@@ -118,13 +140,27 @@ ${pc.bold("OPTIONS")}
                                available; otherwise hardened, which on macOS seals off
                                your home folder with sandbox-exec but leaves the network open
   --limit <n>                  with twin mine, how many are shown (--save stores them
-                               all); with twin verdicts and twin distill, how many are read
-  --project <path>             with twin mine, only the sessions under that path
+                               all); with twin verdicts and twin distill, how many are read;
+                               with memory backfill, how many streams the plan takes (1–500)
+  --project <path>             with twin mine, only the sessions under that path; with memory
+                               allow, revoke and backfill, the slug of the one project meant
   --source <source>            with twin mine, a single history instead of every permitted
                                one: claude-code, codex…; with twin verdicts, only the
                                verdicts that came out of it
   --dry-run                    with twin distill, stop at the estimate instead of spending;
-                               with handoff, show what would travel and write nothing
+                               with handoff, show what would travel and write nothing;
+                               with memory purge, withdraw and backfill, the preview, which
+                               is also what they do without any flag
+  --yes                        with memory purge, withdraw and backfill, confirm the plan
+                               just previewed: the same run fetches it and sends it back
+  --from <iso>                 with memory backfill, where the range starts, as an ISO instant
+                               with its zone (2026-09-01T00:00:00Z)
+  --until <iso>                with memory backfill, where the range ends, the same way; with
+                               video auto, the stage to stop at
+  --purpose <purpose>          with memory backfill, which reader the range feeds: capture,
+                               extract or twin
+  --notice <n>                 with memory allow … capture, the version of the notice you
+                               read: 1 keeps receipts only, 2 also the typed facts
   --to <agent>                 with handoff, where the conversation continues: claude · codex ·
                                opencode · gemini · cursor · copilot · aider · amp · goose,
                                claude-app · codex-app for the desktop apps (macOS), or

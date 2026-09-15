@@ -30,15 +30,15 @@ describe("el puente que escribe el clic", () => {
   });
 
   /*
-    The guard that really matters: the watcher calls with the fixed form `create: false` and
-    without `bridge`. If someone "unifies" the calls and the watcher begins to pass bridge, each
-    commit of each monitored project could debut a file that no one asked for — and nothing will
-    turn red, because the file it writes is innocent.
+    The watcher may enqueue only the already-managed target through the publication outbox.
+    It cannot call the explicit document writer or create a bridge itself: otherwise each commit
+    could introduce a file the owner never requested.
    */
   it("el vigía no puede escribirlo", () => {
-    expect(sync).toMatch(/syncProjectDoc\(root, \{ create: false, analysis, database \}\)/);
     const vigia = /export async function syncManagedDoc[\s\S]*$/.exec(sync)?.[0] ?? "";
+    expect(vigia).toMatch(/if \(!picked\.managed\) return;[\s\S]*await planPublication\(database, \{ target: picked\.file === "CLAUDE\.md" \? "CLAUDE" : "AGENTS", projectId: project\.id, origin: "automatic" \}\)/);
     expect(vigia).not.toContain("bridge");
+    expect(vigia).not.toMatch(/syncProjectDoc\(|syncOwnedProjectDoc\(|writeFile\(|create:/);
   });
 
   it("y lo que escribe es la constante de core, no una plantilla local", () => {

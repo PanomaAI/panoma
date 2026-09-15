@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 const databaseGate = vi.hoisted(() => vi.fn(() => { throw new Error("The gate must precede the database"); }));
-vi.mock("@/lib/db", () => ({ db: databaseGate }));
+// The quarantine check opens the catalog too: a door that consults it before its guards fails the same way.
+vi.mock("@/lib/db", () => ({ db: databaseGate, memoryQuarantine: databaseGate }));
 
 /**
  * The four doors that operate, called for real and from outside the house.
@@ -532,6 +533,37 @@ describe("desde la pestaña de al lado, estas puertas tampoco se abren", () => {
  * catalog is not even opened to look the key up (`requireAgent` would, and `databaseGate`
  * throws if it does).
  */
+/**
+ * The Twin doors that a tab of this same origin may cross: `sameOrigin` alone guards them, and
+ * since the memory plan every one of them consults the quarantine, which opens the catalog. The
+ * two operator doors of the family (look POST, rehearse POST) sit in the block above and caught
+ * the order reversed on 14-Sep-2026; `taste` GET had it reversed the same day and nothing
+ * visited it. The order is the rule: guard, then quarantine, then the body.
+ */
+describe("the Twin doors of this origin consult the quarantine after the guard", () => {
+  type Door = { path: string; method: string; load: () => Promise<(request: Request) => Promise<Response>> };
+  const doors: Door[] = [
+    { path: "/api/twin/taste", method: "GET", load: async () => (await import("./twin/taste/route")).GET },
+    { path: "/api/twin/taste", method: "POST", load: async () => (await import("./twin/taste/route")).POST },
+    { path: "/api/twin/look?slug=example", method: "GET", load: async () => (await import("./twin/look/route")).GET },
+    { path: "/api/twin/classify", method: "POST", load: async () => (await import("./twin/classify/route")).POST },
+    { path: "/api/twin/critique", method: "POST", load: async () => (await import("./twin/critique/route")).POST },
+    { path: "/api/twin/distill", method: "POST", load: async () => (await import("./twin/distill/route")).POST },
+    { path: "/api/twin/synthesize", method: "POST", load: async () => (await import("./twin/synthesize/route")).POST },
+  ];
+  for (const door of doors) {
+    it(`${door.method} ${door.path}`, async () => {
+      const handler = await door.load();
+      const request = desdeOtraPestana(door.path, door.method);
+      databaseGate.mockClear();
+      const readJson = vi.spyOn(request, "json");
+      expect((await handler(request)).status).toBe(403);
+      expect(readJson).not.toHaveBeenCalled();
+      expect(databaseGate).not.toHaveBeenCalled();
+    });
+  }
+});
+
 describe("the handoff stops at the door, before the body and before the catalog", () => {
   type Door = { path: string; method: string; load: () => Promise<(request: Request) => Promise<Response>> };
   const doors: Door[] = [
@@ -642,5 +674,102 @@ describe("official app routes stop before input or the database", () => {
     ]);
     expect(responses.map(response => response.status)).toEqual([403, 403]);
     expect(databaseGate).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The memory contract v2 doors (14-Sep-2026): two hooks and three operator doors.
+ *
+ * `POST /api/hook/context` delivers memory into a program's context and `POST /api/hook/session`
+ * points the reader at a transcript of this disk; neither caller has an agent key, so the
+ * operator key is the whole door. `GET /api/memory/status` is the bridge's control room, with
+ * every project's root and the grants over the person's history; `POST /api/memory/purge` and
+ * `POST /api/memory/withdraw` begin the forgetting of what the memory holds, and their GETs read
+ * the receipts. From the network without the key and from the tab next door, every one of them
+ * answers 403 with the body unread —`json` and `text` both, since these doors read the text to
+ * bound it— and the catalog untouched; the quarantine check is mocked to throw as well, so a
+ * door that consulted it ahead of its guards would fail here. With the key, the same doors are
+ * crossed.
+ *
+ * Delivery B added two operator doors the same day: `POST /api/memory/backfill` opens this
+ * disk's transcripts over a range the person names (its GET reads the receipt of one), and
+ * `GET|POST /api/memory/jobs` lists every project's memory work and retries or cancels it — a
+ * retry spends the person's money. Same rule, same rows.
+ *
+ * Delivery C added four more: `GET|POST /api/memory/checks` names every live rule's anchors on
+ * this disk and defines what the patrol looks at, `GET|POST /api/memory/outcomes` shows what it
+ * saw and takes the owner's verdict on an incident, `GET|POST /api/memory/commitments` holds the
+ * owner's obligations and closes them, and `GET /api/memory/cases` projects a task with the
+ * owner's decisions and an agent's logbook. Same rule, same rows.
+ */
+describe("the memory doors stop at the door, before the body and before the catalog", () => {
+  type Door = { path: string; method: string; load: () => Promise<(request: Request) => Promise<Response>> };
+  const doors: Door[] = [
+    { path: "/api/hook/context", method: "POST", load: async () => (await import("./hook/context/route")).POST },
+    { path: "/api/hook/session", method: "POST", load: async () => (await import("./hook/session/route")).POST },
+    { path: "/api/memory/purge", method: "POST", load: async () => (await import("./memory/purge/route")).POST },
+    { path: "/api/memory/withdraw", method: "POST", load: async () => (await import("./memory/withdraw/route")).POST },
+    { path: "/api/memory/status", method: "GET", load: async () => (await import("./memory/status/route")).GET },
+    { path: "/api/memory/purge?id=mdel_x", method: "GET", load: async () => (await import("./memory/purge/route")).GET },
+    { path: "/api/memory/withdraw?id=mdel_x", method: "GET", load: async () => (await import("./memory/withdraw/route")).GET },
+    { path: "/api/memory/backfill", method: "POST", load: async () => (await import("./memory/backfill/route")).POST },
+    { path: "/api/memory/backfill?id=grant_backfill_x", method: "GET", load: async () => (await import("./memory/backfill/route")).GET },
+    { path: "/api/memory/jobs", method: "GET", load: async () => (await import("./memory/jobs/route")).GET },
+    { path: "/api/memory/jobs", method: "POST", load: async () => (await import("./memory/jobs/route")).POST },
+    { path: "/api/memory/checks?slug=example", method: "GET", load: async () => (await import("./memory/checks/route")).GET },
+    { path: "/api/memory/checks", method: "POST", load: async () => (await import("./memory/checks/route")).POST },
+    { path: "/api/memory/outcomes?slug=example", method: "GET", load: async () => (await import("./memory/outcomes/route")).GET },
+    { path: "/api/memory/outcomes", method: "POST", load: async () => (await import("./memory/outcomes/route")).POST },
+    { path: "/api/memory/commitments?slug=example", method: "GET", load: async () => (await import("./memory/commitments/route")).GET },
+    { path: "/api/memory/commitments", method: "POST", load: async () => (await import("./memory/commitments/route")).POST },
+    { path: "/api/memory/cases?slug=example", method: "GET", load: async () => (await import("./memory/cases/route")).GET },
+  ];
+  const body = { cwd: "/tmp/x", harness: "claude-code", channel: "brief", nativeSessionId: "s", transcriptPath: "/tmp/x.jsonl", reason: "end", target: { kind: "source", id: "x" }, dryRun: true };
+  for (const door of doors) {
+    it(`${door.method} ${door.path}`, async () => {
+      const handler = await door.load();
+      const requests = door.method === "GET"
+        ? [
+            new Request(`http://0.0.0.0:4173${door.path}`, {
+              headers: { host: DE_LA_RED, origin: `http://${DE_LA_RED}`, "sec-fetch-site": "same-origin" },
+            }),
+            desdeOtraPestana(door.path),
+          ]
+        : [comoEnProduccion(door.path, door.method, body), desdeOtraPestana(door.path, door.method)];
+      for (const request of requests) {
+        databaseGate.mockClear();
+        const readJson = vi.spyOn(request, "json");
+        const readText = vi.spyOn(request, "text");
+        expect((await handler(request)).status).toBe(403);
+        expect(readJson).not.toHaveBeenCalled();
+        expect(readText).not.toHaveBeenCalled();
+        expect(databaseGate).not.toHaveBeenCalled();
+      }
+    });
+  }
+
+  it("with the operator key, the same doors are crossed", async () => {
+    // The hooks refuse a remote catalog right after the gate; that refusal is not the gate's.
+    const remote = process.env["DATABASE_URL"];
+    delete process.env["DATABASE_URL"];
+    const withKey = (path: string, method: string) => new Request(`http://${DE_LA_RED}${path}`, {
+      method,
+      headers: {
+        host: DE_LA_RED, origin: `http://${DE_LA_RED}`, "sec-fetch-site": "same-origin", "content-type": "application/json", "x-panoma-operator": OPERADOR,
+      },
+      ...(method === "GET" ? {} : { body: JSON.stringify(body) }),
+    });
+    for (const door of doors) {
+      const handler = await door.load();
+      let status: number | undefined;
+      try {
+        status = (await handler(withKey(door.path, door.method))).status;
+      } catch {
+        // Past the gate the door reaches for the catalog, which this file refuses to open: crossing.
+        status = undefined;
+      }
+      expect(status, `${door.method} ${door.path} stopped the operator`).not.toBe(403);
+    }
+    if (remote !== undefined) process.env["DATABASE_URL"] = remote;
   });
 });

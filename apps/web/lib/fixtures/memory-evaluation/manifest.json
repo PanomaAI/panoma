@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "frozenAt": "2026-09-14",
+  "oracle": "Fixture-authored constraints frozen before running the system. Expected fields never enter the catalog or the query. Synthetic template families do not establish statistical independence in human usage.",
+  "cases": {
+    "development": 32,
+    "evaluation": 40
+  },
+  "sha256": {
+    "development.json": "f5128db79fed44b6ada81d1a6c879aef8a5dc7808c9c085af3d93699388da38d",
+    "evaluation.json": "90d09a9172fccd742e3c36f222898e977d7b1727ccfbeb65fa5351ed28047bad"
+  },
+  "answerEvaluation": "Not run: requires a fixed agent/model, real tokenizer and independent answer judge. This corpus initially measures retrieval and preservation only."
+}

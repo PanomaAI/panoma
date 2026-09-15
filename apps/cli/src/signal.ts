@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { catalogFetch } from "./catalog-fetch";
 import { neutralizeInline, wrapUntrusted } from "@panoma/core";
+import { entrypointFromEnvironment, hookOutput, printHookOutput, within } from "./brief";
 
 /**
  * `panoma signal` — the note at the accident site, delivered.
@@ -18,11 +19,22 @@ import { neutralizeInline, wrapUntrusted } from "@panoma/core";
  * timeout: everything ends in empty output and code 0. The hook's failure is silent, never a crash
  * — memory does not delay the turn, much less veto it.
  * 2. **Machine output only.** The only thing this command prints is the JSON from the hooks
- * protocol or nothing. No prose, no colors: the reader is Claude Code.
+ * protocol or nothing. No prose, no colors: the reader is Claude Code. And it is written to the
+ * descriptor itself (`printHookOutput` in `brief.ts`), past the terminal filter the CLI puts on
+ * `process.stdout`: on the v2 road the bytes are an offer the receipt reader compares whole.
  *
  * In a harness without `additionalContext` in PreToolUse, the extra JSON is ignored without harm:
  * the delivery is opportunistic by design, and the report—which announces how many notes are
  * asleep—remains the backup that does not depend on anyone's version.
+ *
+ * Since 14-Sep-2026 there is a second road, and it is closed by default. The memory plan gives
+ * the signal a v2 —`POST /api/hook/context` with the channel `signal`, which answers a memory
+ * contract with its offer recorded and its receipt observable— but only for a program and entry
+ * whose receipt site the server has verified, and the CLI cannot know the host's version from a
+ * hook. So the legacy GET stays the default, byte for byte, and the v2 road is walked only under
+ * `PANOMA_SIGNAL_V2=1`; when the server answers `409 unsupported_host` (or turns out to be a
+ * server with no such route), the GET is retried inside the same two seconds. Falling back never
+ * invents a v2 receipt: the legacy road records nothing, and this side claims nothing.
  */
 
 /** More than this is that the catalog is not there: the agent's turn waits for no one. */
@@ -145,8 +157,68 @@ async function readStdin(): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-export async function signalCommand(root: string, api: string): Promise<number> {
+/** The v2 road can be opened from a test without touching the environment; the descriptor, so a test can read what was written. */
+export interface SignalOptions {
+  v2?: boolean;
+  /** Where the JSON goes: file descriptor 1 unless a test says otherwise. */
+  fd?: number;
+}
+
+/**
+ * The v2 road: the contract for this path, printed as the server rendered it.
+ *
+ * `fallback` is the one answer that sends the caller to the legacy GET: the server has no
+ * verified profile for this host (`409 unsupported_host`), or there is no such route at all —a
+ * catalog older than the plan answers Next's 404 page, without the machine `code` every memory
+ * refusal carries—. Everything else ends here: a project the catalog does not know, a quarantine,
+ * a timeout. Retrying those on the old road would be walking around a policy, and the old road on
+ * a new server applies the same eligibility anyway.
+ */
+async function signalV2(
+  root: string,
+  path: string,
+  session: string | undefined,
+  api: string,
+  deadline: number,
+  fd: number | undefined,
+): Promise<"done" | "fallback"> {
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) return "done";
+  const entrypoint = entrypointFromEnvironment();
+  const response = await catalogFetch(new URL("/api/hook/context", api), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      cwd: root,
+      harness: "claude-code",
+      channel: "signal",
+      ...(entrypoint === undefined ? {} : { entrypoint }),
+      ...(session === undefined ? {} : { nativeSessionId: session }),
+      paths: [path],
+      operation: "edit",
+    }),
+    signal: AbortSignal.timeout(remaining),
+  });
+
+  if (response.status === 409 || response.status === 404) {
+    const refusal = (await within(response.json().catch(() => undefined), deadline - Date.now())) as
+      | { code?: unknown }
+      | undefined;
+    const code = typeof refusal?.code === "string" ? refusal.code : undefined;
+    if (response.status === 409) return code === "unsupported_host" ? "fallback" : "done";
+    return code === undefined ? "fallback" : "done";
+  }
+  if (!response.ok) return "done";
+
+  const reply = await within(response.json().catch(() => undefined), deadline - Date.now());
+  const output = hookOutput(reply, "hook-signal-v1");
+  if (output !== undefined) printHookOutput(output, fd);
+  return "done";
+}
+
+export async function signalCommand(root: string, api: string, options: SignalOptions = {}): Promise<number> {
   try {
+    const started = Date.now();
     const raw = await readStdin();
     const touched = pathFromHookInput(raw);
     if (touched === undefined) return 0;
@@ -158,13 +230,27 @@ export async function signalCommand(root: string, api: string): Promise<number> 
     if (nativeRelative.startsWith("..") || isAbsolute(nativeRelative)) return 0;
     const relativePath = portablePath(nativeRelative);
 
+    /*
+      The two seconds are one budget for both roads. The v2 attempt spends from it first and the
+      fallback GET gets what is left; with the road closed, the legacy GET keeps its own full two
+      seconds from here, as it always had.
+     */
+    let budget = TIMEOUT_MS;
+    if (options.v2 ?? process.env["PANOMA_SIGNAL_V2"] === "1") {
+      const deadline = started + TIMEOUT_MS;
+      const outcome = await signalV2(projectRoot, relativePath, sessionFromHookInput(raw), api, deadline, options.fd);
+      if (outcome === "done") return 0;
+      budget = deadline - Date.now();
+      if (budget <= 0) return 0;
+    }
+
     const url = new URL("/api/agent/notes", api);
     url.searchParams.set("cwd", projectRoot);
     url.searchParams.set("touching", relativePath);
 
     // catalogFetch and not fetch: every call to the catalog declares a language and uses the
     // appropriate key, and the guardian of catalog-fetch.test.ts exists so that no one forgets it.
-    const response = await catalogFetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+    const response = await catalogFetch(url, { signal: AbortSignal.timeout(budget) });
     if (!response.ok) return 0;
 
     const payload = (await response.json().catch(() => undefined)) as
@@ -184,13 +270,14 @@ export async function signalCommand(root: string, api: string): Promise<number> 
     const fresh = notes.filter((note) => note.id === undefined || !served.has(note.id));
     if (fresh.length === 0) return 0;
 
-    process.stdout.write(
+    printHookOutput(
       `${JSON.stringify({
         hookSpecificOutput: {
           hookEventName: "PreToolUse",
           additionalContext: signalContext(relativePath, fresh),
         },
       })}\n`,
+      options.fd,
     );
 
     if (session !== undefined && seen !== undefined) {

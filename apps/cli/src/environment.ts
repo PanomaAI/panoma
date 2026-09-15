@@ -1,11 +1,14 @@
 import { say } from "./messages";
-import { execFile } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
-
-const run = promisify(execFile);
+import {
+  monorepoBuiltCli,
+  panomaEntryOnPath,
+  panomaMonorepoRoot,
+  resolveHookInvocation,
+  type UndurableInvocation,
+} from "@panoma/core";
 
 /**
  * Where is Panoma installed on this machine.
@@ -77,99 +80,90 @@ export function runningFromNpx(entry = cliEntry()): boolean {
  * writing a configuration that points to a file that does not exist.
  */
 export function monorepoRoot(desde = dirname(cliEntry())): string | undefined {
-  let dir = desde;
-  // Eight steps are more than enough for `<raíz>/apps/cli/dist`; the limit is only so that a rare
-  // symbolic link doesn't turn this into a loop.
-  for (let i = 0; i < 8; i++) {
-    if (existsSync(join(dir, "pnpm-workspace.yaml")) && esElNuestro(dir)) return dir;
-    const padre = dirname(dir);
-    if (padre === dir) break;
-    dir = padre;
-  }
-  return undefined;
+  /*
+    The walk itself lives in @panoma/core since the web installer needed the same answer: the
+    question «is this the Panoma monorepo, or someone else's?» is asked of `apps/web/package.json`
+    and not of the folder structure. The mistake it prevents was serious. `pnpm-workspace.yaml` by
+    itself identifies 'a pnpm monorepo,' not 'this monorepo' — and anyone who installs Panoma
+    **inside their own pnpm monorepo** leaves CLI in `<su-repo>/node_modules/panoma/dist`, from
+    where going up four levels finds that person's workspace. From there Panoma thought it was
+    at home: it ignored the catalog it carries inside and tried to start `@panoma/web` in a
+    repository where that package does not exist. What the user saw, checked in a fake monorepo:
+    'The server closed on its own (code 0)' and, below, a pnpm `No projects matched the filters`
+    that means nothing to those who don't know Panoma has just tried to start someone else's
+    package. And the audience of Panoma is exactly people with pnpm monorepos.
+   */
+  return panomaMonorepoRoot(desde);
 }
 
-/**
- * Is this the Panoma monorepo, or someone else's?
- *
- * The question is not rhetorical and the mistake was serious. `pnpm-workspace.yaml` by itself
- * identifies 'a pnpm monorepo,' not 'this monorepo' — and anyone who installs Panoma **inside
- * their own pnpm monorepo** leaves CLI in `<su-repo>/node_modules/panoma/dist`, from where going
- * up four levels finds that person's workspace. From there Panoma thought it was at home: it
- * ignored the catalog it carries inside and tried to start `@panoma/web` in a repository where
- * that package does not exist.
- *
- * What the user saw, checked in a fake monorepo: 'The server closed on its own'
- * (code 0)» and, below, a pnpm `No projects matched the filters` that means nothing
- * For those who don't know, Panoma has just tried to start someone else's package. And the
- * audience of Panoma is exactly people with pnpm monorepos.
- *
- * It is checked by the package name and not by the folder structure: anyone can have a `apps/web`,
- * but only this monorepo calls it `@panoma/web`.
- */
-function esElNuestro(raiz: string): boolean {
-  try {
-    const manifiesto = JSON.parse(
-      readFileSync(join(raiz, "apps", "web", "package.json"), "utf8"),
-    ) as { name?: string };
-    return manifiesto.name === "@panoma/web";
-  } catch {
-    return false;
-  }
+/** What `panomaCommand` hands to whoever is about to write a file that calls Panoma back. */
+export interface PanomaCommand {
+  /** The interpreter and the entry, as absolute real paths — or `["panoma"]` when refusing. */
+  argv: string[];
+  /** A warning to print before using `argv`, when there is one. */
+  aviso?: string;
+  /** This copy runs from npx: it is here for one command and then gone. */
+  efimero?: boolean;
+  /** Whether `argv` was proven to run tomorrow. Nothing durable is written when it is false. */
+  durable: boolean;
+  reason?: UndurableInvocation["reason"];
+  detail?: string;
 }
 
 /**
  * How to call Panoma again from outside this process.
  *
- * A git hook and a LaunchAgent run without your shell's PATH and without your working directory,
- * so "write `panoma` " only works if `panoma` is really in the system's PATH. It is checked once,
- * during installation, and what is written in the file is the answer to that check:
+ * A git hook and a Claude Code hook run without your shell's PATH and without your working
+ * directory. For a year this answered `which panoma` and, when it succeeded, wrote the bare name
+ * — true at install time and false at hook time: under the desktop app the hooks ran 556 times
+ * with exit 127, and every one of them was silent by contract. Now the answer is always an
+ * absolute interpreter and an absolute entry, resolved and probed by `resolveHookInvocation` in
+ * @panoma/core — the same resolver the bridge's button uses, so both write the same bytes.
  *
- * - if it is in the PATH, the name alone is used, which survives even if you move the repo;
- * - otherwise, the absolute path to `node` and to the built CLI, which survives the hook running
- * without PATH — which is the case that always breaks.
- *
- * The `dist` of CLI is preferred over the source because a `.ts` is only executed by a very recent
- * Node and with warnings: if it is not built, whoever calls it will see the warning and will know
- * what to build.
+ * The candidates, in order: the file that is running, when it is built — the one that IS
+ * Panoma on this machine, whatever the PATH says —; the `panoma` on the PATH, followed to the
+ * file behind its symlink or shim; the built CLI of the monorepo above; and last the running
+ * source file, which is refused as not built with the warning that says what to build. The first
+ * candidate that survives the probe wins; if none does, the last refusal is reported.
  */
-/*
-  Here the language is detected instead of being received.
-  `parseArgs`, `mcpEntry`, and `panomaCommand` are utilities that are called from many places and
-  sometimes before the command exists; threading the language into them would require passing it
-  through half a dozen signatures that do not use it for anything else. `detectLang()` is a pure
-  environment function and is executed only once in a process, so asking it here gives exactly the
-  same answer as receiving it from above.
- */
-
-export async function panomaCommand(): Promise<{ argv: string[]; aviso?: string; efimero?: boolean }> {
+export async function panomaCommand(
+  options: { probe?: boolean; temporaryRoots?: string[] } = {},
+): Promise<PanomaCommand> {
   /*
     Under npx the `which` succeeds and lies: it finds the copy npx put on the PATH for this one
     process. Writing `panoma` into a hook on the strength of that is what installed a broken hook
     in silence. The absolute path is no better — it points inside the same temporary cache — so
     whoever needs a command that outlives this process is told, and decides.
    */
-  if (runningFromNpx()) return { argv: ["panoma"], efimero: true };
-
-  try {
-    await run("which", ["panoma"], { timeout: 4_000 });
-    return { argv: ["panoma"] };
-  } catch {
-    // It is not linked in PATH; it is followed by the absolute path.
-  }
-
-  const root = monorepoRoot();
-  const built = root ? join(root, "apps", "cli", "dist", "index.js") : undefined;
-  if (built && existsSync(built)) {
-    return { argv: [process.execPath, built] };
-  }
+  if (runningFromNpx()) return { argv: ["panoma"], efimero: true, durable: false, reason: "ephemeral" };
 
   const entry = cliEntry();
+  const built = !entry.endsWith(".ts");
+  const candidates = [
+    built ? entry : undefined,
+    await panomaEntryOnPath(),
+    monorepoBuiltCli(dirname(entry)),
+    built ? undefined : entry,
+  ].filter((candidate): candidate is string => candidate !== undefined);
+
+  let last: UndurableInvocation | undefined;
+  for (const candidate of [...new Set(candidates)]) {
+    const resolved = await resolveHookInvocation({
+      entry: candidate,
+      probe: options.probe,
+      temporaryRoots: options.temporaryRoots,
+    });
+    if (resolved.durable) return { argv: resolved.argv, durable: true };
+    last = resolved;
+  }
+
+  const refusal: UndurableInvocation = last ?? { durable: false, reason: "missing" };
   return {
-    argv: [process.execPath, entry],
-    aviso: entry.endsWith(".ts")
-      ? say("env.notBuilt", { entry })
-      : undefined,
+    argv: refusal.argv ?? ["panoma"],
+    durable: false,
+    reason: refusal.reason,
+    detail: refusal.detail,
+    aviso: refusal.reason === "not_built" ? say("env.notBuilt", { entry: refusal.argv?.[1] ?? entry }) : undefined,
   };
 }
 

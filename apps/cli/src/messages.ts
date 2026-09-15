@@ -522,6 +522,23 @@ const MESSAGES = {
   "hooks.notJson": "not a JSON object",
   "hooks.hooksNotObject": "“hooks” is not an object",
   "hooks.stopNotList": "“hooks.Stop” is not a list",
+  "hooks.briefInstalled": "Claude Code SessionStart brief — memory arrives when a context starts, resumes or compacts {path}",
+  "hooks.sessionInstalled": "Claude Code SessionEnd pointer — the catalog learns where the transcript ended {path}",
+  "hooks.eventLegacy": " (older marker: --install upgrades it in place)",
+  "hooks.eventMissing": " (missing)",
+  "hooks.durable": "the hooks call a command that exists on this disk",
+  "hooks.notDurable": "the hooks call a command that is not on this disk: run panoma hooks --install again",
+  /*
+    The refusal that replaced a silence. A hook runs without the interactive PATH, so the command
+    it names is proven to answer in a shell without one before it is written; when it cannot be
+    proven, this says why, and the file is left alone. See `hook-invocation.ts` in @panoma/core.
+   */
+  "hooks.undurable": "The command a hook would call would not be there tomorrow: {detail}",
+  "hooks.undurableHint": "Install panoma where it stays (npm i -g panoma) and run this again.",
+  "hooks.undurableEphemeral": "{entry} lives in a temporary folder",
+  "hooks.undurableMissing": "{entry} is not on this disk",
+  "hooks.undurableProbe": "{entry} did not answer --version in a shell without PATH ({detail})",
+  "hooks.claudeRemoved": "Claude Code hooks removed from {path}: {n}",
 
   "mcp.badJson": "{path} is not valid JSON ({reason}). Leaving it alone.",
   "env.notBuilt": "panoma is not on the PATH and the CLI is not built: this points at {entry}, which only very recent Node versions can run. Build it with “pnpm --filter panoma build” and install again.",
@@ -548,11 +565,18 @@ const MESSAGES = {
   "error.folderAndTerminal": "--folder and --terminal ask for two different things. Pick one.",
   "error.allAndOne": "--all opens everything the plan lists; --folder and --terminal open one thing. Pick one.",
   "error.installAndRemove": "--install and --remove ask for two different things. Pick one.",
+  "error.dryRunAndYes": "--dry-run stops at the preview and --yes goes past it. Pick one.",
   "error.unknownTier": "Unknown tier: {value}",
   "error.tierLevels": "Tiers: {list}",
   "error.unknownDigest": "Unknown digest author: {value}",
   "error.digestKinds": "The ones there are: {list}",
   "error.badKeep": "--keep needs a whole number greater than zero.",
+  "error.unknownPurpose": "Unknown purpose: {value}",
+  "error.purposeKinds": "The ones there are: {list}",
+  "error.badNotice": "--notice is the version of the notice you read: 1 or 2.",
+  "error.projectAndAll": "--project names one project and --all names every project. Pick one.",
+  "error.projectOrAll":
+    "memory {sub} needs its scope, and never assumes one: --project <slug> for one project, or --all for every project.",
   // ── The agents' .md ───────────────────────────────────────────────────────
   "md.usage": "panoma md [check|fix|init|sync|review] [path]",
   "md.unknownSub": "Unknown subcommand: {sub}",
@@ -713,6 +737,16 @@ const MESSAGES = {
   "twin.grantedNoReader":
     "This format cannot be read yet, so the permission is stored with nothing to open.",
   "twin.grantedNext": "panoma twin mine --source {source} reads it now.",
+  /*
+    Since delivery D the yes and the no of a source go through the catalog when it answers, so
+    the effective policy and the reader's cursors move together; when nothing answers, the file
+    is written here as it always was, and that is said. A refusal of the catalog is printed and
+    nothing is written: the catalog knows the disk, and it said no.
+   */
+  "twin.consentOffline":
+    "The catalog did not answer: the permission was written on this disk, and the catalog reads it the next time it looks.",
+  "twin.consentRejected": "The catalog refused the permission ({status}). {detail}",
+  "twin.revokedJobs": "Paid jobs in flight made invalid by this: {n}",
   "twin.revoked": "Permission taken back: {label}",
   "twin.revokedDetail":
     "Those files do not get opened again. What was printed back then was not stored\n  anywhere either, other than whatever you sent to the catalog with --save.",
@@ -1082,10 +1116,187 @@ const MESSAGES = {
   "usage.agentKey": 'Missing the name: panoma agent-key "Claude Code"',
 
   // ── The portable memory ───────────────────────────────────────────────────
-  "memory.usage": "Usage: panoma memory export <project> [--out <file>]",
+  "memory.usage":
+    "Usage: panoma memory export <project> [--out <file>]   ·   status [project] [--json]   ·   purge|withdraw <source> [--dry-run|--yes]   ·   jobs [project] [--json]   ·   jobs retry|cancel <id>",
+  "memory.usageMore":
+    "       panoma memory allow|revoke <source> capture|extract|twin (--project <slug> | --all) [--notice 2]   ·   backfill <source> --from <iso> --until <iso> --purpose capture|extract|twin (--project <slug> | --all) [--limit <n>] [--dry-run|--yes]",
   "memory.usageHint":
-    "The project is its exact slug, the one the catalog shows. Without --out the JSON goes to stdout.",
+    "The project is its exact slug, the one the catalog shows. Without --out the JSON goes to stdout. The source id is the one status lists.",
   "memory.wrote": "Wrote {path} · notes: {notes} · decisions: {decisions}",
+  /*
+    The delivery report and the two deletions. Every line here says what the catalog knows and
+    never dresses transport up as obedience: an offer was sent, a receipt was or was not observed,
+    a cursor is where it is. Names of internals —leases, staged— stay out of a person's screen,
+    as §20.4 of the memory plan asks; what a plan reaches is said with its counts, each closing
+    its clause.
+   */
+  "memory.status": "Memory delivery at {api}",
+  "memory.statusHint": "The whole report, as data: panoma memory status --json",
+  "memory.quarantined":
+    "The deletion journal is in quarantine: delivery, capture and export are refused until it is reconciled.",
+  "memory.capabilities": "Programs",
+  "memory.capability": "{harness} via {entry} · profile {profile} · receipts {receiptSite} · invocation {invocation}",
+  "memory.capabilitiesNone": "no program has been observed yet",
+  "memory.permissions": "Capture permissions",
+  "memory.permission": "{source} · capture {state} · scope {scope} · generation {generation}",
+  "memory.permissionsNone": "none is on: the reader opens no transcript",
+  "memory.delivery": "Offers {offers} · sent {sent} · failed {failed} · unknown {unknown} · unbound {unbound}",
+  "memory.receptions": "Receipts full {full} · partial {partial} · unknown {unknown} · not observed {notObserved}",
+  "memory.queue": "Reader cursors pending {pending} · active {active} · blocked {blocked} · complete {complete} · revoked {revoked}",
+  "memory.capturePass": "Last capture pass in this process: streams {streams} · bytes {bytes}",
+  "memory.captureSkipped": "Skipped for {reason}: {n}",
+  "memory.checkCounts": "Checks: defined {defined} · observed {observed} · unknown {unknown}",
+  "memory.commitmentCounts": "Commitments: open {open} · fulfilled {fulfilled} · cancelled {cancelled}",
+  "memory.patrolPending": "Projects waiting for checks: {n}",
+  "memory.patrolResults": "Last check pass in this process: pass {pass} · fail {fail} · unknown {unknown}",
+  "memory.patrolUnobserved": "No check pass observed in this process.",
+  "memory.sources": "Sources",
+  "memory.source": "{id} · {harness} via {entry} · {status} · generation {generation}",
+  "memory.sourcesNone": "no transcript stream is known yet",
+  "memory.projects": "Projects",
+  "memory.project": "{name} ({slug}) · offers {offers}",
+  "memory.projectsNone": "no project has a delivery yet",
+  "memory.needsSource": "Name the source to {verb}: panoma memory status lists their ids.",
+  "memory.purgePreview": "Review the content to be deleted.",
+  "memory.withdrawPreview": "Review the content whose use would be blocked; its text stays.",
+  "memory.backfillPreview": "Review the ranges the backfill would read.",
+  "memory.plan": "Plan {planId} · source {id} · revision {revision} · expires {expiresAt}",
+  "memory.planAffected":
+    "It reaches revisions {revisions} · offers {offers} · events {events} · sources {sources} · contexts {contexts}",
+  "memory.planRetained": "Kept, because something else still depends on it: {n}",
+  "memory.planRetainedNone": "Nothing else depends on it.",
+  "memory.planExternal": "Copies outside the catalog it cannot reach: {n}",
+  "memory.planExternalNone": "No copy outside the catalog is known.",
+  "memory.confirmRequired": "Nothing was changed. Confirm this exact plan with --yes.",
+  "memory.purgeAccepted":
+    "Purge accepted as operation {id}: the catalog cleans it in batches, and its receipt lists what stayed.",
+  "memory.withdrawAccepted":
+    "Withdrawal accepted as operation {id}: dependent use is blocked from now on, and the content stays.",
+  "memory.staleRevision": "The content changed. Review the current version.",
+  "memory.staleRevisionHint": "Run the same command again: the preview shows the plan as it is now.",
+  "memory.stalePlan": "That plan expired or the catalog does not know it: preview it again.",
+  /*
+    Delivery B: the two permissions a person grants from the terminal, the backfill of a range
+    already written, and the jobs the extraction leaves behind. Each permission line says where
+    the boundary is —what the reader opens from now on and what it never opens— and each
+    revocation says what stays, because "revoke" promises more than it does and the plan asks
+    that the difference be said where the person decides. A refusal of the catalog has its own
+    sentence per code and this terminal never retries on its own.
+   */
+  "memory.permissionUsage":
+    "Usage: panoma memory {verb} <source> capture|extract|twin (--project <slug> | --all) [--notice 2]",
+  "memory.permissionUsageHint":
+    "The source is a history on this disk, claude-code or codex. capture reads receipts and, with --notice 2, typed facts; extract sends new human messages to the model to propose project memory; twin lets the Twin learn from them on its own.",
+  "memory.badPermissionPurpose": "The permission is capture, extract or twin, not {value}.",
+  "memory.scopeProject": "project {slug}",
+  "memory.scopeGlobal": "every project (global)",
+  "memory.captureOn": "Capture on for {source} · scope {scope} · revision {revision}",
+  "memory.captureOff": "Capture off for {source} · scope {scope} · revision {revision}",
+  "memory.extractOn": "Extraction on for {source} · scope {scope} · revision {revision}",
+  "memory.extractOff": "Extraction off for {source} · scope {scope} · revision {revision}",
+  "memory.captureBoundary":
+    "Reading starts at the end of each transcript as it is now: a line written before this permission is never opened, and a record cut by that boundary is left out whole.",
+  "memory.captureNotice1":
+    "Notice 1: receipts and lifecycle records only. Typed facts need the version 2 notice: the same command with --notice 2.",
+  "memory.captureNotice2":
+    "Notice 2 accepted: typed facts too —reads, edits, command families, test outcomes, failures, commits, lifecycle— and never a command line, a prompt or a message.",
+  "memory.extractBoundary":
+    "From here on, new human messages of that scope may travel to the model, redacted, to propose project memory; what was written before this permission stays out, and every proposal waits for your approval.",
+  "memory.captureRevoked":
+    "What stays: rules already approved, receipts already kept, and the local observation. Extraction and the Twin's automatic learning stop with it for as long as capture is off.",
+  "memory.extractRevoked":
+    "What stays: capture, its receipts and the local observation. Extraction jobs in flight are invalid from now on, and no new batch is paid for.",
+  /*
+    Delivery D: the third permission, `twin`, maps to the `twinAutoLearn` grant. Its boundary
+    says what the Twin may do on its own from now on and what it never does without a switch of
+    its own —publish—, and its revocation names what the person's own word keeps: signatures,
+    published criteria, direct teaching. The status line lists it under the capture it depends on.
+   */
+  "memory.twinOn": "Twin learning on for {source} · scope {scope} · revision {revision}",
+  "memory.twinOff": "Twin learning off for {source} · scope {scope} · revision {revision}",
+  "memory.twinBoundary":
+    "From here on, new human messages of that scope may be distilled into observations of the Twin, redacted, in batches the catalog pays for on its own inside the read cap; what was written before this permission stays out, and nothing reaches TASTE.md without the inferred switch.",
+  "memory.twinRevoked":
+    "What stays: signed criteria, published criteria and what you teach directly. Learning jobs in flight are invalid from now on, and no new batch is paid for.",
+  "memory.twinPermission": "{source} · Twin learning on · scope {scope} · generation {generation}",
+  "memory.consentRequired":
+    "That depends on a permission that is off: the source comes first, and extraction needs capture on for the same scope.",
+  "memory.unsupportedSource":
+    "No reader exists for that source and purpose in this version, so nothing was granted or read.",
+  "memory.permissionStale":
+    "The permission changed underneath since it was read: panoma memory status shows it as it is now.",
+  "memory.backfillUsage":
+    "Usage: panoma memory backfill <source> --from <iso> --until <iso> --purpose capture|extract|twin (--project <slug> | --all) [--limit <n>] [--dry-run|--yes]",
+  "memory.backfillUsageHint":
+    "The two instants are ISO with a time zone, like 2026-09-01T00:00:00Z, and the range is from the first up to the second. The preview is the default; --yes confirms the plan the same run fetched.",
+  "memory.badInstant": "{flag} needs an ISO instant with a time zone, like 2026-09-01T00:00:00Z; it got {value}.",
+  "memory.emptyRange": "--until must be later than --from.",
+  "memory.backfillLimit": "--limit for a backfill is between 1 and 500.",
+  "memory.backfillPlan":
+    "Plan {planId} · source {id} · {purpose} · scope {scope} · revision {revision} · expires {expiresAt}",
+  "memory.backfillRange": "Range from {from} until {until}",
+  "memory.backfillReach":
+    "It would read streams {streams} · bytes {bytes} · unreadable {unreadable} · paid calls estimated {callsEstimate}",
+  "memory.backfillAccepted":
+    "Backfill accepted as operation {id}: the worker reads those ranges under the ordinary budget, and the ordinary cursors never move back.",
+  "memory.backfillQueued": "Ranges queued: {n}",
+  "memory.stalePolicy":
+    "A permission the plan relied on changed since the preview, so nothing was read: preview it again to see the plan as it is now.",
+  "memory.jobsUsage": "Usage: panoma memory jobs [project] [--json]   ·   panoma memory jobs retry|cancel <id>",
+  "memory.jobs": "Memory jobs at {api}",
+  "memory.jobsOf": "Memory jobs of {slug} at {api}",
+  "memory.jobsNone": "no job yet",
+  "memory.jobsMore": "Older jobs exist beyond this page; --json carries the cursor to them.",
+  "memory.jobsHint": "Retry or cancel one by its id: panoma memory jobs retry <id>   ·   panoma memory jobs cancel <id>",
+  "memory.jobsColId": "id",
+  "memory.jobsColProcessor": "processor",
+  "memory.jobsColStatus": "status",
+  "memory.jobsColPurpose": "purpose",
+  "memory.jobsColOrigin": "origin",
+  "memory.jobsColAttempts": "attempts",
+  "memory.jobsColPaid": "paid calls",
+  "memory.jobsColReason": "reason",
+  "memory.jobsColRetryAt": "retry at",
+  "memory.needsJob": "Name the job to {verb}: panoma memory jobs lists their ids.",
+  "memory.jobUnknown": "No job has the id {id}: panoma memory jobs lists them.",
+  "memory.jobRetryScheduled":
+    "Retry accepted for job {id}: it takes the next claim under the ordinary budget · status {status}",
+  "memory.jobCancelled": "Job {id} cancelled · status {status}",
+  "memory.jobUnchanged": "Job {id} was already there · status {status}",
+  "memory.jobStale": "The job moved since it was read: list it again with panoma memory jobs, then decide.",
+  "memory.notRetryable": "That job is final: there is nothing to retry or cancel.",
+  /*
+    What a catalog of delivery B adds to the report and to the plans, said only when the reply
+    carries it: the jobs by state, the extraction's backlog with the capacity notice the plan
+    names, the typed facts by kind, the two stores a deletion now reaches, and the streams a
+    backfill's limit left out. The state words are the ones `memory jobs` prints in its status
+    column, so the two screens can be read against each other.
+   */
+  "memory.jobCounts":
+    "Jobs pending {pending} · running {running} · staged {staged} · deferred {deferred} · failed {failed} · complete {complete} · cancelled {cancelled} · obsolete {obsolete}",
+  "memory.extraction": "Extraction backlog bytes {pendingBytes} · oldest pending since {oldestPendingAt}",
+  "memory.extractionIdle": "Extraction backlog: nothing is pending",
+  "memory.extractionIntervals":
+    "Ranges over the last seven days arrived {arrived} · completed {completed} · deferred {deferred} · dropped {dropped}",
+  "memory.capacityLimited": "Work is arriving faster than the quota can process it.",
+  /*
+    The storage quota of plan §25.3 (delivery E): one line per scope that is over its limit or
+    at four fifths of it, each closing on the figure so that a one never meets an inflected
+    word; the scope words are their own keys because the sentence names them in the middle.
+   */
+  "memory.quotaOver": "Storage quota of {scope} reached, new automatic memory is paused · MB limit {limit} · MB used {used}",
+  "memory.quotaNear": "Storage quota of {scope} nearly reached · MB limit {limit} · MB used {used}",
+  "memory.quotaCatalog": "the catalog",
+  "memory.quotaProject": "project {project}",
+  "memory.quotaPaused": "Nothing is deleted to make room: raise the limit on /spend, through PANOMA_MEMORY_QUOTA_MB and PANOMA_PROJECT_QUOTA_MB or quota in spend.json; or review content to purge.",
+  "memory.extractPermission": "{source} · extraction on · scope {scope} · generation {generation}",
+  "memory.facts": "Typed facts",
+  "memory.factCounts":
+    "reads {read} · edits {edit} · commands {command} · test results {testResult} · failures {failure} · commits {commit} · lifecycle {lifecycle} · receipts seen {receiptSeen}",
+  "memory.factsNone": "none captured yet: typed facts need capture on with the version 2 notice",
+  "memory.planAffectedAll":
+    "It reaches revisions {revisions} · offers {offers} · events {events} · sources {sources} · contexts {contexts} · facts {facts} · jobs {jobs}",
+  "memory.backfillOmitted": "Streams left out by the limit: {n}",
 
   // ── The spend: what the models cost, and the caps ─────────────────────────
   "spend.title": "Spend",

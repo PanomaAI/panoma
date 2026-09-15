@@ -1,6 +1,6 @@
 # Documentation
 
-Forty-six documents. Each one records **one decision, with its reasoning and its known
+Fifty documents. Each one records **one decision, with its reasoning and its known
 limits**, not a how-to: the how-to is in `panoma --help`, in the interface itself and on the
 `/docs` page the catalog serves, which is the surface for whoever has just installed it.
 This here is for whoever is about to touch the code —person or agent— and for whoever needs
@@ -22,7 +22,7 @@ here is almost never "what was the file called?", but "what part am I touching?"
 
 | document | what it answers |
 | --- | --- |
-| [database.md](database.md) | The 39 tables, the 63 migrations, and the border that matters: what recomputes itself and what never comes back. |
+| [database.md](database.md) | The fifty tables, the seventy-two migrations, and the border that matters: what recomputes itself and what never comes back. |
 | [single-writer.md](single-writer.md) | Why the CLI never writes to the database, and the three nets against a second writer. |
 | [broken-catalog.md](broken-catalog.md) | The runbook: how a broken catalog is recognized, how it is told apart from one from another version, and what to do with each. |
 | [watcher.md](watcher.md) | The lookout: what keeps the catalog current without anyone typing anything, and what happens when it goes down. |
@@ -41,8 +41,8 @@ here is almost never "what was the file called?", but "what part am I touching?"
 
 | document | what it answers |
 | --- | --- |
-| [cli.md](cli.md) | The twenty-six verbs, their flags and their exit codes. The terminal contract, whole. |
-| [http-api.md](http-api.md) | The 79 route files and their 98 handlers: who calls them, which guards they carry and what they write. |
+| [cli.md](cli.md) | The twenty-seven verbs, their flags and their exit codes. The terminal contract, whole. |
+| [http-api.md](http-api.md) | The 94 route files and their 120 handlers: who calls them, which guards they carry and what they write. |
 | [guards.md](guards.md) | Who can do what. The four guards, and the doctrine of documenting the exceptions and not the cases. |
 | [network-access.md](network-access.md) | How the catalog is opened to the local network, what protects it and what it is **not**. |
 | [web-app.md](web-app.md) | The eighteen screens, the shell, the ⌘K palette and why the testable logic lives outside the components. |
@@ -60,7 +60,7 @@ here is almost never "what was the file called?", but "what part am I touching?"
 | [agent-channel.md](agent-channel.md) | The fifteen MCP tools, how each agent connects and what the report brings back. |
 | [mcp-security.md](mcp-security.md) | Who each door of that channel protects against, and what is still not covered. |
 | [agents-md.md](agents-md.md) | The instructions file: the linter against the real disk, and the block that looks after itself. |
-| [hooks.md](hooks.md) | The three hooks that write down what happens without the model having to remember, and `panoma signal`. |
+| [hooks.md](hooks.md) | The five channels installed outside the model — git's `post-commit` and Claude Code's four events —, the command proven before it is written, and the three of them that speak for the memory: `panoma signal`, `panoma brief` and the session pointer. |
 | [untrusted.md](untrusted.md) | Somebody else's text: how it is marked as data before it reaches a model, and how far that mark reaches. |
 | [handoff.md](handoff.md) | Handoff: a conversation written into another agent's own history so its normal resume picks it up, or resumed in the same agent after signing in — by the person on the screen or in the terminal, or ordered by an agent through two MCP tools behind the same gate. What travels at each tier, what never does, and the line it does not cross. |
 
@@ -70,6 +70,10 @@ here is almost never "what was the file called?", but "what part am I touching?"
 | --- | --- |
 | [memory.md](memory.md) | The four floors, the gate that is a person, the budgets and the sentinels. |
 | [memory-scale.md](memory-scale.md) | How you measure whether the memory is any use — and why it ships turned off. |
+| [memory-contract.md](memory-contract.md) | The memory contract v2: one selector over the whole archive, an immutable offer per delivery with its three hashes, the receipt read back from the program's transcript, the capture grant, forgetting with a journal and a quarantine, and what the real-host probe verified. |
+| [memory-capture.md](memory-capture.md) | Delivery B of the memory plan: the typed facts a transcript yields under the version-2 notice, the owner's turns sent to a model in frozen windows under a grant of their own, the jobs with their lease and revision, the reservation of every paid call of the `memory` family, the backfill, the doors and the terminal — and what it knowingly leaves open. |
+| [memory-checks.md](memory-checks.md) | Delivery C of the memory plan: a check with a purpose and a revision on every unit, the pure evaluator whose `unknown` is never a `fail`, the observations and incidents with the environment they were made in, the patrol that no hook waits for, the commitments only a person or their approved criteria close, the typed predicates in three values, the succession and expiry of notes, the decision case as a projection, the doors — and what it knowingly leaves open. |
+| [twin-learning.md](twin-learning.md) | Delivery D of the memory plan: the third permission under which the Twin distils the owner's new turns on its own inside the `read` cap and a subquota, the case as the unit of support and the three families an inference needs to publish, the batches and the three stage jobs, the topic fingerprint that keeps the cycle from feeding itself, the ambiguous reaction, the publication outbox that compares the file before writing and reads it back after, the taste door by compare-and-set, a criterion's typed conditions and exceptions in the selector and in the file, the two migrations — and what it knowingly leaves open. |
 | [twin.md](twin.md) | The twin, organ by organ. `apps/web/lib/twin-wiring.test.ts` reads it, so renaming a heading breaks something on purpose. |
 | [decision-memory.md](decision-memory.md) | Decision episodes, narrative provenance, revisions, extraction budgets and their use in owner rehearsals. |
 | [budgets.md](budgets.md) | What holds back model spending: the nine caps and where each number comes from, the Spend screen, the ledger, and why calls are counted and not tokens. |

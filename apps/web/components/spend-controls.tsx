@@ -75,6 +75,7 @@ export function SpendControls({ initial }: { initial: SpendReport }) {
   const [currency, setCurrency] = useState(initial.currency);
   const [paused, setPaused] = useState(initial.paused);
   const [shots, setShots] = useState<ShotChoice>(initial.shots);
+  const [quota, setQuota] = useState(() => Object.fromEntries(initial.storage.scopes.map((row) => [row.scope, row.chosenMb === null ? "" : String(row.chosenMb)])));
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -124,6 +125,10 @@ export function SpendControls({ initial }: { initial: SpendReport }) {
       currency: currency.trim().toUpperCase(),
       paused,
       shots,
+      quota: Object.fromEntries(report.storage.scopes.filter((row) => row.source !== "variable").map((row) => {
+        const value = (quota[row.scope] ?? "").trim();
+        return [row.scope === "catalog" ? "catalogMb" : "projectMb", value === "" ? null : Number(value)];
+      })),
     };
 
     try {
@@ -147,6 +152,7 @@ export function SpendControls({ initial }: { initial: SpendReport }) {
       setCurrency(next.currency);
       setPaused(next.paused);
       setShots(next.shots);
+      setQuota(Object.fromEntries(next.storage.scopes.map((row) => [row.scope, row.chosenMb === null ? "" : String(row.chosenMb)])));
       setSaved(true);
       setDirty(false);
       // The two cards above are the server's: the same receipt, painted again.
@@ -161,6 +167,35 @@ export function SpendControls({ initial }: { initial: SpendReport }) {
 
   return (
     <form onSubmit={save} aria-busy={busy} className="mt-6 space-y-4">
+      <Card as="section" aria-labelledby="spend-storage-title">
+        <h2 id="spend-storage-title" className="text-base font-semibold">{translate("spend.storage")}</h2>
+        <p className="mt-2 max-w-2xl text-xs leading-relaxed text-smoke">{translate("spend.storageHint")}</p>
+        <p className="mt-3 font-mono text-xs text-smoke">{translate("spend.storageUsed", {
+          used: (report.storage.state.catalog.bytes / 1024 / 1024).toLocaleString(locale, { maximumFractionDigits: 2 }),
+          limit: report.storage.state.catalog.limit / 1024 / 1024,
+        })}</p>
+        {(report.storage.state.paused || Object.values(report.storage.state.projects).some((row) => row.exceeded)) && (
+          <p role="status" className="mt-2 text-sm text-smoke">{translate("memory.quotaPaused", { scope: translate(report.storage.state.paused ? "memory.quotaScopeCatalog" : "memory.quotaScopeProject") })}</p>
+        )}
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          {report.storage.scopes.map((row) => <div key={row.scope}>
+            <Field label={translate(row.scope === "catalog" ? "spend.quotaCatalog" : "spend.quotaProject")}
+              type="number" min={1} max={report.storage.maximumMb} step={1} inputMode="numeric"
+              value={quota[row.scope] ?? ""} placeholder={String(row.effectiveMb)}
+              disabled={busy || row.source === "variable"}
+              onChange={(event) => { setQuota((current) => ({ ...current, [row.scope]: event.target.value })); touch(); }} />
+            <p className="mt-1 text-xs text-smoke">{row.source === "variable"
+              ? translate("spend.source.env", { name: row.variable })
+              : translate("spend.factory", { n: row.factoryMb })}</p>
+          </div>)}
+        </div>
+        <p className="mt-4 text-xs text-smoke" role={report.storage.disk.state === "full" ? "alert" : undefined}>
+          {report.storage.disk.state === "unknown" ? translate("spend.diskUnknown")
+            : translate(report.storage.disk.state === "full" ? "spend.diskFull" : report.storage.disk.state === "low" ? "spend.diskLow" : "spend.diskAvailable", {
+              n: (report.storage.disk.availableBytes / 1024 / 1024).toLocaleString(locale, { maximumFractionDigits: 0 }),
+            })}
+        </p>
+      </Card>
       <Card as="section" aria-labelledby="spend-caps-title">
         <h2 id="spend-caps-title" className="text-base font-semibold">{translate("spend.caps")}</h2>
         <p className="mt-2 max-w-2xl text-xs leading-relaxed text-smoke">{translate("spend.capsHint")}</p>

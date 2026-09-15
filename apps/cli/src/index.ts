@@ -193,6 +193,13 @@ async function main(): Promise<number> {
     return signalCommand(resolve(expandTilde(parsed.path)), parsed.api);
   }
 
+  if (command === "brief") {
+    // The SessionStart hook, with the same two rules as `signal`; its twin, the SessionEnd
+    // pointer, is `memory session` and lives in the same module. See the header of `brief.ts`.
+    const { briefCommand } = await import("./brief");
+    return briefCommand(resolve(expandTilde(parsed.path)), parsed.api);
+  }
+
   if (command === "hooks") {
     const target = resolve(expandTilde(parsed.path));
     return hooksCommand(
@@ -273,10 +280,14 @@ async function main(): Promise<number> {
   }
 
   /*
-    `memory` sits next to `md` and `twin` and, for now, has one subcommand: `export <project>`,
-    the memory of a project carried out of the catalog as one versioned JSON file. Loaded lazily
-    like them: whoever types `panoma` in the morning does not pay for a module they will not use.
-    Only the English name, for the same reason as `twin`. See the header of `memory-command.ts`.
+    `memory` sits next to `md` and `twin`: `export <project>` carries a project's memory out of
+    the catalog as one versioned JSON file, `status` says what the delivery did, `purge` and
+    `withdraw` take a source back after a preview, `allow` and `revoke` grant or take back a
+    capture or extraction permission in one scope, `backfill` reads a range written before the
+    permission after a preview, `jobs` lists the extraction's batches and retries or cancels
+    one, and `session` is the SessionEnd hook. Loaded lazily like them: whoever types `panoma`
+    in the morning does not pay for a module they will not use. Only the English name, for the
+    same reason as `twin`. See the header of `memory-command.ts`.
    */
   if (command === "memory") {
     const { memoryCommand } = await import("./memory-command");
@@ -1270,7 +1281,10 @@ async function dispatchRun(
 }
 
 main().then(
-  (code) => process.exit(code),
+  // A pipe takes the standard output in chunks of 64 KiB and the rest waits in the process; an
+  // exit right after the write cut `memory status --json` at that size (probe of 14-Sep-2026).
+  // The empty write's callback fires once everything before it has left the process.
+  (code) => process.stdout.write("", () => process.exit(code)),
   (error: unknown) => {
     /*
       The trace goes after `PANOMA_DEBUG` and not in front of the message.

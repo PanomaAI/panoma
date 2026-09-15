@@ -36,6 +36,7 @@ const FAULT_KEY: Record<SettingsFault, MessageKey> = {
   currency: "spend.errCurrency",
   paused: "spend.errPaused",
   shots: "spend.errShots",
+  quota: "spend.errQuota",
 };
 
 export async function GET(request: Request) {

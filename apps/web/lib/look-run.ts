@@ -3,6 +3,7 @@ import { complete } from "@panoma/ai";
 import { saveLook, saveModelCall, type Database, type LookFired } from "@panoma/db";
 import { buildLookPrompt, parseFindings, type Finding, type LookSubject } from "@/lib/look";
 import type { Locale } from "@/lib/i18n";
+import { memoryFence } from "./memory-availability";
 
 /*
   What a glance costs and what remains of it: the part that the two surfaces share.
@@ -95,8 +96,10 @@ export async function runLook(
     locale: Locale;
   },
 ): Promise<LookReceipt> {
+  const memoryCurrent = await memoryFence(database);
   const built = buildLookPrompt(options.subject, { locale: options.locale });
 
+  await memoryCurrent();
   const answer = await complete({
     system: built.system,
     prompt: built.prompt,
@@ -112,6 +115,7 @@ export async function runLook(
     ...(answer.usage ? { input: answer.usage.input, output: answer.usage.output } : {}),
     images: 1,
   });
+  await memoryCurrent();
 
   const outcome = parseFindings(answer.text, built.labels);
   // Of the file, never of what travelled. See `whole` in `LookImage`.

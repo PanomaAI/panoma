@@ -379,6 +379,22 @@ async function forget(parsed: Flags): Promise<number> {
   return 0;
 }
 
+/**
+ * The yes and the no go through the catalog when it answers, and through the file when it does
+ * not.
+ *
+ * Until delivery D of the memory plan this wrote `twin.json` directly, and the catalog learned of
+ * the change whenever it next read the file: the permission the reader's cursors were bound to
+ * could be off while a job paid for under it was still waiting to be published, and the fence
+ * that revoking runs on the door (`POST /api/twin/sources`, T76) never ran for a decision typed
+ * here. Now the same legacy body `{ source, allowed }` the portrait screen sends is posted first,
+ * so the effective policy, the cursors and the jobs in flight move together, and the catalog's
+ * receipt says how many paid jobs the no made invalid. When no catalog answers —the usual case
+ * on a machine where `panoma up` is not running— the file is written here exactly as before,
+ * and the terminal says so: the catalog reads it the next time it looks, and its own
+ * re-validation at publish is the last line of defence. What is never done is writing locally
+ * after the catalog said no: the catalog knows this disk, and its refusal is printed instead.
+ */
 async function decide(parsed: Flags, allowed: boolean): Promise<number> {
   const { inventoryHistory, readableSources, setConsent } = await import("@panoma/core");
   const found = await inventoryHistory();
@@ -400,10 +416,50 @@ async function decide(parsed: Flags, allowed: boolean): Promise<number> {
   const source = known.find((candidate) => candidate.id === wanted);
   if (source === undefined) return badSource(wanted, list);
 
-  await setConsent(source.id, allowed);
-  const lines = decisionLines(source, allowed, readable.includes(source.id));
+  let response: Response | undefined;
+  try {
+    response = await catalogFetch(new URL("/api/twin/sources", parsed.api), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source: source.id, allowed }),
+    });
+  } catch {
+    response = undefined;
+  }
+
+  const outcome: DecisionOutcome = {};
+  if (response === undefined) {
+    await setConsent(source.id, allowed);
+    outcome.offline = true;
+  } else if (!response.ok) {
+    process.stderr.write(pc.red(`${say("twin.consentRejected", { status: response.status, detail: await refusalDetail(response) }).trimEnd()}\n`));
+    return 1;
+  } else {
+    const reply = (await response.json().catch(() => ({}))) as { jobsObsoleted?: unknown };
+    if (typeof reply.jobsObsoleted === "number") outcome.jobsObsoleted = reply.jobsObsoleted;
+  }
+
+  const lines = decisionLines(source, allowed, readable.includes(source.id), outcome);
   process.stdout.write(lines.join("\n"));
   return 0;
+}
+
+/** The catalog's reason in one line: the `error` of a JSON refusal, else the first line of whatever came, cut short. */
+async function refusalDetail(response: Response): Promise<string> {
+  const text = await response.text().catch(() => "");
+  try {
+    const body = JSON.parse(text) as { error?: unknown; hint?: unknown };
+    if (typeof body.error === "string") return `${body.error}${typeof body.hint === "string" ? ` ${body.hint}` : ""}`;
+  } catch {
+    // Not JSON: a page, cut to its first line below.
+  }
+  return (text.split("\n")[0]?.trim() ?? "").replace(/\s+/g, " ").slice(0, 200);
+}
+
+/** How the decision reached the catalog, for the confirmation: written here because nothing answered, or with the jobs the no made invalid. */
+export interface DecisionOutcome {
+  offline?: boolean;
+  jobsObsoleted?: number;
 }
 
 /** The identifier does not exist: those that do exist are told, and none can be guessed. */
@@ -432,12 +488,18 @@ export function decisionLines(
   source: HistorySource,
   allowed: boolean,
   readable: boolean,
-  ): string[] {
+  outcome: DecisionOutcome = {},
+): string[] {
+  // Said right under the confirmation, because a decision the catalog has not seen yet is a different promise.
+  const via = outcome.offline ? [`  ${pc.dim(say("twin.consentOffline"))}`] : [];
   if (!allowed) {
     return [
       "",
       `  ${pc.green("✓")} ${pc.bold(say("twin.revoked", { label: source.label }))}`,
       `  ${pc.dim(say("twin.revokedDetail"))}`,
+      // The paid jobs the no made invalid, when the catalog counted them: zero is not news.
+      ...(outcome.jobsObsoleted !== undefined && outcome.jobsObsoleted > 0 ? [`  ${pc.dim(say("twin.revokedJobs", { n: outcome.jobsObsoleted }))}`] : []),
+      ...via,
       "",
       "",
     ];
@@ -446,6 +508,7 @@ export function decisionLines(
   const lines = [
     "",
     `  ${pc.green("✓")} ${pc.bold(say("twin.granted", { label: source.label }))}`,
+    ...via,
   ];
   lines.push(
     source.present

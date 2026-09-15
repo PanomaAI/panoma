@@ -9,6 +9,11 @@ import {
   type ProjectAnalysis,
 } from "@panoma/core";
 import type { Database } from "./client";
+import { rehomeMemoryJobs } from "./memory-jobs";
+import { settleProjectUsageForDeletion, transferProjectUsage } from "./memory-rehome";
+import {
+  commitmentAuthority, commitmentPayload, noteAuthority, notePayload, recordRevisions, type CommitmentRecord, type NoteRecord,
+} from "./memory-revisions";
 import * as t from "./schema";
 
 /**
@@ -963,6 +968,10 @@ async function pruneMissing(
 
   // Before deleting: what a human or an agent wrote is transferred to the heir, if there is one.
   await rehomeMemory(tx, stale, candidates);
+  // Then the counters of what is about to go: the offers and legacy jobs the cascade drops are
+  // credited, the batch jobs without an heir move to the catalog scope, and each dead project's
+  // row goes; a project that found an heir has nothing left under its id but its history.
+  for (const project of stale) await settleProjectUsageForDeletion(tx, project.id);
 
   await tx.delete(t.projects).where(
     inArray(
@@ -1032,7 +1041,9 @@ async function rehomeMemory(
 
     // The entire family of the memory: everything written by people or agents that hangs from
     // `projects.id` with a cascade. A new table from that family has to be added here.
-    await tx.update(t.notes).set({ projectId: heir }).where(eq(t.notes.projectId, row.id));
+    await rehomePhotographed(tx, row.id, heir);
+    // The bytes of the offers and the facts below follow them to the heir's counter, before they move.
+    await transferProjectUsage(tx, row.id, heir);
     await tx
       .update(t.agentSessions)
       .set({ projectId: heir })
@@ -1047,12 +1058,61 @@ async function rehomeMemory(
       .set({ projectId: heir })
       .where(eq(t.consultations.projectId, row.id));
     await tx.update(t.servings).set({ projectId: heir }).where(eq(t.servings.projectId, row.id));
+    // A context is what a recipient keeps across offers; losing it with the folder would set every
+    // offer's `context_id` to null and make the memory that travelled eligible all over again.
+    await tx
+      .update(t.memoryContexts)
+      .set({ projectId: heir })
+      .where(eq(t.memoryContexts.projectId, row.id));
     await tx.update(t.launches).set({ projectId: heir }).where(eq(t.launches.projectId, row.id));
     await tx.update(t.runs).set({ projectId: heir }).where(eq(t.runs.projectId, row.id));
     // Receipts hang off `project_id` with `set null` rather than a cascade, but the point is the
     // same: a moved folder must not orphan what a person asked for from it.
     await tx.update(t.handoffs).set({ projectId: heir }).where(eq(t.handoffs.projectId, row.id));
+    // Since delivery B a job and a fact name their project too (`set null` on delete): a batch
+    // whose scope key is the old id would otherwise stay findable by nothing after the move.
+    await rehomeMemoryJobs(tx, row.id, heir);
+    await tx.update(t.sessionFacts).set({ projectId: heir }).where(eq(t.sessionFacts.projectId, row.id));
   }
+}
+
+/**
+ * The notes and the commitments move with a current photograph of resolved scope (plan
+ * §22.12.8): the row goes to the heir at `memory_rev + 1` and is photographed there with reason
+ * `scope`, so a purge or a read by the heir's id reaches what it says, while the earlier
+ * photographs keep the old project as history. Nothing of the snapshots is rewritten.
+ */
+async function rehomePhotographed(tx: Database, from: string, heir: string): Promise<void> {
+  const notes = await tx.update(t.notes)
+    .set({ projectId: heir, memoryRev: sql`${t.notes.memoryRev} + 1` })
+    .where(eq(t.notes.projectId, from))
+    .returning();
+  await recordRevisions(tx, notes.map((row) => ({
+    kind: "note" as const,
+    objectId: row.id,
+    rev: row.memoryRev,
+    scopeKind: "project" as const,
+    scopeRef: heir,
+    authority: noteAuthority(row),
+    disposition: row.status,
+    payload: notePayload(row as NoteRecord),
+    reason: "scope" as const,
+  })), { origin: "human" });
+  const commitments = await tx.update(t.commitments)
+    .set({ projectId: heir, memoryRev: sql`${t.commitments.memoryRev} + 1` })
+    .where(eq(t.commitments.projectId, from))
+    .returning();
+  await recordRevisions(tx, commitments.map((row) => ({
+    kind: "commitment" as const,
+    objectId: row.id,
+    rev: row.memoryRev,
+    scopeKind: "project" as const,
+    scopeRef: heir,
+    authority: commitmentAuthority({ status: row.status, createdBy: row.createdBy, resolution: (row.resolution as Record<string, unknown> | null) ?? null }),
+    disposition: row.status,
+    payload: commitmentPayload(row as CommitmentRecord),
+    reason: "scope" as const,
+  })), { origin: "human" });
 }
 
 /**

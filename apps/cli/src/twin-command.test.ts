@@ -1,8 +1,11 @@
-import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseArgs } from "./args";
 import {
   decisionLines,
+  twinCommand,
   distilledLines,
   dryRunLines,
   funnelLines,
@@ -62,6 +65,19 @@ import type { HistorySource, MineStats, QuoteRedaction, Reaction } from "@panoma
  * what is tested is what decides: the distribution by project, the three painters, and the board
  * that turns a key into a decision that cannot be undone.
  */
+
+/*
+  The engine, for `allow` and `revoke` only: the inventory and the local writer are replaced so
+  the two verbs can be driven through the real dispatcher against a catalog played by a stubbed
+  `fetch`, with no disk history and no `twin.json` of this machine touched. Every other test of
+  this file uses the pure formatters and never reaches these two names.
+ */
+const engine = vi.hoisted(() => ({ inventory: vi.fn(), consent: vi.fn() }));
+vi.mock("@panoma/core", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@panoma/core")>(),
+  inventoryHistory: () => engine.inventory(),
+  setConsent: (...args: unknown[]) => engine.consent(...args),
+}));
 
 /** The escape of the colors, written in code so as not to put a control character here. */
 const ANSI = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
@@ -1388,5 +1404,130 @@ describe("de dónde salió la captura", () => {
       expect(text).not.toContain("{s}");
     }
     expect(inboxLine(elegida({ skipped: 1 }), AHORA)).not.toContain("1 fichero que");
+  });
+});
+
+/*
+  Delivery D of the memory plan: `twin allow` and `twin revoke` go through the same door the
+  portrait screen uses —the legacy body of `POST /api/twin/sources`— when a catalog answers, so
+  the effective policy, the reader's cursors and the paid jobs in flight move together; when
+  nothing answers, the file is written here as it always was and the terminal says so; and when
+  the catalog says no, nothing is written and its refusal is printed.
+ */
+describe("twin allow and revoke go through the door, and through the file only when nothing answers", () => {
+  const originalHome = process.env["PANOMA_HOME"];
+  const originalFetch = globalThis.fetch;
+  let home: string;
+  let out = "";
+  let err = "";
+  let requests: { url: string; method: string; body: unknown }[] = [];
+
+  function flags(argv: string[]) {
+    const parsed = parseArgs(argv);
+    if (typeof parsed !== "object" || "error" in parsed) throw new Error(`the parser refused ${argv.join(" ")}`);
+    return parsed;
+  }
+
+  function catalog(reply: (() => Response) | "unreachable"): void {
+    globalThis.fetch = ((url: unknown, init?: RequestInit) => {
+      requests.push({ url: String(url), method: init?.method ?? "GET", body: init?.body === undefined ? undefined : JSON.parse(String(init.body)) });
+      if (reply === "unreachable") return Promise.reject(new TypeError("fetch failed"));
+      return Promise.resolve(reply());
+    }) as typeof fetch;
+  }
+
+  beforeAll(async () => {
+    /* An empty home: no `access.json`, so no real key of this machine goes into the stub. */
+    home = await mkdtemp(join(tmpdir(), "panoma-twin-decide-"));
+    process.env["PANOMA_HOME"] = home;
+  });
+
+  beforeEach(() => {
+    out = "";
+    err = "";
+    requests = [];
+    engine.inventory.mockReset().mockResolvedValue([source(), source({ id: "codex", label: "Codex", path: "/en/ninguna/parte/.codex/sessions", present: false, files: 0, bytes: 0 })]);
+    engine.consent.mockReset().mockResolvedValue({ sources: {} });
+    vi.spyOn(process.stdout, "write").mockImplementation(((chunk: unknown) => {
+      out += String(chunk);
+      return true;
+    }) as typeof process.stdout.write);
+    vi.spyOn(process.stderr, "write").mockImplementation(((chunk: unknown) => {
+      err += String(chunk);
+      return true;
+    }) as typeof process.stderr.write);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    globalThis.fetch = originalFetch;
+  });
+
+  afterAll(async () => {
+    if (originalHome === undefined) delete process.env["PANOMA_HOME"];
+    else process.env["PANOMA_HOME"] = originalHome;
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it("allow posts the legacy body to the door and writes nothing locally when the catalog answers", async () => {
+    catalog(() => Response.json({ sources: [], grants: [], permissions: {} }));
+    expect(await twinCommand(flags(["twin", "allow", "claude-code", "--api", "http://localhost:4188"]))).toBe(0);
+    expect(requests).toEqual([{ url: "http://localhost:4188/api/twin/sources", method: "POST", body: { source: "claude-code", allowed: true } }]);
+    expect(engine.consent).not.toHaveBeenCalled();
+    const said = out.replace(ANSI, "");
+    expect(said).toContain("Permission granted: Claude Code");
+    expect(said).toContain("panoma twin mine --source claude-code");
+    expect(said).not.toContain("did not answer");
+    expect(err).toBe("");
+  });
+
+  it("revoke posts allowed false, and says how many paid jobs the catalog made invalid — zero is not news", async () => {
+    catalog(() => Response.json({ sources: [], grants: [], permissions: {}, jobsObsoleted: 2 }));
+    expect(await twinCommand(flags(["twin", "revoke", "claude-code"]))).toBe(0);
+    expect(requests[0]).toMatchObject({ url: "http://localhost:4173/api/twin/sources", method: "POST", body: { source: "claude-code", allowed: false } });
+    expect(engine.consent).not.toHaveBeenCalled();
+    const said = out.replace(ANSI, "");
+    expect(said).toContain("Permission taken back: Claude Code");
+    expect(said).toContain("Paid jobs in flight made invalid by this: 2");
+    expect(said).not.toMatch(/\d [a-z]+s\b/);
+
+    out = "";
+    catalog(() => Response.json({ sources: [], grants: [], permissions: {}, jobsObsoleted: 0 }));
+    expect(await twinCommand(flags(["twin", "revoke", "claude-code"]))).toBe(0);
+    expect(out.replace(ANSI, "")).not.toContain("made invalid");
+  });
+
+  it("with no catalog answering, the file is written through the core writer and the terminal says the catalog reads it later", async () => {
+    catalog("unreachable");
+    expect(await twinCommand(flags(["twin", "allow", "claude-code"]))).toBe(0);
+    expect(requests).toHaveLength(1);
+    expect(engine.consent).toHaveBeenCalledExactlyOnceWith("claude-code", true);
+    const said = out.replace(ANSI, "");
+    expect(said).toContain("Permission granted: Claude Code");
+    expect(said).toContain("The catalog did not answer: the permission was written on this disk");
+    expect(err).toBe("");
+
+    out = "";
+    engine.consent.mockClear();
+    expect(await twinCommand(flags(["twin", "revoke", "codex"]))).toBe(0);
+    expect(engine.consent).toHaveBeenCalledExactlyOnceWith("codex", false);
+    expect(out.replace(ANSI, "")).toContain("Permission taken back: Codex");
+  });
+
+  it("when the catalog says no, nothing is written anywhere and its reason is printed", async () => {
+    catalog(() => Response.json({ error: "Only the person at this machine can grant this." }, { status: 403 }));
+    expect(await twinCommand(flags(["twin", "allow", "claude-code"]))).toBe(1);
+    expect(engine.consent).not.toHaveBeenCalled();
+    const said = err.replace(ANSI, "");
+    expect(said).toContain("The catalog refused the permission (403). Only the person at this machine can grant this.");
+    expect(out).toBe("");
+  });
+
+  it("an unknown source is refused before any request, as before", async () => {
+    catalog(() => Response.json({}));
+    expect(await twinCommand(flags(["twin", "allow", "claude"]))).toBe(1);
+    expect(requests).toEqual([]);
+    expect(engine.consent).not.toHaveBeenCalled();
+    expect(err.replace(ANSI, "")).toContain("is not an agent history Panoma knows about");
   });
 });

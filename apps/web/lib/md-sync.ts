@@ -17,6 +17,8 @@ import {
 } from "@panoma/core";
 import { getProject, listProjectTasks, resolveProject, type Database } from "@panoma/db";
 import { OPEN_STATUSES } from "./tasks";
+import { memoryFence } from "./memory-availability";
+import { memoryFileWrite } from "./memory-file-write";
 
 /*
   The context block within the agents' instruction file.
@@ -137,6 +139,15 @@ export async function syncProjectDoc(
   root: string,
   options: { create?: boolean; bridge?: boolean; analysis?: ProjectAnalysis; database: Database },
 ): Promise<MdSyncResult | { error: "no-block" } | { error: "broken"; detail: string }> {
+  return memoryFileWrite(options.database, () => syncOwnedProjectDoc(root, options));
+}
+
+async function syncOwnedProjectDoc(
+  root: string,
+  options: { create?: boolean; bridge?: boolean; analysis?: ProjectAnalysis; database: Database },
+): Promise<MdSyncResult | { error: "no-block" } | { error: "broken"; detail: string }> {
+  let memoryCurrent: () => Promise<void>;
+  try { memoryCurrent = await memoryFence(options.database); } catch { return { error: "broken", detail: "Memory is unavailable until its deletion journal is reconciled." }; }
   const picked = await pickAgentDoc(root);
   if (!picked.managed && !options.create) return { error: "no-block" };
 
@@ -180,7 +191,15 @@ export async function syncProjectDoc(
   }
 
   const changed = next !== (picked.content ?? "");
-  if (changed) await writeFile(join(root, picked.file), next, "utf8");
+  if (changed) {
+    try { await memoryCurrent(); } catch { return { error: "broken", detail: "Memory changed before the managed file could be written." }; }
+    const current = await readFile(join(root, picked.file), "utf8").catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return undefined;
+      throw error;
+    });
+    if (current !== picked.content) return { error: "broken", detail: "The instruction file changed while its block was prepared." };
+    await writeFile(join(root, picked.file), next, "utf8");
+  }
 
   /*
     The bridge for Claude Code, only with `bridge` — which is the way of saying "this was
@@ -210,13 +229,15 @@ export async function syncProjectDoc(
 export async function syncManagedDoc(
   root: string,
   database: Database,
-  analysis?: ProjectAnalysis,
+  _analysis?: ProjectAnalysis,
 ): Promise<void> {
   try {
-    const result = await syncProjectDoc(root, { create: false, analysis, database });
-    if ("error" in result && result.error === "broken") {
-      console.warn(`[vigía] el bloque de panoma en ${root} está roto: ${result.detail}`);
-    }
+    const project = await resolveProject(database, { cwd: root });
+    if (!project || project.root !== root) return;
+    const picked = await pickAgentDoc(root);
+    if (!picked.managed) return;
+    const { planPublication } = await import("./taste-publish");
+    await planPublication(database, { target: picked.file === "CLAUDE.md" ? "CLAUDE" : "AGENTS", projectId: project.id, origin: "automatic" });
   } catch (reason) {
     console.warn(`[vigía] no se pudo regenerar el bloque de ${root}:`, reason);
   }

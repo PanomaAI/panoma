@@ -2,7 +2,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { addHumanNote, proposeNote, saveDecisionEpisodes, schema, type Database, type MemoryExport } from "@panoma/db";
+import {
+  addHumanNote, beginDeletion, proposeNote, runDeletionBatches, saveDecisionEpisodes, schema, type Database, type MemoryExport,
+} from "@panoma/db";
 
 /**
  * The export route, called for real against a PGlite in a temporary home, like `notes/route.test.ts`.
@@ -10,7 +12,9 @@ import { addHumanNote, proposeNote, saveDecisionEpisodes, schema, type Database,
  * What is watched: that a missing slug is a 400 and an unknown one a 404, that a hit is the
  * versioned document with the headers a download needs, and —the half that matters— that the
  * worker's lease token is nowhere in the bytes that leave. The 403 from the network is in
- * `gates.test.ts`, next to the other operator-only doors.
+ * `gates.test.ts`, next to the other operator-only doors. Since 14-Sep-2026 the deletion contract
+ * is watched here too: a withdrawn note does not leave through the route (A18/T54) and a
+ * quarantined catalog exports nothing (T56).
  */
 
 let database: Database;
@@ -18,7 +22,8 @@ let close: () => Promise<void>;
 let home: string;
 const originalHome = process.env["PANOMA_HOME"];
 const LEASE = "lease-token-that-must-never-leave-the-catalog";
-vi.mock("@/lib/db", () => ({ db: async () => ({ db: database }) }));
+const mocks = vi.hoisted(() => ({ quarantine: vi.fn() }));
+vi.mock("@/lib/db", () => ({ db: async () => ({ db: database }), memoryQuarantine: mocks.quarantine }));
 vi.mock("@/lib/exposure", () => ({ portIsOpen: () => false }));
 const { GET } = await import("./route");
 
@@ -42,8 +47,11 @@ beforeAll(async () => {
 beforeEach(async () => {
   await database.delete(schema.memoryJobs);
   await database.delete(schema.agentSessions);
+  await database.delete(schema.memoryDeletions);
+  await database.delete(schema.memoryRevisions);
   await database.delete(schema.notes);
   await database.delete(schema.decisionEpisodes);
+  mocks.quarantine.mockResolvedValue({ quarantined: false });
 });
 
 afterAll(async () => {
@@ -78,7 +86,10 @@ describe("the portable memory export", () => {
       identity: null, origin: "owner", model: null, fields: { decision: { text: "Numbers go at the end of the sentence." } },
     }]);
     await database.insert(schema.agentSessions).values({ id: "session-a", projectId: "export-a", agentId: "agent", endedAt: new Date() });
-    await database.insert(schema.memoryJobs).values({ sessionId: "session-a", status: "running", attempts: 1, startedAt: new Date(), leaseToken: LEASE });
+    await database.insert(schema.memoryJobs).values({
+      id: "legacy:session-a", sessionId: "session-a", workKey: "session-a", scopeKey: "export-a", projectId: "export-a",
+      status: "running", attempts: 1, startedAt: new Date(), leaseToken: LEASE,
+    });
 
     const response = await GET(request("?slug=export-a"));
     expect(response.status).toBe(200);
@@ -93,7 +104,7 @@ describe("the portable memory export", () => {
 
     const doc = JSON.parse(text) as MemoryExport;
     expect(doc).toMatchObject({
-      version: 1,
+      version: 2,
       project: { id: "export-a", slug: "export-a", name: "A", identity: "git:export-a" },
       receipts: { counts: { pending: 0, running: 1, deferred: 0, failed: 0, complete: 0 }, jobs: [{ sessionId: "session-a", status: "running", attempts: 1 }] },
     });
@@ -111,5 +122,33 @@ describe("the portable memory export", () => {
     expect(doc.project.identity).toBeNull();
     expect(doc.decisions).toEqual([]);
     expect(doc.generalDecisions).toHaveLength(1);
+  });
+
+  it("A18/T54: a withdrawn note does not leave through the route", async () => {
+    const kept = await addHumanNote(database, { projectId: "export-a", body: "Kept." });
+    const gone = await addHumanNote(database, { projectId: "export-a", body: "Withdrawn before the export." });
+    if (!("id" in kept) || !("id" in gone)) throw new Error("fixture rejected");
+    const begun = await beginDeletion(database, home, { operation: "withdraw", targets: [{ kind: "item", itemKind: "note", id: gone.id }], scope: { projectId: "export-a" } });
+    if ("refused" in begun) throw new Error(begun.reason);
+    await runDeletionBatches(database, begun.id);
+
+    const text = await (await GET(request("?slug=export-a"))).text();
+    expect(text).not.toContain("Withdrawn before the export.");
+    const doc = JSON.parse(text) as MemoryExport;
+    expect(doc.notes.map((note) => note.id)).toEqual([kept.id]);
+  });
+
+  it("T56: a quarantined catalog exports nothing", async () => {
+    await addHumanNote(database, { projectId: "export-a", body: "Nothing leaves a quarantined catalog." });
+    mocks.quarantine.mockResolvedValueOnce({ quarantined: true, reason: "missing" });
+    const held = await GET(request("?slug=export-a"));
+    expect(held.status).toBe(503);
+    expect(held.headers.get("cache-control")).toBe("private, no-store");
+    expect(await held.json()).toMatchObject({ code: "unavailable", retryable: true, error: expect.stringContaining("missing") });
+    // The unknown project is still a 404: the quarantine is asked once the project is known.
+    mocks.quarantine.mockResolvedValueOnce({ quarantined: true, reason: "missing" });
+    expect((await GET(request("?slug=nowhere"))).status).toBe(404);
+    mocks.quarantine.mockReset();
+    mocks.quarantine.mockResolvedValue({ quarantined: false });
   });
 });

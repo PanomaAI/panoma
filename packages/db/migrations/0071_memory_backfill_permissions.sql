@@ -1,0 +1,1 @@
+ALTER TABLE "memory_source_cursors" ADD COLUMN "permission_snapshot" jsonb;

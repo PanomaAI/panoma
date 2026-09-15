@@ -15,6 +15,7 @@ import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   TASTE_CAP,
+  MAX_TASTE_BYTES,
   TasteFullError,
   parseTaste,
   readTaste,
@@ -355,6 +356,14 @@ describe("un fichero que alguien ya editó", () => {
     );
 
     expect((await readTaste()).lines).toEqual([]);
+  });
+
+  it("an oversized portrait is measured in bytes and answers empty without throwing: a screen never gets a 500 for a big file", async () => {
+    // Half the cap in letters, over the cap in bytes: a length check would parse this one.
+    newHome(`## copy\n${"- é".repeat(MAX_TASTE_BYTES / 4 + 1)}`);
+    await expect(readTaste()).resolves.toMatchObject({ lines: [], chars: 0 });
+    newHome(`## copy\n${"- x".repeat(MAX_TASTE_BYTES / 2 + 1)}`);
+    await expect(readTaste()).resolves.toMatchObject({ lines: [], chars: 0 });
   });
 
   it("un comentario que no lleva la marca no es una cita", async () => {

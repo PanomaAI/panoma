@@ -29,7 +29,7 @@ are not enough.
 
 ## Where the rest is documented
 
-`docs/` contains forty-six decision records, each with its reasoning and known limits.
+`docs/` contains fifty decision records, each with its reasoning and known limits.
 The complete index is [docs/README.md](docs/README.md); use this shorter map for the area you
 plan to change:
 
@@ -48,6 +48,10 @@ plan to change:
 | The MCP channel or hooks | [agent-channel.md](docs/agent-channel.md) · [hooks.md](docs/hooks.md) · [untrusted.md](docs/untrusted.md) |
 | A handoff: `packages/handoff`, the `/handoff` screen, `panoma handoff`, the two MCP tools `panoma_conversations` and `panoma_handoff`, the `handoffs` table | [handoff.md](docs/handoff.md) · [agent-channel.md](docs/agent-channel.md) · [untrusted.md](docs/untrusted.md) · [guards.md](docs/guards.md) |
 | Notes, sentinels, or the twin | [memory.md](docs/memory.md) · [twin.md](docs/twin.md) · [decision-memory.md](docs/decision-memory.md) · [budgets.md](docs/budgets.md) · [memory-audit-2026-09-06.md](docs/memory-audit-2026-09-06.md) |
+| What an agent receives from the memory and how it is confirmed: the contract, offers, receipts, revisions, purges | [memory-contract.md](docs/memory-contract.md) · [memory.md](docs/memory.md) |
+| The capture of transcripts, the typed facts, the paid extraction, the jobs and the reservations | [memory-capture.md](docs/memory-capture.md) · [budgets.md](docs/budgets.md) |
+| A check, an observation, an incident, a commitment, a case, a predicate on a decision | [memory-checks.md](docs/memory-checks.md) |
+| The Twin that learns on its own, the publication outbox, a criterion with conditions | [twin-learning.md](docs/twin-learning.md) · [twin.md](docs/twin.md) |
 | `run`, `check`, or `enrich` | [run-and-isolation.md](docs/run-and-isolation.md) · [enrichment.md](docs/enrichment.md) |
 | Something that updates itself | [watcher.md](docs/watcher.md) |
 | Apps, jobs, or the app client | [apps.md](docs/apps.md) · [run-and-isolation.md](docs/run-and-isolation.md) · [agent-channel.md](docs/agent-channel.md) |

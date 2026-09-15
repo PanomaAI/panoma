@@ -1,6 +1,6 @@
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, mkdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { existsSync } from "node:fs";
 import { monorepoRoot, runningFromNpx } from "./environment";
@@ -109,5 +109,70 @@ describe("la copia que npx guarda para un comando", () => {
   it("y no se deja engañar por una carpeta que se llame parecido", () => {
     expect(runningFromNpx("/Users/alguien/mis_npx_cosas/panoma/dist/index.js")).toBe(false);
     expect(runningFromNpx("/Users/alguien/_npx-viejo/panoma/dist/index.js")).toBe(false);
+  });
+});
+
+/*
+  The command a hook can trust, since 14-Sep-2026.
+
+  For a year `panomaCommand()` answered `which panoma` and, when it succeeded, handed back the bare
+  name. It was true at install time and false at hook time: the desktop app's hooks ran 556 times
+  with exit 127, silent by contract. Now the answer is the interpreter and the entry as absolute
+  real paths, proven to answer `--version` in a shell with no PATH, or a refusal with its reason.
+  The fixture is a `panoma` on a PATH whose entry refuses to answer if any PATH leaks in.
+ */
+describe("panomaCommand: the command a hook can trust", () => {
+  const originalPath = process.env["PATH"];
+
+  afterEach(() => {
+    if (originalPath === undefined) delete process.env["PATH"];
+    else process.env["PATH"] = originalPath;
+  });
+
+  async function fixture(): Promise<{ bin: string; entry: string }> {
+    const real = await realpath(base);
+    const dist = join(real, "lib", "node_modules", "panoma", "dist");
+    await mkdir(dist, { recursive: true });
+    const entry = join(dist, "index.js");
+    await writeFile(
+      entry,
+      'if (process.argv.includes("--version")) { if ((process.env.PATH ?? "") !== "") process.exit(9); process.stdout.write("0.0.0\\n"); process.exit(0); }\n',
+    );
+    await chmod(entry, 0o755);
+    const bin = join(real, "bin");
+    await mkdir(bin, { recursive: true });
+    await symlink(join("..", "lib", "node_modules", "panoma", "dist", "index.js"), join(bin, "panoma"));
+    return { bin, entry };
+  }
+
+  it.skipIf(process.platform === "win32")(
+    "follows the panoma on the PATH to the file behind its symlink and writes node plus that file",
+    async () => {
+      const { bin, entry } = await fixture();
+      process.env["PATH"] = [bin, originalPath ?? ""].filter(Boolean).join(delimiter);
+      const { panomaCommand } = await import("./environment");
+      const command = await panomaCommand({ temporaryRoots: [] });
+      expect(command).toEqual({ argv: [await realpath(process.execPath), entry], durable: true });
+    },
+  );
+
+  it.skipIf(process.platform === "win32")("refuses the same fixture as ephemeral under the default temporary roots", async () => {
+    const { bin, entry } = await fixture();
+    process.env["PATH"] = [bin, originalPath ?? ""].filter(Boolean).join(delimiter);
+    const { panomaCommand } = await import("./environment");
+    const command = await panomaCommand();
+    /* The ladder goes on past the refusal: whatever it lands on, it is not the temporary copy. */
+    expect(command.argv).not.toContain(entry);
+    if (command.durable) expect(command.argv).not.toEqual(["panoma"]);
+    else expect(command.reason).toBeDefined();
+  });
+
+  it("without the probe, existence is enough for a report and the shape says durable", async () => {
+    const { panomaCommand } = await import("./environment");
+    const command = await panomaCommand({ probe: false });
+    expect(command.efimero).toBeUndefined();
+    /* Under vitest the running entry is a source file; what is found beyond it is this machine's. */
+    if (command.durable) expect(command.argv[0]).toBe(await realpath(process.execPath));
+    else expect(command.reason).toBe("not_built");
   });
 });

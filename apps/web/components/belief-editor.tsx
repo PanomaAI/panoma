@@ -2,10 +2,23 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useT } from "./i18n-provider";
+import { useLocale, useT } from "./i18n-provider";
 import type { MessageKey } from "@/lib/i18n";
-import { citationDay, topicKey, type BeliefView } from "@/lib/taste-view";
-import { ActionButton, TextArea } from "./primitives";
+import { citationDay, topicKey, type BeliefView, type Citation } from "@/lib/taste-view";
+import {
+  OBSERVATION_KIND_KEYS,
+  PUBLICATION_STATUS_KEYS,
+  PUBLICATION_STATUS_TONES,
+  familiesLine,
+  jobReasonKey,
+  proposalGroups,
+  tasteRefusalKey,
+  SUPPORT_FAMILIES_FLOOR,
+  type CriterionRowView,
+  type EvidenceMark,
+  type PublicationView,
+} from "@/lib/memory-view";
+import { ActionButton, ActionError, Notice, Tag, TextArea, relativeDate } from "./primitives";
 
 /*
   The portrait, and the four gestures that direct it.
@@ -37,6 +50,34 @@ import { ActionButton, TextArea } from "./primitives";
   twelve reads and writes of the same file overlapping each other. Two, and more importantly: this
   is a reading session, not twelve isolated gestures — and seeing the whole portrait changes what
   you think about the third belief when you are at the ninth.
+  ── Since delivery D every gesture names the revision it saw ─────────────────────────
+  The body is the revisioned one (`version: 2`): each gesture carries `expectedRevision`, the
+  `memory_rev` of the criterion as this screen read it, and the door applies the whole batch or
+  nothing. A criterion that moved meanwhile — a synthesis, another tab, a scope from the
+  terminal — is refused as `stale_revision` with nothing applied; the card says so and reloads,
+  so the person signs what is there and never a sentence they did not read. The door takes
+  twenty gestures at a time, so a longer session is sent in batches of twenty, in order, and
+  stops at the first refusal with the earlier batches applied. A narrowing names the project by
+  its slug and the scope in so many words, because the door refuses a slug alone.
+  ── What is signed is what is read ────────────────────────────────────────────────
+  A criterion may carry typed conditions and exceptions (plan §10.1), drawn here as the same
+  sentences the brief and the agent read («Applies when», «Except when»), read-only. Signing a
+  criterion that shows them restates them in the gesture: the door clears a model's trees under
+  a bare signature, so the only way the trees a person saw become signed is to send them back,
+  and the hint under the row says that is what signing does. Editing a signed row keeps the
+  trees it already had, by the door's rule for silence.
+  ── Independence, and the proposals grouped with every evidence ──────────────────────
+  Under an inference the row says how many independent cases stand behind it (plan §10.2) and
+  the floor an automatic publication needs; an inherited row says it was never counted. The
+  proposals of the synthesis are grouped by the signed criteria they would replace, and each
+  proposal shows all of its evidence open, with the kind of every quote — an ambiguous reaction
+  is tagged as founding nothing, so a «perfecto» never reads as a preference.
+  ── The publication is a state of its own ─────────────────────────────────────────
+  `TwinPublication` draws what the outbox says about the file: pending, written, failed, or in
+  conflict because the file moved since the publication was prepared (plan §10.4). A conflict is
+  never a veto; the notice offers to reconcile, which is one more plan through the same door —
+  the permission restated with the generation this screen read — and the outbox then reads the
+  file again, keeps the person's edits and writes what is publishable.
  */
 
 const BADGE: Record<BeliefView["badge"], MessageKey> = {
@@ -45,11 +86,25 @@ const BADGE: Record<BeliefView["badge"], MessageKey> = {
   forming: "twin.badgeForming",
 };
 
+/** How many gestures the door takes in one request; a longer session goes in batches of this size. */
+export const GESTURES_PER_REQUEST = 20;
+
 /** A gesture marked over a belief, before storing it. */
 type Gesture =
   | { kind: "sign"; statement?: string }
   | { kind: "veto" }
-  | { kind: "scope"; identity: string | null };
+  | { kind: "scope"; slug: string | null };
+
+/** The revisioned body of the portrait door, one batch. */
+interface GestureBatch {
+  version: 2;
+  sign: { id: string; expectedRevision: number; statement?: string; conditions?: CriterionRowView["conditions"]; exceptions?: CriterionRowView["exceptions"] }[];
+  veto: { id: string; expectedRevision: number }[];
+  scope: { id: string; expectedRevision: number; scope: "global" | "project"; slug?: string }[];
+  resolve: { id: string; expectedRevision: number; accept: boolean }[];
+}
+
+type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string;
 
 export function BeliefEditor({
   beliefs,
@@ -57,6 +112,9 @@ export function BeliefEditor({
   proposals,
   unpublished,
   locale,
+  criteria,
+  evidence,
+  slugs,
 }: {
   beliefs: BeliefView[];
   graveyard: BeliefView[];
@@ -71,6 +129,12 @@ export function BeliefEditor({
    */
   unpublished: ReadonlySet<string>;
   locale: "es" | "en";
+  /** Per belief id: its revision, its predicates as trees and sentences, its independence. */
+  criteria: Record<string, CriterionRowView>;
+  /** Per belief id, per quote (`verdictId`): the kind of the observation it came from. */
+  evidence: Record<string, Record<string, EvidenceMark>>;
+  /** From a project's identity to its slug, for the projects a criterion may be narrowed to. */
+  slugs: Record<string, string>;
 }) {
   const translate = useT();
   const router = useRouter();
@@ -95,6 +159,9 @@ export function BeliefEditor({
     }
     return [...groups];
   }, [beliefs]);
+
+  /* The proposals, one group per set of signed criteria they would replace, every evidence kept. */
+  const groups = useMemo(() => proposalGroups(proposals), [proposals]);
 
   const marked = gestures.size > 0 || answers.size > 0;
 
@@ -123,31 +190,68 @@ export function BeliefEditor({
     else set(id, gesture);
   }
 
+  /** The revision this screen read for a belief; a row the page did not shape names 0 and is refused, never guessed. */
+  const revisionOf = (id: string) => criteria[id]?.revision ?? 0;
+
+  /**
+   * The batches, twenty gestures each, in the order they were marked. Signing an unsigned
+   * criterion restates the trees it shows; an edited signed row says nothing about them.
+   */
+  function batches(): GestureBatch[] {
+    const out: GestureBatch[] = [];
+    let current: GestureBatch = { version: 2, sign: [], veto: [], scope: [], resolve: [] };
+    let count = 0;
+    const push = (add: (batch: GestureBatch) => void) => {
+      if (count === GESTURES_PER_REQUEST) {
+        out.push(current);
+        current = { version: 2, sign: [], veto: [], scope: [], resolve: [] };
+        count = 0;
+      }
+      add(current);
+      count += 1;
+    };
+    for (const [id, gesture] of gestures) {
+      const expectedRevision = revisionOf(id);
+      if (gesture.kind === "sign") {
+        const row = criteria[id];
+        const signed = beliefs.find((one) => one.id === id)?.badge === "signed";
+        push((batch) => batch.sign.push({
+          id, expectedRevision,
+          ...(gesture.statement ? { statement: gesture.statement } : {}),
+          ...(!signed && row?.conditions ? { conditions: row.conditions } : {}),
+          ...(!signed && row?.exceptions ? { exceptions: row.exceptions } : {}),
+        }));
+      } else if (gesture.kind === "veto") {
+        push((batch) => batch.veto.push({ id, expectedRevision }));
+      } else {
+        const slug = gesture.slug;
+        push((batch) => batch.scope.push({ id, expectedRevision, ...(slug ? { scope: "project", slug } : { scope: "global" }) }));
+      }
+    }
+    for (const [id, accept] of answers) push((batch) => batch.resolve.push({ id, expectedRevision: revisionOf(id), accept }));
+    if (count > 0) out.push(current);
+    return out;
+  }
+
   async function save() {
     setSaving(true);
     setError(null);
-
-    const sign: { id: string; statement?: string }[] = [];
-    const veto: string[] = [];
-    const scope: { id: string; identity: string | null }[] = [];
-    for (const [id, gesture] of gestures) {
-      if (gesture.kind === "sign") {
-        sign.push({ id, ...(gesture.statement ? { statement: gesture.statement } : {}) });
-      } else if (gesture.kind === "veto") veto.push(id);
-      else scope.push({ id, identity: gesture.identity });
-    }
-    const resolve = [...answers].map(([id, accept]) => ({ id, accept }));
-
     try {
-      const response = await fetch("/api/twin/taste", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sign, veto, scope, resolve }),
-      });
-      const payload = (await response.json()) as { error?: string };
-      if (!response.ok) {
-        setError(payload.error ?? String(response.status));
-        return;
+      for (const batch of batches()) {
+        const response = await fetch("/api/twin/taste", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(batch),
+        });
+        const payload = (await response.json().catch(() => ({}))) as { code?: string; error?: string };
+        /* 200 written inline, 202 still in the outbox: both are applied gestures. */
+        if (!response.ok) {
+          const key = tasteRefusalKey(payload.code);
+          setError(key ? translate(key) : payload.error ?? String(response.status));
+          /* A moved revision applied nothing: the screen reloads so the next signature is over what is there. */
+          if (payload.code === "stale_revision" || payload.code === "publication_conflict") router.refresh();
+          return;
+        }
       }
       setGestures(new Map());
       setAnswers(new Map());
@@ -162,7 +266,7 @@ export function BeliefEditor({
 
   return (
     <>
-      {proposals.length > 0 && (
+      {groups.length > 0 && (
         <section className="mt-8">
           <h3 className="text-sm font-semibold">
             {translate("twin.proposalsTitle")}
@@ -171,52 +275,72 @@ export function BeliefEditor({
             {translate("twin.proposalsNote")}
           </p>
           <ul className="mt-4 flex flex-col gap-3" role="list">
-            {proposals.map((one) => (
-              <li
-                key={one.id}
-                className={`rounded-lg border px-4 py-4 ${
-                  answers.has(one.id) ? "border-l-2 border-l-chalk border-edge" : "border-edge"
-                }`}
-              >
-                <p className="eyebrow">
-                  {topicName(one.topic, translate)}
-                  {one.supersedes && one.supersedes.length > 1
-                    ? ` · ${translate("twin.proposalJoins", { n: one.supersedes.length })}`
-                    : ""}
-                </p>
-                {/*
-                   What they say today, above and **whole**. Without them the question is "do you
-                   like this sentence?", which is not the question: the question is whether this
-                   says what those said, and that is only answered with the two parts in front.
-                   And they are sentences that the person signed: accepting them makes them
-                   disappear from the portrait, so hiding them would be the silent compression
-                   that `taste.ts` forbids.
-                  */}
-                {one.supersedes?.map((antes) => (
-                  <p
-                    key={antes}
-                    className="mt-1 max-w-2xl text-sm leading-relaxed text-smoke line-through decoration-faint"
-                  >
-                    {antes}
+            {groups.map((group) => {
+              const first = group.proposals[0]!;
+              const key = group.criteria.length > 0 ? group.criteria.join("\0") : first.id;
+              return (
+                <li key={key} className="rounded-lg border border-edge px-4 py-4">
+                  <p className="eyebrow">
+                    {topicName(first.topic, translate)}
+                    {group.criteria.length > 1
+                      ? ` · ${translate("twin.proposalJoins", { n: group.criteria.length })}`
+                      : ""}
+                    {group.proposals.length > 1
+                      ? ` · ${translate("twin.proposalGroup", { n: group.proposals.length })}`
+                      : ""}
                   </p>
-                ))}
-                <p className="mt-2 max-w-2xl text-base leading-relaxed">{one.statement}</p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Action
-                    label={translate("twin.proposalAccept")}
-                    toggle
-                    active={answers.get(one.id) === true}
-                    onClick={() => setAnswers(flip(answers, one.id, true))}
-                  />
-                  <Action
-                    label={translate("twin.proposalReject")}
-                    toggle
-                    active={answers.get(one.id) === false}
-                    onClick={() => setAnswers(flip(answers, one.id, false))}
-                  />
-                </div>
-              </li>
-            ))}
+                  {/*
+                     What they say today, above and **whole**. Without them the question is "do you
+                     like this sentence?", which is not the question: the question is whether this
+                     says what those said, and that is only answered with the two parts in front.
+                     And they are sentences that the person signed: accepting them makes them
+                     disappear from the portrait, so hiding them would be the silent compression
+                     that `taste.ts` forbids.
+                    */}
+                  {group.criteria.map((antes) => (
+                    <p
+                      key={antes}
+                      className="mt-1 max-w-2xl text-sm leading-relaxed text-smoke line-through decoration-faint"
+                    >
+                      {antes}
+                    </p>
+                  ))}
+                  <ul className="mt-2 flex flex-col gap-3" role="list">
+                    {group.proposals.map((one) => (
+                      <li
+                        key={one.id}
+                        className={`rounded border px-3 py-3 ${
+                          answers.has(one.id) ? "border-l-2 border-l-chalk border-edge" : "border-edge"
+                        }`}
+                      >
+                        <p className="max-w-2xl text-base leading-relaxed">{one.statement}</p>
+                        <Predicates view={criteria[one.id]} translate={translate} />
+                        <p className="mt-2 font-mono text-xs text-smoke">
+                          <Families view={criteria[one.id]} translate={translate} />
+                          {one.citations.length > 0 ? ` · ${translate("twin.proposalEvidence", { n: one.citations.length })}` : ""}
+                        </p>
+                        {/* Every evidence of a proposal, open: a question is answered with all of it in front. */}
+                        <Citations citations={one.citations} marks={evidence[one.id] ?? {}} locale={locale} translate={translate} />
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <Action
+                            label={translate("twin.proposalAccept")}
+                            toggle
+                            active={answers.get(one.id) === true}
+                            onClick={() => setAnswers(flip(answers, one.id, true))}
+                          />
+                          <Action
+                            label={translate("twin.proposalReject")}
+                            toggle
+                            active={answers.get(one.id) === false}
+                            onClick={() => setAnswers(flip(answers, one.id, false))}
+                          />
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}
@@ -231,6 +355,9 @@ export function BeliefEditor({
               <BeliefRowCard
                 key={one.id}
                 belief={one}
+                criterion={criteria[one.id]}
+                marks={evidence[one.id] ?? {}}
+                narrowTo={one.learnedIn ? slugs[one.learnedIn.identity] ?? null : null}
                 locale={locale}
                 gesture={gestures.get(one.id)}
                 stranded={one.badge !== "forming" && unpublished.has(one.id)}
@@ -292,9 +419,7 @@ export function BeliefEditor({
             {translate("twin.cancel")}
           </ActionButton>
           {error && (
-            <span className="font-mono text-xs text-fail">
-              {translate("twin.saveFailed", { detail: error })}
-            </span>
+            <ActionError as="span" text={translate("twin.saveFailed", { detail: error })} />
           )}
         </div>
       )}
@@ -302,14 +427,103 @@ export function BeliefEditor({
   );
 }
 
+/**
+ * What the outbox says about the file, and the one action a conflict offers.
+ *
+ * It sits on the file card, beside the meter, because «does it fit» and «was it written» are
+ * the two halves of one answer. `pending` is said as waiting and never as done; `failed` names
+ * the reason with the same sentences the job rows use; `conflict` is the file moved under a
+ * prepared publication, which is never a veto (plan §10.4): the notice says what reconciling
+ * does and offers it. Reconciling is one more plan through the portrait door — the permission
+ * restated with the generation this screen read, a gesture that changes nothing and makes the
+ * outbox read the file again — so a stale screen meets `publication_conflict` and reloads.
+ */
+export function TwinPublication({
+  publication,
+  publishesInferred,
+}: {
+  publication: PublicationView | null;
+  /** The current permission, restated by the reconcile so the plan changes nothing. */
+  publishesInferred: boolean;
+}) {
+  const translate = useT();
+  const locale = useLocale();
+  const router = useRouter();
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (publication === null) return null;
+
+  async function reconcile() {
+    if (publication === null) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/twin/taste", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ version: 2, publishInferred: publishesInferred, expectedPublicationRevision: publication.revision }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { code?: string; error?: string };
+      if (!response.ok) {
+        const key = tasteRefusalKey(payload.code);
+        setError(key ? translate(key) : payload.error ?? String(response.status));
+      }
+      router.refresh();
+    } catch {
+      setError(translate("project.unreachable"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="mt-3 border-t border-edge pt-3">
+      <p className="font-mono text-xs text-smoke">
+        {translate("twin.publicationTitle")}{" "}
+        <Tag tone={PUBLICATION_STATUS_TONES[publication.status]}>{translate(PUBLICATION_STATUS_KEYS[publication.status])}</Tag>
+      </p>
+      {publication.status === "none" && (
+        <p className="mt-1 text-xs leading-relaxed text-smoke">{translate("twin.publicationNone")}</p>
+      )}
+      {publication.status === "pending" && (
+        <p className="mt-1 text-xs leading-relaxed text-smoke">{translate("twin.publicationPending")}</p>
+      )}
+      {publication.status === "published" && (
+        <p className="mt-1 text-xs leading-relaxed text-smoke">
+          {translate("twin.publicationPublished", { date: publication.at ? relativeDate(publication.at, locale) : "—" })}
+        </p>
+      )}
+      {publication.status === "failed" && (
+        <Notice tone="fail" className="mt-2" title={translate("twin.publicationFailed", { reason: publication.reason ? translate(jobReasonKey(publication.reason), { reason: publication.reason }) : "—" })} />
+      )}
+      {publication.status === "conflict" && (
+        <Notice tone="warn" className="mt-2" title={translate("memory.publicationConflict")}>
+          <p className="mt-1 text-xs leading-relaxed text-smoke">{translate("twin.publicationConflictHint")}</p>
+          <div className="mt-2">
+            <ActionButton
+              tone="raised"
+              size="sm"
+              type="button"
+              onClick={() => void reconcile()}
+              busy={saving}
+              busyLabel={translate("twin.publicationReconciling")}
+            >
+              {translate("twin.publicationReconcile")}
+            </ActionButton>
+          </div>
+        </Notice>
+      )}
+      {error && <ActionError text={error} className="mt-2" />}
+    </div>
+  );
+}
+
 /*
   The map lives in `lib/taste-view.ts`: the card of a project shows the same subjects from the
   server, and two copies give two names for the same thing in the same session.
  */
-function topicName(
-  topic: string,
-  translate: (key: MessageKey, vars?: Record<string, string | number>) => string,
-): string {
+function topicName(topic: string, translate: Translate): string {
   const key = topicKey(topic);
   return key ? translate(key) : topic;
 }
@@ -321,6 +535,81 @@ function flip(current: Map<string, boolean>, id: string, next: boolean): Map<str
   return copy;
 }
 
+/** The typed conditions and exceptions of a criterion, as the sentences the agent reads, read-only. */
+function Predicates({ view, translate }: { view: CriterionRowView | undefined; translate: Translate }) {
+  if (!view || (view.appliesWhen === null && view.exceptWhen === null)) return null;
+  return (
+    <div className="mt-1 max-w-2xl text-xs leading-relaxed text-smoke">
+      {view.appliesWhen !== null && <p>{translate("twin.appliesWhen", { sentence: view.appliesWhen })}</p>}
+      {view.exceptWhen !== null && <p>{translate("twin.exceptWhen", { sentence: view.exceptWhen })}</p>}
+    </div>
+  );
+}
+
+/** The independence of an inference: the families counted, and the floor when they fall short. */
+function Families({ view, translate }: { view: CriterionRowView | undefined; translate: Translate }) {
+  if (!view) return null;
+  const line = familiesLine(view);
+  return (
+    <>
+      {translate(line.key, line.vars)}
+      {view.families !== null && !view.meetsFloor ? (
+        <span className="text-idle">{` · ${translate("twin.familiesShort", { floor: SUPPORT_FAMILIES_FLOOR })}`}</span>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * The quotes under a belief, each with the kind of the observation it came from when the page
+ * could tell. An ambiguous reaction is drawn as evidence that founds nothing — the tag and the
+ * sentence say so — and never as a preference in waiting.
+ */
+function Citations({
+  citations,
+  marks,
+  locale,
+  translate,
+}: {
+  citations: Citation[];
+  marks: Record<string, EvidenceMark>;
+  locale: "es" | "en";
+  translate: Translate;
+}) {
+  if (citations.length === 0) return null;
+  return (
+    <ul className="mt-3 flex flex-col gap-2.5 border-l border-edge pl-3" role="list">
+      {citations.map((cite) => {
+        const mark = marks[cite.verdictId];
+        return (
+          <li key={cite.verdictId}>
+            {/*
+               Trimmed to two lines, and not for aesthetics. Measured in the author's corpus: a
+               real quote can exceed six hundred characters—a whole order dictated in one
+               sitting, with six changes within. The full text is still there: in the attribute
+               `title` and when copying.
+              */}
+            <p className="line-clamp-2 text-sm italic leading-snug text-smoke" title={cite.quote}>
+              «{cite.quote}»
+            </p>
+            <p className="mt-0.5 font-mono text-xs text-faint">
+              {citationDay(cite.at, locale)}
+              {cite.project ? ` · ${translate("twin.citedIn", { project: cite.project })}` : ""}
+              {mark?.kind ? (
+                <>
+                  {" · "}
+                  <Tag tone={mark.ambiguous ? "idle" : "quiet"}>{translate(OBSERVATION_KIND_KEYS[mark.kind])}</Tag>
+                </>
+              ) : null}
+              {mark?.ambiguous ? <span className="text-idle">{` · ${translate("twin.observationAmbiguous")}`}</span> : null}
+            </p>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 /**
  * One belief, as a row you can argue with.
  *
@@ -330,6 +619,9 @@ function flip(current: Map<string, boolean>, id: string, next: boolean): Map<str
  */
 function BeliefRowCard({
   belief,
+  criterion,
+  marks,
+  narrowTo,
   locale,
   gesture,
   stranded,
@@ -340,6 +632,11 @@ function BeliefRowCard({
   translate,
 }: {
   belief: BeliefView;
+  /** Its revision, predicates and independence; undefined for a row the page could not shape. */
+  criterion: CriterionRowView | undefined;
+  marks: Record<string, EvidenceMark>;
+  /** The slug of the project it could be narrowed to, or null when there is none to offer. */
+  narrowTo: string | null;
   locale: "es" | "en";
   gesture?: Gesture;
   /** Publishable, and not in the file: saved here and read by no agent. See `BeliefEditor`. */
@@ -348,11 +645,12 @@ function BeliefRowCard({
   onEdit: (open: boolean) => void;
   onGesture: (gesture: Gesture) => void;
   onWrite: (statement: string) => void;
-  translate: (key: MessageKey, vars?: Record<string, string | number>) => string;
+  translate: Translate;
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(belief.statement);
   const written = gesture?.kind === "sign" ? gesture.statement : undefined;
+  const typed = criterion !== undefined && (criterion.appliesWhen !== null || criterion.exceptWhen !== null);
 
   return (
     <li
@@ -436,6 +734,9 @@ function BeliefRowCard({
         </p>
       )}
 
+      {/* The typed conditions and exceptions, as sentences and read-only: what the agent reads. */}
+      <Predicates view={criterion} translate={translate} />
+
       {/*
          Evidence, always raw. It's what turns a belief into something that can be discussed, and
          what can be discussed can be thrown away: without this number, 'you haven't signed it'
@@ -456,6 +757,17 @@ function BeliefRowCard({
           */}
         {belief.badge === "forming" ? (
           <span className="text-idle">{` · ${translate("twin.formingWhy")}`}</span>
+        ) : null}
+        {/*
+           And its independence (plan §10.2): the families of case behind an inference, against
+           the floor an automatic publication needs. Not for what the owner taught, which needs
+           no quorum, and not for a row that was signed: a signature outranks the count.
+          */}
+        {!belief.authored && belief.badge !== "signed" && criterion ? (
+          <>
+            {" · "}
+            <Families view={criterion} translate={translate} />
+          </>
         ) : null}
         {belief.citations.length > 0 && (
           <>
@@ -479,27 +791,7 @@ function BeliefRowCard({
         )}
       </p>
 
-      {open && (
-        <ul className="mt-3 flex flex-col gap-2.5 border-l border-edge pl-3" role="list">
-          {belief.citations.map((cite) => (
-            <li key={cite.verdictId}>
-              {/*
-                 Trimmed to two lines, and not for aesthetics. Measured in the author's corpus: a
-                 real quote can exceed six hundred characters—a whole order dictated in one
-                 sitting, with six changes within. The full text is still there: in the attribute
-                 `title` and when copying.
-                */}
-              <p className="line-clamp-2 text-sm italic leading-snug text-smoke" title={cite.quote}>
-                «{cite.quote}»
-              </p>
-              <p className="mt-0.5 font-mono text-xs text-faint">
-                {citationDay(cite.at, locale)}
-                {cite.project ? ` · ${translate("twin.citedIn", { project: cite.project })}` : ""}
-              </p>
-            </li>
-          ))}
-        </ul>
-      )}
+      {open && <Citations citations={belief.citations} marks={marks} locale={locale} translate={translate} />}
 
       {!editing && (
         <div className="mt-3 flex flex-wrap gap-2">
@@ -533,27 +825,30 @@ function BeliefRowCard({
           {/*
              Limit only when there is something to limit. A belief without a project —the evidence
              comes from several— cannot be limited to any, and a button that cannot function is
-             worse than its absence. The one that is already limited shows the way back.
+             worse than its absence. The one that is already limited shows the way back. The
+             narrowing names the project by its slug, which is what the revisioned door takes.
             */}
           {belief.scope ? (
             <Action
               label={translate("twin.scopeAll")}
               toggle
-              active={gesture?.kind === "scope" && gesture.identity === null}
-              onClick={() => onGesture({ kind: "scope", identity: null })}
+              active={gesture?.kind === "scope" && gesture.slug === null}
+              onClick={() => onGesture({ kind: "scope", slug: null })}
             />
-          ) : belief.learnedIn ? (
+          ) : belief.learnedIn && narrowTo ? (
             <Action
               label={translate("twin.scopeOnly", { project: belief.learnedIn.name })}
               toggle
               active={gesture?.kind === "scope"}
-              onClick={() =>
-                onGesture({ kind: "scope", identity: belief.learnedIn?.identity ?? null })
-              }
+              onClick={() => onGesture({ kind: "scope", slug: narrowTo })}
             />
           ) : null}
         </div>
       )}
+      {/* Signing a criterion that shows conditions or exceptions signs them too; the person is told before the press. */}
+      {!editing && typed && belief.badge !== "signed" ? (
+        <p className="mt-2 max-w-2xl text-xs leading-relaxed text-faint">{translate("twin.signWhatYouSee")}</p>
+      ) : null}
     </li>
   );
 }

@@ -8,6 +8,7 @@ import {
 } from "@panoma/db";
 import { autoLookCap, fitForLook, readCeiling, type LookSubject } from "@/lib/look";
 import { LOOK_KIND, runLook } from "@/lib/look-run";
+import { memoryFence } from "./memory-availability";
 import { shotDigest } from "@/lib/shots";
 import { capFor, shotPolicy } from "@/lib/spend-settings";
 import type { Locale } from "@/lib/i18n";
@@ -83,6 +84,8 @@ export interface LookedProject {
  * comes out as a value and not as an error.
  */
 export async function autoLook(database: Database, project: LookedProject): Promise<AutoLook> {
+  let memoryCurrent: () => Promise<void>;
+  try { memoryCurrent = await memoryFence(database); } catch { return { did: "failed", detail: "Memory is unavailable until its deletion journal is reconciled." }; }
   const inbox = await readShots(project.root, { limit: 1 });
   const newest = inbox.shots[0];
   if (newest === undefined) return { did: "nothing" };
@@ -152,6 +155,7 @@ export async function autoLook(database: Database, project: LookedProject): Prom
   }
 
   try {
+    await memoryCurrent();
     const receipt = await runLook(database, {
       subject,
       image: {

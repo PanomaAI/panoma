@@ -47,10 +47,42 @@ export interface Flags {
    */
   dryRun: boolean;
   /**
+   * With `memory purge` and `memory withdraw`: confirm the plan the command has just previewed.
+   *
+   * The preview is the default and this is the only way past it: the command fetches the plan,
+   * prints it, and sends the catalog that exact plan —its id and its revision— to confirm. There
+   * is no `--force` here on purpose: a deletion is not a cache to skip, and the plan says so.
+   */
+  yes: boolean;
+  /**
    * `panoma twin distill --all`: chain passes until reading the entire history.
    * `panoma open <project> --all`: open everything the project's plan lists.
+   * `panoma memory allow|revoke|backfill … --all`: the global scope, said with all the letters.
+   *
+   * For the three memory verbs it is one half of a pair: `--project <slug>` names one project,
+   * `--all` names every project, and the parser demands exactly one of the two, because a scope
+   * that is assumed is the trap the memory plan forbids by name — omitting it must never mean
+   * global. The pair contradicts itself anywhere, so both together is refused for every verb.
    */
   all: boolean;
+  /**
+   * `panoma memory backfill --from <iso>`: the start of the range to read. It arrives as typed
+   * and the command validates it as an instant, together with `--until`, which `video` already
+   * uses for a stage name: a parser rule for one would break the other.
+   */
+  from?: string;
+  /**
+   * `panoma memory backfill --purpose capture|extract|twin`: which cursor the backfill feeds. A
+   * closed set checked here, like `--tier`: a misspelled purpose falling to some default would
+   * read a range under the wrong permission, and one of the three spends.
+   */
+  purpose?: string;
+  /**
+   * `panoma memory allow <source> capture --notice 2`: the version of the notice the person has
+   * read. Closed to 1 or 2: version 1 authorizes receipts, version 2 also the typed facts, and a
+   * number that is neither authorizes nothing anyone was shown.
+   */
+  notice?: number;
   /** With `open`: open the folder in the explorer instead of in the editor. */
   folder: boolean;
   /** With `open`: open a terminal already located in the project. */
@@ -125,6 +157,10 @@ export const KNOWN_FLAGS = [
   "--project",
   "--source",
   "--dry-run",
+  "--yes",
+  "--from",
+  "--purpose",
+  "--notice",
   "--to",
   "--tier",
   "--digest",
@@ -192,6 +228,7 @@ export function parseArgs(argv: string[]): Flags | "help" | "version" | { error:
     network: false,
     rotateKey: false,
     dryRun: false,
+    yes: false,
     all: false,
     positionals: [],
   };
@@ -246,6 +283,7 @@ export function parseArgs(argv: string[]): Flags | "help" | "version" | { error:
     else if (arg === "--network") flags.network = true;
     else if (arg === "--rotate-key") flags.rotateKey = true;
     else if (arg === "--dry-run") flags.dryRun = true;
+    else if (arg === "--yes") flags.yes = true;
     else if (arg === "--all") flags.all = true;
     else if (arg === "--api") flags.api = takeValue() ?? flags.api;
     else if (arg === "--depth") flags.depth = Number.parseInt(takeValue() ?? "3", 10) || 3;
@@ -276,6 +314,11 @@ export function parseArgs(argv: string[]): Flags | "help" | "version" | { error:
     else if (arg === "--digest") flags.digest = takeValue();
     else if (arg === "--keep") flags.keep = Number.parseInt(takeValue() ?? "", 10);
     else if (arg === "--target-home") flags.targetHome = takeValue();
+    // The three of `panoma memory` in delivery B; `--notice` is a number without a default, like
+    // `--keep`, and is checked below.
+    else if (arg === "--from") flags.from = takeValue();
+    else if (arg === "--purpose") flags.purpose = takeValue();
+    else if (arg === "--notice") flags.notice = Number.parseInt(takeValue() ?? "", 10);
     else if (arg.startsWith("-")) unknown.push(arg);
     else positionals.push(arg);
   }
@@ -352,6 +395,23 @@ export function parseArgs(argv: string[]): Flags | "help" | "version" | { error:
   }
 
   /*
+    The two closed values of `panoma memory` in delivery B, for the reason `--tier` gives: a
+    purpose that does not exist would have to fall to one of the three, and one of the three
+    pays for a model; a notice version nobody was shown would grant what nobody read.
+   */
+  const PURPOSES = ["capture", "extract", "twin"];
+  if (flags.purpose !== undefined && !PURPOSES.includes(flags.purpose)) {
+    return {
+      error:
+        `${say("error.unknownPurpose", { value: flags.purpose })}\n` +
+        say("error.purposeKinds", { list: PURPOSES.join(" · ") }),
+    };
+  }
+  if (flags.notice !== undefined && flags.notice !== 1 && flags.notice !== 2) {
+    return { error: say("error.badNotice") };
+  }
+
+  /*
     Two flags that contradict each other are the same trap as a poorly written flag: you have to
     choose one for it, and whichever one you choose will do the opposite of what the other half of
     the command asked. Here there is no defensible choice, so one asks.
@@ -368,6 +428,27 @@ export function parseArgs(argv: string[]): Flags | "help" | "version" | { error:
   }
   if (flags.install && flags.remove) {
     return { error: say("error.installAndRemove") };
+  }
+  /*
+    `--dry-run` asks to stop at the preview and `--yes` asks to go past it. Whichever half won
+    would do the opposite of what the other half typed, and one of the two halves deletes.
+   */
+  if (flags.dryRun && flags.yes) {
+    return { error: say("error.dryRunAndYes") };
+  }
+  /*
+    `--project <slug>` names one project and `--all` names every project: the same contradiction
+    as `--all` with `--folder`, refused for every verb. The other half of the rule is only for
+    the three memory verbs that grant, revoke or read under a scope: there, neither of the two
+    is not a default but a refusal, because the memory plan says a scope is never assumed and a
+    permission that quietly turned global would be the worst thing this parser could do.
+   */
+  if (flags.project !== undefined && flags.all) {
+    return { error: say("error.projectAndAll") };
+  }
+  const scoped = positionals[0] === "memory" && ["allow", "revoke", "backfill"].includes(positionals[1] ?? "");
+  if (scoped && flags.project === undefined && !flags.all) {
+    return { error: say("error.projectOrAll", { sub: positionals[1] ?? "" }) };
   }
 
   // positionals[0] is the command ("scan"); the rest is the path.

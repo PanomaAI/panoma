@@ -1,11 +1,12 @@
 import { createHash, randomBytes } from "node:crypto";
-import { and, asc, desc, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, lte, or, sql } from "drizzle-orm";
 import type { Database } from "./client";
 import * as t from "./schema";
 import { agentKindAliases, canonicalAgentKind, redactSecrets } from "@panoma/core";
 import { stateOf } from "./queries";
 // Benign cycle with ./notes (that one imports `newId`, which is a raised declaration).
 import { listProjectNotes, noteUsage } from "./notes";
+import { settleAgentUsageForDeletion } from "./memory-rehome";
 
 /**
  * The bridge between AI agents and the catalog.
@@ -102,8 +103,12 @@ export async function rotateAgentKey(
  * is exactly what is lost.
  */
 export async function deleteAgent(db: Database, id: string): Promise<boolean> {
-  const done = await db.delete(t.agents).where(eq(t.agents.id, id)).returning({ id: t.agents.id });
-  return done.length > 0;
+  return db.transaction(async (tx) => {
+    // The sessions cascade, and the legacy memory jobs hanging from them: their bytes are credited first.
+    await settleAgentUsageForDeletion(tx, id);
+    const done = await tx.delete(t.agents).where(eq(t.agents.id, id)).returning({ id: t.agents.id });
+    return done.length > 0;
+  });
 }
 
 export async function authenticateAgent(db: Database, apiKey: string | undefined) {
@@ -622,6 +627,74 @@ export async function getTask(db: Database, id: string) {
     .where(eq(t.tasks.id, id))
     .limit(1);
   return row;
+}
+
+/**
+ * The row of a task with the claim it carries: who holds it and between which instants. The case
+ * projection of delivery C reads exactly that window to attribute what the agent declared, and
+ * `getTask` — the launcher's reading — has no reason to carry it.
+ */
+export async function taskById(db: Database, id: string) {
+  const [row] = await db
+    .select({
+      id: t.tasks.id,
+      projectId: t.tasks.projectId,
+      title: t.tasks.title,
+      body: t.tasks.body,
+      status: t.tasks.status,
+      createdBy: t.tasks.createdBy,
+      assignedAgentId: t.tasks.assignedAgentId,
+      claimedAt: t.tasks.claimedAt,
+      completedAt: t.tasks.completedAt,
+      createdAt: t.tasks.createdAt,
+    })
+    .from(t.tasks)
+    .where(eq(t.tasks.id, id))
+    .limit(1);
+  return row;
+}
+
+/**
+ * The sessions one agent opened in one project inside a window, oldest first: the case
+ * projection reads the ones between a task's claim and its completion. `to` open means until now.
+ */
+export async function sessionsOf(
+  db: Database,
+  window: { agentId: string; projectId: string; from: Date; to?: Date | null; limit?: number },
+) {
+  return db
+    .select({
+      id: t.agentSessions.id,
+      startedAt: t.agentSessions.startedAt,
+      endedAt: t.agentSessions.endedAt,
+      summary: t.agentSessions.summary,
+    })
+    .from(t.agentSessions)
+    .where(and(
+      eq(t.agentSessions.agentId, window.agentId),
+      eq(t.agentSessions.projectId, window.projectId),
+      gte(t.agentSessions.startedAt, window.from),
+      window.to ? lte(t.agentSessions.startedAt, window.to) : undefined,
+    ))
+    .orderBy(asc(t.agentSessions.startedAt), asc(t.agentSessions.id))
+    .limit(Math.max(1, Math.trunc(window.limit ?? 20)));
+}
+
+/** The activities of the given sessions, oldest first, without their details: what was declared, not how. */
+export async function activitiesOfSessions(db: Database, sessionIds: string[], limit = 100) {
+  if (sessionIds.length === 0) return [];
+  return db
+    .select({
+      id: t.agentActivities.id,
+      sessionId: t.agentActivities.sessionId,
+      kind: t.agentActivities.kind,
+      summary: t.agentActivities.summary,
+      createdAt: t.agentActivities.createdAt,
+    })
+    .from(t.agentActivities)
+    .where(inArray(t.agentActivities.sessionId, sessionIds))
+    .orderBy(asc(t.agentActivities.createdAt), asc(t.agentActivities.id))
+    .limit(Math.max(1, Math.trunc(limit)));
 }
 
 /**

@@ -330,9 +330,14 @@ minimal environment where neither `pnpm` nor your version manager's `node` is pr
 gets written is a snapshot of the day it was installed, so **moving those tools somewhere else
 calls for running `panoma up --on-boot` again**. The opposite — guessing the PATH at every
 start — can't be done without reading somebody's shell configuration, which is a worse idea.
-The same decision is taken by `panoma hooks --install`, which writes the absolute path to
-`node` and to the CLI if `panoma` isn't on the system PATH, because a git hook runs without
-your shell's PATH and that is the case that always breaks.
+The same decision is taken by `panoma hooks --install`, and since 14-Sep-2026 without the
+condition it used to carry: it **always** writes the absolute real path of the interpreter and
+of the CLI's entry, never the bare name `panoma`, whether or not it is on the PATH — and it
+proves the pair with a `--version` run under an environment that has no PATH before writing a
+byte. A git hook and a Claude Code hook run without your shell's PATH, and "on the PATH at
+install time" was the case that always broke: 556 silent `command not found` runs under the
+desktop app on the day it was measured. The resolver and the probe are told in
+[hooks.md](hooks.md), section "The command is proven before it is written".
 
 ## What only exists on macOS
 

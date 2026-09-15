@@ -1,7 +1,8 @@
 import {
   DecisionEpisodeConflict, activeEpisodeRevisions, decisionEpisodeById, listDecisionEpisodes, narrativeCount, narrativesByIds,
-  queueWrite, resolveProject, saveDecisionEpisodes, setDecisionEpisodeStatus, setDecisionEpisodeValidUntil,
+  queueWrite, resolveProject, saveDecisionEpisodes, setDecisionEpisodePredicates, setDecisionEpisodeStatus, setDecisionEpisodeValidUntil,
 } from "@panoma/db";
+import { MemoryShapeError, validatePredicate } from "@panoma/core";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import {
@@ -85,6 +86,26 @@ export async function POST(request: Request) {
   if (!record(body)) return Response.json({ error: t(locale, "twinMemory.errBody") }, { status: 400 });
   try {
     const { db: database } = await db();
+    if (body.conditionsPredicate !== undefined || body.exceptionsPredicate !== undefined) {
+      if (Object.keys(body).some((key) => !["id", "expectedRevision", "conditionsPredicate", "exceptionsPredicate"].includes(key))
+        || typeof body.id !== "string" || body.id.length === 0 || body.id.length > 100
+        || !Number.isSafeInteger(body.expectedRevision) || (body.expectedRevision as number) < 1) return refused(locale, "fields");
+      const patch = {
+        ...(body.conditionsPredicate === undefined ? {} : { conditionsPredicate: body.conditionsPredicate === null ? null : validatePredicate(body.conditionsPredicate) }),
+        ...(body.exceptionsPredicate === undefined ? {} : { exceptionsPredicate: body.exceptionsPredicate === null ? null : validatePredicate(body.exceptionsPredicate) }),
+      };
+      const result = await queueWrite(() => database.transaction(async (tx) => {
+        const existing = await decisionEpisodeById(tx, body.id as string);
+        if (!existing) return null;
+        if (existing.origin !== "owner") return "authority" as const;
+        await setDecisionEpisodePredicates(tx, existing.id, patch, { expectedMemoryRev: body.expectedRevision as number });
+        return decisionEpisodeById(tx, existing.id);
+      }));
+      if (result === null) return Response.json({ error: t(locale, "twinMemory.errNotFound"), code: "not_found" }, { status: 404 });
+      if (result === "authority") return Response.json({ error: "An owner decision is required to attach authoritative predicates.", code: "invalid_input" }, { status: 400 });
+      revalidatePath("/twin");
+      return Response.json({ episode: result }, { headers: { "Cache-Control": "no-store" } });
+    }
     let expectedUpdatedAt: Date | undefined;
     if (body.expectedUpdatedAt !== undefined) {
       if (typeof body.expectedUpdatedAt !== "string" || !Number.isFinite(Date.parse(body.expectedUpdatedAt))) {
@@ -155,6 +176,7 @@ export async function POST(request: Request) {
     revalidatePath("/twin");
     return Response.json({ episode, episodeId: episode?.id });
   } catch (error) {
+    if (error instanceof MemoryShapeError) return refused(locale, "fields");
     if (error instanceof DecisionEpisodeConflict) {
       if (error.code === "activeSuccessor") return refused(locale, "activeSuccessor", 409);
       return Response.json({ error: t(locale, "twinMemory.errStale"), code: "stale" }, { status: 409 });

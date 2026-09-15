@@ -17,10 +17,12 @@ import {
   notesAt,
   noteUsage,
   proposeNote,
+  setValidUntil,
   triggerMatches,
   validMemoryPath,
   validTrigger,
 } from "./notes";
+import { notePayload, readRevision, revisionHistory } from "./memory-revisions";
 import * as t from "./schema";
 
 /**
@@ -416,5 +418,156 @@ describe("la nota que duerme", () => {
     const context = await getAgentContext(db, PROJECT);
     expect(context?.notes.map((n) => n.body)).toEqual(["Siempre presente."]);
     expect(context?.noteUsage.sleeping).toBe(1);
+  });
+});
+
+describe("T52: succession (delivery C)", () => {
+  async function approvedNote(body: string, trigger?: string): Promise<{ id: string; memoryRev: number }> {
+    const added = await addHumanNote(db, { projectId: PROJECT, body, ...(trigger ? { trigger } : {}) });
+    if (!("id" in added)) throw new Error("The fixture note was refused.");
+    const [row] = await db.select({ memoryRev: t.notes.memoryRev }).from(t.notes).where(eq(t.notes.id, added.id));
+    return { id: added.id, memoryRev: row!.memoryRev };
+  }
+
+  async function proposed(body: string): Promise<string> {
+    const note = await proposeNote(db, { projectId: PROJECT, body, createdBy: "claude" });
+    if (!("id" in note)) throw new Error("The fixture proposal was refused.");
+    return note.id;
+  }
+
+  async function noteRow(id: string) {
+    const [row] = await db.select().from(t.notes).where(eq(t.notes.id, id));
+    return row!;
+  }
+
+  it("approves the successor and supersedes the predecessor in one transaction, both photographed, with the link and the expiry in the successor's photograph", async () => {
+    const old = await approvedNote("Run the tests with pnpm test.");
+    const successor = await proposed("Run the tests with pnpm test, after building the packages.");
+    const until = new Date("2026-12-31T23:59:59.999Z");
+    expect(await decideNote(db, successor, "approved", { supersedesId: old.id, expectedPredecessorRev: old.memoryRev, validUntil: until }))
+      .toEqual({ decided: true, body: "Run the tests with pnpm test, after building the packages.", trigger: null });
+
+    const replaced = await noteRow(old.id);
+    expect(replaced).toMatchObject({ status: "superseded", memoryRev: 2 });
+    expect(await readRevision(db, "note", old.id, 2)).toMatchObject({ reason: "supersede", disposition: "superseded", authority: "owner_confirmation" });
+    const heir = await noteRow(successor);
+    expect(heir).toMatchObject({ status: "approved", memoryRev: 2, supersedesId: old.id, validUntil: until });
+    const photo = await readRevision(db, "note", successor, 2);
+    expect(photo).toMatchObject({ reason: "approve", disposition: "approved" });
+    expect(photo?.payload).toEqual(notePayload(heir));
+    expect(photo?.payload).toMatchObject({ supersedesId: old.id, validUntil: until.toISOString() });
+
+    // The predecessor is out of every default reading and comes only when named; the successor carries the link.
+    expect((await listProjectNotes(db, PROJECT)).map((note) => [note.id, note.supersedesId])).toEqual([[successor, old.id]]);
+    expect((await listProjectNotes(db, PROJECT, ["superseded"])).map((note) => note.id)).toEqual([old.id]);
+    expect(await noteUsage(db, PROJECT)).toMatchObject({ count: 1 });
+    // A superseded note is closed: it is not decided again, not challenged, not re-dated.
+    expect(await decideNote(db, old.id, "discarded")).toEqual({ decided: false, reason: "gone" });
+    expect(await setValidUntil(db, old.id, { memoryRev: 2 }, null)).toEqual({ conflict: true });
+  });
+
+  it("refuses with stale_revision and approves nothing when the predecessor moved, was not approved, or is not the one read", async () => {
+    const old = await approvedNote("Deploy on Fridays.");
+    const successor = await proposed("Deploy on any green day.");
+    const before = await revisionHistory(db, "note", successor);
+
+    // The revision read is behind: someone re-anchored the predecessor meanwhile.
+    expect(await decideNote(db, successor, "approved", { supersedesId: old.id, expectedPredecessorRev: old.memoryRev + 1 })).toEqual({ decided: false, reason: "stale_revision" });
+    // The predecessor was challenged in between: it is not approved any more, whatever its number.
+    const challenge = { at: new Date().toISOString(), sentinel: { kind: "path_exists" as const, target: "deploy.sh", expected: true }, observed: "missing" };
+    expect(await challengeNote(db, old.id, challenge)).toBe(true);
+    expect(await decideNote(db, successor, "approved", { supersedesId: old.id, expectedPredecessorRev: old.memoryRev })).toEqual({ decided: false, reason: "stale_revision" });
+    expect(await decideNote(db, successor, "approved", { supersedesId: old.id, expectedPredecessorRev: old.memoryRev + 1 })).toEqual({ decided: false, reason: "stale_revision" });
+    // A predecessor that is not there, or belongs to another project, is the same answer.
+    expect(await decideNote(db, successor, "approved", { supersedesId: "note_missing", expectedPredecessorRev: 1 })).toEqual({ decided: false, reason: "stale_revision" });
+
+    // Nothing moved on either side: the successor stays proposed at its number, with no photograph and no link.
+    expect(await noteRow(successor)).toMatchObject({ status: "proposed", memoryRev: 1, supersedesId: null, validUntil: null });
+    expect(await revisionHistory(db, "note", successor)).toEqual(before);
+    expect(await noteRow(old.id)).toMatchObject({ status: "challenged", memoryRev: old.memoryRev + 1 });
+    expect(await listProjectNotes(db, PROJECT, ["superseded"])).toEqual([]);
+
+    // The person decides a replacement, not an addition: a successor is never approved on its own with the link dropped.
+    await expect(decideNote(db, successor, "approved", { supersedesId: old.id })).rejects.toThrow(/revision of the predecessor/);
+    await expect(decideNote(db, successor, "discarded", { supersedesId: old.id, expectedPredecessorRev: 1 })).rejects.toThrow(/Only an approval/);
+    await expect(decideNote(db, successor, "approved", { supersedesId: successor, expectedPredecessorRev: 1 })).rejects.toThrow(/another note/);
+    expect(await noteRow(successor)).toMatchObject({ status: "proposed", memoryRev: 1 });
+  });
+
+  it("measures the budget after the swap: what the predecessor gives back is what the successor may take", async () => {
+    // Four approved of 490 leave 40 free; a successor of 490 fits only in the place of one of them.
+    const old = await approvedNote("a".repeat(490));
+    for (let index = 0; index < 3; index += 1) await approvedNote(`${index}`.padEnd(490, "x"));
+    const successor = await proposed("b".repeat(490));
+    expect(await decideNote(db, successor, "approved")).toMatchObject({ decided: false, reason: "overBudget", used: 1960 });
+    expect(await decideNote(db, successor, "approved", { supersedesId: old.id, expectedPredecessorRev: old.memoryRev })).toMatchObject({ decided: true });
+    expect(await noteUsage(db, PROJECT)).toMatchObject({ used: 1960, count: 4 });
+  });
+});
+
+describe("the owner's expiry on a note (delivery C)", () => {
+  async function human(body: string, trigger?: string): Promise<string> {
+    const added = await addHumanNote(db, { projectId: PROJECT, body, ...(trigger ? { trigger } : {}) });
+    if (!("id" in added)) throw new Error("The fixture note was refused.");
+    return added.id;
+  }
+
+  it("sets and clears the date by compare-and-set, under policy, and a retry with the same date bumps nothing", async () => {
+    const id = await human("Keep the CHANGELOG in English.");
+    const until = new Date("2026-10-31T23:59:59.999Z");
+    expect(await setValidUntil(db, id, { memoryRev: 2 }, until)).toEqual({ conflict: true });
+    expect(await setValidUntil(db, id, { memoryRev: 1 }, until)).toEqual({ revision: 2 });
+    const [dated] = await db.select().from(t.notes).where(eq(t.notes.id, id));
+    expect(dated).toMatchObject({ validUntil: until, memoryRev: 2, status: "approved" });
+    const photo = await readRevision(db, "note", id, 2);
+    expect(photo).toMatchObject({ reason: "policy", disposition: "approved" });
+    expect(photo?.payload).toEqual(notePayload(dated!));
+    expect(photo?.payload).toMatchObject({ validUntil: until.toISOString() });
+    expect(await setValidUntil(db, id, { memoryRev: 2 }, new Date(until))).toEqual({ revision: 2 });
+    expect(await revisionHistory(db, "note", id)).toHaveLength(2);
+    expect(await setValidUntil(db, id, { memoryRev: 1 }, null)).toEqual({ conflict: true });
+    expect(await setValidUntil(db, id, { memoryRev: 2 }, null)).toEqual({ revision: 3 });
+    expect((await listProjectNotes(db, PROJECT))[0]).toMatchObject({ id, validUntil: null, memoryRev: 3 });
+    expect(await setValidUntil(db, "note_missing", { memoryRev: 1 }, null)).toEqual({ conflict: true });
+    await expect(setValidUntil(db, id, { memoryRev: 3 }, new Date("not a date"))).rejects.toThrow(/valid instant/);
+    await expect(setValidUntil(db, id, { memoryRev: 0 }, null)).rejects.toThrow(/positive integer/);
+  });
+
+  it("leaves an expired note out of every reader an agent is served from, and keeps it for the owner on request", async () => {
+    const clock = Date.now();
+    const day = 24 * 60 * 60 * 1000;
+    const past = new Date(clock - day);
+    const boundary = new Date(clock + day);
+    const future = new Date(clock + 2 * day);
+    const expired = await human("Use the old runner.");
+    const ending = await human("Use the runner until the end of the day.");
+    const alive = await human("Use the new runner.");
+    const forever = await human("Always rebuild the packages first.");
+    const sign = await human("This directory is generated.", "dist/**");
+    const expiredSign = await human("This directory was generated.", "build/**");
+    for (const [id, until] of [[expired, past], [ending, boundary], [alive, future], [sign, future], [expiredSign, past]] as const) {
+      expect(await setValidUntil(db, id, { memoryRev: 1 }, until)).toEqual({ revision: 2 });
+    }
+    const now = new Date(boundary);
+    const at = (notes: { id: string }[]) => notes.map((note) => note.id).sort();
+
+    // Reaching the stored instant is expiring; one millisecond earlier the note still holds.
+    expect(at(await listProjectNotes(db, PROJECT, ["approved"], { now }))).toEqual([alive, forever, sign].sort());
+    expect(at(await listProjectNotes(db, PROJECT, ["approved"], { now: new Date(now.getTime() - 1) }))).toEqual([alive, ending, forever, sign].sort());
+    expect(at(await listProjectNotes(db, PROJECT, ["approved"], { now, includeExpired: true }))).toEqual([alive, ending, expired, expiredSign, forever, sign].sort());
+    // The default clock is the real one: what expired in the past is out, what ends later is in.
+    expect(at(await listProjectNotes(db, PROJECT))).not.toContain(expired);
+    expect(at(await listProjectNotes(db, PROJECT))).toContain(alive);
+    // The signs on a path follow the same rule.
+    expect(at(await notesAt(db, PROJECT, "dist/index.js", { now }))).toEqual([sign]);
+    expect(await notesAt(db, PROJECT, "build/index.js", { now })).toEqual([]);
+    expect(await notesAt(db, PROJECT, "build/index.js")).toEqual([]);
+    // And so does the briefing an agent receives.
+    const { getAgentContext } = await import("./agents");
+    const context = await getAgentContext(db, PROJECT);
+    expect(context?.notes.map((note) => note.id).sort()).toEqual([alive, ending, forever].sort());
+    // The expired note is still the owner's: it can be discarded from the review screen's full listing.
+    expect(at(await listProjectNotes(db, PROJECT, ["approved", "proposed", "challenged"], { includeExpired: true }))).toContain(expired);
+    expect(await decideNote(db, expired, "discarded")).toEqual({ decided: true });
   });
 });

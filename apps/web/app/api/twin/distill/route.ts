@@ -1,15 +1,23 @@
+import { memoryFence, MemoryUnavailableError, memoryUnavailableResponse } from "@/lib/memory-availability";
+import { randomUUID } from "node:crypto";
 import { complete, resolveCredential, type CompleteResult } from "@panoma/ai";
 import {
+  completeReservation,
   corpusProgress,
+  markSent,
+  markUncertain,
   modelSpendToday,
+  queueWrite,
   readVerdictIds,
+  releaseReservation,
+  reserveModelCall,
   listProjectRoots,
   listVerdicts,
   resolveProject,
-  saveModelCall,
   type CorpusProgress,
   type Database,
   type NewObservation,
+  type ReservationPolicy,
   type Verdict,
 } from "@panoma/db";
 import {
@@ -24,7 +32,7 @@ import { READING_KINDS } from "@/lib/reads";
 import { capFor } from "@/lib/spend-settings";
 import { saveDistillationBatch } from "@/lib/distill-save";
 import { modelErrorParts } from "@/lib/model-errors";
-import { db } from "@/lib/db";
+import { db, memoryQuarantine } from "@/lib/db";
 import { sameOrigin } from "@/lib/guard";
 import { localeFrom, t, type Locale } from "@/lib/i18n";
 
@@ -104,6 +112,22 @@ import { localeFrom, t, type Locale } from "@/lib/i18n";
  * proposals and have already been paid for — and the response comes out with 502 using the same
  * counters that it would with 200. Neither is the amount paid thrown away nor is "done" answered
  * on a distillation that didn't reach the end: both things would be lying with a number.
+ *
+ * ── One reservation for the button and the worker (D06/T68) ────────────────────────────
+ *
+ * Since delivery D the Twin also distils on its own: the worker's `twin_distill` processor pays
+ * calls of this same kind, against this same `read` cap, with nobody pressing anything. Two
+ * callers that each read the day's count in their own process and then pay would both spend the
+ * last call of the day, so the count that decides is no longer read here: each call is
+ * reserved through `reserveModelCall` —a row in the state `reserved` under the advisory lock of
+ * the family and the local day, origin `manual`— and moves `sent` before the provider is called,
+ * `completed` with the usage when the answer is back, or `uncertain` when the network answered
+ * nothing readable, which still counts because the provider may well have charged it. The
+ * pre-check above stays for what it was: the sentence with `used` and `cap` before the drill.
+ * A reservation refused before the first call answers the same 429; one refused after a paid
+ * call stops the pass where the old in-process counter stopped it, and the receipt says what
+ * was read. The worker's automatic attempts have a subquota of their own; a person's button is
+ * held back by the family cap and by nothing the worker did on its own (plan §22.11).
  */
 
 /**
@@ -123,6 +147,7 @@ const KIND = "distill";
 export async function POST(request: Request) {
   const blocked = sameOrigin(request);
   if (blocked) return blocked;
+  if ((await memoryQuarantine()).quarantined) return Response.json({ code: "unavailable", error: "Memory is quarantined until its deletion journal is reconciled." }, { status: 503, headers: { "Cache-Control": "no-store" } });
 
   const locale = localeFrom(request);
   const body = (await request.json().catch(() => ({}))) as {
@@ -139,6 +164,8 @@ export async function POST(request: Request) {
   }
 
   const { db: database } = await db();
+  let memoryCurrent: () => Promise<void>;
+  try { memoryCurrent = await memoryFence(database); } catch { return memoryUnavailableResponse(); }
   const [stored, skip] = await Promise.all([
     listVerdicts(database, {}),
     /*
@@ -192,7 +219,8 @@ export async function POST(request: Request) {
     The cap comes from `spend-settings.ts`, read at request time: it is what the Spend screen
     moves, and the pause and `PANOMA_READ_BUDGET` are resolved there and nowhere else.
    */
-  const { cap } = await capFor("read");
+  const budget = await capFor("read");
+  const { cap } = budget;
   const spent = await modelSpendToday(database, READING_KINDS);
   if (chunks.length > 0 && spent.calls >= cap) {
     return Response.json(
@@ -200,6 +228,8 @@ export async function POST(request: Request) {
       { status: 429 },
     );
   }
+  /* What every reservation of this request is judged by: the family, its three kinds, the cap and the pause. */
+  const policy: ReservationPolicy = { family: "read", kinds: READING_KINDS, caps: { family: cap, paused: budget.source === "paused" } };
 
   /*
     With nothing to read, the credential doesn't amount to anything — and asking for it first was
@@ -273,56 +303,78 @@ export async function POST(request: Request) {
   let failure: unknown;
 
   /*
-    What was spent today, which increases batch by batch. The top brake looks at what there was at
-    the start and one round is up to eight calls: not counting them here, one round that starts
-    with a single margin call takes all eight. Each batch is independent — it keeps its own and
-    marks its own — so stopping between two doesn't lose any of what has been paid.
-    Whoever calls again will find 429 upstairs, which is where the reason is written.
+    Every call is reserved **before** it leaves and written to the expense book **before** anyone
+    reads the answer, which is where 'what it has cost today' comes from. It was missing once, and
+    the hole was seen from the screen: the book was written only by the look, so an entire
+    afternoon distilling left the receipt still in the five looks of the morning. A round is a
+    call—tokens, wait, and money—and not recording it does not make it free, it only makes it
+    invisible. It goes per answer and not per loop pass because each answer is a call: merging
+    five in a row would say it was called once, which is exactly what the receipt has to refute —
+    and the retry below is a second call, with its own reservation and its own row.
+    The attempt key names this request and the call within it, so a retried batch reserves under
+    a new key and the same key twice is refused as a duplicate rather than paid twice.
    */
-  let calls = spent.calls;
-
-  /*
-    Every answer goes to the expense book **before** anyone reads it, which is where 'what it has
-    cost today' comes from. It was missing, and the hole was seen from the screen: the book was
-    written only by the look, so an entire afternoon distilling left the receipt still in the five
-    looks of the morning. A round is a call—tokens, wait, and money—and not recording it does not
-    make it free, it only makes it invisible.
-    It goes per answer and not per loop pass because each answer is a call: merging five in a row
-    I would say was called once, which is exactly what the receipt has to refute — and the retry
-    below is a second call, with its own row.
-   */
-  const paid = async (answer: CompleteResult, identity: string) => {
-    calls += 1;
+  const attemptBase = `manual:${KIND}:${randomUUID()}`;
+  let paid = 0;
+  const ask = async (built: (typeof prompts)[number], maxTokens: number): Promise<CompleteResult | "refused"> => {
+    const reservation = await queueWrite(() => reserveModelCall(database, {
+      ...policy, kind: KIND, provider: credential.provider.id, model, origin: "manual", identity: built.chunk.identity,
+      attemptKey: `${attemptBase}:${paid + 1}`,
+    }));
+    if (!reservation.reserved) return "refused";
+    const reserved = { reservationRev: reservation.reservationRev };
+    try { await memoryCurrent(); } catch (error) {
+      await queueWrite(() => releaseReservation(database, reservation.id, reserved));
+      throw error;
+    }
+    if (!(await queueWrite(() => markSent(database, reservation.id, reserved, new Date(), policy)))) {
+      // Midnight passed and the new day has no room: nothing left the process.
+      await queueWrite(() => releaseReservation(database, reservation.id, reserved));
+      return "refused";
+    }
+    const sent = { reservationRev: reserved.reservationRev + 1 };
+    let answer: CompleteResult;
+    try {
+      answer = await complete({ system: built.system, prompt: built.prompt, maxTokens });
+    } catch (error) {
+      // Sent, nothing readable back: the attempt keeps counting until it is reconciled (T68).
+      paid += 1;
+      await queueWrite(() => markUncertain(database, reservation.id, sent, "provider_failed"));
+      throw error;
+    }
+    paid += 1;
     label = `${answer.provider}/${answer.model}`;
     if (answer.usage) {
       metered = true;
       input += answer.usage.input;
       output += answer.usage.output;
     }
-    await saveModelCall(database, {
-      kind: KIND,
-      provider: answer.provider,
-      model: answer.model,
-      identity,
-      ...(answer.usage ? { input: answer.usage.input, output: answer.usage.output } : {}),
-    });
+    await queueWrite(() => completeReservation(database, reservation.id, sent, {
+      inputTokens: answer.usage?.input ?? null, outputTokens: answer.usage?.output ?? null,
+      provider: answer.provider, model: answer.model,
+    }));
+    await memoryCurrent();
+    return answer;
   };
 
   for (const built of prompts) {
-    if (calls >= cap) break;
-
-    let answer;
+    let answer: CompleteResult | "refused";
     try {
-      answer = await complete({
-        system: built.system,
-        prompt: built.prompt,
-        maxTokens: MAX_ANSWER_TOKENS,
-      });
+      answer = await ask(built, MAX_ANSWER_TOKENS);
     } catch (error) {
       failure = error;
       break;
     }
-    await paid(answer, built.chunk.identity);
+    /*
+      The reservation said no: the worker took the day's last call between the brake above and
+      this batch, or the day ended. Before any call it is the same 429 the brake answers; after
+      one, the pass stops where the old counter stopped it and the receipt says what was read.
+     */
+    if (answer === "refused") {
+      if (paid > 0) break;
+      const used = (await modelSpendToday(database, READING_KINDS)).calls;
+      return Response.json({ error: t(locale, "twin.readsSpent", { used, cap }), corpus }, { status: 429 });
+    }
 
     /*
       A cut answer is asked again, once, with twice the room — and now, not tomorrow.
@@ -331,24 +383,25 @@ export async function POST(request: Request) {
       batch stayed unmarked and the next pass sent **the same input at the same cap**, which cut
       it at the same place. Two identical calls for the same nothing. The provider says why it
       stopped (`stopReason`), so the second call can be the one that differs: same batch, double
-      room, immediately, while the batch is in hand. It counts against the cap like any call and
-      does not fire at the brake: at the cap, the cut answer falls through as unreadable, as before.
-      If the second is cut as well, it is treated as unreadable: a batch that does not fit in twice
-      the room is not going to fit by insisting, and the retry is once on purpose.
+      room, immediately, while the batch is in hand. It is reserved like any call and does not
+      fire when the reservation refuses it: at the cap, the cut answer falls through as
+      unreadable, as before. If the second is cut as well, it is treated as unreadable: a batch
+      that does not fit in twice the room is not going to fit by insisting, and the retry is once
+      on purpose.
      */
-    if (answer.stopReason === "length" && calls < cap) {
-      truncated += 1;
+    if (answer.stopReason === "length") {
+      let second: CompleteResult | "refused";
       try {
-        answer = await complete({
-          system: built.system,
-          prompt: built.prompt,
-          maxTokens: MAX_ANSWER_TOKENS * 2,
-        });
+        second = await ask(built, MAX_ANSWER_TOKENS * 2);
       } catch (error) {
+        truncated += 1;
         failure = error;
         break;
       }
-      await paid(answer, built.chunk.identity);
+      if (second !== "refused") {
+        truncated += 1;
+        answer = second;
+      }
     }
 
     const byId = new Map(built.chunk.verdicts.map((one) => [one.id, one] as const));
@@ -535,6 +588,7 @@ async function projectNames(
  * would turn it into decoration and it would stop being read the day it was useful for something.
  */
 function modelFailure(locale: Locale, error: unknown, receipt: object = {}): Response {
+  if (error instanceof MemoryUnavailableError) return memoryUnavailableResponse();
   const { detail, hint } = modelErrorParts(locale, error);
   return Response.json(
     {

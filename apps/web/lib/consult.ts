@@ -11,13 +11,15 @@ import {
   modelSpendToday,
   pendingConsultations,
   saveModelCall,
-  standsUp,
+  publishableByPolicy,
   staleDrafting,
   type Database,
 } from "@panoma/db";
 // Lexical ranking is deterministic and free; the model still decides whether evidence applies.
 import { terms } from "./lexical";
 import { capFor } from "./spend-settings";
+import { memoryFence } from "./memory-availability";
+import { fileStatement } from "./publishable";
 
 /*
   The substitute writer: the double writes what HE WOULD HAVE answered, and no one reads it yet
@@ -188,13 +190,14 @@ export function parseAsk(
 export async function beliefsFor(database: Database, identity: string | null): Promise<LabelledBelief[]> {
   const rows = await listBeliefs(database, { states: ["signed", "inferred"] });
   return rows
+    .filter((b) => b.scopeKind !== "unresolved")
     .filter((b) => b.identity === null || b.identity === identity)
-    .filter((b) => b.state === "signed" || standsUp(b.support))
+    .filter((b) => b.state === "signed" || publishableByPolicy(b.support, b.supportEvidence))
     .map((b, index) => ({
       label: `b${index + 1}`,
       id: b.id,
       state: b.state,
-      statement: redactSecrets(b.statement),
+      statement: redactSecrets(fileStatement(b)),
       topic: b.topic,
       ...(b.identity === null ? {} : { scope: "project" }),
     }));
@@ -277,6 +280,7 @@ export async function rehearse(
 }
 
 async function runRehearsal(database: Database, input: RehearsalInput): Promise<RehearsalReceipt> {
+  const memoryCurrent = await memoryFence(database);
   const question = consultationQuestion(input.question);
   if (question === undefined) throw new Error("Invalid consultation question.");
   const eligible = await beliefsFor(database, input.identity);
@@ -310,8 +314,10 @@ async function runRehearsal(database: Database, input: RehearsalInput): Promise<
     identity: input.identity,
     ...(answer.usage ? { input: answer.usage.input, output: answer.usage.output } : {}),
   });
+  await memoryCurrent();
   let answer = await complete({ ...built, maxTokens: MAX_ANSWER_TOKENS });
   await paid(answer);
+  await memoryCurrent();
   let parsed = parseAsk(answer.text, beliefs);
   let calls = 1;
   /*
@@ -323,8 +329,10 @@ async function runRehearsal(database: Database, input: RehearsalInput): Promise<
     and no more: a model that cannot close in twice the room is answering something else.
    */
   if (parsed === "abstain" && answer.stopReason === "length" && remainingCalls > calls) {
+    await memoryCurrent();
     answer = await complete({ ...built, maxTokens: MAX_ANSWER_TOKENS * 2 });
     await paid(answer);
+    await memoryCurrent();
     parsed = parseAsk(answer.text, beliefs);
     calls += 1;
   }

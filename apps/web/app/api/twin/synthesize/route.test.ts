@@ -6,23 +6,28 @@ import {
   insertBeliefs,
   latestSynthesisByTopic,
   modelSpendToday,
+  reserveModelCall,
   saveObservations,
   schema,
   vetoBelief,
   type Database,
 } from "@panoma/db";
+import { READING_KINDS } from "@/lib/reads";
 
 let database: Database;
 const completeMock = vi.fn();
-vi.mock("@panoma/ai", () => ({
+const credentialMock = vi.fn(async () => ({ provider: { id: "test" }, model: "test" }));
+vi.mock("@panoma/ai", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@panoma/ai")>(),
   complete: (...args: unknown[]) => completeMock(...args),
-  resolveCredential: async () => ({ provider: { id: "test" }, model: "test" }),
+  resolveCredential: () => credentialMock(),
 }));
-vi.mock("@/lib/db", () => ({ db: async () => ({ db: database }) }));
+vi.mock("@/lib/db", () => ({ db: async () => ({ db: database }), memoryQuarantine: async () => ({ quarantined: false }) }));
 const { POST } = await import("./route");
 let home: string;
 let close: () => Promise<void>;
 const originalHome = process.env["PANOMA_HOME"];
+const originalBudget = process.env["PANOMA_READ_BUDGET"];
 
 beforeAll(async () => {
   home = await mkdtemp(join(tmpdir(), "panoma-synthesis-freshness-"));
@@ -34,10 +39,14 @@ afterAll(async () => {
   await close();
   if (originalHome === undefined) delete process.env["PANOMA_HOME"];
   else process.env["PANOMA_HOME"] = originalHome;
+  if (originalBudget === undefined) delete process.env["PANOMA_READ_BUDGET"];
+  else process.env["PANOMA_READ_BUDGET"] = originalBudget;
   await rm(home, { recursive: true, force: true });
 });
 beforeEach(async () => {
   completeMock.mockReset();
+  credentialMock.mockReset().mockResolvedValue({ provider: { id: "test" }, model: "test" });
+  delete process.env["PANOMA_READ_BUDGET"];
   await database.delete(schema.observations);
   await database.delete(schema.beliefs);
   await database.delete(schema.synthesisPasses);
@@ -60,6 +69,24 @@ describe("synthesis follows evidence reads, not signatures", () => {
     expect((await POST(request())).status).toBe(200);
     expect(completeMock).toHaveBeenCalledTimes(1);
     expect((await latestSynthesisByTopic(database)).has("design")).toBe(true);
+  });
+
+  it("D01/T64: the bare approvals filed under the reserved topic are never synthesized, and a belief about approving is never born", async () => {
+    // Three bare approvals under the design topic, and two more under a topic that holds nothing else.
+    await saveObservations(database, ["perfecto", "genial", "ok"].map((statement) => ({
+      topic: "design", statement, identity: null, citations: [], model: "test", kind: "reaction", referent: "unknown",
+    })));
+    await saveObservations(database, ["nice", "great"].map((statement) => ({
+      topic: "naming", statement, identity: null, citations: [], model: "test", kind: "reaction", referent: "unknown",
+    })));
+    completeMock.mockResolvedValue({ text: "[]", provider: "test", model: "test" });
+    const response = await POST(request());
+    expect(await response.json()).toMatchObject({ topics: 1 });
+    expect(completeMock).toHaveBeenCalledTimes(1);
+    const sent = JSON.stringify(completeMock.mock.calls[0]?.[0] ?? {});
+    expect(sent).toContain("Keep interfaces quiet.");
+    for (const word of ["perfecto", "genial", "nice", "great"]) expect(sent).not.toContain(word);
+    expect((await latestSynthesisByTopic(database)).has("naming")).toBe(false);
   });
 
   it("an understood empty response closes the read even when there are no beliefs", async () => {
@@ -142,5 +169,103 @@ describe("the graveyard travels across topics, bounded to the newest vetoes", ()
     completeMock.mockResolvedValue({ text: "[]", provider: "test", model: "test" });
     const receipt = await (await POST(request())).json();
     expect(receipt).not.toHaveProperty("graveyardOmitted");
+  });
+});
+
+/*
+  Delivery D: the worker's `twin_synthesize` processor rewrites the topics whose evidence moved,
+  against this same `read` cap, so the button reserves each call under the same lock (D06/T68).
+  Pinned here: the manual row's origin and state, the same 429 when the worker took the day's last
+  call between the brake and the first reservation, a second topic stopped by a reservation the
+  worker made during the first, and an attempt the provider dropped that stays `uncertain`.
+ */
+describe("D06/T68: the synthesis reserves each manual call under the shared `read` lock", () => {
+  const ledger = async () => (await database.select({ origin: schema.modelCalls.origin, state: schema.modelCalls.state, kind: schema.modelCalls.kind })
+    .from(schema.modelCalls).orderBy(schema.modelCalls.createdAt)).map((row) => ({ ...row }));
+  const worker = (cap: number, key: string) => reserveModelCall(database, {
+    family: "read", kinds: READING_KINDS, kind: "distill", provider: "test", model: "test", origin: "automatic", identity: null,
+    attemptKey: key, caps: { family: cap, subquota: Math.min(6, cap) },
+  });
+
+  it("a manual call is one ledger row with origin manual and state completed, and the pass is recorded", async () => {
+    completeMock.mockResolvedValue({ text: "[]", provider: "test", model: "test" });
+    expect((await POST(request())).status).toBe(200);
+    expect(await ledger()).toEqual([{ origin: "manual", state: "completed", kind: "synthesize" }]);
+    expect((await database.select({ attemptKey: schema.modelCalls.attemptKey }).from(schema.modelCalls))[0]!.attemptKey).toMatch(/^manual:synthesize:[0-9a-f-]{36}:1$/);
+    expect((await latestSynthesisByTopic(database)).has("design")).toBe(true);
+  });
+
+  it("D06: the worker's reservation between the brake and the first call is the brake's 429, and no topic is read", async () => {
+    process.env["PANOMA_READ_BUDGET"] = "1";
+    credentialMock.mockImplementationOnce(async () => {
+      expect((await worker(1, "worker:first")).reserved).toBe(true);
+      return { provider: { id: "test" }, model: "test" };
+    });
+    completeMock.mockResolvedValue({ text: "[]", provider: "test", model: "test" });
+
+    const response = await POST(request());
+    expect(response.status).toBe(429);
+    expect(completeMock).not.toHaveBeenCalled();
+    expect(await ledger()).toEqual([{ origin: "automatic", state: "reserved", kind: "distill" }]);
+    expect((await latestSynthesisByTopic(database)).size).toBe(0);
+  });
+
+  it("D06: a worker reservation during the first topic stops the second where the counter would have let it through", async () => {
+    process.env["PANOMA_READ_BUDGET"] = "2";
+    await saveObservations(database, ["Name the flag.", "Say the exit code."].map((statement) => ({
+      topic: "cli", statement, identity: null, citations: [], model: "test",
+    })));
+    completeMock.mockImplementationOnce(async () => {
+      expect((await worker(2, "worker:during")).reserved).toBe(true);
+      return { text: "[]", provider: "test", model: "test" };
+    }).mockResolvedValue({ text: "[]", provider: "test", model: "test" });
+
+    const response = await POST(request());
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ topics: 2 });
+    expect(completeMock).toHaveBeenCalledTimes(1);
+    expect(await ledger()).toEqual([
+      { origin: "manual", state: "completed", kind: "synthesize" },
+      { origin: "automatic", state: "reserved", kind: "distill" },
+    ]);
+    // One topic closed its read, the other stays pending for the next pass.
+    expect((await latestSynthesisByTopic(database)).size).toBe(1);
+  });
+
+  it("T68: an attempt the provider dropped stays uncertain and still counts against the day", async () => {
+    process.env["PANOMA_READ_BUDGET"] = "1";
+    completeMock.mockRejectedValueOnce(new Error("socket hang up"));
+    const response = await POST(request());
+    expect(response.status).toBe(502);
+    expect(await ledger()).toEqual([{ origin: "manual", state: "uncertain", kind: "synthesize" }]);
+    expect((await modelSpendToday(database, ["synthesize"])).calls).toBe(1);
+    expect((await POST(request())).status).toBe(429);
+    expect(completeMock).toHaveBeenCalledTimes(1);
+    expect((await latestSynthesisByTopic(database)).size).toBe(0);
+  });
+});
+
+/*
+  The fence: a catalog whose deletion journal is missing is quarantined, and a paid route sends
+  nothing while it is — the door answers `503 unavailable`, the provider is never called, and
+  the journal is put back afterwards. Pinned here for each paid door since 14-Sep-2026; the
+  route tests above mock the quarantine away, so without this the fence guarded nothing a test
+  could see.
+ */
+describe("the fence", () => {
+  it("sends nothing and answers 503 unavailable while the deletion journal is missing", async () => {
+    const { ensureDeletionJournal, deletionJournalPath } = await import("@panoma/db");
+    const { rename } = await import("node:fs/promises");
+    await ensureDeletionJournal(database, home);
+    const path = deletionJournalPath(home);
+    await rename(path, `${path}.held`);
+    try {
+      const response = await POST(request());
+      expect(response.status).toBe(503);
+      expect(await response.json()).toMatchObject({ code: "unavailable" });
+      expect(completeMock).not.toHaveBeenCalled();
+    } finally {
+      await rename(`${path}.held`, path);
+    }
   });
 });

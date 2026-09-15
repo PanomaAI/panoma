@@ -1,6 +1,6 @@
 # What the catalog stores, and under what rules
 
-The catalog is thirty-nine tables in PostgreSQL —PGlite locally, a real server with
+The catalog is fifty tables in PostgreSQL —PGlite locally, a real server with
 `DATABASE_URL`— and the whole schema lives in `packages/db/src/schema.ts`. This page does
 not list columns: it tells the rules that decided the shape, and above all where **the
 border between what a scan gives back and what a loss takes away forever** runs. Who may
@@ -11,6 +11,11 @@ Three tests anchor it, and they run against PGlite and not against a double:
 `packages/db/src/ingest.test.ts` (the ingestion transaction, the pruning of `snapshots` and
 the rehoming of memory), `packages/db/src/downgrade.test.ts` (the two refusals to open) and
 `packages/db/src/prune-codepoints.test.ts` (the cleanup under a root with an emoji inside).
+The seven tables of the memory contract have a test each beside their module
+(`packages/db/src/memory-*.test.ts`), and they are told in
+[memory-contract.md](memory-contract.md); the two of delivery C, `commitments` and
+`memory_outcomes`, in `commitments.test.ts` and `memory-outcomes.test.ts`, told in
+[memory-checks.md](memory-checks.md); here they get their row and their rules.
 
 ## The two decisions that condition everything else
 
@@ -36,7 +41,7 @@ They are written in the schema's header and they explain half the oddities of th
    the engine's rule. That turns ingestion into pure upserts —no prior reads, no duplicate
    ids when rescanning— and makes rescanning idempotent by construction, not by care.
 
-## The thirty-nine tables, by family
+## The fifty tables, by family
 
 | Table | What for | What it hangs off |
 | --- | --- | --- |
@@ -68,27 +73,40 @@ Comparing it with a list of advisories is comparing two questions. See
 | `agents` | A registered agent, with its key stored hashed only | random `id` |
 | `agent_sessions` | One stretch of work by an agent on a project | `agent_id` · `project_id` |
 | `agent_activities` | What it did, with full-text search on top | `session_id` · `project_id` · `agent_id` |
-| `memory_jobs` | The distiller's queue: one row per closed session, with its status, attempts, lease and receipt | `session_id` (primary key), cascading from `agent_sessions` |
+| `memory_jobs` | Durable work with a lease: the legacy distiller's job over a closed session (`processor legacy_session`, `id = legacy:<session>`) and, since delivery B, the paid extraction's batch job — a frozen `input_manifest` of byte intervals with its canonical `input_hash`, `processor`, `purpose`, `origin`, `scope_key`, the eight states (`pending` · `running` · `staged` · `deferred` · `failed` · `complete` · `cancelled` · `obsolete`), `attempts` counting claims only, `lease_token` with `lease_until`, `rev` for the compare-and-set, `requested_rev` for the work wanted after the window, `staged_output` for a paid answer waiting to be published, and the receipt — [memory-capture.md](memory-capture.md) | `id` (primary key since migration `0065`, the session id was it before); `UNIQUE (processor, work_key)` is the window's identity and a partial unique index keeps one legacy job per session; nullable `session_id` cascading from `agent_sessions`, nullable `project_id` set null |
 | `tasks` | The queue of assignments an agent can pick up | `project_id` |
-| `notes` | The project's curated memory, with its gate and its trigger | `project_id` |
+| `notes` | The project's curated memory, with its gate and its trigger; since delivery C also `valid_until`, the owner's explicit expiry, `supersedes_id`, the approved note this one replaced (`superseded` is the fifth status, terminal), and the second generation of checks beside the first-generation anchors in `sentinels` — [memory-checks.md](memory-checks.md) | `project_id`; `supersedes_id` → `notes`, restrict, with a partial unique index that keeps one approved successor per predecessor |
 | `consultations` | The judgment questions the twin answers in the shadows | `project_id` · `agent_id` |
-| `servings` | Each delivery —or withholding— of memory to an agent | `project_id` · `agent_id` |
+| `servings` | Each delivery —or withholding— of memory to an agent; since 14-Sep-2026 also the v2 **offer**: the rendered text, both hashes, the unit manifest, the policy snapshot, the channel, the context and its generation, `purged_at` when a purge blanked it | `project_id` · nullable `agent_id` · nullable `context_id`, **set null** |
+| `memory_contexts` | What one recipient keeps: project, harness, entrypoint, recipient key, native session key, the `generation` that rises on every start, resume or compaction, and the last lifecycle event | `project_id`, cascading |
+| `serving_events` | Append-only: an attempt of transport, or a reception the reader observed with its source, byte offset and native event id; unique by event key | `serving_id`, cascading · nullable `source_id`, restrict |
+| `memory_revisions` | One photograph per `(kind, object_id, rev)` of a note, a belief, a decision episode and, since C, a commitment and a check definition, since D an observation: its semantic columns as they were, scope, authority, reason, the previous revision; `purged_at` and a null payload once purged | `object_id`, **no foreign key**: a photograph survives its row on purpose |
+| `memory_dependencies` | The reverse index a withdrawal walks: a dependent revision, offer or — since delivery B — job (`dependent_job_id`, exactly one of the three), an input revision or source interval, the relation (`derived_from` · `supported_by` · `exception` · `counterexample`), the group and its mode | revision and source ids with `restrict`, serving and job ids cascading |
+| `memory_sources` | One transcript stream per generation: stream key, harness, entrypoint, native session key, the validated locator and file identity — with `gaps`, the last 50 ranges a cursor crossed, kept through every fingerprint —, the anchor hash, origin, parent stream, status; a purge leaves a tombstone with the locator blanked | `previous_id`, restrict |
+| `memory_source_cursors` | Where the reader stands in a stream for one purpose under one grant: the consent boundary, the next byte, the gap, the state and the lease | `source_id`, restrict |
+| `memory_deletions` | Every withdrawal or purge as an intention with its sequence, targets, state and progress; the `baseline` row the journal starts with; never a payload | the journal on disk, by sequence |
+| `commitments` | Delivery C: a human obligation with a version — its text, an optional task, typed `conditions`, up to six `completion_checks` and up to six other `checks`, `status` (`open` · `fulfilled` · `cancelled`), `created_by` (`human` · `agent`: who wrote it down, never who fulfils it), `memory_rev` for the compare-and-set and `resolution` at closure (`actor: owner \| checks`, the revision closed, the observations that allowed it); a `CHECK` ties the state to its closure, `open` with a null resolution and date, anything else with both. Never reopened: a successor is linked through `memory_dependencies` — [memory-checks.md](memory-checks.md) | `project_id`, cascading; `task_id`, set null |
+| `memory_outcomes` | Delivery C: what a check observed and the incidents it opened, one row per look and never corrected — `kind` (`observation` · `incident`), `occurrence_id` (a hash of subject revision, check revision and environment for an observation; `inc_<uuid>` for an incident), the photograph observed against, `check_id` with `check_rev` (together or not at all), the `environment` (two dirty worktrees at one HEAD have two ids), `result` (`pass` · `fail` · `unknown`), the `evidence` with its coverage and `deliveredBefore`, and the owner's `owner_verdict` (`confirmed` · `false_positive`) moved by compare-and-set on `verdict_rev`, the only mutable field — [memory-checks.md](memory-checks.md) | `subject_revision_id` → `memory_revisions`, **restrict**: a look names the photograph it was made against; `project_id`, set null; `source_id`, restrict |
+| `memory_usage` | Delivery E: the logical bytes of derived memory content, one row for the catalog (`scope_kind = catalog`, key `catalog`) and one per project by id — the canonical payload bytes of the photographs, the offers with their rendered text, the typed facts and the staged answers, charged by the writer that adds them in its own transaction and credited by the one that removes them, floored at zero; compared with the quota of plan §25.3 (256 MiB per catalog, 64 MiB per project out of the box) to pause new automatic retention, never to prune; recomputed from the rows once a day by `reconcileUsage` — [memory-capture.md](memory-capture.md) | `(scope_kind, scope_key)`, no foreign key: a project's counter outlives nothing, the reconciliation drops the row of a project whose content is gone |
+| `session_facts` | Delivery B: a typed local fact read from a program's own record — read, edit, command, test result, failure, commit, lifecycle, receipt seen — under a closed list of kinds with a closed payload each, never a command line, a prompt or an assistant text; `ingest_seq` is the order the catalog learned in, `observed_at` the record's own time, `payload.copied` marks a record a handoff carried; pruned after ninety days when nothing cites it — [memory-capture.md](memory-capture.md) | `source_id`, restrict; unique by stream generation, byte offset, sub-index and parser version; nullable `project_id`, set null |
 | `launches` | Each assignment that went out to a terminal, one gesture per click | `project_id` · `task_id` |
 | `handoffs` | The receipt of a handoff: which conversation became which, when, at which tier, on which surface —`target_surface`, `cli` or `app`, added on 11-Sep-2026 for the desktop apps— what was left behind, the line that resumes it, and who asked —`requested_by`, added on 12-Sep-2026: the agent's name when the write came over the MCP channel, `null` when a person did it from the screen or the terminal; never the text | nullable `project_id`, **set null** and not a cascade: a folder outside the catalog still gets a receipt |
 | `runs` | A proposal to bump a dependency, with its branch and its patch | `project_id` · `task_id` |
 | `verdicts` | Your literal quotes, mined from the agent history | `identity`, **no foreign key** |
 | `narratives` | Your verified turns —`opening`, `brief`, `reaction`— with the assistant's context kept apart, a read marker and a failed marker | `identity`, **no foreign key**; `id` = sha1 of source, session, date and redacted text |
-| `decision_episodes` | Goal, alternatives, rationale, outcome, conditions and exceptions as `jsonb` fields; origin `owner` or `history`; `supersedes_id`, `status` and `valid_until`, the last day the decision applies | nullable `identity`, no foreign key |
-| `observations` | What the distiller read across several quotes | nullable `identity`, no foreign key |
-| `beliefs` | The portrait's sentences: the only thing that reaches the agents | random `id` · nullable `identity` |
-| `synthesis_passes` | What each synthesis pass moved, one row per subject | random `id` |
+| `decision_episodes` | Goal, alternatives, rationale, outcome, conditions and exceptions as `jsonb` fields; origin `owner` or `history`; `supersedes_id`, `status` and `valid_until`, the last day the decision applies; since delivery C also `conditions_predicate` and `exceptions_predicate`, the typed trees beside the narrative, and `checks` — [memory-checks.md](memory-checks.md) | nullable `identity`, no foreign key |
+| `observations` | What the distiller read across several quotes; since delivery D also `memory_rev` (the delivery revision, `> 0`, bumped by compare-and-set on a real topic move and photographed under the kind `observation`), `case_origin_key` (where the quotes came from — a stream turn, a lesson, `copied:` for a copy, null for a legacy row), `kind` (one of the seven the distiller writes, or null) and `referent` (what the turn was about; the literal `unknown` on a reaction with no object, which no synthesis reads) — [twin-learning.md](twin-learning.md) | nullable `identity`, no foreign key |
+| `beliefs` | The portrait's sentences: the only thing that reaches the agents; since 14-Sep-2026 also `scope_kind`, `delivery_mode` — `core` exactly when `published_as` is a line, set by `markPublished` and seeded at startup by `ensureDeliveryModes` — and `delivery_policy_rev`, which moves when the mode does, while `memory_rev` moves only with the text, the state, the scope or the evidence; since delivery C also `checks`, the applicability and grounds checks of a criterion; since delivery D also `conditions` and `exceptions` — the typed predicate, null when none is declared — and `support_evidence`, the closed object of the independent families behind an inference, computed from the observations' origin keys and never from a model, null on a legacy row — [twin-learning.md](twin-learning.md) | random `id` · nullable `identity` |
+| `synthesis_passes` | What each synthesis pass moved, one row per subject; since delivery D also `job_id` — the learning job that ran it, set null when the job goes — and `input_hash`, the fingerprint of the topic's inputs the pass ran from, which is what stops the worker from paying twice for one portrait | random `id`; `job_id` → `memory_jobs`, set null |
 | `looks` | What the critic with eyes saw in a screenshot | random `id` · `identity` |
-| `model_calls` | The spend ledger: one row per model call | random `id` |
+| `model_calls` | The spend ledger: one row per model call; since delivery B also the reservation of one — `origin` (`legacy` · `manual` · `automatic`), `state` (`reserved` · `sent` · `completed` · `uncertain` · `released`), `attempt_key` (unique where present), `job_id`, `budget_day` (the local calendar day the call is charged to), `reserved_at`, `sent_at`, `finished_at` and `reservation_rev` for the compare-and-set, indexed by `(kind, budget_day, origin, state)`; `saveModelCall`, the door of the organs not yet moved, writes the row `completed`, `manual` unless told otherwise, charged to today and finished now — [memory-capture.md](memory-capture.md) | random `id`; `job_id` → `memory_jobs`, set null |
 
 The three at the top are **the optional programs**; the next nine describe **the disk**; the
 four after them, **the supply**; the two family ones, **the copies**; `decisions` and
-`exclusions`, **what the person said**; the eleven about agents and work, **what happened**;
-and the last eight are **the twin**.
+`exclusions`, **what the person said**; the twenty-two about agents, work and the memory
+contract — the two of delivery C and the counter of delivery E among them —, **what
+happened**; and the last eight are
+**the twin**.
 
 ## The border: what a scan gives back and what it does not
 
@@ -101,14 +119,24 @@ and it comes back the same. With it come back its technologies, its dependencies
 distributions, its links, its families and its design fingerprint. `reviews` recomputes in
 a second and a half by reading the same folder. `packages`, `advisories` and
 `vulnerabilities` come back with one pass of `panoma enrich`, which costs network but costs
-no decision. Fifteen of the thirty-nine tables are on this side, and one of them with fine
+no decision. `memory_usage` is derived too, from the catalog's own rows rather than the
+disk: delete it and the daily reconciliation writes it again, to the byte. Sixteen of the
+fifty tables are on this side, and one of them with fine
 print: from `snapshots` today's analysis comes back, not the timeline of the earlier ones —
 which the pruning trims on purpose anyway.
 
-**What does not come back.** The other twenty-four hold things no scan can reconstruct:
-what a person wrote (`decisions`, `exclusions`, `notes`, `tasks`), what the agents did while
+**What does not come back.** The other thirty-four hold things no scan can reconstruct:
+what a person wrote (`decisions`, `exclusions`, `notes`, `tasks`, and since delivery C
+`commitments`), what the agents did while
 they worked (`agents`, `agent_sessions`, `agent_activities`, `memory_jobs`, `runs`, `launches`,
-`servings`, `consultations`), what a person asked for from a folder (`handoffs`: the
+`servings`, `consultations`), what was offered to a context and what it received
+(`memory_contexts`, `serving_events`, `memory_revisions`, `memory_dependencies`,
+`memory_sources`, `memory_source_cursors`, `memory_deletions`, delivery B's
+`session_facts` — the facts a purge deletes by stream and a prune forgets after ninety days —
+and delivery C's `memory_outcomes`, every look a patrol took at a disk state that is gone: a
+photograph of a revision
+the owner has since rewritten, or a receipt found in a transcript that may be gone, comes
+back from nowhere), what a person asked for from a folder (`handoffs`: the
 conversation it records lives in the agent's own store, and a rescan knows nothing of it), the
 three app tables, and the entire portrait (`verdicts`, `narratives`,
 `observations`, `beliefs`, `decision_episodes`, `synthesis_passes`, `looks`,
@@ -147,11 +175,11 @@ Two things it cannot do on its own, and that ingestion settles:
   fall back to `ruta:`. Hanging off `identity` are `decisions`, `verdicts`, `narratives`,
   `observations`, `beliefs`, `decision_episodes`, `looks` and `model_calls`.
 
-## Sixty-four migrations, and four snapshots that are missing
+## Seventy-two migrations, and four snapshots that are missing
 
-`packages/db/migrations` has sixty-four `.sql` files, from `0000_lonely_tigra` to
-`0063_app_job_requested_by`, and `meta/_journal.json` with its sixty-four entries. In
-`meta/` there are sixty snapshots: `0014`, `0015`, `0052` and `0053` are missing.
+`packages/db/migrations` has seventy-two `.sql` files, from `0000_lonely_tigra` to
+`0071_memory_backfill_permissions`, and `meta/_journal.json` with its seventy-two entries. In
+`meta/` there are sixty-eight snapshots: `0014`, `0015`, `0052` and `0053` are missing.
 
 It is not an oversight, and it is worth knowing why before trying to "fix it". Those
 migrations **were written by hand**, and the snapshots are generated by `drizzle-kit` when
@@ -185,9 +213,69 @@ before the agent channel's door reads as a person's, which is what it was) on `0
 same way (`pnpm --filter @panoma/db generate --name handoff_requested_by`); and
 `0063_app_job_requested_by` (12-Sep-2026, the same column on `app_jobs`, for the same reason and
 under the same name, the day the optional apps got their door on the agent channel) on
-`0062`'s, the same way again. The two `CHECK` constraints written by hand on `memory_jobs` are
-not in it because the schema does not declare them, and that is harmless — drizzle only ever
-diffs what the schema says, so it will neither drop them nor recreate them.
+`0062`'s, the same way again; and `0064_memory_contract_a` (14-Sep-2026, delivery A of the
+memory plan: the seven tables above, `memory_rev` on `notes`, `beliefs` and
+`decision_episodes`, `scope_kind` and the delivery policy on `beliefs`, `scope_kind` on
+`decision_episodes`, `agent_id` made nullable on `servings` with the offer columns beside it,
+and every `CHECK` declared in the schema this time — plus a hand-added backfill,
+`UPDATE … SET scope_kind = CASE WHEN identity IS NULL THEN 'global' ELSE 'project' END`, on
+the two tables, because a row written before the column existed is still a scoped row) on
+`0063`'s, generated by `drizzle-kit` with its snapshot chained. The two `CHECK` constraints written by hand on `memory_jobs` in
+`0053` are not in `0064`'s snapshot because the schema of that delivery did not declare them; `0065`
+declares them, drops both by name and recreates them widened, and from then on they are
+ordinary schema-owned checks that drizzle diffs like any other. After it comes
+`0065_memory_capture_b`, delivery B's, the same day ([memory-capture.md](memory-capture.md)):
+generated by `drizzle-kit` with its snapshot chained on `0064`'s, then rewritten by hand where
+the generator cannot know the data — `session_facts` with its four indexes, the primary key of
+`memory_jobs` moved from `session_id` to a new `id` with every legacy row backfilled
+deterministically before the new columns become `NOT NULL` (`legacy:<session_id>`, the session
+id as `work_key`, the session's project as `scope_key` and `project_id`, the baseline manifest
+and its canonical hash `fb19453d5f6386ea1686e18a7fbfd2504b9d964737a71df6071d6bfafbf3b9fd`), the
+status check dropped and re-created with the eight states, the reservation columns on
+`model_calls` with their checks and their index, and `dependent_job_id` on
+`memory_dependencies` with the dependent check re-created to demand exactly one of three.
+Then `0066_memory_checks_c`, delivery C's, the same day again ([memory-checks.md](memory-checks.md)),
+generated by `drizzle-kit` with its snapshot chained on `0065`'s and nothing rewritten by
+hand, because every rule it adds is a shape and not data: the two tables `commitments` and
+`memory_outcomes` with their `CHECK`s and their four indexes, `valid_until` and
+`supersedes_id` on `notes` with the foreign key to `notes` itself (restrict) and the partial
+unique index `notes_successor_idx` on approved successors, the `CHECK` on `notes.status` that
+admits `superseded`, `conditions_predicate`, `exceptions_predicate` and `checks` on
+`decision_episodes`, and `checks` on `beliefs` — the two `jsonb` list columns with `'[]'` as
+their default, so every row written before the column reads as a unit without checks. After
+it come the two of delivery D, the same day again ([twin-learning.md](twin-learning.md)),
+both generated by `drizzle-kit` with their snapshots chained and nothing rewritten by hand.
+`0067_twin_contextual_d` is additive on three tables and creates none: `conditions`,
+`exceptions` and `support_evidence` on `beliefs` as nullable `jsonb`; `memory_rev` on
+`observations` as `bigint NOT NULL DEFAULT 1` with its `CHECK (memory_rev > 0)` and
+`case_origin_key` as nullable text with an index; `job_id` on `synthesis_passes` as a nullable
+foreign key to `memory_jobs` set null on delete, and `input_hash` as nullable text, indexed
+with the topic. The plan asks `memory_rev` to be backfilled to the highest photographed
+revision of the row or 1, and the default is that backfill: the `observation` revision kind
+existed since delivery A and nothing ever wrote it, so every legacy row starts at 1 and
+`ensureBaselineRevisions` photographs it there at the next start; null in the three new
+nullable columns is a value never recorded, never a checked absence. `0068_observation_kinds_d`
+adds `kind` — nullable text with a `CHECK` on the seven kinds the distiller writes: `reaction`,
+`choice`, `reason`, `condition`, `exception`, `counterexample`, `correction` — and `referent`,
+nullable text, both null on every legacy row. The ambiguous reaction of plan §21.3 is a row of
+kind `reaction` with the literal referent `unknown`, and the filter that keeps it out of every
+synthesis is spelled with `coalesce` on both columns, because `not (null = …)` is null and a
+`where` reads null as false: without it every legacy observation would have vanished from the
+synthesis the day the column arrived. `0069_memory_usage_quota` is delivery E's
+([memory-capture.md](memory-capture.md), «The storage quota»), generated by `drizzle-kit`
+with its snapshot chained: it creates `memory_usage` and touches nothing else. The rows are
+born empty on purpose — the migration deletes no legacy content to fit and counts none of it
+either — and the worker's first heartbeat fills them from the payloads already in the catalog
+before it reads the gate, so a catalog that migrates with more than the quota reports its size,
+pauses new automatic retention from that heartbeat, and keeps everything it had. The review of the same day added two more,
+both hand-written and one statement each: `0070_memory_storage_reservations` puts
+`storage_reserved_bytes` on `memory_jobs` — `bigint`, default 0, `NOT NULL`, with a check that
+keeps it between zero and the safe integer — so a paid answer has its room reserved before the
+call leaves and a legacy row keeps its staged answer with a zero reservation; and
+`0071_memory_backfill_permissions` puts a nullable `permission_snapshot` jsonb on
+`memory_source_cursors`, the exact grants that authorised a historical range, so that turning a
+permission off and on again does not revive an older approval
+([memory-capture.md](memory-capture.md)).
 
 One more thing a hand-written entry has to get right: its `when`. The migrator applies
 whatever is newer than the last `created_at` the database remembers, so a `when` set in the
@@ -332,10 +420,16 @@ Before deleting, what a human or an agent wrote moves to the heir. The heir is t
 —just scanned, or already catalogued outside the scope— whose `git:` identity matches the
 condemned one's, and **only if it is unique**: two copies claiming the same identity are
 the same ambiguity that `assignIdentities` resolves by handing out nothing, and handing out
-memory blindly would be worse than losing it. Nine tables get re-pointed: `notes`,
-`agent_sessions`, `agent_activities`, `tasks`, `consultations`, `servings`, `launches`, `runs`
-and `handoffs` —the last one hangs off the project with `set null` and not a cascade, but the
-point is the same: a moved folder must not orphan what a person asked for from it.
+memory blindly would be worse than losing it. Thirteen tables get re-pointed: `notes` and
+`commitments` (each moved row goes to the heir at `memory_rev + 1` and is photographed there
+with reason `scope` and the heir as `scope_ref`, so a purge or a read by the heir's id reaches
+what it says while the earlier photographs keep the old project as history — plan §22.12.8),
+`agent_sessions`, `agent_activities`, `tasks`, `consultations`, `servings`, `memory_contexts`,
+`launches`, `runs`, `handoffs` —that one hangs off the project with `set null` and not a
+cascade, but the point is the same: a moved folder must not orphan what a person asked for
+from it—, `memory_jobs` and `session_facts`. `memory_contexts` is there for a reason of its
+own: losing a context with the folder would set every offer's `context_id` to null and make
+the memory that already travelled eligible all over again.
 
 **The gap is declared in the code itself:** if the new location is not in the catalog yet
 when the old one is pruned, there is no heir in sight and the memory goes with the row.
@@ -388,7 +482,8 @@ prototype something you never have to rewrite. There `checkpoint` does nothing, 
 right: a `CHECKPOINT` is superuser business, on a managed Postgres you cannot do it and do
 not need to, and that server has its own shutdown policy. The function exists all the same
 so that whoever calls it does not have to ask what it is talking to. What does change is
-the product: fifteen HTTP handlers refuse to work against a remote catalog, because with
+the product: forty-one HTTP handlers in thirty-four route files refuse to work against a
+remote catalog (counted 14-Sep-2026, [http-api.md](http-api.md)), because with
 the database on another machine the folders are not on the server's disk.
 
 ## What takes up the disk, and what regenerates
@@ -443,7 +538,18 @@ exclusive lock and is not something you slip in at the end of every scan. The pr
   and the first one are kept.
 - **`servings` is not pruned, and that is a decision.** At local-catalog pace it will take
   years to weigh anything; the day it weighs, the right pruning is to compact the oldest
-  into per-day aggregates, and that day gets decided in its header and not in silence.
+  into per-day aggregates, and that day gets decided in its header and not in silence. Since
+  14-Sep-2026 a v2 offer carries its rendered text, so the row is heavier than the legacy
+  one; what takes the text away is a purge, which blanks it and keeps the coordinates.
+- **The photographs of a moved project's criteria, decisions and observations keep the
+  identity as their scope**, which is what they had: `rehomeMemory` photographs the notes and
+  the commitments under the heir (their scope is a project id) and leaves the identity-scoped
+  kinds alone, because an identity survives the move by definition.
+- **`memory_sources` and `memory_source_cursors` are written only through
+  `packages/db/src/memory-sources.ts`**, and a cursor row never carries its lease token in
+  what it returns; a purged source stays as a tombstone — status `purged`, locator, file
+  identity and anchor blanked — with its cursors revoked in the same call, so the next sweep
+  does not recapture it.
 - **`verdicts` has no foreign key against anything**, so it can pile up quotes from folders
   that no longer exist: in the author's catalog there are 487, nearly all of them from work
   done where panoma has never scanned. With a foreign key, mining a year and a half of

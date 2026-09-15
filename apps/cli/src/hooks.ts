@@ -3,9 +3,24 @@ import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import pc from "picocolors";
-import { HOOKS_BRAND, hookIsOurs, mergePreToolUse, mergeStop, postCommitScript, removeStop } from "@panoma/core";
-import { say } from "./messages";
-import { panomaCommand, asShellLine } from "./environment";
+import {
+  MANAGED_EVENTS,
+  gitScanOrder,
+  hookIsOurs,
+  hookStateOf,
+  managedHooks,
+  mergeManagedHooks,
+  mergePreToolUse,
+  mergeStop,
+  postCommitScript,
+  removeManagedHooks,
+  removeStop,
+  settingsText,
+  type HookEvent,
+  type HookState,
+} from "@panoma/core";
+import { say, type MessageKey } from "./messages";
+import { panomaCommand, type PanomaCommand } from "./environment";
 
 const run = promisify(execFile);
 
@@ -18,34 +33,36 @@ const run = promisify(execFile);
  * record that depends on the goodwill of the person recording it is not a record: it is an
  * optimistic estimate.
  *
- * So it is captured from the outside and through two routes, which cover different gaps:
- *
- * - **`post-commit` from git**, which is triggered with every commit, no matter who it comes from
- * —yours, Claude's, Cursor's, from a script—, but only if there was a commit;
- * - **`Stop` by Claude Code**, which is triggered when the agent finishes their shift, even if
- * they haven't committed anything.
- *
- * Both do the same thing: `panoma scan . --save`, in the background and without noise. No new
- * endpoint is invented — `/api/agent/log` asks for an agent key and a hook has none — so the same
- * door through which everything else already comes in is used.
+ * So it is captured from the outside, through git's `post-commit` — which fires on every commit,
+ * whoever it comes from — and through Claude Code's events: `Stop` when the agent ends its turn,
+ * `PreToolUse` right before an edit, `SessionStart` when a context is new, `SessionEnd` when it
+ * closes. None of them invents an endpoint: the first two run `panoma scan` and `panoma signal`,
+ * the door everything else already comes in through; the last two ask the catalog for the memory
+ * contract and hand it a pointer, and both end quietly whatever happens.
  */
 
 /*
-  The tag, the post-commit hook, and the merges live in @panoma/core
-  (`hooks-install.ts`) since the bridge won its button: the web and this command write
-  the same two files, and the logic of what to write has only one truth. Here remains what belongs
-  to the terminal: to decide where, to warn in color, and to yield to what is other's.
+  The brand, the identities, the post-commit script and the mergers live in @panoma/core
+  (`hooks-install.ts`, `hook-invocation.ts`) since the bridge won its button: the web and this
+  command write the same two files, and the logic of what to write has only one truth. Here
+  remains what belongs to the terminal: to decide where, to warn in color, and to yield to what
+  is other's.
  */
-const BRAND = HOOKS_BRAND;
 export { mergeStop, mergePreToolUse, postCommitScript, removeStop };
 
 export type HookAction = "install" | "remove" | "status";
+
+/** The resolver is injectable so a test can drive this command and the button on the same entry. */
+export interface HooksOptions {
+  command?: () => Promise<PanomaCommand>;
+}
 
 export async function hooksCommand(
   directory: string,
   api: string,
   action: HookAction,
-  ): Promise<number> {
+  options: HooksOptions = {},
+): Promise<number> {
   const root = resolve(directory);
   const hooks = await hooksDir(root);
 
@@ -61,7 +78,7 @@ export async function hooksCommand(
   const anterior = await readFile(postCommit, "utf8").catch(() => undefined);
   const settings = await claudeSettings(root);
 
-  if (action === "status") return countState(root, postCommit, anterior, settings);
+  if (action === "status") return reportState(root, postCommit, anterior, settings);
   if (action === "remove") return remove(postCommit, anterior, settings);
 
   /*
@@ -80,7 +97,8 @@ export async function hooksCommand(
     return 1;
   }
 
-  const { argv, aviso, efimero } = await panomaCommand();
+  const resolved = await (options.command ?? panomaCommand)();
+  const { argv, aviso, efimero } = resolved;
 
   /*
     And here it refuses rather than writing something that looks installed and is not. A hook is a
@@ -97,33 +115,32 @@ export async function hooksCommand(
     return 1;
   }
 
-  if (aviso) process.stderr.write(`${pc.yellow("!")} ${pc.dim(aviso)}\n`);
+  /*
+    The same refusal for every other way the command could be gone tomorrow: it lives in a
+    temporary folder, it is not on the disk, it is a source file, or — the case that was measured
+    at 556 silent failures — it did not answer to `--version` in a shell with no PATH. The
+    resolver proved what it could; what it could not prove is not written.
+   */
+  if (!resolved.durable) {
+    if (aviso) process.stderr.write(`${pc.yellow("!")} ${pc.dim(aviso)}\n`);
+    else process.stderr.write(pc.yellow(`${say("hooks.undurable", { detail: undurableDetail(resolved) })}\n`));
+    process.stderr.write(pc.dim(`${say("hooks.undurableHint")}\n`));
+    return 1;
+  }
 
-  // The git hook can say '.' because git always runs its hooks from the root of the repository.
-  // Claude Code's hook includes the full path: there, the working directory depends on where the
-  // session was launched from, and a `scan .` in the wrong place does not cause an error — it puts
-  // another project in the directory.
-  const paraGit = asShellLine([...argv, "scan", ".", "--save", "--api", api]);
-  const paraClaude = `${asShellLine([...argv, "scan", root, "--save", "--api", api])}  ${BRAND}`;
+  const managed = managedHooks(argv, root, api);
+  const before = hookStateOf({ postCommit: anterior, settings: settings?.content });
 
   /*
     The contents of the two files are calculated before writing either. If Claude's settings have
     a form that we don't understand, what cannot happen is that we have already left half of the
     other half installed.
    */
-  // The accident site signal: before each edition, ask about the route.
-  const paraSignal = `${asShellLine([...argv, "signal", root, "--api", api])}  ${BRAND}`;
-
-  let pending: { path: string; text: string; updatedAt: boolean } | undefined;
+  let pending: { path: string; text: string } | undefined;
   if (settings) {
     try {
-      const stopMerge = mergeStop(settings.content, paraClaude);
-      const { result, updatedAt } = mergePreToolUse(stopMerge.result, paraSignal);
-      pending = {
-        path: settings.path,
-        text: `${JSON.stringify(result, null, 2)}\n`,
-        updatedAt: stopMerge.updatedAt || updatedAt,
-      };
+      const { result } = mergeManagedHooks(settings.content, managed);
+      pending = { path: settings.path, text: settingsText(result) };
     } catch (error) {
       process.stderr.write(
         pc.yellow(`${say("hooks.cantWrite", { path: settings.path, reason: (error as Error).message })}\n`),
@@ -133,7 +150,7 @@ export async function hooksCommand(
   }
 
   await mkdir(hooks, { recursive: true });
-  await writeFile(postCommit, postCommitScript(paraGit), "utf8");
+  await writeFile(postCommit, postCommitScript(gitScanOrder(argv, api)), "utf8");
   // The `mode` of `writeFile` only applies when creating: if the file already existed, a hook
   // without execution permission is a hook that git silently ignores.
   await chmod(postCommit, 0o755);
@@ -144,10 +161,12 @@ export async function hooksCommand(
 
   if (pending) {
     await writeFile(pending.path, pending.text, "utf8");
-    facts.push(
-      `${pc.green("✓")} ${say("hooks.stopInstalled", { path: pc.dim(pending.path) })}${pending.updatedAt ? pc.dim(say("hooks.updated")) : ""}`,
-      `${pc.green("✓")} ${say("hooks.signalInstalled", { path: pc.dim(pending.path) })}`,
-    );
+    for (const event of MANAGED_EVENTS) {
+      const updated = before.events[event] !== "missing";
+      facts.push(
+        `${pc.green("✓")} ${say(EVENT_LINE[event], { path: pc.dim(pending.path) })}${updated ? pc.dim(say("hooks.updated")) : ""}`,
+      );
+    }
   }
 
   process.stdout.write(
@@ -159,6 +178,24 @@ export async function hooksCommand(
 }
 
 const isOurs = hookIsOurs;
+
+/** One sentence per event, for the install receipt and the status. */
+const EVENT_LINE: Record<HookEvent, MessageKey> = {
+  Stop: "hooks.stopInstalled",
+  PreToolUse: "hooks.signalInstalled",
+  SessionStart: "hooks.briefInstalled",
+  SessionEnd: "hooks.sessionInstalled",
+};
+
+/** Why the command would not be there tomorrow, in one clause. */
+function undurableDetail(resolved: PanomaCommand): string {
+  const entry = resolved.argv[1] ?? resolved.argv[0] ?? "panoma";
+  if (resolved.reason === "ephemeral") return say("hooks.undurableEphemeral", { entry });
+  if (resolved.reason === "probe_failed") {
+    return say("hooks.undurableProbe", { entry, detail: resolved.detail ?? "no answer" });
+  }
+  return say("hooks.undurableMissing", { entry });
+}
 
 /**
  * Where does git have its hooks here.
@@ -186,10 +223,11 @@ async function hooksDir(root: string): Promise<string | undefined> {
  *
  * It is taught **without the mark**: whoever sticks it on their own hook does not want a
  * `--install` from tomorrow to confuse their file with one of ours and overwrite it completely.
+ * And without the probe: this is text for a person to paste, not a file for a process to run.
  */
 async function scanOrder(api: string): Promise<string> {
-  const { argv } = await panomaCommand();
-  return `${asShellLine([...argv, "scan", ".", "--save", "--api", api])} >/dev/null 2>&1 &`;
+  const { argv } = await panomaCommand({ probe: false });
+  return `${gitScanOrder(argv, api)} >/dev/null 2>&1 &`;
 }
 
 interface ClaudeSettings {
@@ -245,10 +283,11 @@ async function remove(
   }
 
   if (settings) {
-    const { result, removed } = removeStop(settings.content);
+    // Everything of ours, legacy entries included: removing the hooks means removing them all.
+    const { result, removed } = removeManagedHooks(settings.content);
     if (removed > 0) {
-      await writeFile(settings.path, `${JSON.stringify(result, null, 2)}\n`, "utf8");
-      facts.push(`${pc.green("✓")} ${say("hooks.stopRemoved", { path: pc.dim(settings.path) })}`);
+      await writeFile(settings.path, settingsText(result), "utf8");
+      facts.push(`${pc.green("✓")} ${say("hooks.claudeRemoved", { path: pc.dim(settings.path), n: removed })}`);
     } else {
       facts.push(pc.dim(say("hooks.noPanomaHook", { path: settings.path })));
     }
@@ -258,29 +297,46 @@ async function remove(
   return 0;
 }
 
-function countState(
+/**
+ * What is here, event by event, and whether it can run.
+ *
+ * Three evidences, and the status keeps them apart on purpose: the brand is present, the identity
+ * is the current one, and the command it names still exists on this disk. The old status said
+ * «there is a Claude Code hook» when the brand appeared anywhere in the JSON, which is how a
+ * catalog carried 556 hooks that could not run and a status that called them installed.
+ */
+function reportState(
   root: string,
   postCommit: string,
   anterior: string | undefined,
   settings: ClaudeSettings | undefined,
 ): number {
-  const brand = (present: boolean) => (present ? pc.green("✓") : pc.dim("·"));
-  const stopPresent = settings ? JSON.stringify(settings.content).includes(BRAND) : false;
+  const state: HookState = hookStateOf({ postCommit: anterior, settings: settings?.content });
+  const mark = (present: boolean) => (present ? pc.green("✓") : pc.dim("·"));
 
-  process.stdout.write(
-    [
-      "",
-      `  ${pc.bold(say("hooks.statusTitle"))} ${pc.cyan(root)}`,
-      "",
-      `      ${brand(anterior !== undefined && isOurs(anterior))} ${say("hooks.gitPostCommit", { path: pc.dim(postCommit) })}`,
-      settings
-        ? `      ${brand(stopPresent)} ${say("hooks.stopInstalled", { path: pc.dim(settings.path) })}`
-        : `      ${pc.dim(say("hooks.noSettings"))}`,
-      "",
-      pc.dim(`      ${say("hooks.statusHint")}`),
-      "",
-      "",
-    ].join("\n"),
-  );
+  const lines = [
+    "",
+    `  ${pc.bold(say("hooks.statusTitle"))} ${pc.cyan(root)}`,
+    "",
+    `      ${mark(state.postCommit)} ${say("hooks.gitPostCommit", { path: pc.dim(postCommit) })}`,
+  ];
+
+  if (settings) {
+    for (const event of MANAGED_EVENTS) {
+      const eventState = state.events[event];
+      const suffix =
+        eventState === "legacy" ? pc.yellow(say("hooks.eventLegacy")) : eventState === "missing" ? pc.dim(say("hooks.eventMissing")) : "";
+      const symbol = eventState === "installed" ? pc.green("✓") : eventState === "legacy" ? pc.yellow("!") : pc.dim("·");
+      lines.push(`      ${symbol} ${say(EVENT_LINE[event], { path: pc.dim(settings.path) })}${suffix}`);
+    }
+  } else {
+    lines.push(`      ${pc.dim(say("hooks.noSettings"))}`);
+  }
+
+  if (state.durable === true) lines.push(`      ${pc.green("✓")} ${say("hooks.durable")}`);
+  else if (state.durable === false) lines.push(`      ${pc.yellow("!")} ${say("hooks.notDurable")}`);
+
+  lines.push("", pc.dim(`      ${say("hooks.statusHint")}`), "", "");
+  process.stdout.write(lines.join("\n"));
   return 0;
 }

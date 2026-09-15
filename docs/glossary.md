@@ -73,9 +73,28 @@ text that comes from the client: the browser sends a slug and a kind, and the se
 Letting a tab dictate the text would be letting it write instructions for your agent.
 → [twin.md](twin.md)
 
+**auto-learn · `twinAutoLearn`** — The third purpose a grant can carry, since 14-Sep-2026:
+the Twin learning from the owner's new turns of a source and a scope on its own, granted
+only on top of an enabled capture of the same scope, at notice 1, and never touching the
+inferred switch. Under it the worker freezes the new turns into a batch after 30 minutes of
+quiet — or 4 hours after the first pending turn — and pays for one stage at a time inside the
+`read` cap, under a subquota of `min(6, cap)` attempts a day across the three stages and 4 per
+scope. `panoma memory allow <source> twin`. Learning and publishing stay two acts.
+→ [twin-learning.md](twin-learning.md)
+
+**backfill** — Another consent, with an explicit source, purpose and range: a re-read of what
+was written before a permission existed, planned first (`POST /api/memory/backfill` with
+`dryRun: true`, `panoma memory backfill`) and confirmed as exactly that plan. Its cursors live
+under a grant id of their own, `grant_backfill_<plan uuid>`, bounded by `allowedFrom` and
+`allowedTo` from the records' own timestamps, and the ordinary cursor never moves back. The
+`twin` purpose is refused in delivery B, and still in D. → [memory-capture.md](memory-capture.md)
+
 **belief** — What the synthesis writes about your taste, and the only one of the twin's three
-floors that reaches the agents. It can be signed, vetoed and narrowed to one project.
-→ [twin.md](twin.md)
+floors that reaches the agents. It can be signed, vetoed and narrowed to one project. Since
+14-Sep-2026 it may carry typed `conditions` and `exceptions` — a predicate the selector judges
+in three values and every agent reads inside the rule as `Applies when:` and `Except when:` —
+and, when it is an inference, `support_evidence`: the families of independent origin behind
+it. → [twin.md](twin.md) · [twin-learning.md](twin-learning.md)
 
 **cap** — How many calls of one family fit today, and who decided the number. Four sources, in
 order: the pause in `~/.panoma/spend.json` (every cap reads as zero), the family's
@@ -85,9 +104,24 @@ the factory value and never to "no limit". → [budgets.md](budgets.md)
 
 **the card** — A project's page on the web: `/p/<slug>`. → [web-app.md](web-app.md)
 
+**case** — The decision case of a task, read as four columns from rows that already exist —
+what was asked, what was decided, what the agent declared, what was checked — and never
+stored: it has no row and no revision, and a half nothing was recorded for says `unknown`
+instead of a story written to fill it. A closing report is declared; a look at the disk is
+checked; the two never merge. → [memory-checks.md](memory-checks.md)
+
 **catalog** — The web server (`@panoma/web`) plus its PGlite database in `~/.panoma/db`. It is
 the only writer; the CLI, the MCP server and the browser talk to it over HTTP. It comes up
 with `panoma up`. → [architecture.md](architecture.md)
+
+**check** — What a unit of the memory says can be looked at on the disk, since 14-Sep-2026:
+`{ schemaVersion: 1, checkId, revision, purpose, kind, target, expected }` on a note, a
+criterion, a decision or a commitment, in one of seven closed kinds (a path exists, a file's
+hash, a literal present or absent, a script of a manifest, a direct dependency, a key of a
+JSON, TOML or YAML file) and with a mandatory purpose — `grounds`, `applicability`,
+`violation` or `completion` — that says what a `fail` does. Its revision moves only when its
+definition does, never when it is observed. A first-generation sentinel is a check read
+without a purpose of its own, as `grounds`. → [memory-checks.md](memory-checks.md)
 
 **the cheap failure** — The deliberate choice between the two errors a path can make. In
 `panoma signal`, repeating a signal beats losing one; in the daily report, seeing something
@@ -97,11 +131,26 @@ twice beats deleting it unread. → [doctrine.md](doctrine.md)
 a neutral path, with a `prepack` that refuses in the face of a dirty tree or a stale artifact.
 → [release.md](release.md)
 
+**commitment** — A human obligation with a version: a text, a project, an optional task,
+typed conditions and up to six completion criteria, in the state `open`, `fulfilled` or
+`cancelled`. Only the owner or the criteria the owner approved close it, an agent's «done» is
+a report, a failed check while it is open changes nothing, and a closed one is never
+reopened — a new one continues it. What the disk observed of it lives apart, as observations.
+→ [memory-checks.md](memory-checks.md)
+
 **conversation** — The transcript an agent keeps on disk for one chat: Claude Code's
 `.jsonl` under `~/.claude/projects`, a Codex rollout, an OpenCode session row, a Gemini chat
 file. panoma reads it where it is and never receives it. Not a *session*: `agent_sessions`
 are the logbook sessions of the agent channel, the fifth homonym above.
 → [handoff.md](handoff.md)
+
+**context, and its generation** — What one recipient of memory keeps, as against a session,
+which is a conversation: one row of `memory_contexts` per project, harness, entrypoint,
+recipient and native session key, with a `generation` that rises on every start, resume or
+compaction — the moments at which what the previous context saw is gone — and a rule that
+follows: a rule seen under generation 1 is eligible again under generation 2. A subagent has
+its own context. The catalog is the authority; no file shared by the hooks decides an
+exclusion. → [memory-contract.md](memory-contract.md)
 
 **coverage** — How many of an episode's nine dimensions were recorded: context, goal,
 constraints, alternatives, decision, rationale, outcome, conditions and exceptions. It counts
@@ -154,11 +203,18 @@ decision: it is a typo nobody sees. → [review.md](review.md)
 **the engine** — `@panoma/core`: what reads the disk and produces facts. It does no network,
 uses no model and writes in nobody's projects. → [analysis.md](analysis.md)
 
-**expiry** — The optional last day a decision applies, written by the owner on a decision
-episode and stored as that calendar day at 23:59:59.999 UTC. Past it the record stops reaching
-the agents' briefing, task matches and the Lab, and stays in the owner's archive marked expired.
-Nothing expires by itself, and no note has one: it is a property of a decision.
-→ [decision-memory.md](decision-memory.md)
+**environment** — The state of the disk an observation was made in: the resolved root, the
+commit `.git/HEAD` names (read without running git), and a fingerprint of the files the
+checks inspected with their hashes, hashed together into an `environmentId`. Two dirty
+worktrees at one HEAD are two environments, and a verification never transfers between them;
+HEAD is information, never an equivalence. → [memory-checks.md](memory-checks.md)
+
+**expiry** — The optional last day a decision — and, since 14-Sep-2026, a note — applies,
+written by the owner and stored as that calendar day at 23:59:59.999 UTC. Past it the record
+stops reaching the agents' briefing, task matches and the Lab, and stays in the owner's
+archive marked expired. Nothing expires by itself; the freshness of a check's observation is a
+flag on the read and not an expiry of anything.
+→ [decision-memory.md](decision-memory.md), [memory-checks.md](memory-checks.md)
 
 **export** — One project's memory carried out of the catalog as a single versioned JSON
 document: the notes in every state, the decisions with their revision links, the owner's
@@ -166,6 +222,15 @@ general decisions and the distiller's receipts, never a lease token. It is the e
 the audit's portable-memory proposal only: nothing imports it back, and it asks for the
 operator key because it carries the owner's own testimony. `panoma memory export <project>`,
 `GET /api/memory/export`. → [memory.md](memory.md)
+
+**fact** — The smallest thing the catalog keeps from a transcript without a paid call and
+without a person reading it: a row of `session_facts` of one of eight closed kinds — `read`,
+`edit`, `command`, `test_result`, `failure`, `commit`, `lifecycle`, `receipt_seen` — with a
+closed payload that carries a family, a tool name and bounded paths and never a command line,
+a prompt, an answer or a tool's output. Identified by the stream generation, the byte offset,
+the sub-index within the record and the parser version; one reading per event is what a
+consumer keeps when two versions coexist. Opened by the version-2 notice of the capture grant.
+→ [memory-capture.md](memory-capture.md)
 
 **fail closed** — Refusing everybody when the credential is missing, instead of guessing who
 is calling. It is what the middleware and `localOperatorOnly` do with the port open.
@@ -180,11 +245,28 @@ canonical one is the living copy, picked by `rank` — recency rules, and having
 real history counts. The rest are copies and do not show up in the grid.
 → [discovery.md](discovery.md)
 
+**family (of cases)** — The unit of support behind an inference, since 14-Sep-2026: every
+observation names the origin of its quotes (`case_origin_key` — a stream turn as
+`<harness>:<native session key>:<recipient>`, a lesson as `teach:<gesture>`), and two
+observations with one origin are one family. A copy, a relay, a compaction summary or the
+system's own output carries `copied:` and founds none; `unknown` founds none; a legacy row
+carries null. A new or revised inference publishes on its own only with the legacy floor and
+3 families of known origin. Neither the family of copies below nor the family of kinds.
+→ [twin-learning.md](twin-learning.md)
+
 **family (of kinds)** — The unit a cap holds back: one or more kinds of the spend ledger that
-are one job to the person. Seven —`read`, `look`, `memory`, `ask`, `rehearse`, `episodes`,
-`card`— and `read` counts three kinds because distilling, sorting and synthesizing are one
-chained job, `card` two because the two buttons of a project's card are one gesture repeated.
-Not the family of copies above. → [budgets.md](budgets.md)
+are one job to the person. Nine —`read`, `look`, `memory`, `ask`, `rehearse`, `episodes`,
+`card`, `app`, `handoff`— and `read` counts three kinds because distilling, sorting and
+synthesizing are one chained job, `card` two because the two buttons of a project's card are
+one gesture repeated. Not the family of copies above. → [budgets.md](budgets.md)
+
+**fingerprint (of a topic)** — The sha256 of what a synthesis of one topic would read, at its
+revisions: the admissible observations' photographs, the alive criteria whose latest revision
+is a person's gesture and not the cycle's own output, their conditions, exceptions and
+scopes, the vetoes, the learning grants' generations, the processor and prompt versions.
+Recorded in `synthesis_passes.input_hash`; a wake that computes the same one pays nothing,
+and the synthesis' own output never moves it. Not the design fingerprint above.
+→ [twin-learning.md](twin-learning.md)
 
 **fitted capture** — A screenshot reduced so that its long edge measures 1,568 px before it is
 shown to the critic with eyes, because an image is charged by its pixels. It happens only when
@@ -204,6 +286,19 @@ the disk, how many reactions of yours really survive and why the rest falls away
 without going through `POST /api/notes`, which is the card: approve and discard do not exist
 in the agent channel, not even with a key. → [memory.md](memory.md)
 
+**grant** — A permission with a purpose and a scope on top of a history source's base yes:
+`{ grantId, generation, source, purpose, scope, scopeKeys, enabled, noticeVersion,
+activatedAt }` in `twin.json`. In delivery A the one purpose that does anything is
+`memoryCapture`, which lets the receipt reader open Claude Code's transcripts of one project
+or of every project and read nothing but receipt and lifecycle records; since delivery B its
+notice version 2 also opens the typed facts, and `memoryExtract` is a grant of its own, on top
+of an enabled capture for the same scope, with its own boundary; since delivery D
+`twinAutoLearn` is the third, on the same terms and with a `twin_extract` cursor of its own
+(→ auto-learn above); `generation` moves
+only when the grant is switched on again, and a cursor is re-armed at the new boundary, never
+behind it. Revoking the base yes revokes the grant. → [memory-contract.md](memory-contract.md)
+· [memory-capture.md](memory-capture.md)
+
 **the guard** — Not one piece: it is the house word for anything that says no. See above.
 → [guards.md](guards.md)
 
@@ -222,6 +317,13 @@ never "bypass": the wording is "continue your work elsewhere". → [handoff.md](
 **heir** — The one project with the same stable identity that whatever a person or an agent
 wrote moves to, before the doomed row is pruned. If there is none, that memory goes with the
 row, and it is declared. → [database.md](database.md)
+
+**incident** — What a `violation` check, or a `grounds` check on a decision or a criterion,
+or a `completion` check after the obligation was fulfilled, opens when it fails: an occurrence
+with an identity of its own, `inc_<uuid>`, new each time even with the same text and the
+same HEAD, whose only mutable field is the owner's verdict — `confirmed` or `false_positive`,
+never obeyed or ignored. A repeat on the same occurrence adds an observation and opens
+nothing. The rule it concerns stays exactly as it is. → [memory-checks.md](memory-checks.md)
 
 **isolated worktree** — The real copy of the repository, in a temporary directory and with its
 own HEAD, where everything panoma executes runs. It isolates THE CHANGES, not the process: the
@@ -255,12 +357,28 @@ file is the user's and is never touched. → [agents-md.md](agents-md.md)
 
 **the mark** — The literal string `# panoma-hooks` inside a hook's own command. It tells ours
 from other people's, and it goes there because a `.json` has no room for comments and hooks
-are run with a shell. → [hooks.md](hooks.md)
+are run with a shell. Since 14-Sep-2026 the brand in a Claude Code hook carries the verb —
+`# panoma-hooks scan` · `signal` · `brief` · `session` — and is part of the hook's identity
+(brand, event, verb and matcher): reinstalling replaces only the entry with the same identity.
+An entry with the bare `# panoma-hooks` is still recognized as ours, called **legacy**, and
+upgraded in place by `--install`. In `post-commit` the brand stays bare: there the file is the
+hook. → [hooks.md](hooks.md)
 
-**memory job** — One row of `memory_jobs` per closed agent session: the distiller's durable
-to-do, with its status (`pending`, `running`, `deferred`, `failed`, `complete`), its attempts,
-its lease and its receipt. Queued in the same transaction as the session close, drained by
-the worker inside the web server, never by the HTTP turn. → [memory.md](memory.md)
+**memory contract** — What an agent receives from the memory since 14-Sep-2026, as one
+document with a version: the units that travelled whole, the checks left open, the coverage of
+the search, what was omitted and why, the snapshot the selection was made at, and the exact
+text emitted. `ready` means the required units are all there as the request declared it,
+never that the agent may act. `MemoryContractV2` in `packages/core/src/memory-contract.ts`.
+→ [memory-contract.md](memory-contract.md)
+
+**memory job** — One row of `memory_jobs`: the legacy distiller's durable to-do over a closed
+agent session (`processor legacy_session`, queued in the same transaction as the session
+close) or, since delivery B, a frozen window of the paid extraction (`project_extract`, keyed
+by its work key). Its states are `pending`, `running`, `staged`, `deferred`, `failed`,
+`complete`, `cancelled` and `obsolete`; `attempts` counts claims and the paid calls live in
+`model_calls`; every write by the worker is compare-and-set on the pair `(lease_token, rev)`.
+Drained by the worker inside the web server, never by the HTTP turn.
+→ [memory.md](memory.md) · [memory-capture.md](memory-capture.md)
 
 **narrative** — A verified owner turn captured from the agent history with its conversation
 role —`opening`, `brief` or `reaction`— and the assistant's preceding context kept apart. The
@@ -275,9 +393,23 @@ cookie. → [network-access.md](network-access.md)
 per project, no history, up to 300 characters, and the only write to the catalog where panoma
 contributes nothing. → [cli.md](cli.md)
 
-**observation** — What a model distills out of several quotes of yours. It does not touch the
-profile, it asks for nothing and it reaches no agent: it is the material a belief comes out
-of. → [twin.md](twin.md)
+**observation** — Two things since 14-Sep-2026. The twin's: what a model distills out of
+several quotes of yours — since delivery D with the origin of the quotes, a kind among seven
+and a referent, and photographed at a revision like a note; it does not touch the profile, it
+asks for nothing and it reaches no agent — it is the material a belief comes out of, unless it
+is a reaction whose referent is `unknown`, which founds nothing (→ [twin.md](twin.md),
+[twin-learning.md](twin-learning.md)). A check's: one look
+at the disk, written once and never corrected — the check revision, the environment, `pass`,
+`fail` or `unknown` with the reason, the files inspected and whether the revision had been
+delivered before — one row of `memory_outcomes` on the occurrence of that check in that state;
+`stale` ten minutes later or when an inspected file moves, which asks for another look and
+turns no rule on or off (→ [memory-checks.md](memory-checks.md)). Say which.
+
+**offer** — A memory contract written down before its bytes leave the process: the row in
+`servings` with `schema_version = 2`, holding the rendered text, its two hashes, the unit
+manifest, the policy snapshot, the channel, the recipient and the context. Immutable; a retry
+adds an **attempt** event and never moves the first offer's time. An offer proves what panoma
+prepared, not that it arrived. → [memory-contract.md](memory-contract.md)
 
 **on-the-spot enrollment** — `panoma_context` analyzing and enrolling a project that was not
 in the catalog, inside the same call, instead of sending the person off to open a terminal. It
@@ -289,14 +421,42 @@ directory, not excluded by hand, and looking like a project root.
 machine. It lives in `~/.panoma/access.json` with 0600 permissions, and it travels in the
 "this machine" link and not in the phone's. → [guards.md](guards.md)
 
+**outbox (of publications)** — The one road a criterion takes to a file since 14-Sep-2026:
+a `taste_publish` job of `memory_jobs`, unpaid, one per target file and manifest — `TASTE.md`,
+or the managed block of one project's `AGENTS.md` or `CLAUDE.md` — that freezes the file's
+hash and the revisions it will write, renders, compares the file before writing, writes it
+whole, reads the bytes back and only then marks the beliefs published in one short
+transaction. A file that moved meanwhile is `deferred` with `file_changed`, a conflict to
+reconcile and never a veto; a crash between the write and the row is recovered by hash. The
+version-2 body of `POST /api/twin/taste` and every automatic publication go through it; the
+legacy body still writes inline. → [twin-learning.md](twin-learning.md)
+
 **owner decisions** — The section of the briefing that carries the owner's recorded decisions
 to an agent through `panoma_context`: owner-authored and active only, with their reasons,
 conditions and exceptions, six at most and no model call. Extracted episodes never travel
 there. → [decision-memory.md](decision-memory.md) · [agent-channel.md](agent-channel.md)
 
+**quota (of storage)** — The ceiling on the logical bytes of derived memory the catalog keeps,
+since 14-Sep-2026 (plan §25.3): 256 MiB per catalog and 64 MiB per project out of the box,
+measured as the canonical UTF-8 bytes of the photographs, the offers with their rendered text,
+the typed facts and the staged answers, and nothing else — never the database on disk, never
+the metadata that lets the owner forget. The counters live in `memory_usage`, charged by the
+writer in its own transaction; an automatic write past the limit is refused
+(`QuotaExceeded`), the owner's own gestures are charged and never refused, a deletion always
+goes through. When reached, the passes pause and say `quota`, a job waits, an offer answers
+`unavailable`, and nothing is pruned to make room. Not a budget: a budget counts calls a day,
+the quota counts bytes held. → [memory-capture.md](memory-capture.md), [budgets.md](budgets.md)
+
 **the portrait · `TASTE.md`** — The few sentences of your taste that go down to all of your
 agents. It lives in `~/.panoma/TASTE.md` as editable plain text, with a hard ceiling of 3,000
 characters: a twin you cannot read is an impostor. → [twin.md](twin.md)
+
+**predicate** — The typed half of a condition or an exception, beside the owner's sentence:
+a tree of `all`, `any` and `not` over six closed leaves — the project, a path, the operation,
+an observed environment, an explicit task label, the result of one of the unit's own checks —
+at most 4 levels deep and 20 leaves wide, evaluated in three values. `unknown` is an answer: a
+fact the request did not declare never lets a condition fail or an exception pass, and it
+travels as the check that would settle it. → [memory-checks.md](memory-checks.md)
 
 **proposal** — What `panoma run` produces: a `panoma/bump-…` branch with a commit and a patch.
 Never a change applied in your tree, never a push, never a PR.
@@ -313,14 +473,35 @@ bounded reason code, never the source text nor the model's answer; the Memory ta
 latest one. For a handoff: a row of `handoffs` saying which conversation became which, when, at which
 tier, on which surface, what was left behind, the command that resumes it and —since
 12-Sep-2026— who asked for it (*requested by*); the panel reads it to say "already handed to
-that agent" before writing a second copy, and so does the dry run of `panoma_handoff`.
-→ [memory.md](memory.md) · [handoff.md](handoff.md)
+that agent" before writing a second copy, and so does the dry run of `panoma_handoff`. For
+the memory contract, two more with the same rule: the **reception** the reader writes in
+`serving_events` when it finds an offer's bytes in the program's own transcript — `full`,
+`partial`, `unknown` or `not_observed`, with the coordinate and never the text — and the
+receipt of a withdrawal or a purge: status, what was removed, what was blocked, what stayed
+and the copies panoma cannot reach. → [memory.md](memory.md) · [handoff.md](handoff.md) ·
+[memory-contract.md](memory-contract.md)
 
 **requested by** — `handoffs.requested_by`: the name of the agent whose key ordered a handoff
 through the agent channel, as `requireAgent` resolved it, or null when a person ordered it on
 the screen or in the terminal. The name and nothing else: not the agent's session, not the
 conversation it was in. It is what the agent key buys on that route, attribution, since the
 gate in front of it is the operator's. → [handoff.md](handoff.md)
+
+**reservation** — A row of `model_calls` written before the call leaves, in the state
+`reserved`, under an advisory lock on the family and the local day, with the count that decides
+taken under the same lock; it moves `sent`, then `completed` with the usage, or `uncertain`
+when nothing readable came back (still counted), and only a row proven never sent is
+`released`. Every move is compare-and-set on `reservation_rev`, and a reservation that crosses
+midnight is charged to the day it is sent on. The `memory` family reserves since delivery B;
+the rest still write the row after the answer. → [memory-capture.md](memory-capture.md)
+
+**revision** — The photograph of a note, a belief or a decision episode as it was when it
+changed: one row of `memory_revisions` per `(kind, object id, rev)`, written in the same
+transaction as the change, with `memory_rev` on the row moving by one in the same statement.
+A contract names the revision of every unit it carries; a read of an older one is
+`historical` and never revives it. What was there before 14-Sep-2026 is a `baseline`
+photograph, id, state, text, scope and signature preserved. Not the twin's *revision family*,
+which is a decision's succession by `supersedes_id`. → [memory-contract.md](memory-contract.md)
 
 **revision family** — Every version of one decision, linked by `supersedes_id` in either
 direction, siblings included. One member may be active at a time, and the database enforces
@@ -335,8 +516,10 @@ against what `--api` and with what node interpreter.
 → [single-writer.md](single-writer.md)
 
 **sentinel** — A note's anchor turned into a watch: a file's hash, a path's existence, a text
-it contains. If it falls, the note is disputed and stops being served.
-→ [memory.md](memory.md)
+it contains. If it falls, the note is disputed and stops being served. Since 14-Sep-2026 it
+is the first generation of a **check**, read as one of purpose `grounds` and never rewritten;
+the column it lives in also holds the second generation. → [memory.md](memory.md),
+[memory-checks.md](memory-checks.md)
 
 **the signal** — The delivery of a sleeping note at the scene of the accident: the
 `PreToolUse` hook (`panoma signal`) injects it as `additionalContext` right before the agent
@@ -358,10 +541,24 @@ cost today by family and over the last thirty days by day and by model, and the 
 it — the seven caps, the rates, the currency, the pause and how much of a capture the critic
 is shown — written to `spend.json` without restarting the server. → [budgets.md](budgets.md)
 
+**staged** — A job whose paid answer was validated and saved under its frozen manifest
+(`memory_jobs.staged_output`) and not yet published. It outlives its worker: an expired lease
+or a review queue that filled after paying leaves the answer for the next claim, which
+publishes it without paying again, and the publication re-validates the grants, the sources
+and the deletion barrier first. → [memory-capture.md](memory-capture.md)
+
 **stable identity** — The repository's root commit with the `git:` prefix, plus its path
 inside the repository when the project is not the root. It survives moving and renaming the
 folder, unlike `projects.id`, which is the sha1 of the path. Everything the person decided
 hangs off it. → [database.md](database.md)
+
+**supersession** — A note replaced by its successor: an approval that names `supersedesId`
+moves the predecessor to `superseded` and the successor to `approved` in one transaction, by
+compare-and-set on both revisions, and a predecessor that moved meanwhile approves nothing.
+`superseded` is terminal, a superseded note is not eligible and is found at no revision, and
+the successor's photograph says what it replaced — so a rewrite can be told from a second rule
+without editing, which still does not exist. Not the twin's *revision family*, where
+`supersedes_id` links versions of one decision. → [memory-checks.md](memory-checks.md)
 
 **surface** — Where a conversation is read or continued: the terminal (`cli`) or the vendor's
 desktop app (`app`). The same store either way —Claude.app's Code tab writes the very
@@ -406,6 +603,11 @@ not, because there what is read is exactly what leaves. Before the split one num
 both, and a six-megabyte capture was refused before anybody could reduce it.
 → [budgets.md](budgets.md)
 
+**unresolved scope** — The third scope, beside `global` and `project`: a belief or a decision
+whose scope nobody can name — its project lost its catalog name, or the row says so. Absence of
+a name grants no scope: an unresolved unit stays out of `TASTE.md`, out of every delivery, and
+is counted back to the owner as a scope to resolve. → [memory-contract.md](memory-contract.md)
+
 **untrusted material** — Everything panoma read off the disk and that whoever is asking did
 not write. It goes wrapped in `untrusted_data` with its origin, marked as data and never as
 orders. → [untrusted.md](untrusted.md)
@@ -422,6 +624,28 @@ commit says so. → [run-and-isolation.md](run-and-isolation.md)
 **view** — Each of the card's eleven tabs (`PROJECT_VIEWS`), which crop the page instead of
 jumping to an anchor. → [web-app.md](web-app.md)
 
+**window** — What the paid extraction freezes before it pays: a manifest of byte intervals
+per stream between the extraction cursor and the captured high water, with the owner fragments
+as coordinates and hashes, the fact ids and the context revision ids. Opened when the newest
+record is thirty minutes old, the pending bytes exceed 96 KiB or the oldest pending record is
+four hours old, and only with a useful signal — a turn, an edit, a test result or a failure —
+in it; cut between records at 24,000 UTF-16 units of evidence, the rest left pending.
+→ [memory-capture.md](memory-capture.md)
+
+**work key** — The identity of a window: the SHA-256 of the project id and the canonical JSON
+of its intervals, unique with the processor in `memory_jobs`. The same window enqueued twice
+is one job, a published window is never run again, and activity that arrives while a job runs
+is the next window with a key of its own, never a change to this one.
+→ [memory-capture.md](memory-capture.md)
+
+**withdraw · purge** — The two ways of forgetting under the memory contract, one protocol
+with one word of difference: a **withdrawal** takes eligibility away and keeps the bytes — the
+revisions in scope stop being served, the stream stops being read — and a **purge** blanks the
+copies as well and keeps the coordinates. Both are previewed as a plan, confirmed as an
+operation and answered with a receipt, and both are written to the journal outside the
+database before their row exists; neither touches the program's own transcript, which is
+listed as an external copy. → [memory-contract.md](memory-contract.md)
+
 ## What it does not do / known limits
 
 - **It is not an index of the documentation.** That one is [README.md](README.md); here there
@@ -435,11 +659,15 @@ jumping to an anchor. → [web-app.md](web-app.md)
 - **No test checks that these definitions are still true.** `twin.md` is watched by
   `apps/web/lib/twin-wiring.test.ts`; this one is not, and that is why the entries steer clear
   of numbers that age and stay on the meaning.
-- **Five homonyms are known and all five are said out loud**: "the critic" (mechanical and
+- **Seven homonyms are known and all seven are said out loud**: "the critic" (mechanical and
   with eyes), "the guard" (which is not one piece), "verdict" (the twin's and the build's),
-  "family" (the copies of one project, and the kinds one cap holds back) and "session" (the
-  logbook's, and the agent's own file, which the house calls a conversation). If a sixth turns
-  up, the place to note it is this page, not a comment.
+  "family" (the copies of one project, and the kinds one cap holds back), "session" (the
+  logbook's, and the agent's own file, which the house calls a conversation) and, since
+  14-Sep-2026, "revision" (a photograph of one object, and the twin's *revision family* of a
+  decision's succession) and "observation" (the twin's material for a belief, and a check's
+  look at the disk). "Receipt" is stretched rather than doubled — a job's, a handoff's, a
+  reception's, a deletion's — under one rule, never the text. If an eighth turns up, the place
+  to note it is this page, not a comment.
 - **The links point at the agreed map of `docs/`.** The documents marked as new are written in
   the same batch as this one; if one of them is not there yet, the link is dead and that is
   the sign that it is missing.

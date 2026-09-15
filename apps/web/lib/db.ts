@@ -1,4 +1,4 @@
-import type { Database } from "@panoma/db";
+import { ensureBaselineRevisions, ensureDeletionJournal, ensureDeliveryModes, queueWrite, type Database, type QuarantineReason } from "@panoma/db";
 
 /**
  * Unique connection to the catalog.
@@ -31,8 +31,19 @@ const globalForDb = globalThis as unknown as {
   panomaDb?: Promise<Handle>;
   panomaDbCuidada?: boolean;
   panomaMemoryStop?: () => void;
+  panomaMemoryGuard?: Promise<MemoryQuarantine>;
   panomaClosing?: boolean;
 };
+
+/**
+ * Whether the memory may be served, captured or exported: the deletion journal on disk and the
+ * `memory_deletions` table agreed when the catalog opened. A catalog restored from a backup taken
+ * before a purge, a journal that is missing or torn, or a check that could not run at all, all
+ * read as quarantined — nothing is delivered until a person reconciles (plan §12.2, T56).
+ */
+export type MemoryQuarantine =
+  | { quarantined: false }
+  | { quarantined: true; reason: QuarantineReason | "unavailable" };
 
 export function db(): Promise<{ db: Database }> {
   globalForDb.panomaDb ??= runtimeImport("@panoma/db/client")
@@ -68,6 +79,8 @@ export function db(): Promise<{ db: Database }> {
 function cuidar(handle: Handle): void {
   if (globalForDb.panomaDbCuidada) return;
   globalForDb.panomaDbCuidada = true;
+  // Queued first, so the baseline and the journal check precede the worker's first claim.
+  globalForDb.panomaMemoryGuard = guardMemory(handle.db);
   /*
     The memory worker only starts against a local catalog, and this is a decision deferred, not
     a limitation discovered. Nothing technical stops it from draining a remote one: the
@@ -108,4 +121,32 @@ function cuidar(handle: Handle): void {
       log: (text) => console.error(text),
     });
   });
+}
+
+/**
+ * The three startup passes of the memory contract, queued before any other write of this
+ * process: every note, criterion and decision gets its baseline photograph if it lacks one, the
+ * core of the Twin is seeded from the published manifest (`delivery_mode` follows
+ * `published_as`, plan §5.2/§22.3 — until 14-Sep-2026 nothing set it, so the brief never carried
+ * a criterion), and the deletion journal is created or compared. The result is what
+ * `memoryQuarantine()` answers. A failure of the pass itself is not a green light: it quarantines
+ * with `unavailable`, and the next start tries again.
+ */
+function guardMemory(database: Database): Promise<MemoryQuarantine> {
+  return queueWrite(async (): Promise<MemoryQuarantine> => {
+    await ensureBaselineRevisions(database);
+    await ensureDeliveryModes(database);
+    const journal = await ensureDeletionJournal(database);
+    return journal.quarantined ? { quarantined: true, reason: journal.reason } : { quarantined: false };
+  }).catch((): MemoryQuarantine => ({ quarantined: true, reason: "unavailable" }));
+}
+
+/**
+ * What the routes that deliver, capture or export memory consult first. It waits for the catalog
+ * to open and for the startup pass to finish, so a request that arrives in the first second gets
+ * the real answer rather than a guess.
+ */
+export async function memoryQuarantine(): Promise<MemoryQuarantine> {
+  await db();
+  return globalForDb.panomaMemoryGuard ?? { quarantined: true, reason: "unavailable" };
 }

@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Database } from "@panoma/db";
-import { anchorNote, evaluateSentinel, extractAnchors, patrolSentinels, refreshProjectMemory } from "./sentinels";
+import { pendingPatrols, resetPatrolState } from "./memory-patrol";
+import { anchorNote, evaluateSentinel, extractAnchors, isLegacyAnchor, patrolSentinels, refreshProjectMemory } from "./sentinels";
 
 /**
  * Against disk and real Postgres, because the sentinel IS the comparison with the disk: a double
@@ -252,6 +253,33 @@ describe("la patrulla", () => {
         observed: "missing",
       }),
     ).toBe(false);
+  });
+
+  /*
+    Since delivery C the column holds two generations. The anchors of the first are this
+    patrol's; a check with a purpose and a `chk_` id is the worker patrol's (`memory-patrol.ts`),
+    and reading it with the three-kind reader above would call a `manifest_script` «absent» and
+    challenge a healthy note — which is what this case pins.
+   */
+  it("C01: a new-shape check beside a legacy anchor is left to the patrol, and the visit asks for its turn", async () => {
+    const { addHumanNote, listProjectNotes, putCheck, setSentinels } = await import("@panoma/db");
+    resetPatrolState();
+    const added = await addHumanNote(db, { projectId: PROJECT, body: "The build is package.json's build script." });
+    if (!("id" in added)) throw new Error("did not create the note");
+    await setSentinels(db, added.id, [{ kind: "path_exists", target: "package.json", expected: true }]);
+    const [note] = await listProjectNotes(db, PROJECT);
+    // A check that fails today: the manifest defines no `deploy` script.
+    const put = await putCheck(db, "note", added.id, { purpose: "grounds", kind: "manifest_script", target: "package.json", expected: { name: "deploy" } }, { memoryRev: note!.memoryRev });
+    expect("checkId" in put).toBe(true);
+    const [guarded] = await listProjectNotes(db, PROJECT);
+    expect((guarded!.sentinels as unknown[]).map(isLegacyAnchor)).toEqual([true, false]);
+
+    const result = await refreshProjectMemory(db, { id: PROJECT, root });
+    expect(result).toEqual({ checked: 1, challenged: [] });
+    expect((await listProjectNotes(db, PROJECT)).map((n) => n.id)).toEqual([added.id]);
+    expect(await listProjectNotes(db, PROJECT, ["challenged"])).toHaveLength(0);
+    expect(pendingPatrols()).toEqual([{ projectId: PROJECT, reason: "refresh" }]);
+    resetPatrolState();
   });
 });
 

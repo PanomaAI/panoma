@@ -8,6 +8,7 @@ import {
   MAX_STATEMENTS,
   MAX_STATEMENT_CHARS,
   MAX_VERDICTS_PER_RUN,
+  REFERENT_MAX_CHARS,
   buildPrompt,
   estimateRunTokens,
   parseObservations,
@@ -806,5 +807,30 @@ describe("la materia de cada observación", () => {
    */
   it("una materia ilegible no tira la observación", () => {
     expect(leer(undefined)?.statement).toBe("Una frase.");
+  });
+});
+
+describe("the kind and the referent of an observation (delivery D)", () => {
+  const labels = new Map([["c1", verdict({ id: "v1" })]]);
+
+  function read(extra: Record<string, unknown>) {
+    const answer = JSON.stringify([{ topic: "backend", statement: "A sentence.", citations: ["c1"], ...extra }]);
+    return parseObservations(answer, labels, { minCitations: 1 }).observations[0];
+  }
+
+  it("travels only with a known kind; a missing, empty or literal unknown referent reads as unknown", () => {
+    expect(read({ kind: "choice", referent: "the cover" })).toMatchObject({ kind: "choice", referent: "the cover" });
+    expect(read({ kind: "reaction" })).toMatchObject({ kind: "reaction", referent: "unknown" });
+    expect(read({ kind: "reaction", referent: "  " })).toMatchObject({ kind: "reaction", referent: "unknown" });
+    expect(read({ kind: "reaction", referent: "Unknown" })).toMatchObject({ kind: "reaction", referent: "unknown" });
+    const unknownKind = read({ kind: "praise", referent: "the cover" });
+    expect(unknownKind).not.toHaveProperty("kind");
+    expect(unknownKind).not.toHaveProperty("referent");
+  });
+
+  it("strips control characters and bounds the referent, so the row's validator never refuses a batch for one word", () => {
+    const named = read({ kind: "reason", referent: "the\u0007 cover\u007f  of the   book" });
+    expect(named?.referent).toBe("the cover of the book");
+    expect(read({ kind: "reason", referent: "x".repeat(300) })?.referent).toHaveLength(REFERENT_MAX_CHARS);
   });
 });

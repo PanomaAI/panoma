@@ -1,10 +1,24 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, or, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import type { DesignFingerprint, WorkState } from "@panoma/core";
+import { canonicalJson } from "@panoma/core";
+import type { DesignFingerprint, Predicate, WorkState } from "@panoma/core";
 import type { Database } from "./client";
 import { idFor } from "./ingest";
+import type { Check } from "./memory-checks";
+import { settleProjectUsageForDeletion } from "./memory-rehome";
+import { memoryReadBarrier } from "./memory-purge";
+import {
+  criterionAuthority, criterionPayload, observationAuthority, observationDisposition, observationPayload, recordRevision,
+  readRevision, recordRevisions, scopeKindFor, scopeOf,
+  type RevisionAuthority, type RevisionReason, type RevisionScopeKind,
+} from "./memory-revisions";
 import * as t from "./schema";
+import {
+  UNKNOWN_REFERENT, beliefPredicate, beliefSupportEvidence, storedPredicate, storedSupportEvidence, validateCaseOriginKey,
+  validateObservationKind, validateReferent,
+  type BeliefWrite, type ObservationKind, type SupportEvidence,
+} from "./twin";
 
 /**
  * Catalog reading queries.
@@ -542,24 +556,28 @@ export async function excludeProject(
    */
   confirmation?: string,
 ): Promise<{ name: string; root: string } | undefined> {
-  const [project] = await db
-    .select({ name: t.projects.name, root: t.projects.root })
-    .from(t.projects)
-    .where(eq(t.projects.id, id))
-    .limit(1);
-  if (!project) return undefined;
-  if (confirmation !== undefined && confirmation.trim() !== project.name) {
-    throw new Error(
-      `Para sacar «${project.name}» del catálogo hay que escribir su nombre exactamente.`,
-    );
-  }
+  return db.transaction(async (tx) => {
+    const [project] = await tx
+      .select({ name: t.projects.name, root: t.projects.root })
+      .from(t.projects)
+      .where(eq(t.projects.id, id))
+      .limit(1);
+    if (!project) return undefined;
+    if (confirmation !== undefined && confirmation.trim() !== project.name) {
+      throw new Error(
+        `Para sacar «${project.name}» del catálogo hay que escribir su nombre exactamente.`,
+      );
+    }
 
-  await db
-    .insert(t.exclusions)
-    .values({ root: project.root, name: project.name })
-    .onConflictDoNothing();
-  await db.delete(t.projects).where(eq(t.projects.id, id));
-  return project;
+    await tx
+      .insert(t.exclusions)
+      .values({ root: project.root, name: project.name })
+      .onConflictDoNothing();
+    // The counters first: the cascade drops offers and legacy jobs nobody would credit otherwise.
+    await settleProjectUsageForDeletion(tx, id);
+    await tx.delete(t.projects).where(eq(t.projects.id, id));
+    return project;
+  });
 }
 
 /**
@@ -583,23 +601,26 @@ export async function excludeProject(
  */
 export async function forgetProjectsUnder(db: Database, root: string): Promise<number> {
   const scope = root.replace(/\/+$/, "");
-  const doomed = await db
-    .select({ id: t.projects.id })
-    .from(t.projects)
-    .where(
-      or(
-        eq(t.projects.root, scope),
-        sql`left(${t.projects.root}, ${scope.length + 1}) = ${`${scope}/`}`,
+  return db.transaction(async (tx) => {
+    const doomed = await tx
+      .select({ id: t.projects.id })
+      .from(t.projects)
+      .where(
+        or(
+          eq(t.projects.root, scope),
+          sql`left(${t.projects.root}, ${scope.length + 1}) = ${`${scope}/`}`,
+        ),
+      );
+    if (doomed.length === 0) return 0;
+    for (const project of doomed) await settleProjectUsageForDeletion(tx, project.id);
+    await tx.delete(t.projects).where(
+      inArray(
+        t.projects.id,
+        doomed.map((row) => row.id),
       ),
     );
-  if (doomed.length === 0) return 0;
-  await db.delete(t.projects).where(
-    inArray(
-      t.projects.id,
-      doomed.map((row) => row.id),
-    ),
-  );
-  return doomed.length;
+    return doomed.length;
+  });
 }
 
 /** Re-allow an excluded folder. It reappears in the next scan. */
@@ -2245,6 +2266,19 @@ export interface NewObservation {
   citations: TasteCitation[];
   /** Which model wrote it. The house signs what a model writes. */
   model: string;
+  /**
+   * Where the quotes came from (delivery D): the manifest's origin key of the stream turn or the
+   * teach gesture, `copied:…` for words that were somebody else's, `unknown` when nobody could
+   * tell. Omitted or null: not recorded, as in every legacy row. See `twin.ts`.
+   */
+  caseOriginKey?: string | null;
+  /**
+   * What the distiller read the turn as, and what it was about (delivery D, plan §21.3): one of
+   * `OBSERVATION_KINDS` and a few words, or the literal `unknown` for a reaction with no object.
+   * Omitted or null: not recorded. See `twin.ts`.
+   */
+  kind?: ObservationKind | null;
+  referent?: string | null;
 }
 
 export interface ObservationRow extends NewObservation {
@@ -2253,6 +2287,11 @@ export interface ObservationRow extends NewObservation {
   /** The date of your most recent appointment. See the column in `schema.ts`. */
   at: Date;
   createdAt: Date;
+  /** The delivery revision: moves when the observation is filed under another topic. */
+  memoryRev: number;
+  caseOriginKey: string | null;
+  kind: ObservationKind | null;
+  referent: string | null;
 }
 
 /**
@@ -2287,11 +2326,22 @@ function observationId(row: { identity: string | null; statement: string }): str
  * copies of the same sentence would make something said once pass as ‘said twice.’ It is paid with
  * a read query per call against a local database, which next to the four calls to a model that
  * precede it goes unnoticed.
+ *
+ * Since delivery D every new row is born with its case origin key and its photograph (kind
+ * `observation`, revision 1) in one transaction: the evidence an inference cites has to be
+ * nameable by revision from the day it exists. A sentence already stored keeps the origin it
+ * was stored with — the second reading of the same words is not a second case (§10.2).
  */
 export async function saveObservations(db: Database, rows: NewObservation[]): Promise<number> {
   const unique = new Map<string, NewObservation>();
   for (const row of rows) unique.set(observationId(row), row);
   if (unique.size === 0) return 0;
+  const origins = new Map<string, string | null>();
+  const kinds = new Map<string, { kind: ObservationKind | null; referent: string | null }>();
+  for (const [id, row] of unique) {
+    origins.set(id, validateCaseOriginKey(row.caseOriginKey));
+    kinds.set(id, { kind: validateObservationKind(row.kind), referent: validateReferent(row.referent) });
+  }
 
   const identities = [...new Set([...unique.values()].map((row) => row.identity))];
   const known = await db
@@ -2319,16 +2369,58 @@ export async function saveObservations(db: Database, rows: NewObservation[]): Pr
       citations: row.citations,
       model: row.model,
       at: newestCitation(row.citations),
+      caseOriginKey: origins.get(id) ?? null,
+      kind: kinds.get(id)?.kind ?? null,
+      referent: kinds.get(id)?.referent ?? null,
     }));
   if (values.length === 0) return 0;
 
-  const done = await db
-    .insert(t.observations)
-    .values(values)
-    .onConflictDoNothing({ target: t.observations.id })
-    .returning({ id: t.observations.id });
+  return db.transaction(async (tx) => {
+    /*
+      The id is derived from the words, so a row deleted and distilled again is born with the id
+      of its earlier life, whose photographs stay as the receipt of the gap. The reborn row
+      starts past the highest number already photographed (§22.10: never collide with an
+      earlier snapshot), and its chain names the old life as history, not as input.
+     */
+    const history = await tx
+      .select({ objectId: t.memoryRevisions.objectId, rev: sql<number>`max(${t.memoryRevisions.rev})::int` })
+      .from(t.memoryRevisions)
+      .where(and(eq(t.memoryRevisions.kind, "observation"), inArray(t.memoryRevisions.objectId, values.map((row) => row.id))))
+      .groupBy(t.memoryRevisions.objectId);
+    const reborn = new Map(history.map((row) => [row.objectId, row.rev]));
+    const done = await tx
+      .insert(t.observations)
+      .values(values.map((row) => ({ ...row, memoryRev: (reborn.get(row.id) ?? 0) + 1 })))
+      .onConflictDoNothing({ target: t.observations.id })
+      .returning();
+    await recordRevisions(tx, done.map((row) => observationRevision(row, "create")));
+    return done.length;
+  });
+}
 
-  return done.length;
+type ObservationSelect = typeof t.observations.$inferSelect;
+
+/**
+ * Every row but an ambiguous reaction: a reaction whose referent is the literal `unknown`. Spelled
+ * with `coalesce` on purpose — a legacy row has null in both columns, and `not (null = …)` is
+ * null, which a `where` reads as false and would have hidden every legacy row.
+ */
+function admissibleObservation(): SQL {
+  return sql`(coalesce(${t.observations.kind}, '') <> 'reaction' or coalesce(${t.observations.referent}, '') <> ${UNKNOWN_REFERENT})`;
+}
+
+/** The photograph of an observation at the revision the statement just produced. */
+function observationRevision(row: ObservationSelect, reason: RevisionReason) {
+  return {
+    kind: "observation" as const,
+    objectId: row.id,
+    rev: row.memoryRev,
+    ...scopeOf(scopeKindFor(row.identity), row.identity),
+    authority: observationAuthority(),
+    disposition: observationDisposition(row),
+    payload: observationPayload(row),
+    reason,
+  };
 }
 
 /** The same phrase from the same project, said in two ways that the file no longer distinguishes. */
@@ -2366,14 +2458,16 @@ function newestCitation(citations: TasteCitation[]): Date {
  */
 export async function listObservations(
   db: Database,
-  options: { topic?: string; classified?: boolean; identity?: string | null; limit?: number } = {},
+  options: { topic?: string; classified?: boolean; identity?: string | null; limit?: number; admissible?: boolean } = {},
 ): Promise<ObservationRow[]> {
   const { topic, classified, identity } = options;
-  const filters: SQL[] = [];
+  const filters: SQL[] = [await memoryReadBarrier(db, "observation", t.observations.id)];
   if (topic !== undefined) filters.push(eq(t.observations.topic, topic));
   if (classified !== undefined) filters.push(eq(t.observations.classified, classified));
   if (identity === null) filters.push(isNull(t.observations.identity));
   else if (identity !== undefined) filters.push(eq(t.observations.identity, identity));
+  // `admissible`: what a synthesis may read — every row but the ambiguous reactions (plan §21.3).
+  if (options.admissible) filters.push(admissibleObservation());
 
   const query = db
     .select()
@@ -2386,7 +2480,20 @@ export async function listObservations(
   // `citations` is jsonb and drizzle reads it as `unknown`, which is the honest one: it was written
   // by another pass of this same code and no one guarantees its form. It is stated here, in a
   // single place, just like the signals of `listVerdicts`.
-  return rows.map((row) => ({ ...row, citations: (row.citations as TasteCitation[] | null) ?? [] }));
+  // The kind column is guarded by its CHECK; the row reads it back as the vocabulary it was written in.
+  return rows.map((row) => ({ ...row, citations: (row.citations as TasteCitation[] | null) ?? [], kind: row.kind as ObservationKind | null }));
+}
+
+/** The observations a set of citations name, by id and in no order: what a screen needs to say the kind of each quote. */
+export async function observationsByIds(db: Database, ids: readonly string[]): Promise<ObservationRow[]> {
+  const unique = [...new Set(ids)];
+  const rows: ObservationRow[] = [];
+  const barrier = await memoryReadBarrier(db, "observation", t.observations.id);
+  for (let offset = 0; offset < unique.length; offset += VERDICT_CHUNK) {
+    const page = await db.select().from(t.observations).where(and(inArray(t.observations.id, unique.slice(offset, offset + VERDICT_CHUNK)), barrier));
+    for (const row of page) rows.push({ ...row, citations: (row.citations as TasteCitation[] | null) ?? [], kind: row.kind as ObservationKind | null });
+  }
+  return rows;
 }
 
 /** How much evidence is there for each subject, and how much without looking. */
@@ -2414,7 +2521,7 @@ export interface TopicCount {
  * Ordered by quantity and not alphabetically: whoever looks at this is deciding which topic to
  * summarize, and the one with the most evidence is the one that will provide the most beliefs.
  */
-export async function observationTopics(db: Database): Promise<TopicCount[]> {
+export async function observationTopics(db: Database, options: { admissible?: boolean } = {}): Promise<TopicCount[]> {
   const rows = await db
     .select({
       topic: t.observations.topic,
@@ -2429,6 +2536,7 @@ export async function observationTopics(db: Database): Promise<TopicCount[]> {
       newest: sql<number | null>`extract(epoch from max(topic_at))::double precision`,
     })
     .from(t.observations)
+    .where(options.admissible ? admissibleObservation() : undefined)
     .groupBy(t.observations.topic)
     .orderBy(desc(sql`count(*)`), asc(t.observations.topic));
 
@@ -2447,6 +2555,13 @@ export async function observationTopics(db: Database): Promise<TopicCount[]> {
  *
  * `classified` is marked here and not in the classifier: what makes an observation no longer be
  * unseen is that its topic is written, not that a model has responded.
+ *
+ * Since delivery D a move is a revision of the row: the topic is filed under `memory_rev + 1` by
+ * compare-and-set on the number read under the lock, and photographed (kind `observation`,
+ * reason `edit`) in the same short transaction, one per row. Filing an observation where it
+ * already is —the same topic, already looked at— is a no-op that moves nothing, not even
+ * `topic_at`: reclassifying never duplicates evidence, and the fingerprint of a topic must not
+ * move for a pass that changed no filing (D04/T66).
  */
 export async function setObservationTopics(
   db: Database,
@@ -2454,18 +2569,26 @@ export async function setObservationTopics(
 ): Promise<number> {
   let changed = 0;
   for (const row of rows) {
-    const done = await db
-      .update(t.observations)
-      /*
-        `topicAt` moves here, and that's what makes spreading count as new material. Without it,
-        an observation from March placed today in `security` left `security` looking older than
-        its own beliefs, and the synthesis never called it again: the distilled date does not
-        move, so no future pass would unlock it.
-       */
-      .set({ topic: row.topic, classified: true, topicAt: new Date() })
-      .where(eq(t.observations.id, row.id))
-      .returning({ id: t.observations.id });
-    changed += done.length;
+    const moved = await db.transaction(async (tx) => {
+      const [current] = await tx.select().from(t.observations).where(and(eq(t.observations.id, row.id), await memoryReadBarrier(tx, "observation", t.observations.id))).for("update");
+      if (!current) return false;
+      if (current.classified && current.topic === row.topic) return false;
+      const [done] = await tx
+        .update(t.observations)
+        /*
+          `topicAt` moves here, and that's what makes spreading count as new material. Without it,
+          an observation from March placed today in `security` left `security` looking older than
+          its own beliefs, and the synthesis never called it again: the distilled date does not
+          move, so no future pass would unlock it.
+         */
+        .set({ topic: row.topic, classified: true, topicAt: new Date(), memoryRev: sql`${t.observations.memoryRev} + 1` })
+        .where(and(eq(t.observations.id, row.id), eq(t.observations.memoryRev, current.memoryRev)))
+        .returning();
+      if (!done) return false;
+      await recordRevision(tx, observationRevision(done, "edit"));
+      return true;
+    });
+    if (moved) changed += 1;
   }
   return changed;
 }
@@ -2515,6 +2638,21 @@ export interface NewBelief {
   citations: BeliefCitation[];
   support: BeliefSupport;
   model: string;
+  /**
+   * Omitted: a project when there is an identity, global when there is none. The synthesis does
+   * not know whether an identity still has a name; a caller that does —the taste route reading
+   * a scope it cannot resolve— says `unresolved`, and that row never reaches another project.
+   */
+  scopeKind?: RevisionScopeKind;
+  /**
+   * The typed conditions and exceptions of delivery D, a predicate of `@panoma/core` validated
+   * by the writer; omitted or null means none declared. `supportEvidence` is the independence
+   * behind an inference, computed by `supportOf` in `support-families.ts` and never by a model;
+   * omitted or null is a legacy row under the legacy floor. See `twin.ts`.
+   */
+  conditions?: unknown;
+  exceptions?: unknown;
+  supportEvidence?: unknown;
 }
 
 export interface BeliefRow extends NewBelief {
@@ -2522,6 +2660,11 @@ export interface BeliefRow extends NewBelief {
   classified: boolean;
   identity: string | null;
   supersedes: string[];
+  conditions: Predicate | null;
+  exceptions: Predicate | null;
+  supportEvidence: SupportEvidence | null;
+  /** The typed checks of delivery C as `memory-checks.ts` writes them; a criterion never carries a legacy anchor. */
+  checks: Check[];
   signedAt: Date | null;
   vetoedAt: Date | null;
   retiredAt: Date | null;
@@ -2529,6 +2672,77 @@ export interface BeliefRow extends NewBelief {
   publishedAs: PublishedLine | null;
   updatedAt: Date;
   createdAt: Date;
+  /** The delivery revision: the block at the top of `schema.ts`, and `memory-revisions.ts`. */
+  memoryRev: number;
+  scopeKind: RevisionScopeKind;
+  /** Whether it travels in every delivery to the projects it applies to, or only when asked for. */
+  deliveryMode: "core" | "contextual";
+  deliveryPolicyRev: number;
+}
+
+type BeliefSelect = typeof t.beliefs.$inferSelect;
+
+/** The revision moves in the statement that changes the row; see the same constant in `notes.ts`. */
+const NEXT_BELIEF_REV = sql`${t.beliefs.memoryRev} + 1`;
+
+/**
+ * The photograph of a belief at the revision the statement just produced, in the same transaction.
+ * The authority is read from the row's standing unless the writer knows better — a signed belief
+ * absorbed by a merge the person accepted is retired under their confirmation, which the retired
+ * row alone cannot say.
+ */
+async function photographBelief(tx: Database, row: BeliefSelect, reason: RevisionReason, authority?: RevisionAuthority, independent = false): Promise<void> {
+  await recordRevision(tx, {
+    kind: "criterion",
+    objectId: row.id,
+    rev: row.memoryRev,
+    ...scopeOf(row.scopeKind, row.identity),
+    authority: authority ?? criterionAuthority(row),
+    disposition: row.state,
+    payload: criterionPayload(row),
+    reason,
+    ...(independent ? { inheritDependencies: false as const } : {}),
+  });
+}
+
+/**
+ * The row under lock, so the comparison that decides whether a revision is due cannot race the
+ * write that follows it. `states` is the writer's own guard, the same one its `update` repeats.
+ */
+async function lockBelief(tx: Database, id: string, states: BeliefState[]): Promise<BeliefSelect | undefined> {
+  const [row] = await tx.select().from(t.beliefs).where(and(eq(t.beliefs.id, id), inArray(t.beliefs.state, states), await memoryReadBarrier(tx, "criterion", t.beliefs.id))).for("update");
+  return row;
+}
+
+/** A scope the caller asked for, checked against the identity the row will carry. */
+function beliefScope(identity: string | null, scopeKind: RevisionScopeKind | undefined): RevisionScopeKind {
+  const kind = scopeKind ?? scopeKindFor(identity);
+  if (kind === "global" && identity !== null) throw new Error("A global belief has no project identity.");
+  if (kind === "project" && identity === null) throw new Error("A project belief names its project identity.");
+  return kind;
+}
+
+/** jsonb columns are typed as plain records; the validated shapes are stored as they are. */
+type StoredJson = Record<string, unknown>;
+
+/**
+ * The three typed columns of delivery D as a writer stores them: validated whole, null when the
+ * caller declared none. A key the caller left out is `undefined` here, so a patch can tell
+ * "keep what the row has" from "clear it".
+ */
+function typedBeliefColumns(input: { conditions?: unknown; exceptions?: unknown; supportEvidence?: unknown }): {
+  conditions?: StoredJson | null; exceptions?: StoredJson | null; supportEvidence?: StoredJson | null;
+} {
+  return {
+    ...(input.conditions !== undefined ? { conditions: beliefPredicate(input.conditions) as StoredJson | null } : {}),
+    ...(input.exceptions !== undefined ? { exceptions: beliefPredicate(input.exceptions) as StoredJson | null } : {}),
+    ...(input.supportEvidence !== undefined ? { supportEvidence: beliefSupportEvidence(input.supportEvidence) as StoredJson | null } : {}),
+  };
+}
+
+/** Whether a typed column the patch names differs from what the row holds, by canonical bytes. */
+function typedColumnMoved(next: StoredJson | null | undefined, current: unknown): boolean {
+  return next !== undefined && canonicalJson(next) !== canonicalJson(current ?? null);
 }
 
 /**
@@ -2541,24 +2755,35 @@ export interface BeliefRow extends NewBelief {
  */
 export async function insertBeliefs(db: Database, rows: NewBelief[]): Promise<string[]> {
   if (rows.length === 0) return [];
-  const done = await db
-    .insert(t.beliefs)
-    .values(
-      rows.map((row) => ({
-        id: randomUUID(),
-        topic: row.topic,
-        classified: row.classified ?? true,
-        statement: row.statement,
-        identity: row.identity ?? null,
-        state: row.state,
-        supersedes: row.supersedes ?? [],
-        citations: row.citations,
-        support: row.support,
-        model: row.model,
-      })),
-    )
-    .returning({ id: t.beliefs.id });
-  return done.map((row) => row.id);
+  // The whole batch is validated before the first write: a bad predicate refuses the batch whole.
+  const values = rows.map((row) => ({
+    id: randomUUID(),
+    topic: row.topic,
+    classified: row.classified ?? true,
+    statement: row.statement,
+    identity: row.identity ?? null,
+    scopeKind: beliefScope(row.identity ?? null, row.scopeKind),
+    state: row.state,
+    supersedes: row.supersedes ?? [],
+    citations: row.citations,
+    support: row.support,
+    model: row.model,
+    ...typedBeliefColumns(row),
+  }));
+  return db.transaction(async (tx) => {
+    const done = await tx.insert(t.beliefs).values(values).returning();
+    await recordRevisions(tx, done.map((row) => ({
+      kind: "criterion" as const,
+      objectId: row.id,
+      rev: row.memoryRev,
+      ...scopeOf(row.scopeKind, row.identity),
+      authority: criterionAuthority(row),
+      disposition: row.state,
+      payload: criterionPayload(row),
+      reason: "create" as const,
+    })));
+    return done.map((row) => row.id);
+  });
 }
 
 /**
@@ -2579,14 +2804,54 @@ export async function updateBelief(
     citations?: BeliefCitation[];
     support?: BeliefSupport;
     model?: string;
+    /** Delivery D: a narrowed condition, a new exception, the recomputed independence. `null` clears. */
+    conditions?: unknown;
+    exceptions?: unknown;
+    supportEvidence?: unknown;
   },
 ): Promise<boolean> {
-  const done = await db
-    .update(t.beliefs)
-    .set({ ...patch, updatedAt: new Date() })
-    .where(and(eq(t.beliefs.id, id), eq(t.beliefs.state, "inferred")))
-    .returning({ id: t.beliefs.id });
-  return done.length > 0;
+  // Validated before the lock: a bad predicate never opens a transaction.
+  const typed = typedBeliefColumns(patch);
+  const { conditions: _conditions, exceptions: _exceptions, supportEvidence: _supportEvidence, ...plain } = patch;
+  return db.transaction(async (tx) => {
+    const current = await lockBelief(tx, id, ["inferred"]);
+    if (!current) return false;
+    /*
+      A recount with the same numbers moves `updatedAt`, as it always did, and nothing else: the
+      revision only moves when the text, the subject, the scope, the evidence or the author differ
+      from what the row already says — a photograph of the same content would be a second number
+      for one thing.
+      The scope is the word, not only the identity: an identity the patch repeats unchanged still
+      resolves an `unresolved` row to `project`, and that flip is a change of scope an agent
+      receives — it moves the revision and is photographed like any other.
+     */
+    const scopeKind = patch.identity !== undefined ? scopeKindFor(patch.identity) : undefined;
+    const changed = (patch.statement !== undefined && patch.statement !== current.statement)
+      || (patch.topic !== undefined && patch.topic !== current.topic)
+      || (patch.identity !== undefined && patch.identity !== current.identity)
+      || (scopeKind !== undefined && scopeKind !== current.scopeKind)
+      || (patch.model !== undefined && patch.model !== current.model)
+      || (patch.citations !== undefined && canonicalJson(patch.citations) !== canonicalJson(current.citations))
+      || (patch.support !== undefined && canonicalJson(patch.support) !== canonicalJson(current.support))
+      // Delivery D: a condition, an exception or the independence behind it is content too.
+      || typedColumnMoved(typed.conditions, current.conditions)
+      || typedColumnMoved(typed.exceptions, current.exceptions)
+      || typedColumnMoved(typed.supportEvidence, current.supportEvidence);
+    const [row] = await tx
+      .update(t.beliefs)
+      .set({
+        ...plain,
+        ...typed,
+        ...(scopeKind !== undefined ? { scopeKind } : {}),
+        ...(changed ? { memoryRev: NEXT_BELIEF_REV } : {}),
+        updatedAt: new Date(),
+      })
+      .where(and(eq(t.beliefs.id, id), eq(t.beliefs.state, "inferred")))
+      .returning();
+    if (!row) return false;
+    if (changed) await photographBelief(tx, row, "edit");
+    return true;
+  });
 }
 
 /**
@@ -2600,7 +2865,7 @@ export async function listBeliefs(
   db: Database,
   options: { topic?: string; states?: BeliefState[] } = {},
 ): Promise<BeliefRow[]> {
-  const filters: SQL[] = [];
+  const filters: SQL[] = [await memoryReadBarrier(db, "criterion", t.beliefs.id)];
   if (options.topic !== undefined) filters.push(eq(t.beliefs.topic, options.topic));
   if (options.states !== undefined) filters.push(inArray(t.beliefs.state, options.states));
 
@@ -2613,6 +2878,8 @@ export async function listBeliefs(
   return rows.map((row) => ({
     ...row,
     state: row.state as BeliefState,
+    scopeKind: row.scopeKind as RevisionScopeKind,
+    deliveryMode: row.deliveryMode as "core" | "contextual",
     // `published_as` is jsonb: anything that does not have the form is read as 'it was never
     // written', which is the safe failure — it is added again instead of being blocked for not
     // being recognized.
@@ -2625,7 +2892,18 @@ export async function listBeliefs(
       : [],
     citations: (row.citations as BeliefCitation[] | null) ?? [],
     support: (row.support as BeliefSupport | null) ?? { observations: 0, projects: 0, days: 0 },
+    // Delivery D: a malformed non-null predicate fails closed instead of widening the rule.
+    conditions: storedPredicate(row.conditions),
+    exceptions: storedPredicate(row.exceptions),
+    supportEvidence: storedSupportEvidence(row.supportEvidence),
+    // Delivery C: `putCheck` validated every entry; one without an id is not a check and is left out.
+    checks: storedChecks(row.checks),
   }));
+}
+
+function storedChecks(value: unknown): Check[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is Check => typeof entry === "object" && entry !== null && typeof (entry as { checkId?: unknown }).checkId === "string");
 }
 
 /** The ones that are alive: the inferred and the signed. Neither the cemetery nor what is withdrawn. */
@@ -2650,8 +2928,82 @@ export const ALIVE: BeliefState[] = ["inferred", "signed"];
  * yours again.
  */
 export async function signBelief(db: Database, id: string, statement?: string): Promise<boolean> {
-  const clean = statement?.replace(/\s+/g, " ").trim();
-  const done = await db
+  return db.transaction(async (tx) => {
+    const current = await lockBelief(tx, id, ALIVE);
+    if (!current) return false;
+    return (await signBeliefLocked(tx, current, { statement })) !== undefined;
+  });
+}
+
+/**
+ * The signature by compare-and-set (delivery D): the owner's gesture names the revision it
+ * looked at, and a belief that moved meanwhile —another gesture, a synthesis, a redistribution—
+ * refuses with `stale_revision` and writes nothing, so the person re-reads before signing what
+ * they did not see. What is accepted is stored exactly: the statement, and the typed conditions
+ * and exceptions the gesture carries (`undefined` keeps the row's, `null` clears). The legacy
+ * `signBelief` stays for the route that has no revision to name.
+ */
+export async function signBeliefByRevision(
+  db: Database,
+  id: string,
+  expected: { memoryRev: number },
+  changes: { statement?: string; conditions?: unknown; exceptions?: unknown } = {},
+): Promise<BeliefWrite> {
+  expectedRevision(expected);
+  const typed = typedBeliefColumns({ conditions: changes.conditions, exceptions: changes.exceptions });
+  return db.transaction(async (tx) => {
+    let current = await lockBelief(tx, id, ALIVE);
+    let adoptingWithdrawn = false;
+    const clean = changes.statement?.replace(/\s+/g, " ").trim();
+    if (!current && clean) {
+      // This narrow owner gesture never returns withdrawn text to a reader. It replaces it
+      // with supplied words under the expected revision; a bare signature stays barred.
+      const [retained] = await tx.select().from(t.beliefs).where(and(eq(t.beliefs.id, id), inArray(t.beliefs.state, ALIVE))).for("update");
+      if (retained && clean !== retained.statement) {
+        const revision = await readRevision(tx, "criterion", id, retained.memoryRev);
+        if (revision && revision.purgedAt === null && revision.payload !== null) { current = retained; adoptingWithdrawn = true; }
+      }
+    }
+    if (!current) return { conflict: true, reason: "not_found" };
+    if (current.memoryRev !== expected.memoryRev) return { conflict: true, reason: "stale_revision" };
+    const row = await signBeliefLocked(tx, current, {
+      statement: changes.statement, ...typed,
+      ...(adoptingWithdrawn ? { conditions: typed.conditions ?? null, exceptions: typed.exceptions ?? null } : {}),
+    });
+    if (!row) return { conflict: true, reason: "stale_revision" };
+    return { revision: row.memoryRev };
+  });
+}
+
+/** A positive integer, or the caller misread the row. */
+function expectedRevision(expected: { memoryRev: number }): void {
+  if (!Number.isSafeInteger(expected.memoryRev) || expected.memoryRev < 1) throw new TypeError("The expected revision is a positive integer.");
+}
+
+/** The citations as marks alone: the verdict, its instant and its project, never the words nor the observation they came from. */
+function marksOnly(citations: unknown): TasteCitation[] {
+  if (!Array.isArray(citations)) return [];
+  return citations
+    .filter((one): one is BeliefCitation => typeof one === "object" && one !== null && typeof (one as { verdictId?: unknown }).verdictId === "string")
+    .map((one) => ({ verdictId: one.verdictId, quote: "", at: typeof one.at === "string" ? one.at : "", ...(one.project ? { project: one.project } : {}) }));
+}
+
+/**
+ * The one body of the two signatures, under the caller's lock on `current`. Returns the row it
+ * left, or nothing when the `update` matched no row — impossible under the lock, kept as a guard.
+ */
+async function signBeliefLocked(
+  tx: Database,
+  current: BeliefSelect,
+  changes: { statement?: string; conditions?: StoredJson | null; exceptions?: StoredJson | null },
+): Promise<BeliefSelect | undefined> {
+  const clean = changes.statement?.replace(/\s+/g, " ").trim();
+  // Signing again what is already signed, with the same words, changes nothing an agent receives.
+  const changed = current.state !== "signed"
+    || (clean !== undefined && clean !== "" && clean !== current.statement)
+    || typedColumnMoved(changes.conditions, current.conditions)
+    || typedColumnMoved(changes.exceptions, current.exceptions);
+  const [row] = await tx
     .update(t.beliefs)
     .set({
       state: "signed",
@@ -2665,10 +3017,27 @@ export async function signBelief(db: Database, id: string, statement?: string): 
       ...(clean ? { statement: clean,
         model: sql`case when ${t.beliefs.model} = 'owner' then 'owner' else '' end`,
         updatedAt: new Date() } : {}),
+      /*
+        The owner's own words are their instruction, not the model's inference: the quotes and
+        the counts that supported the model's sentence do not travel into the owner's revision
+        (plan T79 — a withdrawn stream must not survive in a photograph the barrier does not
+        reach). The marks stay — a verdict id is the owner's own reaction, and the file's line
+        is matched by it — with the words and the evidence link gone; the earlier photographs
+        keep them as history. A bare signature adopts the sentence with its evidence and keeps it.
+       */
+      ...(clean && clean !== current.statement
+        ? { citations: marksOnly(current.citations), support: { observations: 0, projects: 0, days: 0 }, supportEvidence: null }
+        : {}),
+      ...(changes.conditions !== undefined ? { conditions: changes.conditions } : {}),
+      ...(changes.exceptions !== undefined ? { exceptions: changes.exceptions } : {}),
+      ...(changed ? { memoryRev: NEXT_BELIEF_REV } : {}),
     })
-    .where(and(eq(t.beliefs.id, id), inArray(t.beliefs.state, ALIVE)))
-    .returning({ id: t.beliefs.id });
-  return done.length > 0;
+    // The revision in the predicate as well: the lock makes it redundant, the CAS makes it explicit.
+    .where(and(eq(t.beliefs.id, current.id), inArray(t.beliefs.state, ALIVE), eq(t.beliefs.memoryRev, current.memoryRev)))
+    .returning();
+  if (!row) return undefined;
+  if (changed) await photographBelief(tx, row, "approve", undefined, !!clean && clean !== current.statement);
+  return row;
 }
 
 /**
@@ -2680,6 +3049,28 @@ export async function signBelief(db: Database, id: string, statement?: string): 
  * worst possible version of the queue that this increment has just closed.
  */
 export async function vetoBelief(db: Database, id: string): Promise<boolean> {
+  // One transaction: the burial, its photograph and the questions it closes commit together.
+  return db.transaction((tx) => vetoBeliefLocked(tx, id));
+}
+
+/**
+ * The veto by compare-and-set (delivery D): the same burial as `vetoBelief`, refused with
+ * `stale_revision` and nothing written when the row moved since the person read it. The row is
+ * locked before the comparison, so the burial that follows cannot race another writer.
+ */
+export async function vetoBeliefByRevision(db: Database, id: string, expected: { memoryRev: number }): Promise<BeliefWrite> {
+  expectedRevision(expected);
+  return db.transaction(async (tx) => {
+    const current = await lockBelief(tx, id, ALIVE);
+    if (!current) return { conflict: true, reason: "not_found" };
+    if (current.memoryRev !== expected.memoryRev) return { conflict: true, reason: "stale_revision" };
+    if (!(await vetoBeliefLocked(tx, id))) return { conflict: true, reason: "stale_revision" };
+    const [buried] = await tx.select({ memoryRev: t.beliefs.memoryRev }).from(t.beliefs).where(eq(t.beliefs.id, id));
+    return { revision: buried!.memoryRev };
+  });
+}
+
+async function vetoBeliefLocked(tx: Database, id: string): Promise<boolean> {
   /*
     Without touching `updatedAt`. That column indicates when the **text or evidence** changed,
     which is where “refined” comes from in the summary and the metric for whether the synthesis
@@ -2687,9 +3078,9 @@ export async function vetoBelief(db: Database, id: string): Promise<boolean> {
     two beliefs and narrowing three read as “refined: 5” without the machine having written a
     single word.
    */
-  const done = await db
+  const [buried] = await tx
     .update(t.beliefs)
-    .set({ state: "vetoed", vetoedAt: sql`coalesce(${t.beliefs.vetoedAt}, now())` })
+    .set({ state: "vetoed", vetoedAt: sql`coalesce(${t.beliefs.vetoedAt}, now())`, memoryRev: NEXT_BELIEF_REV })
     /*
       I just experience it, like `signBelief` and for the same reason. It was the only state
       mutator without a guard, and the two rows it allowed in lie on the scoreboard: vetoing a
@@ -2698,8 +3089,10 @@ export async function vetoBelief(db: Database, id: string): Promise<boolean> {
       rejection something that went away because the evidence stopped supporting it.
      */
     .where(and(eq(t.beliefs.id, id), inArray(t.beliefs.state, ALIVE)))
-    .returning({ id: t.beliefs.id });
-  if (done.length === 0) return false;
+    .returning();
+  if (!buried) return false;
+  // The cemetery has a number too: a vetoed row is what an offer must never carry again, by revision.
+  await photographBelief(tx, buried, "veto");
 
   /*
     And the questions that this veto leaves without a subject are closed right here.
@@ -2714,7 +3107,7 @@ export async function vetoBelief(db: Database, id: string): Promise<boolean> {
     question had extra is recovered on its own: the next round of that subject can propose it
     again if the evidence still indicates it.
    */
-  const abiertas = await db
+  const abiertas = await tx
     .select({ id: t.beliefs.id, supersedes: t.beliefs.supersedes })
     .from(t.beliefs)
     .where(eq(t.beliefs.state, "proposed"));
@@ -2724,7 +3117,7 @@ export async function vetoBelief(db: Database, id: string): Promise<boolean> {
   if (tocadas.length > 0) {
     const vivas = new Set(
       (
-        await db
+        await tx
           .select({ id: t.beliefs.id })
           .from(t.beliefs)
           .where(inArray(t.beliefs.state, ALIVE))
@@ -2738,13 +3131,20 @@ export async function vetoBelief(db: Database, id: string): Promise<boolean> {
       )
       .map((one) => one.id);
     if (huerfanas.length > 0) {
-      await db
-        .update(t.beliefs)
-        .set({ state: "answered", retiredAt: sql`coalesce(${t.beliefs.retiredAt}, now())` })
-        .where(inArray(t.beliefs.id, huerfanas));
+      await answerProposals(tx, huerfanas);
     }
   }
   return true;
+}
+
+/** Close proposals as `answered` by rule, each with its revision: a question closed is a state too. */
+async function answerProposals(tx: Database, ids: string[]): Promise<void> {
+  const closed = await tx
+    .update(t.beliefs)
+    .set({ state: "answered", retiredAt: sql`coalesce(${t.beliefs.retiredAt}, now())`, memoryRev: NEXT_BELIEF_REV })
+    .where(and(inArray(t.beliefs.id, ids), eq(t.beliefs.state, "proposed")))
+    .returning();
+  for (const row of closed) await photographBelief(tx, row, "policy");
 }
 
 /**
@@ -2756,12 +3156,15 @@ export async function vetoBelief(db: Database, id: string): Promise<boolean> {
  */
 export async function retireBeliefs(db: Database, ids: string[]): Promise<number> {
   if (ids.length === 0) return 0;
-  const done = await db
-    .update(t.beliefs)
-    .set({ state: "retired", retiredAt: sql`coalesce(${t.beliefs.retiredAt}, now())` })
-    .where(and(inArray(t.beliefs.id, ids), eq(t.beliefs.state, "inferred")))
-    .returning({ id: t.beliefs.id });
-  return done.length;
+  return db.transaction(async (tx) => {
+    const done = await tx
+      .update(t.beliefs)
+      .set({ state: "retired", retiredAt: sql`coalesce(${t.beliefs.retiredAt}, now())`, memoryRev: NEXT_BELIEF_REV })
+      .where(and(inArray(t.beliefs.id, ids), eq(t.beliefs.state, "inferred")))
+      .returning();
+    for (const row of done) await photographBelief(tx, row, "supersede");
+    return done.length;
+  });
 }
 
 /**
@@ -2778,16 +3181,52 @@ export async function setBeliefScope(
   id: string,
   identity: string | null,
 ): Promise<boolean> {
-  const done = await db
+  return db.transaction(async (tx) => {
+    const current = await lockBelief(tx, id, ALIVE);
+    if (!current) return false;
+    return (await setBeliefScopeLocked(tx, current, identity)) !== undefined;
+  });
+}
+
+/**
+ * The scope gesture by compare-and-set (delivery D): the same narrowing or widening as
+ * `setBeliefScope`, refused with `stale_revision` and nothing written when the row moved since
+ * the person read it. A gesture that leaves the scope where it was answers the current revision.
+ */
+export async function setBeliefScopeByRevision(
+  db: Database,
+  id: string,
+  expected: { memoryRev: number },
+  identity: string | null,
+): Promise<BeliefWrite> {
+  expectedRevision(expected);
+  return db.transaction(async (tx) => {
+    const current = await lockBelief(tx, id, ALIVE);
+    if (!current) return { conflict: true, reason: "not_found" };
+    if (current.memoryRev !== expected.memoryRev) return { conflict: true, reason: "stale_revision" };
+    const row = await setBeliefScopeLocked(tx, current, identity);
+    if (!row) return { conflict: true, reason: "stale_revision" };
+    return { revision: row.memoryRev };
+  });
+}
+
+/** The one body of the two scope writers, under the caller's lock on `current`. */
+async function setBeliefScopeLocked(tx: Database, current: BeliefSelect, identity: string | null): Promise<BeliefSelect | undefined> {
+  // The person's click resolves the scope: an `unresolved` row becomes what it says, even unchanged.
+  const scopeKind = scopeKindFor(identity);
+  if (current.identity === identity && current.scopeKind === scopeKind) return current;
+  const [row] = await tx
     .update(t.beliefs)
     /*
       Without touching `updatedAt`: narrowing does not change either the text or the evidence. See
       `vetoBelief`.
      */
-    .set({ identity })
-    .where(and(eq(t.beliefs.id, id), inArray(t.beliefs.state, ALIVE)))
-    .returning({ id: t.beliefs.id });
-  return done.length > 0;
+    .set({ identity, scopeKind, memoryRev: NEXT_BELIEF_REV })
+    .where(and(eq(t.beliefs.id, current.id), inArray(t.beliefs.state, ALIVE), eq(t.beliefs.memoryRev, current.memoryRev)))
+    .returning();
+  if (!row) return undefined;
+  await photographBelief(tx, row, "scope");
+  return row;
 }
 
 /**
@@ -2812,11 +3251,36 @@ export async function setBeliefScope(
  * been vetoed or rewritten. What is no longer signed is not affected by this.
  */
 export async function resolveProposal(db: Database, id: string, accept: boolean): Promise<boolean> {
-  const [row] = await db
-    .select()
-    .from(t.beliefs)
-    .where(and(eq(t.beliefs.id, id), eq(t.beliefs.state, "proposed")));
-  if (!row) return false;
+  return db.transaction(async (tx) => (await resolveProposalLocked(tx, id, accept)) === "applied");
+}
+
+/**
+ * The same answer by compare-and-set on `memory_rev` (the taste door v2, delivery D): a proposal
+ * the screen read at one number and the catalog moved since is refused under the row lock, and
+ * nothing is applied. `applied` says whether accepting found a signed heir to carry the text.
+ */
+export async function resolveProposalByRevision(
+  db: Database,
+  id: string,
+  expected: { memoryRev: number },
+  accept: boolean,
+): Promise<BeliefWrite & { applied?: boolean }> {
+  expectedRevision(expected);
+  return db.transaction(async (tx) => {
+    const current = await lockBelief(tx, id, ["proposed"]);
+    if (!current) return { conflict: true, reason: "not_found" };
+    if (current.memoryRev !== expected.memoryRev) return { conflict: true, reason: "stale_revision" };
+    const outcome = await resolveProposalLocked(tx, id, accept);
+    if (outcome === "not_found") return { conflict: true, reason: "not_found" };
+    const [after] = await tx.select({ memoryRev: t.beliefs.memoryRev }).from(t.beliefs).where(eq(t.beliefs.id, id)).limit(1);
+    return { revision: after?.memoryRev ?? current.memoryRev + 1, applied: outcome === "applied" };
+  });
+}
+
+/** `not_found` when no open proposal has the id; otherwise whether accepting found a place to write. */
+async function resolveProposalLocked(tx: Database, id: string, accept: boolean): Promise<"not_found" | "applied" | "answered"> {
+  const row = await lockBelief(tx, id, ["proposed"]);
+  if (!row) return "not_found";
 
   const supersedes = Array.isArray(row.supersedes)
     ? row.supersedes.filter((one): one is string => typeof one === "string")
@@ -2840,12 +3304,13 @@ export async function resolveProposal(db: Database, id: string, accept: boolean)
     let heredera: string | undefined;
     for (const other of supersedes) {
       if (heredera === undefined) {
-        const done = await db
+        const done = await tx
           .update(t.beliefs)
           .set({
             statement: row.statement,
             citations: row.citations,
             support: row.support,
+            memoryRev: NEXT_BELIEF_REV,
             /*
               `model` **is not to be touched**, neither with the one from the proposal nor by
               emptying it.
@@ -2861,14 +3326,20 @@ export async function resolveProposal(db: Database, id: string, accept: boolean)
             updatedAt: new Date(),
           })
           .where(and(eq(t.beliefs.id, other), eq(t.beliefs.state, "signed")))
-          .returning({ id: t.beliefs.id });
-        if (done.length > 0) heredera = other;
+          .returning();
+        if (done.length > 0) {
+          heredera = other;
+          // The heir carries the adopted text under the person's yes; the others it absorbed are superseded.
+          await photographBelief(tx, done[0]!, "adopt");
+        }
         continue;
       }
-      await db
+      const retired = await tx
         .update(t.beliefs)
-        .set({ state: "retired", retiredAt: sql`coalesce(${t.beliefs.retiredAt}, now())` })
-        .where(and(eq(t.beliefs.id, other), eq(t.beliefs.state, "signed")));
+        .set({ state: "retired", retiredAt: sql`coalesce(${t.beliefs.retiredAt}, now())`, memoryRev: NEXT_BELIEF_REV })
+        .where(and(eq(t.beliefs.id, other), eq(t.beliefs.state, "signed")))
+        .returning();
+      if (retired[0]) await photographBelief(tx, retired[0], "supersede", "owner_confirmation");
     }
     aplicado = heredera !== undefined;
   }
@@ -2881,10 +3352,12 @@ export async function resolveProposal(db: Database, id: string, accept: boolean)
     having corrected anything; and `retired`, which the screen presents as “those that the
     evidence stopped supporting,” grew without any evidence having changed.
    */
-  await db
+  const [answered] = await tx
     .update(t.beliefs)
-    .set({ state: "answered", retiredAt: sql`coalesce(${t.beliefs.retiredAt}, now())` })
-    .where(eq(t.beliefs.id, id));
+    .set({ state: "answered", retiredAt: sql`coalesce(${t.beliefs.retiredAt}, now())`, memoryRev: NEXT_BELIEF_REV })
+    .where(eq(t.beliefs.id, id))
+    .returning();
+  if (answered) await photographBelief(tx, answered, accept ? "adopt" : "veto");
 
   /*
     And the other questions about the same beliefs go with her.
@@ -2904,7 +3377,7 @@ export async function resolveProposal(db: Database, id: string, accept: boolean)
     obsolete and is asked correctly again is better than one that is answered blindly.
    */
   if (supersedes.length > 0) {
-    const abiertas = await db
+    const abiertas = await tx
       .select({ id: t.beliefs.id, supersedes: t.beliefs.supersedes })
       .from(t.beliefs)
       .where(eq(t.beliefs.state, "proposed"));
@@ -2916,14 +3389,11 @@ export async function resolveProposal(db: Database, id: string, accept: boolean)
       )
       .map((one) => one.id);
     if (mismas.length > 0) {
-      await db
-        .update(t.beliefs)
-        .set({ state: "answered", retiredAt: sql`coalesce(${t.beliefs.retiredAt}, now())` })
-        .where(inArray(t.beliefs.id, mismas));
+      await answerProposals(tx, mismas);
     }
   }
 
-  return aplicado;
+  return aplicado ? "applied" : "answered";
 }
 
 /** What is stored in `published_as`, defended from a column that can bring anything. */
@@ -2951,15 +3421,32 @@ function asPublished(value: unknown): PublishedLine | null {
  *
  * `null` withdraws the mark: the belief is no longer in the file, so the next reconciliation
  * cannot read its absence as a deletion of the person.
+ *
+ * ── And the core of the Twin follows the file ──────────────────────────────────────────
+ *
+ * The published manifest is what seeds `delivery_mode` (plan §5.2, §22.3): a line written makes
+ * the belief `core` — it travels in every delivery to the projects it applies to — and a line
+ * withdrawn makes it `contextual` again. Nothing else decides that membership in A: signing does
+ * not, and a signature alone never turns a preference into mandatory content of every task.
+ * `delivery_policy_rev` moves only when the mode really changes, because it is part of every
+ * receipt that carries the belief; `memory_rev` never moves here — a publication is not a change
+ * of the text, the state, the scope or the evidence, and the photograph at the current number
+ * stays the one the offers cite. `ensureDeliveryModes` applies the same rule at startup to the
+ * rows written before the mode existed.
  */
 export async function markPublished(
   db: Database,
   rows: { id: string; published: PublishedLine | null }[],
 ): Promise<void> {
   for (const row of rows) {
+    const mode = row.published === null ? "contextual" : "core";
     await db
       .update(t.beliefs)
-      .set({ publishedAs: row.published })
+      .set({
+        publishedAs: row.published,
+        deliveryMode: mode,
+        deliveryPolicyRev: sql`case when ${t.beliefs.deliveryMode} = ${mode} then ${t.beliefs.deliveryPolicyRev} else ${t.beliefs.deliveryPolicyRev} + 1 end`,
+      })
       .where(eq(t.beliefs.id, row.id));
   }
 }
@@ -2969,16 +3456,24 @@ export async function setBeliefTopics(
   db: Database,
   rows: { id: string; topic: string }[],
 ): Promise<number> {
-  let changed = 0;
-  for (const row of rows) {
-    const done = await db
-      .update(t.beliefs)
-      .set({ topic: row.topic, classified: true })
-      .where(eq(t.beliefs.id, row.id))
-      .returning({ id: t.beliefs.id });
-    changed += done.length;
-  }
-  return changed;
+  return db.transaction(async (tx) => {
+    let changed = 0;
+    for (const row of rows) {
+      const current = await lockBelief(tx, row.id, ["inferred", "signed", "vetoed", "retired", "proposed", "answered"]);
+      if (!current) continue;
+      // The subject is content; a redistribution that leaves it where it was is not a new revision.
+      const moved = current.topic !== row.topic || !current.classified;
+      const [done] = await tx
+        .update(t.beliefs)
+        .set({ topic: row.topic, classified: true, ...(moved ? { memoryRev: NEXT_BELIEF_REV } : {}) })
+        .where(eq(t.beliefs.id, row.id))
+        .returning();
+      if (!done) continue;
+      changed += 1;
+      if (moved) await photographBelief(tx, done, "edit");
+    }
+    return changed;
+  });
 }
 
 /*
@@ -3526,6 +4021,8 @@ export interface NewModelCall {
   output?: number | undefined;
   /** How many images traveled in the request. */
   images?: number;
+  /** Who asked: a person, unless the caller says the worker did. Legacy rows keep `legacy`. */
+  origin?: "manual" | "automatic";
 }
 
 /**
@@ -3542,8 +4039,15 @@ export interface NewModelCall {
  * that is being counted. Two identical looks at the same capture are two calls, two waits, and two
  * consumptions, and a deterministic identifier would merge them into one row, leaving the day's
  * budget short just when it is being spent the most.
+ *
+ * Since delivery B this is the door of the organs that have not moved to a reservation yet
+ * (`model-reservations.ts`): the row is born `completed`, charged to today's local day and
+ * finished now, so the reservation ledger counts it beside the rows it reserved itself.
  */
 export async function saveModelCall(db: Database, call: NewModelCall): Promise<void> {
+  const now = new Date();
+  // The same day `localDayOf` (`model-reservations.ts`) fixes at reservation: this machine's own.
+  const budgetDay = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   await db.insert(t.modelCalls).values({
     id: randomUUID(),
     kind: call.kind,
@@ -3555,6 +4059,11 @@ export async function saveModelCall(db: Database, call: NewModelCall): Promise<v
     inputTokens: call.input ?? null,
     outputTokens: call.output ?? null,
     images: call.images ?? 0,
+    origin: call.origin ?? "manual",
+    state: "completed",
+    budgetDay,
+    finishedAt: now,
+    createdAt: now,
   });
 }
 
@@ -3608,6 +4117,10 @@ export function startOfDay(at: Date = new Date()): Date {
  * brake that, in the face of an empty list, returned the day's total would trigger on organs that
  * nobody has called, and a brake that makes a mistake has to make the mistake by letting what is
  * measured pass, not by stopping what it does not measure.
+ *
+ * A reservation counts from the moment it is written (`model-reservations.ts`): `reserved`,
+ * `sent`, `completed` and `uncertain` rows all spend, and only a `released` one —proven never
+ * sent— is left out. Legacy rows are `completed` by default and keep their count.
  */
 export async function modelSpendToday(
   db: Database,
@@ -3621,7 +4134,11 @@ export async function modelSpendToday(
   const [row] = await db
     .select(SPEND)
     .from(t.modelCalls)
-    .where(and(inArray(t.modelCalls.kind, [...kinds]), gte(t.modelCalls.createdAt, since)));
+    .where(and(
+      inArray(t.modelCalls.kind, [...kinds]),
+      gte(t.modelCalls.createdAt, since),
+      inArray(t.modelCalls.state, ["reserved", "sent", "completed", "uncertain"]),
+    ));
 
   return row ?? none;
 }
@@ -3766,6 +4283,14 @@ export interface SynthesisPass {
   observations: number;
   /** Start of the evidence read, so material arriving during the model call stays pending. */
   at?: Date;
+  /** Delivery D: the job that ran the pass; omitted or null for a manual or legacy pass. */
+  jobId?: string | null;
+  /**
+   * Delivery D: the topic fingerprint the pass was synthesized from. `lastSynthesisHash` answers
+   * with it, and a topic whose fingerprint still equals it is not paid again (§10.2, D07/T72).
+   * Omitted or null for a pass that predates the fingerprint.
+   */
+  inputHash?: string | null;
 }
 
 /** Successful topic reads, independent of later signatures and edits to the portrait. */
@@ -3782,7 +4307,23 @@ export async function latestSynthesisByTopic(db: Database): Promise<Map<string, 
  * nothing: zero is the sign of convergence and it must be distinguished from silence.
  */
 export async function saveSynthesisPass(db: Database, pass: SynthesisPass): Promise<void> {
-  await db.insert(t.synthesisPasses).values({ id: randomUUID(), ...pass });
+  await db.insert(t.synthesisPasses).values({ id: randomUUID(), ...pass, jobId: pass.jobId ?? null, inputHash: pass.inputHash ?? null });
+}
+
+/**
+ * The fingerprint the topic was last synthesized from, or null when it never was —or when its
+ * last pass predates the fingerprint, which reads the same: nothing proves the portrait already
+ * compressed these inputs, so the next synthesis is due. The newest pass by its instant, the id
+ * as the tiebreaker for two passes written in one millisecond.
+ */
+export async function lastSynthesisHash(db: Database, topic: string): Promise<string | null> {
+  const [row] = await db
+    .select({ inputHash: t.synthesisPasses.inputHash })
+    .from(t.synthesisPasses)
+    .where(eq(t.synthesisPasses.topic, topic))
+    .orderBy(desc(t.synthesisPasses.at), desc(t.synthesisPasses.id))
+    .limit(1);
+  return row?.inputHash ?? null;
 }
 
 /** A month of movement, already added. */
@@ -4186,11 +4727,21 @@ export async function remapObservations(db: Database): Promise<number> {
     }
 
     if (best === undefined || best === row.identity) continue;
-    await db
-      .update(t.observations)
-      .set({ identity: best })
-      .where(eq(t.observations.id, row.id));
-    changed += 1;
+    // Delivery D: the scope is part of the photograph, so a re-attribution moves the revision by
+    // compare-and-set and photographs the row; a concurrent move wins and this one is skipped.
+    const moved = await db.transaction(async (tx) => {
+      const [current] = await tx.select().from(t.observations).where(eq(t.observations.id, row.id)).for("update");
+      if (!current || current.identity === best) return false;
+      const [done] = await tx
+        .update(t.observations)
+        .set({ identity: best, memoryRev: sql`${t.observations.memoryRev} + 1` })
+        .where(and(eq(t.observations.id, row.id), eq(t.observations.memoryRev, current.memoryRev)))
+        .returning();
+      if (!done) return false;
+      await recordRevision(tx, observationRevision(done, "scope"));
+      return true;
+    });
+    if (moved) changed += 1;
   }
 
   return changed;

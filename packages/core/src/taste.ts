@@ -212,7 +212,7 @@ export const TASTE_FILE = "TASTE.md";
  * being written on top. Converting a megabyte of noise into ten thousand scripts would be worse
  * than reading nothing, because the result has the shape of a portrait and would be written back.
  */
-const MAX_TASTE_BYTES = 1024 * 1024;
+export const MAX_TASTE_BYTES = 1024 * 1024;
 
 /**
  * It doesn't fit. Put the numbers inside because whoever receives it has to be able to say how
@@ -600,12 +600,21 @@ function file(home?: string): string {
   return home === undefined ? panomaPath(TASTE_FILE) : join(home, TASTE_FILE);
 }
 
-/** The saved portrait, or an empty one. Never throws. See the header. */
+/**
+ * The saved portrait, or an empty one. Never throws. See the header.
+ *
+ * The cap is measured in UTF-8 bytes, the unit the file has on the disk and the unit the
+ * selector's `stat` reads before calling this: until 14-Sep-2026 it compared `raw.length`,
+ * UTF-16 units, so a file of two-byte letters twice the cap was parsed. The empty answer is on
+ * purpose — the readers that must tell "nothing" from "cannot be read" (the selector, the
+ * publication) measure the file themselves before calling this and say `unreadable`; every
+ * other caller is a screen or a digest, and a throw here would turn a big file into a 500.
+ */
 export async function readTaste(home?: string): Promise<TasteProfile> {
   const raw = await readFile(file(home), "utf8").catch(() => undefined);
   // Without a file, without permission to open it, or with a directory where the file was supposed
   // to go.
-  if (raw === undefined || raw.length > MAX_TASTE_BYTES) return profileOf([]);
+  if (raw === undefined || Buffer.byteLength(raw, "utf8") > MAX_TASTE_BYTES) return profileOf([]);
   return parseTaste(raw);
 }
 

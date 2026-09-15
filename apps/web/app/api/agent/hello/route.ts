@@ -18,10 +18,26 @@ import { requireAgent } from "@/lib/agent-auth";
  * It is deliberately not a heartbeat. It is called once, when the agent's server comes up, and its
  * failure is not worth reporting to anybody: an agent whose catalog is not running has a real
  * problem, and it is not this one.
+ *
+ * ── Since the memory contract v2, the answer also negotiates ────────────────────────────────
+ *
+ * The MCP server keeps the result of this one call: `memory.versions` says which shapes of the
+ * `memory` object `POST /api/agent/context` understands, `features` what the v2 shape can do here
+ * —a read by id and revision, a continuation of a page or of a read, and contexts the client
+ * hands back—, and `profiles` the transport profiles the server emits on that channel. A server
+ * without this block is a legacy one, and the client formats the briefing exactly as before. What
+ * is described is the server's capability, never a claim about the host the agent runs in: no
+ * hello proves that a program received a byte (plan §23.2.2).
  */
+const MEMORY_CAPABILITY = {
+  versions: [1, 2],
+  features: ["read", "continuation", "contexts"],
+  profiles: ["mcp-memory-v2"],
+} as const;
+
 export async function POST(request: Request) {
   const auth = await requireAgent(request);
   if ("error" in auth) return auth.error;
 
-  return Response.json({ ok: true, agent: auth.agent.name });
+  return Response.json({ ok: true, agent: auth.agent.name, memory: MEMORY_CAPABILITY });
 }

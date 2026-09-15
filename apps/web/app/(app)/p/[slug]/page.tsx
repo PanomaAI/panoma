@@ -14,17 +14,37 @@ import {
   listProjectRoots,
   memoryJobCounts,
   latestProjectMemoryJob,
+  listJobs,
+  offersForProject,
   NOTE_PENDING_MAX,
   NOTE_SLEEPING_MAX,
   listProjectTasks,
   noteUsage,
   stateOf,
+  commitmentsByTask,
+  edgesOfDependents,
+  listCommitments,
+  listDecisionEpisodes,
+  outcomesFor,
+  revisionRefsOf,
+  staleOf,
+  validateCheck,
+  type CommitmentView,
+  type Database,
+  type OccurrenceView,
 } from "@panoma/db";
 import { isOutdated } from "@panoma/enrich";
 import type { ConversationRef } from "@panoma/handoff";
 import { discoverCached } from "@/lib/handoff-cache";
 import { inProject } from "@/lib/handoff-write";
-import { hookInstalledAt } from "@/lib/bridge";
+import { hookStateAt, hooksReady } from "@/lib/bridge";
+import { memoryStatus } from "@/lib/memory-status";
+import {
+  caseListRows, checkStateViews, commitmentRowView, decisionRowView, expiredAt, extractionView, factCountLines, incidentViews, quotaPauseView,
+  jobsPageView, lookView, offerViews, projectMemoryView, successorsOf, type LookView,
+} from "@/lib/memory-view";
+import { predicateSentence } from "@/lib/memory-delivery";
+import { decisionInScope } from "@/lib/select-memory";
 import { commitsPerDay, critiqueKey, workRisks } from "@panoma/core";
 import type { AgentsMdReport, Runbook } from "@panoma/core";
 import { AGENT_DOC_FILES, agentsMdHash, docHash } from "@panoma/core";
@@ -62,6 +82,7 @@ import { CaptureTask } from "@/components/capture-task";
 import { ProjectDouble } from "@/components/project-double";
 import { ProjectHooks } from "@/components/project-hooks";
 import { ProjectMemory } from "@/components/project-memory";
+import { ProjectCase } from "@/components/project-case";
 import { Assignments } from "@/components/assignments";
 import { Critiques } from "@/components/critiques";
 import { MdReview } from "@/components/md-review";
@@ -91,6 +112,82 @@ import { EmptyState, ProjectIcon, StateDot, formatBytes, relativeDate } from "@/
 import { platform } from "node:os";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * How many of the newest offers the memory view lists. Ten is a screenful of references; the
+ * whole record is one link away in `GET /api/memory/status?slug=`.
+ */
+const RECENT_OFFERS = 10;
+
+/**
+ * The delivery C reads of the card (the check states, the commitments, the incidents), bounded
+ * where the catalog pages: the newest fifty commitments, as the door serves them, and up to five
+ * pages of two hundred occurrences of the patrol's looks. Both bounds are known limits the card
+ * says out loud when it hits them — a check whose looks fell off the pages is drawn as «not
+ * observed yet», and the sentence above the blocks says older looks exist.
+ */
+const COMMITMENTS_SHOWN = 50;
+const OUTCOMES_PER_PAGE = 200;
+const OUTCOME_PAGES_MAX = 5;
+
+/**
+ * Every look the patrol took at this project's items, as the card draws them, with the freshness
+ * of each computed here (`staleOf` is a value of `@panoma/db`, which the client-safe view module
+ * does not import). `complete` says whether the walk reached the end; `undefined` says the looks
+ * could not be read at all, which is a different sentence from «nothing was looked at».
+ */
+async function projectLooks(database: Database, projectId: string, now: Date): Promise<{ looks: LookView[]; complete: boolean } | undefined> {
+  try {
+    const occurrences: OccurrenceView[] = [];
+    let cursor: string | null = null;
+    let complete = false;
+    for (let page = 0; page < OUTCOME_PAGES_MAX; page += 1) {
+      const listed = await outcomesFor(database, { projectId, limit: OUTCOMES_PER_PAGE, cursor });
+      occurrences.push(...listed.occurrences);
+      cursor = listed.nextCursor;
+      if (cursor === null) {
+        complete = true;
+        break;
+      }
+    }
+    return { looks: occurrences.map((occurrence) => lookView(occurrence, staleOf(occurrence.latest, now))), complete };
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The succession among the commitments drawn: `derived_from` edges between their photographs,
+ * read for the revisions those commitments have had, so a commitment that continues an older
+ * one — a closed commitment is never reopened — links both ways. Only edges between commitments
+ * on this list resolve; an edge to a photograph of something else is not a continuation.
+ */
+async function commitmentSuccession(database: Database, commitments: CommitmentView[]): Promise<{ continues: Map<string, string>; continuedBy: Map<string, string> }> {
+  const continues = new Map<string, string>();
+  const continuedBy = new Map<string, string>();
+  const ownerOfRevision = new Map<string, string>();
+  for (const ref of await revisionRefsOf(database, "commitment", commitments.map((commitment) => commitment.id))) ownerOfRevision.set(ref.id, ref.objectId);
+  if (ownerOfRevision.size === 0) return { continues, continuedBy };
+  const edges = await edgesOfDependents(database, { revisionIds: [...ownerOfRevision.keys()] });
+  for (const edge of edges) {
+    if (edge.relation !== "derived_from" || edge.dependentRevisionId === null || edge.inputRevisionId === null) continue;
+    const newer = ownerOfRevision.get(edge.dependentRevisionId);
+    const older = ownerOfRevision.get(edge.inputRevisionId);
+    if (newer === undefined || older === undefined || newer === older) continue;
+    continues.set(newer, older);
+    continuedBy.set(older, newer);
+  }
+  return { continues, continuedBy };
+}
+
+/** The stored entries of a note's column as checks, legacy anchors normalized by position; null when an entry is corrupt, which the row says. */
+function noteChecks(column: unknown) {
+  try {
+    return Array.isArray(column) ? column.map((entry, index) => validateCheck(entry, { legacyIndex: index })) : [];
+  } catch {
+    return null;
+  }
+}
 
 /*
   The source keys, not their texts: the left is the value stored by the detector in the database
@@ -168,8 +265,10 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
     listProjectRuns(database, data.project.id),
     listProjectLaunches(database, data.project.id),
     // Approved and proposed: the card is the only place where both are seen at the same time,
-    // because it is where the gate resides. Only the approved ones travel to the agents.
-    listProjectNotes(database, data.project.id, ["approved", "proposed", "challenged"]),
+    // because it is where the gate resides. Only the approved ones travel to the agents. Since
+    // delivery C the superseded and the expired ones are read too: they travel nowhere, and the
+    // card draws each with its state and its successor rather than letting it vanish.
+    listProjectNotes(database, data.project.id, ["approved", "proposed", "challenged", "superseded"], { includeExpired: true }),
     noteUsage(database, data.project.id),
     listProjectConsultations(database, data.project.id),
     memoryJobCounts(database, data.project.id),
@@ -198,7 +297,76 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
     }
   }
 
-  const hooksInstalled = await hookInstalledAt(data.project.root);
+  /*
+    The memory bridge of this project, three evidences kept apart: the hooks on disk, the offers
+    prepared and what the session records showed of them (plan §14.1). `memoryStatus` narrowed to
+    this slug already reads the hooks the way the bridge does, so the card and the bridge cannot
+    disagree; when it cannot be read — a quarantined journal, a remote catalog — the hooks line
+    still answers on its own from the disk, and the block under it stays off rather than claiming
+    an absence. The offers reach the client as references and counters only (`offerViews`).
+   */
+  const [memoryReport, recentOffers, jobsPage] = await Promise.all([
+    memoryStatus(database, undefined, { slug: data.project.slug }).catch(() => undefined),
+    offersForProject(database, data.project.id, RECENT_OFFERS).catch(() => []),
+    /*
+      The newest page of this project's jobs (delivery B): `listJobs` already withholds the lease
+      token, the staged output and the manifest, and `jobsPageView` keeps only what the rows
+      print. `undefined` keeps the block honest — «could not list» rather than «no job».
+     */
+    listJobs(database, { projectId: data.project.id }).catch(() => undefined),
+  ]);
+  const projectMemory = projectMemoryView(memoryReport, data.project.slug);
+  /*
+    The extraction's capacity and the typed facts by kind come from the same status document,
+    already narrowed to this slug; both are null when it could not be read, and the card leaves
+    those two blocks off rather than claiming an absence.
+   */
+  const extractionReport = extractionView(memoryReport?.queue.extraction);
+  const factLines = memoryReport?.coverage.facts ? factCountLines(memoryReport.coverage.facts) : null;
+  const hooksInstalled = hooksReady(projectMemory?.hooks ?? (await hookStateAt(data.project.root)));
+
+  /*
+    What the disk showed (delivery C): the patrol's looks at this project's items, the owner's
+    decisions in force for it in the selector's own eligibility, and the newest commitments with
+    their observations apart. Each read degrades on its own — `undefined` is «could not be
+    read» and the card says so in that block — so a failure in one never blanks the others, and
+    the notes above keep their checks with whatever looks were read.
+   */
+  const now = new Date();
+  const [projectLookRead, decisionRows, commitmentPage, commitmentsPerTask] = await Promise.all([
+    projectLooks(database, data.project.id, now),
+    listDecisionEpisodes(database, { status: "active", ownerDecisionsOnly: true, unambiguousOnly: true, activeAt: now })
+      .then((rows) => rows.filter((row) => decisionInScope(row, data.project) === "in"))
+      .catch(() => undefined),
+    listCommitments(database, data.project.id, { limit: COMMITMENTS_SHOWN }).catch(() => undefined),
+    // The case list's figure per task, counted in the database and not off the page above.
+    commitmentsByTask(database, data.project.id).catch(() => undefined),
+  ]);
+  const looks = projectLookRead?.looks ?? [];
+  const succession = commitmentPage
+    ? await commitmentSuccession(database, commitmentPage.commitments).catch(() => ({ continues: new Map<string, string>(), continuedBy: new Map<string, string>() }))
+    : undefined;
+  const successors = successorsOf(memoryNotes);
+  const decisionViews = decisionRows
+    ? decisionRows.map((row) => decisionRowView(row, looks, {
+      now,
+      conditions: row.conditionsPredicate ? predicateSentence(row.conditionsPredicate.expression) : null,
+      exceptions: row.exceptionsPredicate ? predicateSentence(row.exceptionsPredicate.expression) : null,
+    }))
+    : null;
+  const commitmentViews = commitmentPage
+    ? {
+      rows: commitmentPage.commitments.map((row) => commitmentRowView(row, looks, {
+        now,
+        conditions: row.conditions ? predicateSentence(row.conditions.expression) : null,
+        continues: succession?.continues.get(row.id) ?? null,
+        continuedBy: succession?.continuedBy.get(row.id) ?? null,
+      })),
+      more: commitmentPage.nextCursor !== null,
+    }
+    : null;
+  const incidents = projectLookRead ? incidentViews(looks) : null;
+  const looksNote = projectLookRead ? { read: looks.length, limited: !projectLookRead.complete } : null;
 
   /*
     What Claude Code, Codex, OpenCode and Gemini CLI kept in this folder, for the «pick it up
@@ -971,11 +1139,18 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
             <CaptureTask slug={project.slug} tasks={tasks} />
           </div>
           {/*
+             The decision case of each task (delivery C): what was asked, decided, declared and
+             checked, read on demand from the cases door. The list carries the tasks and how
+             many commitments name each; the columns are the door's, so the card never draws
+             every logbook on every render.
+            */}
+          <ProjectCase slug={project.slug} cases={caseListRows(tasks, commitmentsPerTask)} />
+          {/*
              If the log of THIS project writes itself, said here and not only in the added account
              of the bridge — and if not, the button that fixes it.
             */}
           <div className="mt-4">
-            <ProjectHooks slug={project.slug} installed={hooksInstalled} />
+            <ProjectHooks slug={project.slug} installed={hooksInstalled} memory={projectMemory} />
           </div>
 
 
@@ -1007,18 +1182,36 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
           <div className="mt-4">
             <ProjectMemory
               slug={project.slug}
-              notes={memoryNotes.map((note) => ({
-                id: note.id,
-                body: note.body,
-                status: note.status,
-                createdBy: note.createdBy,
-                trigger: note.trigger,
-                anchors: Array.isArray(note.sentinels) ? note.sentinels.length : 0,
-                /* The lawsuit of a contested [party] travels whole: without it, the evidence comes out «?». */
-                challenge: note.challenge as { sentinel?: { target?: string }; observed?: string } | null,
-              }))}
+              notes={memoryNotes.map((note) => {
+                const checks = noteChecks(note.sentinels);
+                return {
+                  id: note.id,
+                  body: note.body,
+                  status: note.status,
+                  createdBy: note.createdBy,
+                  trigger: note.trigger,
+                  anchors: Array.isArray(note.sentinels) ? note.sentinels.length : 0,
+                  /* The lawsuit of a contested [party] travels whole: without it, the evidence comes out «?». */
+                  challenge: note.challenge as { sentinel?: { target?: string }; observed?: string } | null,
+                  validUntil: note.validUntil ? note.validUntil.toISOString() : null,
+                  expired: expiredAt(note.validUntil, now),
+                  supersedesId: note.supersedesId ?? null,
+                  supersededBy: successors.get(note.id) ?? null,
+                  /* The checks keep their state only with looks to read them from: without any, every check is a gap. */
+                  checks: checks === null || !projectLookRead ? null : checkStateViews({ id: note.id, revision: note.memoryRev, checks }, looks),
+                };
+              })}
               extraction={{ ...memoryJobs, coverage }}
               usage={{ ...memoryUsage, sleepingMax: NOTE_SLEEPING_MAX, pendingMax: NOTE_PENDING_MAX }}
+              deliveries={offerViews(recentOffers)}
+              jobs={jobsPageView(jobsPage)}
+              report={extractionReport}
+              facts={factLines}
+              decisions={decisionViews}
+              commitments={commitmentViews}
+              incidents={incidents}
+              looks={looksNote}
+              quota={quotaPauseView(memoryReport?.coverage.quota, data.project.id)}
             />
           </div>
         </ProjectViewFrame>

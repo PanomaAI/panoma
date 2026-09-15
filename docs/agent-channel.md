@@ -40,10 +40,10 @@ English, like everything headed for a machine (`AGENT_LANGUAGE`).
 
 | tool | route | what it does |
 | --- | --- | --- |
-| `panoma_context` | `POST /api/agent/context` | the project briefing, rules for optional `files`, memory matched by the words of an optional `task`, and enrollment if it was not there |
+| `panoma_context` | `POST /api/agent/context` | the project briefing, rules for optional `files`, memory matched by the words of an optional `task`, enrollment if it was not there, and — when the catalog speaks it — the memory contract v2 in place of the legacy memory sections |
 | `panoma_log` | `POST /api/agent/log` | records what the agent just did |
 | `panoma_remember` | `POST /api/agent/notes` | **proposes** a durable fact for memory |
-| `panoma_recall` | `POST /api/agent/journal` | searches the project's full journal and reads an original entry |
+| `panoma_recall` | `POST /api/agent/journal`, or `POST /api/agent/context` with `memory.read` | searches the project's full journal and reads an original entry; or reads one memory unit whole by kind, id and revision — a note, a criterion, a decision, and since delivery C an open commitment or a task's case |
 | `panoma_ask` | `POST /api/agent/consult` | leaves a question of judgment for the twin |
 | `panoma_tasks` | `POST /api/agent/tasks` | lists the open and in-progress tasks |
 | `panoma_create_task` | `POST /api/agent/tasks` | creates a task (same route, with `title`) |
@@ -120,6 +120,31 @@ remain outside memory ablation, like the hook's signals. A missing `pathNotes` f
 an older server has no such delivery; an empty list with `memoryFiles` means those files were
 checked and no approved rules matched. The same reading applies to `taskNotes`.
 
+**Since 14-Sep-2026 the same call can carry the memory contract v2**, and whether it does is
+negotiated once, in the hello. `POST /api/agent/hello` answers `memory: { versions: [1, 2],
+features: ["read", "continuation", "contexts"], profiles: ["mcp-memory-v2"] }`; the MCP
+server keeps that answer for the life of the process — a hello without the block, or one that
+failed, is a legacy catalog and there is no second hello — and, when the catalog speaks
+version 2, sends `memory: { version: 2, mode, operation?, contextId?, contextGeneration?,
+continuation? }` inside the same body: `mode` is `action` when `files` or `task` is present
+and `orientation` otherwise. The tool gains `memoryVersion` (only the literal 2, which
+forces the request), `operation` (`read` · `edit` · `test` · `build` · `deploy` · `review` ·
+`other`), `contextId`, `contextGeneration` and `continuation`. The route answers every legacy
+field exactly as before plus `memoryContract`, and the formatter replaces the legacy memory
+sections — the project memory, the path rules, the task matches, the owner decisions and the
+patrol's confession — with `presentation.text` verbatim, not re-wrapped and not trimmed,
+followed by one status sentence when the contract is not `ready`, a `More memory:` line with
+the continuation when there is one, and the context line, `Memory context <id> generation N`,
+whose two values the agent sends back on its next call. Without a contract the legacy
+document is byte for byte what it was, and a golden test in `format.test.ts` pins it. The
+briefing's cap of 24,000 characters drops background sections first and never the contract;
+the `mcp-memory-v2` profile already bounds the contract to 24 KiB. What travels, and what a
+context is, is told in [memory-contract.md](memory-contract.md); the refusals of the v2 road
+are `{ code, error, hint?, retryable }` with `409 stale_cursor` for a continuation the catalog
+no longer holds and `503 unavailable` under quarantine — and, on a read by id, when the
+criteria could not be reconciled with `TASTE.md` this time, which is retryable —, and the
+client maps `code` onto `CatalogError` so the agent reads the sentence that says what to do.
+
 ### `panoma_log` — what happened, not what is still true
 
 It records a finished change, a decision worth remembering, or a snag. Its description says
@@ -179,6 +204,48 @@ the original summary and details in segments of at most 4,000 characters, with `
 when more remains. Repeat with that `offset` until the end. The read requires the same
 project: an ID does not grant access to another project's record. Returned text remains
 wrapped as journal evidence, and an excerpt never replaces the stored original.
+
+The third read is the memory unit whole. A contract lists what did not fit by kind, id and
+revision, and `panoma_recall` with `memoryKind`, `memoryId` and `revision` — the three
+together, exclusive with `query`, `cursor`, `entryId` and `offset`, a rule enforced in the
+handler because the SDK publishes no schema for a refined object — calls
+`POST /api/agent/context` with `memory.read` and prints the unit as the catalog rendered it.
+A unit larger than the 24 KiB page comes in consecutive UTF-8 parts of one revision, each
+printed verbatim inside the catalog's `untrusted_data` fence and followed by its `segment`
+line — the hash of the whole reading, the hash of the part, the total bytes, `[start, end)`,
+all measured on the raw bytes between the fence lines, and whether it is the last — and the
+contract stays `incomplete` until the last part: a part is never a rule. The continuation is
+bound to the hash the first part measured, so a unit rewritten between two parts is
+`409 stale_cursor` and the read starts from byte zero. A revision older than the current one is marked
+`historical` with a check that says so; it never revives a superseded rule. A
+`409 stale_cursor` on the continuation becomes the exact call to repeat, without the
+continuation, and never a paid re-read.
+
+Since delivery C `memoryKind` takes two more words beside `note`, `criterion` and `decision`
+([memory-checks.md](memory-checks.md)). `commitment` reads an **open** obligation of this
+project by its id and revision as one unit: the text, a status line — `open`, who wrote it
+down, and how many observations its criteria have with their pass, fail and unknown counts —,
+the completion criteria each with its last look (`pass`, `fail`, `unknown`, `not observed`,
+and `(stale)` past ten minutes), the typed conditions as sentences, and the checks still
+pending as lines; a closed one is `not_found` at every revision, an older revision comes back
+`historical` from its photograph. `case` reads the projection of one task of this project —
+`asked:`, `decided (n):`, `declared (n):`, `checked (n):` and `unknown:` naming the halves
+nothing was recorded for — at revision 1, which the tool fills in when `revision` is omitted;
+a case is computed on the spot and never stored, and an agent's own closing report stays in
+`declared` and never counts as `checked` (T51). Both serve publishable content and authorized
+references only; the same rule as every other read: `memoryKind`, `memoryId` and the
+revision together, exclusive with `query` and `entryId`. `panoma_recall` writes nothing and
+no MCP tool approves, closes or judges anything: the checks door, the verdict and the closure
+of an obligation are the operator's, on the HTTP surface.
+
+Delivery D changed no tool and no route of this channel — the fifteen are the same fifteen —
+and changed what a criterion reads as ([twin-learning.md](twin-learning.md)): a criterion
+with typed conditions and exceptions travels, in the brief of `panoma_context` and in a read
+by id, with `  Applies when: …` and `  Except when: …` inside the unit after its body, judged
+with the request's facts in three values like a decision's predicate — served, left out as
+`not_applicable`, or `conditional` with a `requires_check` line — and a criterion widened from
+one project to all travels with its statement, topic, conditions and exceptions and never
+with its citations, quotes, source paths or model.
 
 ### `panoma_ask` is written in the future tense because today it does not answer
 
@@ -438,6 +505,11 @@ stack and dependencies, so a repeat visit still makes new information easy to fi
 8. `Stack`, `Vulnerabilities`, `Dependencies`.
 9. `Open tasks` and `Recent work by other agents`.
 
+When the response carries a memory contract, the second and third items are one block: the
+contract's `presentation.text`, verbatim, with its own receipt markers and its own fence, and
+the patrol's confession is not repeated under it because every unit already carries its
+evidence state. The rest of the order is untouched.
+
 The unverified-material warning goes **ahead of everything and exactly once**. Ahead because
 it is the first thing the model reads and what frames the rest; once because repeating it
 after every block turns it into filler that gets skipped. The blocks are marked all the
@@ -667,8 +739,8 @@ are not called by an agent.
 
 | handler | what it does | who may |
 | --- | --- | --- |
-| `POST /api/agent/hello` | the MCP server saying it is up, once, at startup; stamps `last_seen_at` | agent key |
-| `POST /api/agent/context` | the briefing, optional path rules, the delta, what is pending, the owner's recorded decisions, and enrollment | agent key |
+| `POST /api/agent/hello` | the MCP server saying it is up, once, at startup; stamps `last_seen_at`; answers which memory contract versions and profiles this catalog speaks | agent key |
+| `POST /api/agent/context` | the briefing, optional path rules, the delta, what is pending, the owner's recorded decisions, and enrollment; with `memory`, the contract v2 on top of the legacy fields, or one unit read whole by id and revision | agent key |
 | `POST /api/agent/log` | records activity; closes the session and enqueues extraction | agent key |
 | `POST /api/agent/notes` | proposes a note (or rereads what was approved) | agent key |
 | `POST /api/agent/journal` | searches the full journal or reads an original entry in bounded segments | agent key |
@@ -688,7 +760,13 @@ are not called by an agent.
 
 `GET /api/agent/notes` is the one that runs the other way around, and it has its reason: it
 is called by the `panoma signal` hook right before an agent edits a file, and **a hook has
-no agent key**. So it carries the browser's guard and not the channel's.
+no agent key**. So it carries the browser's guard and not the channel's. The two hook doors
+the memory contract added on 14-Sep-2026 live outside this prefix for the same reason with
+the answer sharpened: `POST /api/hook/context` and `POST /api/hook/session` are called by
+`panoma brief`, `panoma signal` and `panoma memory session`, which have no key either, and
+they carry `sameOrigin` **and** the operator key, because what they hand out is the project's
+memory and what they point at is a transcript of this disk. They are inventoried in
+[http-api.md](http-api.md) and told in [hooks.md](hooks.md).
 
 The last three issue or revoke a durable credential, or write to the owner's disk: that is
 commanding, not looking. The handoff pair is on the same side of that line — reading the four
@@ -828,11 +906,16 @@ five minutes ago is not there until somebody analyzes the folder again.
 mode lasts, the tool costs a turn and saves none; what it gives in exchange is that the
 question goes into the twin's exam.
 
-**The catalog does not know whether the agent read anything.** The only measure of whether
-memory is any use is the ablation scale (`/api/scale`), which is off out of the box. What
-gets served is written down; what gets obeyed is not.
+**The catalog does not know whether the agent read anything, and on this channel it does not
+even know whether the bytes arrived.** Since 14-Sep-2026 a delivery through the `SessionStart`
+hook on a verified host leaves a receipt: the reader finds the offer's bytes in Claude Code's
+own transcript and writes what arrived, unit by unit. No MCP client records a site anybody has
+validated, so a contract served through `panoma_context` is an offer with an attempt and a
+reception of `unknown` — which is the honest word, and the word the status document uses.
+What gets obeyed is still not written anywhere; the only measure of whether memory is any use
+is the ablation scale (`/api/scale`), which is off out of the box.
 
-**No test guards the eleven descriptions.** They are the program's real interface — the only
+**No test guards the fifteen descriptions.** They are the program's real interface — the only
 thing the model reads to decide when to call — and they are checked by reading them. It has
 already happened once that one promised something the route does not send: `panoma_tasks`
 and its closed tasks. What a test does read off `index.ts` is the count of `registerTool`

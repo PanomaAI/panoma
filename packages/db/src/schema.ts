@@ -2,6 +2,8 @@ import { sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
+  check,
+  date,
   index,
   integer,
   jsonb,
@@ -11,7 +13,21 @@ import {
   text,
   timestamp,
   uniqueIndex,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
+
+/*
+  Memory revisions, in one sentence: every row an agent may receive carries `memory_rev`, a
+  counter that moves only when the content, authority, scope, standing or membership of that row
+  changes — never when it is merely delivered or counted. A write that changes one of those things
+  compares the revision it read (`update … where memory_rev = expected`) and increments it, and in
+  the same transaction photographs the row into `memory_revisions`. The domain table keeps the
+  current state; the photograph is what an offer, a receipt or a dependency can name exactly.
+  `docs/memory.md` and `private/memory-build-plan.md` (§11, §22) hold the whole argument.
+ */
+
+/** `scope_kind`: an explicit global, a project, or unresolved — which never grants global reach. */
+const SCOPE_KINDS = sql`'global', 'project', 'unresolved'`;
 
 /** Installed programs and their work survive catalog rescans and project retirement. */
 export const apps = pgTable("apps", {
@@ -545,8 +561,21 @@ export const agentActivities = pgTable(
  * moves; keeping another project_id here would strand queued work at the old folder.
  */
 export const memoryJobs = pgTable("memory_jobs", {
-  sessionId: text("session_id").primaryKey().references(() => agentSessions.id, { onDelete: "cascade" }),
-  status: text("status").$type<"pending" | "running" | "deferred" | "failed" | "complete">().notNull().default("pending"),
+  /**
+   * Its own id since delivery B. A job used to be the session it distilled, and `session_id` was
+   * the key; a batch of intervals across streams, or a topic of the Twin, has no single session.
+   * Legacy rows are backfilled as `legacy:<session_id>` and keep their `session_id`.
+   */
+  id: text("id").primaryKey(),
+  sessionId: text("session_id").references(() => agentSessions.id, { onDelete: "cascade" }),
+  /**
+   * `pending → running → staged → complete`, with `deferred`, `failed`, `cancelled` and
+   * `obsolete` as outcomes. `complete` is the SQL word for the plan's `published`; `staged` is
+   * a paid answer that has been validated and saved and waits to be published without paying
+   * again; `obsolete` is a staged answer the world overtook (a permission, a purge, a signature).
+   */
+  status: text("status").$type<"pending" | "running" | "staged" | "deferred" | "failed" | "complete" | "cancelled" | "obsolete">().notNull().default("pending"),
+  /** Claims, not calls: the paid calls of a job live in `model_calls` under `job_id`. */
   attempts: integer("attempts").notNull().default(0),
   availableAt: timestamp("available_at", { withTimezone: true }).notNull().defaultNow(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -554,10 +583,85 @@ export const memoryJobs = pgTable("memory_jobs", {
   finishedAt: timestamp("finished_at", { withTimezone: true }),
   /** Rotates on every claim, so an expired worker cannot finish another worker's attempt. */
   leaseToken: text("lease_token"),
+  /** When the lease ends; a claim after this instant may take the job over, staged output included. */
+  leaseUntil: timestamp("lease_until", { withTimezone: true }),
   reason: text("reason"),
   /** Counts and coverage only; source excerpts and model output belong in neither receipt nor logs. */
   receipt: jsonb("receipt").$type<Record<string, unknown>>(),
-}, (table) => [index("memory_jobs_ready_idx").on(table.status, table.availableAt)]);
+  /** `legacy_session` (the session distiller) · `project_extract` · later the Twin's processors. */
+  processor: text("processor").notNull().default("legacy_session"),
+  /** The logical key of the batch or topic: one job per (processor, work key), never restarted. */
+  workKey: text("work_key").notNull(),
+  /** The scope the batch belongs to: a project id, an identity, or a topic. */
+  scopeKey: text("scope_key").notNull(),
+  /** The project of a batch; the legacy job derives it from its session, which can move. */
+  projectId: text("project_id").references(() => projects.id, { onDelete: "set null" }),
+  /** `legacy_memory` · `project_extract` — the permission it runs under. */
+  purpose: text("purpose").notNull().default("legacy_memory"),
+  /** legacy · manual · automatic */
+  origin: text("origin").notNull().default("legacy"),
+  /** The frozen input: intervals, evidence and context references, grants. Never text. */
+  inputManifest: jsonb("input_manifest").$type<Record<string, unknown>>().notNull().default({ schemaVersion: 1, processor: "legacy_session", coverage: "baseline_only" }),
+  /** Canonical hash of the manifest, which does not include itself. */
+  inputHash: text("input_hash").notNull().default(""),
+  /** Rises when activity arrives while the job runs: the next window is pending, this one keeps its manifest. */
+  requestedRev: bigint("requested_rev", { mode: "number" }).notNull().default(1),
+  /** Compare-and-set counter of the row. */
+  rev: bigint("rev", { mode: "number" }).notNull().default(1),
+  /** The validated answer waiting to be published; never copied into receipts or logs. */
+  stagedOutput: jsonb("staged_output").$type<Record<string, unknown>>(),
+  /** Capacity held for an automatic model answer and its publication, charged to memory_usage. */
+  storageReservedBytes: bigint("storage_reserved_bytes", { mode: "number" }).notNull().default(0),
+}, (table) => [
+  index("memory_jobs_ready_idx").on(table.status, table.availableAt),
+  index("memory_jobs_project_idx").on(table.projectId, table.createdAt),
+  uniqueIndex("memory_jobs_work_idx").on(table.processor, table.workKey),
+  uniqueIndex("memory_jobs_legacy_session_idx").on(table.sessionId).where(sql`processor = 'legacy_session'`),
+  check("memory_jobs_status_check", sql`${table.status} in ('pending', 'running', 'staged', 'deferred', 'failed', 'complete', 'cancelled', 'obsolete')`),
+  check("memory_jobs_attempts_check", sql`${table.attempts} >= 0`),
+  check("memory_jobs_origin_check", sql`${table.origin} in ('legacy', 'manual', 'automatic')`),
+  check("memory_jobs_rev_check", sql`${table.rev} > 0 and ${table.requestedRev} > 0`),
+  check("memory_jobs_storage_reserved_check", sql`${table.storageReservedBytes} >= 0 and ${table.storageReservedBytes} <= 9007199254740991`),
+]);
+
+/**
+ * A typed local fact read from a program's own record: what was read, edited, run, what a test
+ * said, what failed, that a commit happened, a lifecycle event, a receipt seen. The list is closed
+ * and the payload of each kind is closed too (`packages/db/src/session-facts.ts`): no command
+ * line, no prompt, no assistant text, no tool output ever lands here. A fact is identified by
+ * its stream, generation, byte offset and sub-index under one parser version; a new parser
+ * version reads the same bytes again into rows of its own and never adds a second confirmation
+ * of the same event. `ingest_seq` orders what the catalog learned, not what happened.
+ */
+export const sessionFacts = pgTable(
+  "session_facts",
+  {
+    id: text("id").primaryKey(),
+    sourceId: text("source_id").notNull().references(() => memorySources.id, { onDelete: "restrict" }),
+    byteOffset: bigint("byte_offset", { mode: "number" }).notNull(),
+    subIndex: integer("sub_index").notNull(),
+    parserVersion: text("parser_version").notNull(),
+    ingestSeq: bigint("ingest_seq", { mode: "number" }).notNull().generatedAlwaysAsIdentity(),
+    projectId: text("project_id").references(() => projects.id, { onDelete: "set null" }),
+    identity: text("identity"),
+    recipientKey: text("recipient_key"),
+    kind: text("kind").notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+    observedAt: timestamp("observed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("session_facts_identity_idx").on(table.sourceId, table.byteOffset, table.subIndex, table.parserVersion),
+    uniqueIndex("session_facts_ingest_idx").on(table.ingestSeq),
+    index("session_facts_project_idx").on(table.projectId, table.ingestSeq),
+    index("session_facts_source_idx").on(table.sourceId, table.byteOffset),
+    check("session_facts_offset_check", sql`${table.byteOffset} >= 0 and ${table.subIndex} >= 0`),
+    check(
+      "session_facts_kind_check",
+      sql`${table.kind} in ('read', 'edit', 'command', 'test_result', 'failure', 'commit', 'lifecycle', 'receipt_seen')`,
+    ),
+  ],
+);
 
 /** Work queue: what agents can pick up. */
 export const tasks = pgTable(
@@ -662,7 +766,10 @@ export const notes = pgTable(
       .references(() => projects.id, { onDelete: "cascade" }),
     /** The fact, in one or two sentences. The cap per grade lives in `notes.ts` (`NOTE_MAX`). */
     body: text("body").notNull(),
-    /** proposed · approved · discarded · challenged (the sentinel's lawsuit: see `challenge`) */
+    /**
+     * proposed · approved · discarded · challenged (the sentinel's lawsuit: see `challenge`) ·
+     * superseded (since delivery C: an approved successor named it in `supersedes_id`).
+     */
     status: text("status").notNull().default("proposed"),
     /** The name of the agent who proposed it, or `human` if it was written by the person. */
     createdBy: text("created_by").notNull(),
@@ -705,8 +812,30 @@ export const notes = pgTable(
      * permission; exiting it does, always.
      */
     challenge: jsonb("challenge"),
+    /**
+     * The delivery revision: see the block at the top of this file. Body, status, trigger,
+     * sentinels and the challenge move it; a serving or a receipt does not. Notes keep
+     * `project_id` as their scope and a null `trigger` as their membership in the core.
+     */
+    memoryRev: bigint("memory_rev", { mode: "number" }).notNull().default(1),
+    /**
+     * The owner's explicit expiry, since delivery C. An expired note is not eligible and travels
+     * nowhere; the date is the owner's and is shown as they wrote it, never re-interpreted.
+     */
+    validUntil: timestamp("valid_until", { withTimezone: true }),
+    /**
+     * The note this one replaced when it was approved (delivery C). Approving a successor sets the
+     * predecessor `superseded` in the same transaction, by compare-and-set on both revisions; the
+     * predecessor is never deleted (`restrict`), so the succession stays readable.
+     */
+    supersedesId: text("supersedes_id").references((): AnyPgColumn => notes.id, { onDelete: "restrict" }),
   },
-  (table) => [index("notes_project_idx").on(table.projectId, table.status)],
+  (table) => [
+    index("notes_project_idx").on(table.projectId, table.status),
+    uniqueIndex("notes_successor_idx").on(table.supersedesId).where(sql`status = 'approved' and supersedes_id is not null`),
+    check("notes_memory_rev_check", sql`${table.memoryRev} > 0`),
+    check("notes_status_check", sql`${table.status} in ('proposed', 'approved', 'discarded', 'challenged', 'superseded')`),
+  ],
 );
 
 /**
@@ -836,9 +965,12 @@ export const servings = pgTable(
     projectId: text("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
-    agentId: text("agent_id")
-      .notNull()
-      .references(() => agents.id, { onDelete: "cascade" }),
+    /**
+     * Nullable since the memory contract v2: a hook has no agent key, and an offer made to a
+     * hook's context must not invent one. Deleting an agent keeps the offer and blanks the name —
+     * the offer is a record of what was prepared, not a possession of the key.
+     */
+    agentId: text("agent_id").references(() => agents.id, { onDelete: "set null" }),
     /** served · withheld */
     arm: text("arm").notNull(),
     /** Null means ordinary delivery; only enrolled servings belong in an experiment comparison. */
@@ -848,8 +980,509 @@ export const servings = pgTable(
     /** How much did the delivery weigh, in order to relate effect with size. */
     noteChars: integer("note_chars").notNull(),
     at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+    /*
+      ── The offer of the memory contract v2 ────────────────────────────────────────────────
+      The legacy row above says "these notes travelled in the briefing"; it never said which
+      bytes. From v2 an offer is immutable: the canonical payload and its hash, the exact message
+      the adapter emits (`rendered`, whose UTF-8 bytes every unit offset refers to), the manifest
+      of complete units inside it, the context and generation it was prepared for, and the policy
+      snapshot that authorized it. A retry with the same determinants reuses the offer; changing
+      one relevant byte is another offer. Attempts and observations go to `serving_events` and
+      never rewrite this row. `schema_version` 0 is the legacy row; 2 is a v2 offer, and the
+      check below demands the whole manifest for a v2 offer that has not been purged.
+     */
+    schemaVersion: integer("schema_version").notNull().default(0),
+    contextId: text("context_id").references(() => memoryContexts.id, { onDelete: "set null" }),
+    contextGeneration: bigint("context_generation", { mode: "number" }),
+    /** brief · signal · mcp · handoff — the closed list lives in `@panoma/core` (`memory-contract.ts`). */
+    channel: text("channel"),
+    /** Caller, context, generation, channel and request id: an identical retry finds its offer here. */
+    requestKey: text("request_key"),
+    /** The canonical contract without presentation, contract id or its own hash. */
+    payload: jsonb("payload"),
+    /** SHA-256 hex of the canonical payload: the public `contentHash`. */
+    contentHash: text("content_hash"),
+    /** `presentation.text`, exactly as emitted. Unit offsets are UTF-8 byte ranges of this text. */
+    rendered: text("rendered"),
+    /** SHA-256 hex of `rendered`: the `renderedHash`, computed after the id and the body. */
+    renderedHash: text("rendered_hash"),
+    /** Bytes of the final message of the emitted profile, wrapper and escaping included. */
+    serializedBytes: bigint("serialized_bytes", { mode: "number" }),
+    /** `{ schemaVersion: 1, units: [{ kind, id, revision, start, end, unitHash }] }`. */
+    unitManifest: jsonb("unit_manifest"),
+    /** Grants and generations that authorized the offer; never source text. */
+    policySnapshot: jsonb("policy_snapshot"),
+    /** Purging blanks payload, rendered, hashes and manifest; the row and its events remain. */
+    purgedAt: timestamp("purged_at", { withTimezone: true }),
   },
-  (table) => [index("servings_project_idx").on(table.projectId, table.at)],
+  (table) => [
+    index("servings_project_idx").on(table.projectId, table.at),
+    index("servings_context_idx").on(table.contextId, table.at),
+    uniqueIndex("servings_request_key_idx").on(table.requestKey).where(sql`request_key is not null`),
+    check("servings_schema_version_check", sql`${table.schemaVersion} in (0, 2)`),
+    check("servings_serialized_bytes_check", sql`${table.serializedBytes} is null or ${table.serializedBytes} >= 0`),
+    check(
+      "servings_v2_complete_check",
+      sql`${table.schemaVersion} <> 2 or ${table.purgedAt} is not null or (
+        ${table.payload} is not null and ${table.contentHash} is not null and ${table.rendered} is not null
+        and ${table.renderedHash} is not null and ${table.unitManifest} is not null
+        and ${table.serializedBytes} is not null and ${table.channel} is not null and ${table.policySnapshot} is not null
+      )`,
+    ),
+  ],
+);
+
+/**
+ * A context: what one recipient keeps, as opposed to a session, which is a conversation.
+ *
+ * A subagent has its own context although its facts group under the parent's session. Every
+ * start, resume or compaction that discards context invalidates what was "seen" in the previous
+ * generation, and the memory that had travelled becomes eligible again: repeating a rule costs
+ * tokens, suppressing one that may have vanished costs the rule. `lifecycle_key` names the native
+ * event when the program gives a reliable one, which is what allows an idempotent retry; without
+ * it an ambiguous resume creates a new context, on purpose. The authoritative state lives here,
+ * never in a file shared by hooks: restarting the server loses no generation.
+ */
+export const memoryContexts = pgTable(
+  "memory_contexts",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+    /** The adapter with an implementation: `claude-code` · `codex`. */
+    harness: text("harness").notNull(),
+    /** cli · desktop · mcp · unknown — where the program was entered from, as it declares it. */
+    entrypoint: text("entrypoint").notNull(),
+    /** The recipient inside the session: the main context or a subagent, or a fresh instance. */
+    recipientKey: text("recipient_key").notNull(),
+    /** The program's own session id, pseudonymized; null when the caller cannot be bound to one. */
+    nativeSessionKey: text("native_session_key"),
+    agentId: text("agent_id").references(() => agents.id, { onDelete: "set null" }),
+    /** Rises on every lifecycle event that discards context. */
+    generation: bigint("generation", { mode: "number" }).notNull().default(1),
+    /** Compare-and-set counter for the row itself. */
+    rev: bigint("rev", { mode: "number" }).notNull().default(1),
+    /** harness / entrypoint / recipient / native event coordinate. Never a timestamp. */
+    lifecycleKey: text("lifecycle_key"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("memory_contexts_project_idx").on(table.projectId, table.lastSeenAt),
+    uniqueIndex("memory_contexts_lifecycle_idx").on(table.lifecycleKey).where(sql`lifecycle_key is not null`),
+    check("memory_contexts_generation_check", sql`${table.generation} > 0`),
+    check("memory_contexts_rev_check", sql`${table.rev} > 0`),
+  ],
+);
+
+/**
+ * A physical generation of a stream a reader may observe: one transcript file as it exists now.
+ *
+ * Not a permission and not an agent session. A truncation, substitution, rotation or rewrite of
+ * the file opens a new generation with `previous_id` pointing at the old one, so that a receipt
+ * observed at byte 4,000 of generation 1 keeps meaning that and nothing else. `stream_key` derives
+ * from the program's stable identifier (or its hash), never from a sensitive phrase; `locator`
+ * and `file_identity` stay in the catalog and are blanked on purge. `origin` says whether the
+ * stream is native, a copy (a handoff, an export) or unknown — a copy never seals a receipt.
+ */
+export const memorySources = pgTable(
+  "memory_sources",
+  {
+    id: text("id").primaryKey(),
+    streamKey: text("stream_key").notNull(),
+    generation: bigint("generation", { mode: "number" }).notNull(),
+    previousId: text("previous_id").references((): AnyPgColumn => memorySources.id, { onDelete: "restrict" }),
+    harness: text("harness").notNull(),
+    entrypoint: text("entrypoint").notNull(),
+    nativeSessionKey: text("native_session_key"),
+    /** The validated local path. Only the catalog reads it; a client never supplies it as authority. */
+    locator: text("locator"),
+    /** `{ device?, inode?, nativeFileId?, observedSize, anchorFrom, anchorTo }`, as the adapter declares. */
+    fileIdentity: jsonb("file_identity"),
+    /** Fingerprint of the bytes around the cursor: a growing size does not prove an intact prefix. */
+    anchorHash: text("anchor_hash"),
+    /** native · copy · unknown. `native` demands validated provenance. */
+    origin: text("origin").notNull().default("unknown"),
+    /** Proven lineage of a copy; null proves no independence. */
+    originKey: text("origin_key"),
+    parentStreamKey: text("parent_stream_key"),
+    /** active · replaced · blocked · purged */
+    status: text("status").notNull().default("active"),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+    purgedAt: timestamp("purged_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("memory_sources_stream_idx").on(table.streamKey, table.generation),
+    index("memory_sources_status_idx").on(table.status, table.lastSeenAt),
+    check("memory_sources_generation_check", sql`${table.generation} > 0`),
+    check("memory_sources_origin_check", sql`${table.origin} in ('native', 'copy', 'unknown')`),
+    check("memory_sources_status_check", sql`${table.status} in ('active', 'replaced', 'blocked', 'purged')`),
+    check(
+      "memory_sources_purged_check",
+      sql`${table.purgedAt} is null or (${table.locator} is null and ${table.fileIdentity} is null and ${table.anchorHash} is null)`,
+    ),
+  ],
+);
+
+/**
+ * Where each purpose stands on each stream, per grant and scope — relational, so that no
+ * permission or coverage hides inside a growing JSON.
+ *
+ * `allowed_from` is the boundary the permission fixed (the exact EOF at activation); `next_byte`
+ * only crosses complete records that were processed or excluded with a reason. A record cut in
+ * half at the boundary is excluded whole. The first unresolved gap stays in `blocked_from` /
+ * `blocked_to` and the cursor never advances over it. A backfill is another `grant_id` with a
+ * closed range; it never rewinds the ordinary cursor. Delivery A has one purpose, `receipt`;
+ * later deliveries add `facts`, `project_extract` and `twin_extract`, each with its own progress.
+ */
+export const memorySourceCursors = pgTable(
+  "memory_source_cursors",
+  {
+    sourceId: text("source_id").notNull().references(() => memorySources.id, { onDelete: "restrict" }),
+    purpose: text("purpose").notNull(),
+    grantId: text("grant_id").notNull(),
+    /** A project identity or reference; `*` only under an explicit global grant. */
+    scopeKey: text("scope_key").notNull(),
+    grantGeneration: bigint("grant_generation", { mode: "number" }).notNull(),
+    /** The exact base and semantic grants that authorised a historical range; null for ordinary cursors. */
+    permissionSnapshot: jsonb("permission_snapshot").$type<Record<string, unknown>>(),
+    allowedFrom: bigint("allowed_from", { mode: "number" }).notNull(),
+    allowedTo: bigint("allowed_to", { mode: "number" }),
+    nextByte: bigint("next_byte", { mode: "number" }).notNull(),
+    /** A concrete version, never "latest". */
+    parserVersion: text("parser_version").notNull(),
+    /** pending · active · blocked · complete · revoked */
+    state: text("state").notNull().default("pending"),
+    rev: bigint("rev", { mode: "number" }).notNull().default(1),
+    leaseToken: text("lease_token"),
+    leaseUntil: timestamp("lease_until", { withTimezone: true }),
+    /** A bounded code; never a line of the session. */
+    reason: text("reason"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    blockedFrom: bigint("blocked_from", { mode: "number" }),
+    blockedTo: bigint("blocked_to", { mode: "number" }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.sourceId, table.purpose, table.grantId, table.scopeKey] }),
+    index("memory_source_cursors_purpose_idx").on(table.purpose, table.state, table.updatedAt),
+    check("memory_source_cursors_grant_generation_check", sql`${table.grantGeneration} > 0`),
+    check("memory_source_cursors_range_check", sql`${table.allowedFrom} >= 0 and (${table.allowedTo} is null or ${table.allowedTo} > ${table.allowedFrom})`),
+    check("memory_source_cursors_next_check", sql`${table.nextByte} >= ${table.allowedFrom} and (${table.allowedTo} is null or ${table.nextByte} <= ${table.allowedTo})`),
+    check("memory_source_cursors_state_check", sql`${table.state} in ('pending', 'active', 'blocked', 'complete', 'revoked')`),
+    check("memory_source_cursors_rev_check", sql`${table.rev} > 0`),
+    check("memory_source_cursors_lease_check", sql`(${table.leaseToken} is null) = (${table.leaseUntil} is null)`),
+    check("memory_source_cursors_blocked_check", sql`${table.blockedTo} is null or (${table.blockedFrom} is not null and ${table.blockedTo} > ${table.blockedFrom})`),
+  ],
+);
+
+/**
+ * What happened to an offer after it was prepared: an attempt to transport it, or an observation
+ * of it in a native record. Append-only; nothing here rewrites the offer's time or content.
+ *
+ * An attempt says the server tried to answer, with its local result and latency. A reception
+ * says the adapter found those bytes at a validated site of the program's own record — `full`,
+ * `partial`, `unknown` or `not_observed` — with the source and byte coordinate that prove it.
+ * `event_key` is the native event's identity when the program gives a reliable one; then the
+ * same observation cannot be recorded twice. Two markers at the ends do not prove an intact
+ * middle: the reception compares the units of the manifest.
+ */
+export const servingEvents = pgTable(
+  "serving_events",
+  {
+    id: text("id").primaryKey(),
+    servingId: text("serving_id").notNull().references(() => servings.id, { onDelete: "cascade" }),
+    /** attempt · reception */
+    eventKind: text("event_kind").notNull(),
+    eventKey: text("event_key"),
+    sourceId: text("source_id").references(() => memorySources.id, { onDelete: "restrict" }),
+    byteOffset: bigint("byte_offset", { mode: "number" }),
+    /** attempt: sent · failed · unknown — reception: full · partial · unknown · not_observed */
+    result: text("result").notNull(),
+    /** `{ schemaVersion: 1, … }`: latency, units checked, parser version. Never source text. */
+    details: jsonb("details").notNull(),
+    observedAt: timestamp("observed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("serving_events_serving_idx").on(table.servingId, table.observedAt),
+    index("serving_events_source_idx").on(table.sourceId, table.byteOffset),
+    uniqueIndex("serving_events_event_key_idx").on(table.eventKey).where(sql`event_key is not null`),
+    check("serving_events_kind_check", sql`${table.eventKind} in ('attempt', 'reception')`),
+    check(
+      "serving_events_result_check",
+      sql`(${table.eventKind} = 'attempt' and ${table.result} in ('sent', 'failed', 'unknown'))
+        or (${table.eventKind} = 'reception' and ${table.result} in ('full', 'partial', 'unknown', 'not_observed'))`,
+    ),
+    check("serving_events_offset_check", sql`${table.byteOffset} is null or ${table.byteOffset} >= 0`),
+  ],
+);
+
+/**
+ * The photograph of a delivered object at one revision. See the block at the top of the file.
+ *
+ * `kind` names the domain (`note`, `criterion`, `decision`, and the evidence domains that are
+ * only photographed when they become an input of a revision or an offer); `object_id` the row;
+ * `rev` its `memory_rev`. `payload` keeps every semantic column of the row and `payload_hash`
+ * the SHA-256 of its canonical JSON. A baseline (`coverage = baseline_only`) is what the
+ * migration writes for rows that existed before this table: it preserves id, state, text, scope
+ * and signature, and invents no approval nor instant that was never recorded. Purging a
+ * photograph blanks payload and hash and leaves the row as the receipt of the gap: this table
+ * promises no immutability that would stop the owner from deleting data.
+ */
+export const memoryRevisions = pgTable(
+  "memory_revisions",
+  {
+    id: text("id").primaryKey(),
+    kind: text("kind").notNull(),
+    objectId: text("object_id").notNull(),
+    rev: bigint("rev", { mode: "number" }).notNull(),
+    previousId: text("previous_id").references((): AnyPgColumn => memoryRevisions.id, { onDelete: "restrict" }),
+    schemaVersion: integer("schema_version").notNull().default(1),
+    scopeKind: text("scope_kind").notNull(),
+    scopeRef: text("scope_ref"),
+    /** owner_instruction · owner_confirmation · owner_report · agent_report · observed_result · inference */
+    authority: text("authority").notNull(),
+    /** The domain's own state word at that revision (approved, signed, active…). */
+    disposition: text("disposition").notNull(),
+    payload: jsonb("payload"),
+    payloadHash: text("payload_hash"),
+    /** complete · baseline_only */
+    coverage: text("coverage").notNull().default("complete"),
+    /** create · edit · approve · adopt · veto · supersede · support · scope · policy · baseline */
+    reason: text("reason").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    purgedAt: timestamp("purged_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("memory_revisions_object_rev_idx").on(table.kind, table.objectId, table.rev),
+    index("memory_revisions_object_idx").on(table.kind, table.objectId, table.createdAt),
+    index("memory_revisions_scope_idx").on(table.scopeKind, table.scopeRef, table.createdAt),
+    check("memory_revisions_rev_check", sql`${table.rev} > 0`),
+    check("memory_revisions_schema_version_check", sql`${table.schemaVersion} = 1`),
+    check("memory_revisions_scope_kind_check", sql`${table.scopeKind} in (${SCOPE_KINDS})`),
+    check("memory_revisions_scope_ref_check", sql`${table.scopeKind} <> 'project' or ${table.scopeRef} is not null`),
+    check("memory_revisions_coverage_check", sql`${table.coverage} in ('complete', 'baseline_only')`),
+    check(
+      "memory_revisions_payload_check",
+      sql`(${table.purgedAt} is null and ${table.payload} is not null and ${table.payloadHash} is not null)
+        or (${table.purgedAt} is not null and ${table.payload} is null and ${table.payloadHash} is null)`,
+    ),
+  ],
+);
+
+/**
+ * What a derived object was built from, and what supports it: the reverse index that a
+ * withdrawal or a purge walks.
+ *
+ * `derived_from` records what really entered a transformation and is immutable; every required
+ * group must remain permitted for that revision to be served. `supported_by` is additional,
+ * independent support and may open an alternative group. Withdrawing one of two alternatives
+ * keeps a fact with enough support; withdrawing an indispensable input blocks that version and
+ * asks for a regeneration from what remains. Exactly one `dependent_*` and one `input_*` are set
+ * on every edge; a group has one mode; an empty required group does not exist. Delivery B adds
+ * `dependent_job_id`.
+ */
+export const memoryDependencies = pgTable(
+  "memory_dependencies",
+  {
+    id: text("id").primaryKey(),
+    /** The canonical key of ends, relation and group: the same edge cannot be written twice. */
+    dependencyKey: text("dependency_key").notNull(),
+    dependentRevisionId: text("dependent_revision_id").references(() => memoryRevisions.id, { onDelete: "restrict" }),
+    dependentServingId: text("dependent_serving_id").references(() => servings.id, { onDelete: "cascade" }),
+    /** Since delivery B: a job is a derived object too — what it read is what it may publish from. */
+    dependentJobId: text("dependent_job_id").references(() => memoryJobs.id, { onDelete: "cascade" }),
+    inputRevisionId: text("input_revision_id").references(() => memoryRevisions.id, { onDelete: "restrict" }),
+    inputSourceId: text("input_source_id").references(() => memorySources.id, { onDelete: "restrict" }),
+    /** Byte range of the source input, `[from, to)`; only with a source. */
+    inputFrom: bigint("input_from", { mode: "number" }),
+    inputTo: bigint("input_to", { mode: "number" }),
+    /** derived_from · supported_by · exception · counterexample */
+    relation: text("relation").notNull(),
+    groupNo: integer("group_no").notNull().default(0),
+    /** all · any */
+    groupMode: text("group_mode").notNull().default("all"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("memory_dependencies_key_idx").on(table.dependencyKey),
+    index("memory_dependencies_input_revision_idx").on(table.inputRevisionId),
+    index("memory_dependencies_input_source_idx").on(table.inputSourceId),
+    index("memory_dependencies_dependent_revision_idx").on(table.dependentRevisionId),
+    index("memory_dependencies_dependent_serving_idx").on(table.dependentServingId),
+    index("memory_dependencies_dependent_job_idx").on(table.dependentJobId),
+    check(
+      "memory_dependencies_dependent_check",
+      sql`(${table.dependentRevisionId} is not null)::int + (${table.dependentServingId} is not null)::int + (${table.dependentJobId} is not null)::int = 1`,
+    ),
+    check(
+      "memory_dependencies_input_check",
+      sql`(${table.inputRevisionId} is not null)::int + (${table.inputSourceId} is not null)::int = 1`,
+    ),
+    check(
+      "memory_dependencies_range_check",
+      sql`(${table.inputSourceId} is null and ${table.inputFrom} is null and ${table.inputTo} is null)
+        or (${table.inputSourceId} is not null and (${table.inputFrom} is null or (${table.inputFrom} >= 0 and (${table.inputTo} is null or ${table.inputTo} > ${table.inputFrom}))))`,
+    ),
+    check("memory_dependencies_relation_check", sql`${table.relation} in ('derived_from', 'supported_by', 'exception', 'counterexample')`),
+    check("memory_dependencies_group_check", sql`${table.groupNo} >= 0 and ${table.groupMode} in ('all', 'any')`),
+  ],
+);
+
+/**
+ * A commitment: a human obligation with a version, since delivery C. Its text, project, optional
+ * task, typed conditions and completion criteria are the owner's; `status` is the obligation
+ * (`open` · `fulfilled` · `cancelled`) and the observations of its completion checks live apart in
+ * `memory_outcomes`, so a failed check while working never closes it and a later regression never
+ * erases that it was once fulfilled. Fulfilment is declared by the owner or by every completion
+ * check the owner approved passing on the current revision in one environment; an agent's
+ * `task_closed` report is a report. A closed commitment is never reopened: a new one is created
+ * and linked through a dependency edge between their revisions.
+ */
+export const commitments = pgTable(
+  "commitments",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+    taskId: text("task_id").references(() => tasks.id, { onDelete: "set null" }),
+    /** 1 to 2,000 UTF-16 units; the cap lives in `commitments.ts`. */
+    text: text("text").notNull(),
+    /** A predicate of `packages/core/src/predicates.ts`, or null. */
+    conditions: jsonb("conditions").$type<Record<string, unknown>>(),
+    /** Up to six checks of purpose `completion`, approved by the owner. */
+    completionChecks: jsonb("completion_checks").$type<Record<string, unknown>[]>().notNull().default([]),
+    /** Checks of the other purposes, the same shape as on a note. */
+    checks: jsonb("checks").$type<Record<string, unknown>[]>().notNull().default([]),
+    /** open · fulfilled · cancelled */
+    status: text("status").notNull().default("open"),
+    memoryRev: bigint("memory_rev", { mode: "number" }).notNull().default(1),
+    /** human · agent — who wrote the obligation down, never who fulfils it. */
+    createdBy: text("created_by").notNull().default("human"),
+    /** `{ schemaVersion, actor: owner | checks, revision, checks?, reason?, environmentId? }` at closure. */
+    resolution: jsonb("resolution").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("commitments_project_idx").on(table.projectId, table.status),
+    check("commitments_status_check", sql`${table.status} in ('open', 'fulfilled', 'cancelled')`),
+    check("commitments_memory_rev_check", sql`${table.memoryRev} > 0`),
+    check("commitments_created_by_check", sql`${table.createdBy} in ('human', 'agent')`),
+    check(
+      "commitments_resolution_check",
+      sql`(${table.status} = 'open' and ${table.resolution} is null and ${table.resolvedAt} is null)
+        or (${table.status} <> 'open' and ${table.resolution} is not null and ${table.resolvedAt} is not null)`,
+    ),
+  ],
+);
+
+/**
+ * What a check observed, and the incidents it opened, since delivery C. An observation is one
+ * row per look: the check revision, the environment the disk was in (`environment_id` tells two
+ * dirty worktrees at one HEAD apart), the result and the evidence with its coverage. An incident
+ * is an occurrence with an identity of its own — another row even with the same text and HEAD —
+ * whose only mutable field is the owner's verdict, by compare-and-set on `verdict_rev`. Observing
+ * never rewrites an earlier row and never moves a definition revision.
+ */
+export const memoryOutcomes = pgTable(
+  "memory_outcomes",
+  {
+    id: text("id").primaryKey(),
+    /** observation · incident */
+    kind: text("kind").notNull(),
+    /** The occurrence this row belongs to: a hash of subject, check and environment for an observation, its own id for an incident. */
+    occurrenceId: text("occurrence_id").notNull(),
+    projectId: text("project_id").references(() => projects.id, { onDelete: "set null" }),
+    /** The photographed revision of the note, decision, criterion or commitment observed. */
+    subjectRevisionId: text("subject_revision_id").notNull().references(() => memoryRevisions.id, { onDelete: "restrict" }),
+    checkId: text("check_id"),
+    checkRev: bigint("check_rev", { mode: "number" }),
+    /** `{ schemaVersion, environmentId, projectRef, resolvedRoot, head?, dirtyFingerprint?, observedAt, inspected }`. */
+    environment: jsonb("environment").$type<Record<string, unknown>>().notNull(),
+    /** pass · fail · unknown */
+    result: text("result").notNull(),
+    /** `{ schemaVersion, sourceRefs, checkRevision?, observedCoverage, deliveredBefore, reason }`. */
+    evidence: jsonb("evidence").$type<Record<string, unknown>>().notNull(),
+    sourceId: text("source_id").references(() => memorySources.id, { onDelete: "restrict" }),
+    observedAt: timestamp("observed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    /** confirmed · false_positive, the owner's word on an incident; null until they speak. */
+    ownerVerdict: text("owner_verdict"),
+    verdictRev: bigint("verdict_rev", { mode: "number" }).notNull().default(1),
+  },
+  (table) => [
+    index("memory_outcomes_occurrence_idx").on(table.occurrenceId),
+    index("memory_outcomes_subject_idx").on(table.subjectRevisionId),
+    index("memory_outcomes_project_idx").on(table.projectId, table.createdAt),
+    check("memory_outcomes_kind_check", sql`${table.kind} in ('observation', 'incident')`),
+    check("memory_outcomes_result_check", sql`${table.result} in ('pass', 'fail', 'unknown')`),
+    check("memory_outcomes_check_pair_check", sql`(${table.checkId} is null) = (${table.checkRev} is null) and (${table.checkRev} is null or ${table.checkRev} > 0)`),
+    check("memory_outcomes_verdict_check", sql`${table.ownerVerdict} is null or ${table.ownerVerdict} in ('confirmed', 'false_positive')`),
+    check("memory_outcomes_verdict_rev_check", sql`${table.verdictRev} > 0`),
+  ],
+);
+
+/**
+ * The logical bytes of derived memory content, per catalog and per project (plan §25.3): the
+ * canonical payloads of the photographs, the offers, the typed facts and the staged answers,
+ * counted by the writer in the same transaction that adds them and reduced by the writer that
+ * removes them. It is accounting, not a measure of the database on disk: the quota it is
+ * compared with pauses new automatic retention when reached, never prunes pending or cited
+ * evidence to make room, and is reconciled from the rows themselves (`reconcileUsage`).
+ */
+export const memoryUsage = pgTable(
+  "memory_usage",
+  {
+    /** `catalog` for the whole catalog (one row, key `catalog`), `project` for one project by id. */
+    scopeKind: text("scope_kind").notNull(),
+    scopeKey: text("scope_key").notNull(),
+    bytes: bigint("bytes", { mode: "number" }).notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.scopeKind, table.scopeKey] }),
+    check("memory_usage_scope_kind_check", sql`${table.scopeKind} in ('catalog', 'project')`),
+    check("memory_usage_bytes_check", sql`${table.bytes} >= 0`),
+  ],
+);
+
+/**
+ * The durable intention and progress of a withdrawal or a purge — never a payload.
+ *
+ * Every operation is also appended, before the database is touched, to
+ * `PANOMA_HOME/memory-deletions.jsonl`, a journal that sits outside what a database backup
+ * restores: a copy taken before a purge must not bring the purged text back in silence, and the
+ * journal is how a restored catalog learns which deletions it has to honour or quarantine
+ * itself. `targets` names ids, origins, stores and counts; `progress` keeps the checkpoint, the
+ * pending stores and the last error code. The intention is immutable; progress moves by CAS.
+ * `complete` demands a date and every store confirmed. The `baseline` operation is written once
+ * when this delivery initializes, so the journal exists before there is anything to delete.
+ */
+export const memoryDeletions = pgTable(
+  "memory_deletions",
+  {
+    id: text("id").primaryKey(),
+    journalId: text("journal_id").notNull(),
+    sequence: bigint("sequence", { mode: "number" }).notNull(),
+    /** baseline · withdraw · purge */
+    operation: text("operation").notNull(),
+    /** pending · cleaning · complete · failed */
+    state: text("state").notNull().default("pending"),
+    targets: jsonb("targets").notNull(),
+    progress: jsonb("progress").notNull(),
+    rev: bigint("rev", { mode: "number" }).notNull().default(1),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    reason: text("reason"),
+  },
+  (table) => [
+    uniqueIndex("memory_deletions_journal_idx").on(table.journalId, table.sequence),
+    index("memory_deletions_state_idx").on(table.state, table.sequence),
+    check("memory_deletions_sequence_check", sql`${table.sequence} > 0`),
+    check("memory_deletions_rev_check", sql`${table.rev} > 0`),
+    check("memory_deletions_operation_check", sql`${table.operation} in ('baseline', 'withdraw', 'purge')`),
+    check("memory_deletions_state_check", sql`${table.state} in ('pending', 'cleaning', 'complete', 'failed')`),
+    check("memory_deletions_complete_check", sql`${table.state} <> 'complete' or ${table.completedAt} is not null`),
+  ],
 );
 
 export const launches = pgTable(
@@ -1314,10 +1947,34 @@ export const decisionEpisodes = pgTable(
     validUntil: timestamp("valid_until", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    /** The delivery revision. It neither replaces `supersedes_id` nor changes the episode's id. */
+    memoryRev: bigint("memory_rev", { mode: "number" }).notNull().default(1),
+    /**
+     * `global` · `project` · `unresolved`. A null identity used to mean "every project" by the
+     * shape of the schema alone; the backfill keeps that meaning for the rows that already exist
+     * and writes it down. A new row without a resolved project is `unresolved`: visible to the
+     * owner so the attribution can be repaired, never delivered to another project.
+     */
+    scopeKind: text("scope_kind").notNull().default("unresolved"),
+    /**
+     * The typed conditions and exceptions of delivery C: `{ schemaVersion: 1, expression }` as
+     * `packages/core/src/predicates.ts` validates them, or null when none is declared. Null never
+     * means the narrative was checked; the narrative in `fields` stays whole beside them.
+     */
+    conditionsPredicate: jsonb("conditions_predicate").$type<Record<string, unknown>>(),
+    exceptionsPredicate: jsonb("exceptions_predicate").$type<Record<string, unknown>>(),
+    /** The checks of this decision (delivery C): `{ schemaVersion, checkId, revision, purpose, kind, target, expected }[]`. */
+    checks: jsonb("checks").$type<Record<string, unknown>[]>().notNull().default([]),
   },
   (table) => [
     index("decision_episodes_identity_idx").on(table.identity, table.status, table.createdAt),
     index("decision_episodes_supersedes_idx").on(table.supersedesId),
+    check("decision_episodes_memory_rev_check", sql`${table.memoryRev} > 0`),
+    check("decision_episodes_scope_kind_check", sql`${table.scopeKind} in (${SCOPE_KINDS})`),
+    check(
+      "decision_episodes_scope_identity_check",
+      sql`(${table.scopeKind} <> 'global' or ${table.identity} is null) and (${table.scopeKind} <> 'project' or ${table.identity} is not null)`,
+    ),
   ],
 );
 
@@ -1408,11 +2065,37 @@ export const observations = pgTable(
      * decisions.
      */
     topicAt: timestamp("topic_at", { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * The delivery revision of the observation (delivery D): reclassifying moves it and
+     * photographs the row; the backfill set it to the highest photographed revision or 1.
+     */
+    memoryRev: bigint("memory_rev", { mode: "number" }).notNull().default(1),
+    /**
+     * The independence unit of §10.2: `<harness>:<native session key>:<recipient>` for a turn read
+     * from a stream, `teach:<gesture>` for a lesson; a copy or the system's own output carries
+     * `copied:` and never counts. Null for the legacy rows, whose origin is unknown.
+     */
+    caseOriginKey: text("case_origin_key"),
+    /**
+     * What the distiller read the turn as (plan §21.3, delivery D): a reaction, a choice, a
+     * reason, a condition, an exception, a counterexample or a correction. Null for a legacy row
+     * and for a statement filed without one; never a guess.
+     */
+    kind: text("kind"),
+    /**
+     * What a reaction or a choice was about, as the distiller read it. The literal `unknown` is
+     * the ambiguous case the plan names — «perfecto» with no object — which no synthesis reads as
+     * a preference; null when the kind names no referent or the row is a legacy one.
+     */
+    referent: text("referent"),
   },
   (table) => [
     // The synthesis always asks the same thing: 'give me what is on this topic, the most recent
     // first.'
     index("observations_topic_idx").on(table.topic, table.at),
+    index("observations_origin_idx").on(table.caseOriginKey),
+    check("observations_memory_rev_check", sql`${table.memoryRev} > 0`),
+    check("observations_kind_check", sql`${table.kind} is null or ${table.kind} in ('reaction', 'choice', 'reason', 'condition', 'exception', 'counterexample', 'correction')`),
     // And the classifier: «what remains to be seen».
     index("observations_classified_idx").on(table.classified),
   ],
@@ -1520,6 +2203,21 @@ export const beliefs = pgTable(
      * deletion that does not contradict them.
      */
     support: jsonb("support").notNull(),
+    /**
+     * The typed conditions and exceptions of delivery D, a predicate of
+     * `packages/core/src/predicates.ts` or null: null means none is declared, never that the
+     * narrative was checked. A criterion is applicable only when its conditions are true and its
+     * exceptions false; an unknown decisive exception asks to be checked.
+     */
+    conditions: jsonb("conditions").$type<Record<string, unknown>>(),
+    exceptions: jsonb("exceptions").$type<Record<string, unknown>>(),
+    /**
+     * The independence behind an inference, since delivery D: `{ schemaVersion, supportPolicyVersion,
+     * families, counts, refs }`, derived from the observations' origin keys and never from a model.
+     * Legacy rows keep null and their policy; a new or revised inference publishes automatically
+     * only with three families of known origin besides the floor `support` still guards.
+     */
+    supportEvidence: jsonb("support_evidence").$type<Record<string, unknown>>(),
     /** Which model wrote it. Empty when the person editing it wrote it. */
     model: text("model").notNull(),
     /** When the person signed it. Null while it is inferred. */
@@ -1568,12 +2266,42 @@ export const beliefs = pgTable(
      */
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    /**
+     * The delivery revision, independent of `updated_at`, whose meaning — "the machine changed
+     * the text or the evidence" — is kept as it is. Statement, state, scope and support move this
+     * one; publication, the delivery mode (which moves `delivery_policy_rev`) and a serving do not.
+     */
+    memoryRev: bigint("memory_rev", { mode: "number" }).notNull().default(1),
+    /**
+     * `global` · `project` · `unresolved`. Same rule as on `decision_episodes`: a null identity is
+     * global only when it says so, and the migration says so for the rows that predate the word.
+     */
+    scopeKind: text("scope_kind").notNull().default("unresolved"),
+    /**
+     * `core` · `contextual`. Whether the criterion travels in every delivery to the projects it
+     * applies to (core) or only when the task reaches for it (contextual). It is seeded from the
+     * published manifest, decided by policy, and a signature by itself does not turn a preference
+     * into mandatory content of every task.
+     */
+    deliveryMode: text("delivery_mode").notNull().default("contextual"),
+    /** The revision of that policy decision; part of every receipt that carries the belief. */
+    deliveryPolicyRev: bigint("delivery_policy_rev", { mode: "number" }).notNull().default(1),
+    /** The checks of this criterion (delivery C), the same shape as on a decision. */
+    checks: jsonb("checks").$type<Record<string, unknown>[]>().notNull().default([]),
   },
   (table) => [
     // The screen always asks the same thing: 'the portrait, by subjects'.
     index("beliefs_topic_idx").on(table.topic, table.createdAt),
     // And the synthesis: 'what is alive, what is buried'.
     index("beliefs_state_idx").on(table.state),
+    check("beliefs_memory_rev_check", sql`${table.memoryRev} > 0`),
+    check("beliefs_delivery_policy_rev_check", sql`${table.deliveryPolicyRev} > 0`),
+    check("beliefs_scope_kind_check", sql`${table.scopeKind} in (${SCOPE_KINDS})`),
+    check(
+      "beliefs_scope_identity_check",
+      sql`(${table.scopeKind} <> 'global' or ${table.identity} is null) and (${table.scopeKind} <> 'project' or ${table.identity} is not null)`,
+    ),
+    check("beliefs_delivery_mode_check", sql`${table.deliveryMode} in ('core', 'contextual')`),
   ],
 );
 
@@ -1677,9 +2405,16 @@ export const synthesisPasses = pgTable(
      */
     observations: integer("observations").notNull().default(0),
     at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+    /** The job of delivery D that ran the pass; null for a manual pass and for the legacy ones. */
+    jobId: text("job_id").references(() => memoryJobs.id, { onDelete: "set null" }),
+    /** The topic fingerprint the pass was synthesized from (delivery D): an equal one is not paid again. Null for legacy passes. */
+    inputHash: text("input_hash"),
   },
   // The question is always 'what has moved since such a date,' and then it is grouped by month.
-  (table) => [index("synthesis_passes_at_idx").on(table.at)],
+  (table) => [
+    index("synthesis_passes_at_idx").on(table.at),
+    index("synthesis_passes_topic_hash_idx").on(table.topic, table.inputHash),
+  ],
 );
 
 export const modelCalls = pgTable(
@@ -1711,9 +2446,39 @@ export const modelCalls = pgTable(
      */
     images: integer("images").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    /*
+      ── The reservation, since delivery B ────────────────────────────────────────────────
+      A row used to be written after the answer came back, and the cap was read before the call
+      by whoever was about to pay: two callers could read the same count and both spend the last
+      call of the day. Now the row is inserted BEFORE the call, under a lock per family and local
+      day, in the state `reserved`; it moves to `sent`, then `completed` (with the usage) or
+      `uncertain` (a network result nobody can read: still counted), and only a reservation that
+      demonstrably never left the process is `released` and stops counting. Legacy rows carry
+      `origin = legacy` and `state = completed`, and keep counting by their creation day.
+     */
+    /** legacy · manual · automatic */
+    origin: text("origin").notNull().default("legacy"),
+    /** reserved · sent · completed · uncertain · released */
+    state: text("state").notNull().default("completed"),
+    /** One reservation per attempt of a job: a retry is a new key. */
+    attemptKey: text("attempt_key"),
+    jobId: text("job_id").references(() => memoryJobs.id, { onDelete: "set null" }),
+    /** The local calendar day the call is charged to, fixed at reservation and moved at send when midnight passed. */
+    budgetDay: date("budget_day"),
+    reservedAt: timestamp("reserved_at", { withTimezone: true }),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    reservationRev: bigint("reservation_rev", { mode: "number" }).notNull().default(1),
   },
   // The budget always asks the same thing: 'how many of this kind go today?'
-  (table) => [index("model_calls_kind_idx").on(table.kind, table.createdAt)],
+  (table) => [
+    index("model_calls_kind_idx").on(table.kind, table.createdAt),
+    index("model_calls_budget_idx").on(table.kind, table.budgetDay, table.origin, table.state),
+    uniqueIndex("model_calls_attempt_idx").on(table.attemptKey).where(sql`attempt_key is not null`),
+    check("model_calls_origin_check", sql`${table.origin} in ('legacy', 'manual', 'automatic')`),
+    check("model_calls_state_check", sql`${table.state} in ('reserved', 'sent', 'completed', 'uncertain', 'released')`),
+    check("model_calls_reservation_rev_check", sql`${table.reservationRev} > 0`),
+  ],
 );
 
 /**

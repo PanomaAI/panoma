@@ -1,4 +1,5 @@
 import { estimateTokens, wrapUntrusted } from "@panoma/core";
+import { OBSERVATION_KINDS, REFERENT_MAX, UNKNOWN_REFERENT, type ObservationKind } from "@panoma/db";
 
 /*
   From what you said to what is proposed to you: the prompt, and everything that can be tested
@@ -208,6 +209,30 @@ export const MAX_STATEMENT_CHARS = 200;
  */
 const QUOTES_LIMIT = 40_000;
 
+/**
+ * What the person did in a quote, for the Twin's continuous learning (plan §21.3): a reaction
+ * to a delivery, a choice among alternatives, an explicit reason, a condition or an exception
+ * of a preference, a counterexample, or a correction of what was done. The manual distiller
+ * does not ask for it; `twin-learn.ts` does, because a bare «perfecto» is a reaction whose
+ * object nobody can name, and that is what keeps it from becoming a general preference.
+ */
+export { OBSERVATION_KINDS, UNKNOWN_REFERENT, type ObservationKind };
+
+/** A referent is a few words taken from the quote, never a paragraph: the row's own bound. */
+export const REFERENT_MAX_CHARS = REFERENT_MAX;
+
+/**
+ * What a caller may change about the prompt. Without options the prompt is the manual
+ * distiller's, byte for byte; the Twin's continuous learning (`twin-learn.ts`) lowers the
+ * citation floor to one — a teach said once may propose (D01/T64) — and asks for the kind and
+ * the referent of every observation (plan §21.3).
+ */
+export interface PromptOptions {
+  /** Citations an observation needs; {@link MIN_CITATIONS} by default. */
+  minCitations?: number;
+  /** Ask for `kind` and `referent` on every observation. */
+  kinds?: boolean;
+}
 
 /** A quote with the label with which the model will refer to it. */
 export interface LabelledQuote {
@@ -414,9 +439,10 @@ export function labelChunk(chunk: DistillChunk): LabelledQuote[] {
  * Instructions to the model are English, which is another thing: the model reads them, nobody
  * else does. Source quotations travel verbatim and stored rows are never migrated.
  */
-export function buildPrompt(chunk: DistillChunk): BuiltPrompt {
+export function buildPrompt(chunk: DistillChunk, options: PromptOptions = {}): BuiltPrompt {
   const labelled = labelChunk(chunk);
   const labels = new Map(labelled.map(({ label, verdict }) => [label, verdict]));
+  const min = options.minCitations ?? MIN_CITATIONS;
 
   const quotes = wrapUntrusted(labelled.map(entryLines).join("\n\n"), {
     origin: "journal",
@@ -429,12 +455,13 @@ export function buildPrompt(chunk: DistillChunk): BuiltPrompt {
     "includes its date, signals detected by the engine and, when available, the assistant",
     "delivery that prompted the reaction. Assistant context is not the person's evidence.",
     "",
-    `Extract two to ${MAX_STATEMENTS} observations about how THIS person wants their work`,
+    // With a floor of one quote (the Twin's continuous learning) a single quote may answer.
+    `Extract ${min > 1 ? "two" : "up"} to ${MAX_STATEMENTS} observations about how THIS person wants their work`,
     'to turn out, addressing them directly: "you want X", "you cannot stand Y".',
     "",
     "Rules. The first two are disqualifying:",
-    `- Each observation cites at least ${MIN_CITATIONS} labels from the list using their`,
-    "  exact names. Do not write anything that cannot be supported by two quotes: omitting",
+    `- Each observation cites at least ${min} label${min === 1 ? "" : "s"} from the list using their`,
+    `  exact names. Do not write anything that cannot be supported by ${min > 1 ? "two quotes" : "a quote"}: omitting`,
     "  an observation is preferable to adding an unsupported one.",
     "- An observation that would be true of any programmer is not useful.",
     '  "Prefers clean code" distinguishes nobody. Discard observations that do not',
@@ -489,8 +516,11 @@ export function buildPrompt(chunk: DistillChunk): BuiltPrompt {
     'only when "other" would be clearly less useful; inventing a topic for each',
     "observation is not classification.",
     "",
+    ...(options.kinds ? kindRules() : []),
     "Return only a JSON array: no code fences and no explanation before or after it.",
-    `[{"topic":"design","statement":"…","citations":["c3","c17"]}]`,
+    options.kinds
+      ? `[{"topic":"design","kind":"choice","referent":"the empty state","statement":"…","citations":["c3"]}]`
+      : `[{"topic":"design","statement":"…","citations":["c3","c17"]}]`,
     "",
     "If the material supports no observation, return []. That is a valid response and",
     "preferable to an unsupported statement.",
@@ -507,6 +537,28 @@ const SYSTEM = [
   "advice or a style guide. Write each observation in plain, concrete words, in the language",
   "of the quotes it rests on, without translating or rewriting the source quotations.",
 ].join(" ");
+
+/**
+ * The paragraph plan §21.3 adds for the Twin: the kind of each observation and its referent.
+ * The referent rule is what keeps a bare «perfecto» out of the portrait — it is kept as a
+ * reaction whose object is unknown, and the caller files it apart from the preferences.
+ */
+function kindRules(): string[] {
+  return [
+    "Each observation also states its KIND, one of: reaction (approval or rejection of",
+    "something delivered), choice (a pick among alternatives), reason (an explicit why),",
+    "condition (when a preference applies), exception (when it does not), counterexample",
+    "(a case that contradicts a stated preference), correction (the person corrected what",
+    "was done).",
+    "",
+    "And its REFERENT: what the quote is about, in a few words taken from the quote itself.",
+    `Write "${UNKNOWN_REFERENT}" when the quote names no object of feedback. A bare approval such as`,
+    '"perfecto" or "ok" praises something the material does not show: report it as kind',
+    `"reaction" with referent "${UNKNOWN_REFERENT}" and describe only what was said, never a general`,
+    "preference. Never guess the referent from the previous quote.",
+    "",
+  ];
+}
 
 /**
  * Remove from the end of a sentence the tags that the model has left hanging.
@@ -605,6 +657,16 @@ export interface Observation {
   citations: string[];
   /** If the subject is not in the sown vocabulary: it was coined in this answer. */
   minted: boolean;
+  /** What the person did in the quote; only when the prompt asked for kinds and the answer carried one. */
+  kind?: ObservationKind;
+  /** The object of the feedback, or {@link UNKNOWN_REFERENT}; only with `kind`. */
+  referent?: string;
+  /**
+   * The answer carried no topic at all: `topic` is the drawer, and the caller may save the row
+   * unclassified so that a classifier looks at it later (D04/T66). Absent when a topic was named,
+   * `other` included.
+   */
+  unclassified?: true;
 }
 
 export interface ParseOutcome {
@@ -642,7 +704,9 @@ export interface ParseOutcome {
 export function parseObservations(
   text: string,
   labels: ReadonlyMap<string, DistillVerdict>,
+  options: { minCitations?: number } = {},
 ): ParseOutcome {
+  const min = options.minCitations ?? MIN_CITATIONS;
   const parsed = readArray(text);
   if (parsed === undefined) return { observations: [], dropped: 0, unreadable: true };
 
@@ -660,7 +724,7 @@ export function parseObservations(
   let dropped = 0;
 
   for (const item of parsed) {
-    const observation = asObservation(item, labels);
+    const observation = asObservation(item, labels, min);
     if (observation === undefined) {
       dropped += 1;
       continue;
@@ -768,6 +832,7 @@ function stripFences(text: string): string {
 function asObservation(
   item: unknown,
   labels: ReadonlyMap<string, DistillVerdict>,
+  min: number,
 ): Observation | undefined {
   if (!isRecord(item)) return undefined;
 
@@ -776,6 +841,8 @@ function asObservation(
   if (!statement || statement.length > MAX_STATEMENT_CHARS) return undefined;
 
   const topic = topicOf(item["topic"]);
+  // No topic at all is not `other`: it is a row a classifier still has to look at (D04/T66).
+  const unclassified = text(item["topic"])?.trim() ? undefined : true;
 
   const cited = item["citations"];
   if (!Array.isArray(cited)) return undefined;
@@ -790,9 +857,30 @@ function asObservation(
       if (verdict) citations.add(verdict.id);
     }
   }
-  if (citations.size < MIN_CITATIONS) return undefined;
+  if (citations.size < min) return undefined;
 
-  return { ...topic, statement, citations: [...citations] };
+  /*
+    The kind and the referent travel only when the answer names a kind the vocabulary knows; a
+    referent without a kind says nothing. A missing or empty referent reads as unknown, which is
+    the safe side: an observation nobody can attach to an object never founds a preference.
+   */
+  const kind = kindOf(item["kind"]);
+  // Control characters are stripped before the bound: the row's validator refuses them, and a refused row would fail the whole batch.
+  const named = text(item["referent"])?.replace(/\p{Cc}/gu, " ").replace(/\s+/g, " ").trim().slice(0, REFERENT_MAX_CHARS);
+  const referent = kind === undefined ? undefined : named && named.toLowerCase() !== UNKNOWN_REFERENT ? named : UNKNOWN_REFERENT;
+
+  return {
+    ...topic,
+    statement,
+    citations: [...citations],
+    ...(kind === undefined ? {} : { kind, referent }),
+    ...(unclassified === undefined ? {} : { unclassified }),
+  };
+}
+
+function kindOf(value: unknown): ObservationKind | undefined {
+  const named = text(value)?.trim().toLowerCase();
+  return (OBSERVATION_KINDS as readonly string[]).includes(named ?? "") ? (named as ObservationKind) : undefined;
 }
 
 /**

@@ -1,9 +1,10 @@
 import { CONSULT_MAX, resolveProject } from "@panoma/db";
 import { AskBudgetError, consultationQuestion, rehearse } from "@/lib/consult";
-import { db } from "@/lib/db";
+import { db, memoryQuarantine } from "@/lib/db";
 import { localOperatorOnly, sameOrigin } from "@/lib/guard";
 import { localeFrom, t } from "@/lib/i18n";
 import { modelErrorParts } from "@/lib/model-errors";
+import { MemoryUnavailableError, memoryUnavailableResponse } from "@/lib/memory-availability";
 
 export const maxDuration = 120;
 
@@ -13,6 +14,7 @@ export async function POST(request: Request) {
   if (blocked) return blocked;
   const operator = localOperatorOnly(request);
   if (operator) return operator;
+  if ((await memoryQuarantine()).quarantined) return Response.json({ code: "unavailable", error: "Memory is quarantined." }, { status: 503, headers: { "Cache-Control": "no-store" } });
 
   const locale = localeFrom(request);
   const raw: unknown = await request.json().catch(() => undefined);
@@ -45,6 +47,7 @@ export async function POST(request: Request) {
     });
     return Response.json(receipt, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
+    if (error instanceof MemoryUnavailableError) return memoryUnavailableResponse();
     if (error instanceof AskBudgetError) {
       return Response.json(
         { error: t(locale, "twinLab.budgetReached"), remainingCalls: 0 },

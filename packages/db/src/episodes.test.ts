@@ -18,11 +18,13 @@ import {
   narrativesByIds,
   saveDecisionEpisodes,
   saveNarratives,
+  setDecisionEpisodePredicates,
   setDecisionEpisodeStatus,
   setDecisionEpisodeValidUntil,
   type NewDecisionEpisode,
   type NewNarrative,
 } from "./episodes";
+import { decisionPayload, readRevision, revisionHistory } from "./memory-revisions";
 import * as t from "./schema";
 
 /** Real migrated PostgreSQL protects replay, attribution and the distinction between source and model output. */
@@ -469,5 +471,81 @@ describe("when a decision stops applying", () => {
     expect((await listDecisionEpisodes(db, { activeAt: now, status: "active" })).map((entry) => entry.id)).toEqual([successor!.id]);
     const [retried] = await saveDecisionEpisodes(db, [{ ...successorRow, validUntil: new Date("2030-01-01T23:59:59.999Z") }]);
     expect(retried).toEqual(successor);
+  });
+});
+
+describe("typed conditions, exceptions and checks (delivery C)", () => {
+  const owner = (text: string, extra: Partial<NewDecisionEpisode> = {}): NewDecisionEpisode => ({
+    identity: "git:atlas", origin: "owner", fields: { decision: { text }, conditions: { text: "Only in production." } }, model: null, ...extra,
+  });
+  const production = { schemaVersion: 1, expression: { kind: "environment_is", environmentId: "a".repeat(64) } };
+  const onSite = { schemaVersion: 1, expression: { not: { kind: "path_under", path: "apps/site" } } };
+  const check = { purpose: "violation", kind: "text_absent", target: "apps/web/lib/db.ts", expected: "console.log(" };
+
+  async function episodeRow(id: string) {
+    const [row] = await db.select().from(t.decisionEpisodes).where(eq(t.decisionEpisodes.id, id));
+    return row!;
+  }
+
+  it("stores the predicates beside the narrative, validated whole before the first write, and photographs them", async () => {
+    const [saved] = await saveDecisionEpisodes(db, [owner("Use the CDN.", { conditionsPredicate: production, exceptionsPredicate: onSite, checks: [check] })]);
+    expect(saved).toMatchObject({ memoryRev: 1, conditionsPredicate: production, exceptionsPredicate: onSite, fields: { conditions: { text: "Only in production." } } });
+    expect(saved!.checks).toHaveLength(1);
+    expect(saved!.checks[0]).toMatchObject({ schemaVersion: 1, revision: 1, purpose: "violation", kind: "text_absent", target: "apps/web/lib/db.ts" });
+    expect(saved!.checks[0]!.checkId).toMatch(/^chk_/);
+    const photo = await readRevision(db, "decision", saved!.id, 1);
+    expect(photo?.payload).toEqual(decisionPayload(await episodeRow(saved!.id)));
+    expect(photo?.payload).toMatchObject({ conditionsPredicate: production, exceptionsPredicate: onSite, checks: saved!.checks });
+    expect(await decisionEpisodeById(db, saved!.id)).toMatchObject({ conditionsPredicate: production, exceptionsPredicate: onSite, checks: saved!.checks });
+    // A row without any reads as none declared, never as checked.
+    const [bare] = await saveDecisionEpisodes(db, [owner("No typed conditions.")]);
+    expect(bare).toMatchObject({ conditionsPredicate: null, exceptionsPredicate: null, checks: [] });
+    // An exact retry keeps the row's predicates: they live outside the identifier, like the expiry.
+    const [retried] = await saveDecisionEpisodes(db, [owner("Use the CDN.", { conditionsPredicate: null, checks: [] })]);
+    expect(retried).toEqual(saved);
+    expect(await revisionHistory(db, "decision", saved!.id)).toHaveLength(1);
+
+    // The whole batch is refused before its first row: limits, extra keys, a completion check, a bad shape.
+    const before = await listDecisionEpisodes(db);
+    const batches: NewDecisionEpisode[][] = [
+      [owner("Good."), owner("Bad depth.", { conditionsPredicate: { schemaVersion: 1, expression: { all: [{ any: [{ all: [{ not: production.expression }] }] }] } } })],
+      [owner("Extra key.", { exceptionsPredicate: { schemaVersion: 1, expression: { kind: "operation_is", operation: "edit", extra: 1 } } })],
+      [owner("Empty.", { conditionsPredicate: { schemaVersion: 1, expression: { any: [] } } })],
+      [owner("Version.", { conditionsPredicate: { schemaVersion: 2, expression: production.expression } })],
+      [owner("Completion.", { checks: [{ ...check, purpose: "completion" }] })],
+      [owner("Seven.", { checks: Array.from({ length: 7 }, (_, i) => ({ ...check, target: `f${i}.ts` })) })],
+      [owner("Shape.", { checks: [{ purpose: "violation", kind: "path_exists", target: "x", expected: "yes" }] })],
+      [owner("Regex.", { checks: [{ purpose: "violation", kind: "text_absent", target: "x", expected: 42 }] })],
+    ];
+    for (const batch of batches) await expect(saveDecisionEpisodes(db, batch)).rejects.toThrow();
+    expect(await listDecisionEpisodes(db)).toEqual(before);
+  });
+
+  it("changes them on purpose under the revision the owner read, one revision per real change", async () => {
+    const [saved] = await saveDecisionEpisodes(db, [owner("Cache aggressively.")]);
+    await expect(setDecisionEpisodePredicates(db, saved!.id, { conditionsPredicate: production }, { expectedMemoryRev: 2 })).rejects.toMatchObject({ code: "stale" });
+    await expect(setDecisionEpisodePredicates(db, saved!.id, { conditionsPredicate: production }, { expectedUpdatedAt: new Date(0) })).rejects.toMatchObject({ code: "stale" });
+    await expect(setDecisionEpisodePredicates(db, saved!.id, { status: "dismissed" } as never)).rejects.toThrow(/unknown key/i);
+    await expect(setDecisionEpisodePredicates(db, saved!.id, { conditionsPredicate: { schemaVersion: 1, expression: {} } })).rejects.toThrow();
+    expect(await episodeRow(saved!.id)).toMatchObject({ memoryRev: 1, conditionsPredicate: null });
+
+    expect(await setDecisionEpisodePredicates(db, saved!.id, { conditionsPredicate: production, checks: [check] }, { expectedMemoryRev: 1 })).toBe(true);
+    let row = await episodeRow(saved!.id);
+    expect(row).toMatchObject({ memoryRev: 2, conditionsPredicate: production, exceptionsPredicate: null });
+    expect(row.checks).toHaveLength(1);
+    expect(await readRevision(db, "decision", saved!.id, 2)).toMatchObject({ reason: "edit", disposition: "active", authority: "owner_instruction" });
+    expect((await readRevision(db, "decision", saved!.id, 2))?.payload).toEqual(decisionPayload(row));
+    // The same again is a retry; a key left out keeps what the row has.
+    expect(await setDecisionEpisodePredicates(db, saved!.id, { conditionsPredicate: production })).toBe(false);
+    expect(await setDecisionEpisodePredicates(db, saved!.id, { exceptionsPredicate: onSite }, { expectedMemoryRev: 2 })).toBe(true);
+    row = await episodeRow(saved!.id);
+    expect(row).toMatchObject({ memoryRev: 3, conditionsPredicate: production, exceptionsPredicate: onSite });
+    expect(row.checks).toHaveLength(1);
+    // Clearing is a change too, and the testimony never moves.
+    expect(await setDecisionEpisodePredicates(db, saved!.id, { conditionsPredicate: null, checks: [] })).toBe(true);
+    row = await episodeRow(saved!.id);
+    expect(row).toMatchObject({ memoryRev: 4, conditionsPredicate: null, exceptionsPredicate: onSite, checks: [], fields: saved!.fields });
+    expect((await revisionHistory(db, "decision", saved!.id)).map((entry) => entry.reason)).toEqual(["create", "edit", "edit", "edit"]);
+    expect(await setDecisionEpisodePredicates(db, "missing", { conditionsPredicate: production })).toBe(false);
   });
 });

@@ -158,6 +158,24 @@ export function wrapUntrusted(text: string | undefined, options: UntrustedOption
 }
 
 /**
+ * The neutralization alone, without a limit and without the fence: the delimiter cannot close
+ * the block from inside and the chat tokens are gone, and nothing else changes.
+ *
+ * The memory contract needs this half on its own. A delivery unit is hashed over the exact bytes
+ * that travel, and those bytes must already be neutralized — a hash over the raw text would
+ * verify a message nobody sent. The fence itself is written by whoever assembles the message,
+ * outside the units, so that the receipt can find each unit by its offsets.
+ */
+export function neutralizeUntrusted(text: string): string {
+  return text.replace(TAG_ANYWHERE, TAG_NEUTRAL).replace(CHAT_TOKENS, " ");
+}
+
+/** The opening and closing fence for a given origin, exactly as `wrapUntrusted` writes them. */
+export function untrustedFence(origin: UntrustedOrigin): { open: string; close: string } {
+  return { open: `<${TAG} origin="${origin}">`, close: `</${TAG}>` };
+}
+
+/**
  * The notice that accompanies the block.
  *
  * Exported so that whoever issues several blocks can put it once, at the top, instead of repeating

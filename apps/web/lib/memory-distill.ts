@@ -1,20 +1,40 @@
-import { complete } from "@panoma/ai";
-import { wrapUntrusted } from "@panoma/core";
+import { randomUUID } from "node:crypto";
+import { complete, resolveCredential, type CompleteResult } from "@panoma/ai";
+import { canonicalHash, redactSecrets, wrapUntrusted } from "@panoma/core";
 import {
   NOTE_MAX,
   NOTE_PENDING_MAX,
+  MEMORY_JOB_STORAGE_RESERVATION_BYTES,
+  addDependencies,
+  completeReservation,
+  deletionGeneration,
+  finishMemoryJob,
+  isQuotaExceeded,
+  jobById,
+  latestRevision,
   listProjectNotes,
+  markSent,
+  markUncertain,
   sessionMemoryWindow,
-  modelSpendToday,
   noteUsage,
   proposeNote,
+  publishJob,
+  quotaState,
+  QuotaExceeded,
   queueWrite,
-  saveModelCall,
+  releaseReservation,
+  reserveModelCall,
+  reserveJobStorage,
+  stageJob,
   validTrigger,
   withMemoryJobLease,
   type Database,
+  type ReservationPolicy,
+  type UsageLimits,
 } from "@panoma/db";
-import { capFor } from "@/lib/spend-settings";
+import { pausedFor, type QuotaGate } from "@/lib/memory-quota";
+import { FAMILY_KINDS, capFor, memoryQuota } from "@/lib/spend-settings";
+import { memoryFence, MemoryUnavailableError } from "./memory-availability";
 
 /*
   The distiller: the memory that writes itself, with the gate intact.
@@ -31,9 +51,13 @@ import { capFor } from "@/lib/spend-settings";
   response: most sessions do not discover anything lasting.
   ── The order of the brakes ───────────────────────────────────────────────────────────
   First the free ones (session with substance, review queue with gap), then the expense book, and
-  only then is the call paid. And the expense is recorded BEFORE understanding the answer — the
-  rule of `look-run`: a brake that only counts calls that were also understood stops counting
-  exactly the day a model starts answering anything.
+  only then is the call paid. Since delivery B the expense book is a reservation: the ledger row
+  is written in the state `reserved` under the lock of the family and the day BEFORE the call
+  leaves, moves to `sent` when it does and to `completed` when the answer is back — or to
+  `uncertain` when the network answered nothing readable, which still counts. A brake that only
+  counted calls that were also understood would stop counting exactly the day a model starts
+  answering anything; a brake that counted after the call would let two callers spend the same
+  last slot. See `runDistillation`.
  */
 
 /**
@@ -99,8 +123,10 @@ export interface DistillCoverage {
  * session was charged twice without opening the ledger.
  */
 export type DistillReceipt =
-  | { did: "thin" | "queueFull" | "budget"; coverage?: DistillCoverage }
+  /** A free gate or a publication delay; a job that already paid keeps its validated answer. */
+  | { did: "thin" | "queueFull" | "budget" | "quota"; coverage?: DistillCoverage }
   | { did: "unreadable"; coverage: DistillCoverage; calls: number }
+  | { did: "obsolete"; reason: "memory_changed" | "inputs_changed" }
   | { did: "distilled"; proposed: number; dropped: number; coverage: DistillCoverage; calls: number }
   /** Paid and understood, and then the publication failed. Travels inside `DistillPublishError`. */
   | { did: "unpublished"; candidates: number; coverage: DistillCoverage; calls: number };
@@ -112,8 +138,8 @@ export type DistillReceipt =
  * transient and earns its three attempts with backoff, while this one has already paid for a
  * readable answer and only lost the last step —a lease that stopped being current, a write that
  * failed—. The candidates cannot travel in the receipt (they are model output, and the receipt
- * holds none), so what the worker does with this is spend the attempts down to one more claim: a
- * second payment at most, never a third.
+ * holds none). The validated answer stays in the job's staged output. The worker allows one
+ * more claim, which revalidates and publishes that answer without another model call.
  */
 export class DistillPublishError extends Error {
   constructor(readonly receipt: DistillReceipt & { did: "unpublished" }, readonly origin: unknown) {
@@ -286,54 +312,157 @@ function normalized(body: string): string {
 }
 
 /**
+ * Who holds the job while this runs. `jobId` and `attempts` come from the claim and name the
+ * attempt in the ledger (`<job>:<attempt>:<call>`); without them the job is the legacy one of the
+ * session and the attempt is unnamed. `origin` is what the caller says it is: a worker's claim is
+ * `automatic`, a person's button is `manual`.
+ */
+export interface DistillOwnership {
+  leaseToken: string;
+  isActive: () => boolean;
+  jobId?: string;
+  attempts?: number;
+  origin?: "manual" | "automatic";
+}
+
+export interface DistillOptions {
+  /**
+   * The storage quota as the heartbeat read it (delivery E): a project at its limit, or a
+   * catalog at its own, answers `quota` before the journal is read or a call reserved. The notes
+   * a distillation proposes are photographed, and a photograph is charged content.
+   */
+  quota?: QuotaGate;
+}
+
+/**
+ * The provider and model a reservation is written under, read from the configuration before the
+ * call. The answer says what really served it; a configuration nobody can read names neither,
+ * and the call that follows fails on its own terms.
+ */
+export async function plannedModel(): Promise<{ provider: string; model: string }> {
+  try {
+    const credential = await resolveCredential();
+    return { provider: credential.provider.id, model: credential.model || "session" };
+  } catch {
+    return { provider: "unresolved", model: "unresolved" };
+  }
+}
+
+/**
  * Reread a closed session and propose durable facts. The persistent worker calls this outside
- * the HTTP turn, with a lease guard on publication; retries keep the journal intact. All paid
- * calls share a queue so concurrent sessions cannot spend the final daily slot twice.
+ * the HTTP turn, with a lease guard on publication; retries keep the journal intact. Paid calls
+ * of one process still take turns, so two sessions never have a call in flight at once.
  */
 export async function distillSession(
   database: Database,
   input: { projectId: string; identity: string | null; sessionId: string },
-  ownership?: { leaseToken: string; isActive: () => boolean },
+  ownership?: DistillOwnership,
+  options: DistillOptions = {},
 ): Promise<DistillReceipt> {
   const queues = runtime.panomaDistillQueues ??= new WeakMap();
-  const turn = (queues.get(database) ?? Promise.resolve()).then(() => runDistillation(database, input, ownership));
+  const turn = (queues.get(database) ?? Promise.resolve()).then(() => runDistillation(database, input, ownership, options));
   queues.set(database, turn.then(() => undefined, () => undefined));
   return turn;
 }
 
 const runtime = globalThis as unknown as { panomaDistillQueues?: WeakMap<Database, Promise<void>> };
 
+interface SavedDistillation {
+  schemaVersion: 1;
+  sessionId: string;
+  projectId: string;
+  generation: number;
+  activityHash: string;
+  memoryRevisionIds: string[];
+  candidates: { body: string; trigger?: string }[];
+  dropped: number;
+  calls: number;
+  coverage: DistillCoverage;
+}
+
+/** Only the validated, redacted candidates survive a retry, never the provider's raw answer. */
+function savedDistillation(value: unknown): SavedDistillation | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  if (Object.keys(row).some((key) => !["schemaVersion", "sessionId", "projectId", "generation", "activityHash", "memoryRevisionIds", "candidates", "dropped", "calls", "coverage"].includes(key))) return null;
+  if (row.schemaVersion !== 1 || typeof row.sessionId !== "string" || typeof row.projectId !== "string"
+    || !Number.isSafeInteger(row.generation) || (row.generation as number) < 0 || typeof row.activityHash !== "string" || !/^[a-f0-9]{64}$/.test(row.activityHash)
+    || !Number.isSafeInteger(row.calls) || (row.calls as number) < 1 || (row.calls as number) > 2
+    || !Number.isSafeInteger(row.dropped) || (row.dropped as number) < 0 || (row.dropped as number) > MAX_CANDIDATES) return null;
+  if (!Array.isArray(row.memoryRevisionIds) || row.memoryRevisionIds.length > 500 || row.memoryRevisionIds.some((id) => typeof id !== "string" || id.length > 128 || !id)) return null;
+  if (!Array.isArray(row.candidates) || row.candidates.length > MAX_CANDIDATES || row.candidates.some((candidate: unknown) => {
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return true;
+    const item = candidate as Record<string, unknown>;
+    return Object.keys(item).some((key) => key !== "body" && key !== "trigger") || typeof item.body !== "string" || !item.body.trim() || item.body.length > NOTE_MAX
+      || (item.trigger !== undefined && (typeof item.trigger !== "string" || !validTrigger(item.trigger)));
+  })) return null;
+  if (!row.coverage || typeof row.coverage !== "object" || Array.isArray(row.coverage)) return null;
+  const coverage = row.coverage as Record<string, unknown>;
+  if (Object.keys(coverage).length !== 4 || ["total", "selected", "omitted", "clipped"].some((key) => !Number.isSafeInteger(coverage[key]) || (coverage[key] as number) < 0)) return null;
+  return row as unknown as SavedDistillation;
+}
+
+class DistillQueueFull extends Error {}
+
+async function checkStorage(database: Database, projectId: string, limits: UsageLimits): Promise<void> {
+  const state = await quotaState(database, limits);
+  if (state.catalog.bytes > state.catalog.limit) throw new QuotaExceeded("catalog", null, state.catalog.bytes, state.catalog.limit);
+  const project = state.projects[projectId];
+  if (project && project.bytes > project.limit) throw new QuotaExceeded("project", projectId, project.bytes, project.limit);
+}
+
 async function runDistillation(
   database: Database,
   input: { projectId: string; identity: string | null; sessionId: string },
-  ownership?: { leaseToken: string; isActive: () => boolean },
+  ownership?: DistillOwnership,
+  options: DistillOptions = {},
 ): Promise<DistillReceipt> {
+  if (ownership && !ownership.isActive()) throw new Error("Memory work stopped before extraction.");
+  const assertAvailable = await memoryFence(database);
+  const generation = await deletionGeneration(database);
+  const job = ownership ? await jobById(database, ownership.jobId ?? `legacy:${input.sessionId}`) : undefined;
+  if (ownership && (!job || job.processor !== "legacy_session" || job.sessionId !== input.sessionId || job.projectId !== input.projectId || job.leaseToken !== ownership.leaseToken)) {
+    throw new Error("Memory work lease is no longer current.");
+  }
+  const expected = job && ownership ? { leaseToken: ownership.leaseToken, rev: job.rev, requestedRev: job.requestedRev } : undefined;
+  if (ownership) {
+    const held = await queueWrite(() => withMemoryJobLease(database, input.sessionId, ownership.leaseToken, async () => ownership.isActive(), input.projectId));
+    if (!held.current || !held.value) throw new Error("Memory work lease is no longer current.");
+  }
+  const staged = job?.stagedOutput ? savedDistillation(job.stagedOutput["output"]) : null;
+  if (job?.stagedOutput && !staged) return { did: "obsolete", reason: "inputs_changed" };
+  if (staged && (staged.sessionId !== input.sessionId || staged.projectId !== input.projectId)) return { did: "obsolete", reason: "inputs_changed" };
+  if (staged && staged.generation !== generation) return { did: "obsolete", reason: "memory_changed" };
+  // A saved answer may fit after its reservation is released. Only new extraction uses the early hint.
+  if (!staged && options.quota && pausedFor(options.quota, input.projectId) !== null) return { did: "quota" };
   const { activities, total } = await sessionMemoryWindow(database, input.sessionId);
+  const activityHash = canonicalHash({ activities, total });
+  if (staged && staged.activityHash !== activityHash) return { did: "obsolete", reason: "inputs_changed" };
   if (activities.length < MIN_ACTIVITIES) return { did: "thin" };
 
   const usage = await noteUsage(database, input.projectId);
   if (usage.pending >= NOTE_PENDING_MAX) return { did: "queueFull" };
 
   /*
-    The cap is checked per process, not under a database lock. Within one process the distill
-    queue serializes the check and the paid call, so two jobs cannot both read "one call left"
-    and both pay. Across processes —a remote catalog served by several servers— they can: each
-    reads the same count before either records its call, so N processes would exceed the cap by
-    at most N−1 calls a day. A bound of that size is cheaper than holding a lock through a
-    model call — and nobody pays it today, because since 6-Sep-2026 the worker only drains a
-    local catalog. That deferral is exactly about this: whoever lifts it accepts both the
-    server's bill and this bound. See `memory-worker.ts` and `docs/open-questions.md`.
+    The cap is decided by `reserveModelCall`, under a PostgreSQL advisory lock keyed by the
+    family and the local day, with the day's count read under that same lock. Until delivery B
+    the check was per process: the distill queue serialized check and call inside one process,
+    and N processes over a shared catalog could exceed the cap by N−1 calls a day — a bound
+    nobody paid because the worker only drains a local catalog. The reservation closes that
+    bound for every process, and the paid call still happens outside the lock: what is held
+    through the call is a row in the state `reserved`, not a transaction. A refusal is a `budget`
+    receipt as before; the rest of the reasons the lock can give (paused, subquota, conversation)
+    land under the same word here, because this receipt has one word for "not today".
    */
-  const { cap } = await capFor("memory");
-  const spent = await modelSpendToday(database, DISTILL_KIND);
-  if (spent.calls >= cap) return { did: "budget" };
+  const cap = await capFor("memory");
+  const policy: ReservationPolicy = { family: "memory", kinds: FAMILY_KINDS.memory, caps: { family: cap.cap, paused: cap.source === "paused" } };
 
   const existing = await listProjectNotes(database, input.projectId, [
     "approved",
     "proposed",
     "discarded",
     "challenged",
-  ]);
+  ], { includeExpired: true });
 
   /*
     The jsonb arrives without type: it is normalized once and serves for the prompt and for the
@@ -354,87 +483,212 @@ async function runDistillation(
 
   const built = buildDistillPrompt({ activities: shaped, existing, total });
   if (ownership && !ownership.isActive()) throw new Error("Memory work stopped before extraction.");
+  const memoryRevisionIds = [...(staged?.memoryRevisionIds ?? [])];
+  if (job && !staged) {
+    let chars = 0;
+    for (const note of byOwnerDecision(existing)) {
+      if (chars >= MEMORY_LIMIT) break;
+      chars += `- [${note.status}] ${note.body}\n`.length;
+      const revision = await latestRevision(database, "note", note.id);
+      if (!revision || revision.purgedAt !== null || revision.rev !== note.memoryRev) throw new MemoryUnavailableError();
+      memoryRevisionIds.push(revision.id);
+    }
+  }
 
   /*
-    The ledger row goes in before the answer is read, once per call: the same order as
-    `look-run`, and the reason is in the header. `calls` is the in-loop brake of the read routes,
-    here for a loop of at most two.
+    Reserve, send, complete: the row goes in before the call leaves, once per call. The attempt
+    key names the job, the claim and the call, so a retried claim reserves under a new key and a
+    repeated one is refused as a duplicate rather than paid twice. `paid` counts the calls that
+    left the process, whatever came back.
    */
-  let calls = spent.calls;
-  const ask = async (maxTokens: number) => {
-    const answer = await complete({ system: built.system, prompt: built.prompt, maxTokens });
-    calls += 1;
-    await queueWrite(() => saveModelCall(database, {
-      kind: DISTILL_KIND,
-      provider: answer.provider,
-      model: answer.model,
-      identity: input.identity,
-      ...(answer.usage ? { input: answer.usage.input, output: answer.usage.output } : {}),
+  const planned = staged ? { provider: "staged", model: "staged" } : await plannedModel();
+  const jobId = ownership ? ownership.jobId ?? `legacy:${input.sessionId}` : null;
+  const origin = ownership?.origin ?? (ownership ? "automatic" : "manual");
+  const attemptBase = `${jobId ?? `session:${input.sessionId}`}:${ownership?.attempts ?? randomUUID()}`;
+  let paid = staged?.calls ?? 0;
+  const assertInputs = async (tx: Database) => {
+    if (await deletionGeneration(tx) !== generation) throw new MemoryUnavailableError();
+    if (ownership && !ownership.isActive()) throw new Error("Memory work stopped before extraction.");
+  };
+  const ask = async (maxTokens: number): Promise<CompleteResult | undefined> => {
+    await assertAvailable();
+    const limits = await memoryQuota();
+    const reserve = async (tx: Database) => {
+      await assertInputs(tx);
+      if (job && expected) {
+        if (!await reserveJobStorage(tx, job.id, expected, { bytes: MEMORY_JOB_STORAGE_RESERVATION_BYTES, limits })) throw new Error("Memory work lease is no longer current.");
+        await checkStorage(tx, input.projectId, limits);
+        await addDependencies(tx, memoryRevisionIds.map((revisionId) => ({ dependent: { jobId: job.id }, input: { revisionId }, relation: "derived_from" as const })));
+      }
+      return reserveModelCall(tx, {
+        ...policy, kind: DISTILL_KIND, provider: planned.provider, model: planned.model, origin, identity: input.identity, jobId,
+        attemptKey: `${attemptBase}:${paid + 1}`,
+      });
+    };
+    const held = await queueWrite(() => ownership
+      ? withMemoryJobLease(database, input.sessionId, ownership.leaseToken, reserve, input.projectId)
+      : database.transaction(async (tx) => ({ current: true as const, value: await reserve(tx) })));
+    if (!held.current) throw new Error("Memory work lease is no longer current.");
+    const reservation = held.value;
+    if (!reservation.reserved) return undefined;
+    const reserved = { reservationRev: reservation.reservationRev };
+    if (ownership && !ownership.isActive()) {
+      await queueWrite(() => releaseReservation(database, reservation.id, reserved));
+      throw new Error("Memory work stopped before extraction.");
+    }
+    let sentNow: boolean;
+    try {
+      await assertAvailable();
+      const currentLimits = await memoryQuota();
+      const currentCap = await capFor("memory");
+      const send = async (tx: Database) => {
+        await assertInputs(tx);
+        if (job) await checkStorage(tx, input.projectId, currentLimits);
+        return markSent(tx, reservation.id, reserved, new Date(), { ...policy, caps: { family: currentCap.cap, paused: currentCap.source === "paused" } });
+      };
+      const sent = await queueWrite(() => ownership
+        ? withMemoryJobLease(database, input.sessionId, ownership.leaseToken, send, input.projectId)
+        : database.transaction(async (tx) => ({ current: true as const, value: await send(tx) })));
+      if (!sent.current) throw new Error("Memory work lease is no longer current.");
+      sentNow = sent.value;
+    } catch (error) {
+      await queueWrite(() => releaseReservation(database, reservation.id, reserved));
+      throw error;
+    }
+    if (!sentNow) {
+      // Midnight passed and the new day has no room: nothing left the process.
+      await queueWrite(() => releaseReservation(database, reservation.id, reserved));
+      return undefined;
+    }
+    const sent = { reservationRev: reserved.reservationRev + 1 };
+    let answer: CompleteResult;
+    try {
+      answer = await complete({ system: built.system, prompt: built.prompt, maxTokens });
+    } catch (error) {
+      // Sent, nothing readable back: the attempt keeps counting until it is reconciled.
+      paid += 1;
+      await queueWrite(() => markUncertain(database, reservation.id, sent, "provider_failed"));
+      throw error;
+    }
+    paid += 1;
+    await queueWrite(() => completeReservation(database, reservation.id, sent, {
+      inputTokens: answer.usage?.input ?? null, outputTokens: answer.usage?.output ?? null,
+      provider: answer.provider, model: answer.model,
     }));
     return answer;
   };
 
-  let answer = await ask(MAX_ANSWER_TOKENS);
-  let candidates = parseCandidates(answer.text);
+  let output = staged;
+  if (!output) {
+    let first: CompleteResult | undefined;
+    try { first = await ask(MAX_ANSWER_TOKENS); }
+    catch (error) { if (isQuotaExceeded(error)) return { did: "quota" }; throw error; }
+    if (first === undefined) return { did: "budget" };
+    let answer = first;
+    let candidates = parseCandidates(answer.text);
   /*
     Cut and unreadable: once more, with double the room, if the day still has a call in it and
     nobody has asked this worker to stop. Cut and readable is left alone —the array closed before
     the ceiling— because paying again for what is already in hand is the waste this exists to
-    avoid. A retry the cap refuses leaves the answer unreadable, and unreadable is final: the
-    alternative was deferring the job to tomorrow to pay the same 500-token call again first.
+    avoid. A retry the reservation refuses leaves the answer unreadable, and unreadable is final:
+    the alternative was deferring the job to tomorrow to pay the same 500-token call again first.
    */
-  if (
-    candidates === undefined &&
-    answer.stopReason === "length" &&
-    calls < cap &&
-    (ownership === undefined || ownership.isActive())
-  ) {
-    answer = await ask(MAX_ANSWER_TOKENS * 2);
-    candidates = parseCandidates(answer.text);
+    if (
+      candidates === undefined &&
+      answer.stopReason === "length" &&
+      (ownership === undefined || ownership.isActive())
+    ) {
+      let second: CompleteResult | undefined;
+      try { second = await ask(MAX_ANSWER_TOKENS * 2); }
+      catch (error) { if (!isQuotaExceeded(error)) throw error; }
+      if (second !== undefined) {
+        answer = second;
+        candidates = parseCandidates(answer.text);
+      }
+    }
+    if (candidates === undefined) return { did: "unreadable", coverage: built.coverage, calls: paid };
+    const validated = candidates.slice(0, MAX_CANDIDATES).flatMap((candidate) => {
+      const body = redactSecrets(candidate.body.trim());
+      if (!body || body.length > NOTE_MAX) return [];
+      const trigger = whereToTrigger(candidate.where, touched);
+      return [{ body, ...(trigger ? { trigger } : {}) }];
+    });
+    output = { schemaVersion: 1, sessionId: input.sessionId, projectId: input.projectId, generation, activityHash, memoryRevisionIds, candidates: validated,
+      dropped: Math.min(candidates.length, MAX_CANDIDATES) - validated.length, calls: paid, coverage: built.coverage };
+    if (job && expected) {
+      await assertAvailable();
+      const stored = await queueWrite(() => database.transaction(async (tx) => {
+        if (await deletionGeneration(tx) !== generation) throw new MemoryUnavailableError();
+        return stageJob(tx, job.id, expected, { output: output as unknown as Record<string, unknown>, coverage: { ...output!.coverage } });
+      }));
+      if (!stored) throw new DistillPublishError({ did: "unpublished", candidates: validated.length, coverage: built.coverage, calls: paid }, new Error("Memory work lease is no longer current."));
+    }
   }
-  const paid = calls - spent.calls;
-  const found = candidates;
-  if (found === undefined) return { did: "unreadable", coverage: built.coverage, calls: paid };
+  const found = output.candidates;
+  const coverage = output.coverage;
 
   const commit = async (tx: Database): Promise<DistillReceipt> => {
-    if (ownership && !ownership.isActive()) throw new Error("Memory work stopped before publication.");
+    await assertInputs(tx);
+    const currentWindow = await sessionMemoryWindow(tx, input.sessionId);
+    if (canonicalHash({ activities: currentWindow.activities, total: currentWindow.total }) !== activityHash) throw new MemoryUnavailableError();
     // The owner or another agent may have added a note while the model answered. Recheck under
     // the write transaction, and publish nothing if a different worker reclaimed this lease.
-    const current = await listProjectNotes(tx, input.projectId, ["approved", "proposed", "discarded", "challenged"]);
+    // An expired note still exists: the duplicate check reads it so it is not proposed again.
+    const current = await listProjectNotes(tx, input.projectId, ["approved", "proposed", "discarded", "challenged"], { includeExpired: true });
     const known = new Set([...existing, ...current].map((note) => normalized(note.body)));
     let proposed = 0;
-    let dropped = 0;
+    let dropped = output.dropped;
     for (const candidate of found.slice(0, MAX_CANDIDATES)) {
       const body = candidate.body.trim();
       if (body.length === 0 || body.length > NOTE_MAX || known.has(normalized(body))) {
         dropped++;
         continue;
       }
-      const trigger = whereToTrigger(candidate.where, touched);
+      const trigger = candidate.trigger;
       const result = await proposeNote(tx, {
         projectId: input.projectId, body, createdBy: "distiller",
         ...(trigger !== undefined ? { trigger } : {}),
       });
       if ("refused" in result) {
         dropped++;
-        if (result.refused === "pendingFull") return { did: "queueFull", coverage: built.coverage };
+        if (result.refused === "pendingFull") throw new DistillQueueFull();
         continue;
       }
       known.add(normalized(body));
+      if (memoryRevisionIds.length) {
+        const revision = await latestRevision(tx, "note", result.id);
+        if (!revision) throw new Error("A proposed note has no revision.");
+        await addDependencies(tx, memoryRevisionIds.map((revisionId) => ({ dependent: { revisionId: revision.id }, input: { revisionId }, relation: "derived_from" as const })));
+      }
       proposed++;
     }
-    return { did: "distilled", proposed, dropped, coverage: built.coverage, calls: paid };
+    const receipt = { did: "distilled" as const, proposed, dropped, coverage, calls: paid };
+    if (ownership && !await finishMemoryJob(tx, input.sessionId, ownership.leaseToken, { status: "complete", reason: "distilled", receipt })) {
+      throw new Error("Memory work lease is no longer current.");
+    }
+    return receipt;
   };
   const unpublished = (origin: unknown) => new DistillPublishError(
-    { did: "unpublished", candidates: found.length, coverage: built.coverage, calls: paid },
+    { did: "unpublished", candidates: found.length, coverage, calls: paid },
     origin,
   );
   let saved;
   try {
+    await assertAvailable();
+    const limits = await memoryQuota();
+    const currentCap = await capFor("memory");
+    if (ownership && currentCap.cap === 0) return { did: "budget", coverage };
     saved = await queueWrite(() => ownership
-      ? withMemoryJobLease(database, input.sessionId, ownership.leaseToken, commit, input.projectId)
+      ? withMemoryJobLease(database, input.sessionId, ownership.leaseToken, async (tx) => {
+        const published = await publishJob(tx, job!.id, expected!, commit, { storageLimits: limits });
+        if (!published.current) throw new Error("Memory work lease is no longer current.");
+        return published.value;
+      }, input.projectId)
       : database.transaction(async (tx) => ({ current: true as const, value: await commit(tx) })));
   } catch (error) {
+    if (isQuotaExceeded(error)) return { did: "quota", coverage };
+    if (error instanceof DistillQueueFull) return { did: "queueFull", coverage };
+    if (error instanceof MemoryUnavailableError && ownership && await deletionGeneration(database) !== generation) return { did: "obsolete", reason: "memory_changed" };
     throw unpublished(error);
   }
   if (!saved.current) throw unpublished(new Error("Memory work lease is no longer current."));

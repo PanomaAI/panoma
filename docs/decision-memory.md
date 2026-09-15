@@ -9,7 +9,13 @@ Five tests anchor it: `packages/core/src/history/narratives.test.ts` (what captu
 what it refuses), `packages/db/src/episodes.test.ts` (the store and its deletions),
 `apps/web/lib/episode-learning.test.ts` (batching, grounding, budget and the failed pass),
 `apps/web/app/api/twin/episodes/route.test.ts` (the owner's doors) and
-`apps/web/lib/decision-brief.test.ts` (what an agent hears).
+`apps/web/lib/decision-brief.test.ts` (what an agent hears). What an agent hears through the
+memory contract — the search over the whole archive, the conditional units and the read by
+revision — is executed in `apps/web/lib/select-memory.test.ts` and
+`apps/web/lib/memory-delivery.test.ts`, and the photograph every writer of
+`decision_episodes` leaves in `packages/db/src/memory-revisions.test.ts`; the typed
+predicates of delivery C in `packages/core/src/predicates.test.ts` and, on an episode, in
+`packages/db/src/episodes.test.ts`.
 
 ## Capture and provenance
 
@@ -161,6 +167,46 @@ bytes are the owner's, not that the model filed them in the right role, and what
 on has to be what the owner wrote as a decision. Revising an extracted episode makes it
 owner-authored. Episodes do not become beliefs, do not change `TASTE.md` and do not alter the
 agent shadow protocol.
+
+**Under the memory contract, the archive is searched before it is cut.** The recency brief
+and the task road above read the newest fifty active decisions per scope and rank inside
+them, so a decision recorded behind fifty newer ones could not be found by its words. Since
+14-Sep-2026 a client that speaks the contract — `panoma_context` against a catalog whose hello
+answers version 2, or the `SessionStart` brief — gets the same eligibility through one
+selector, `apps/web/lib/select-memory.ts`, with no candidate limit ahead of the search: exact
+ids and paths first, then a lexical route over every eligible decision's goal, decision,
+reasons, conditions and exceptions, then the page limits (a hundred candidates per route, two
+hundred after the union) with a continuation when a limit is hit, and a decision behind 250
+newer ones is found (plan case A06/T19). A decision with conditions or exceptions travels
+whole and marked `conditional`, its conditions as pending checks, and the contract is
+`requires_check` while it is in; the agent can then read the full record by id and revision
+with `panoma_recall`, in parts if it is larger than a page, each part inside the untrusted
+fence, and an older revision comes back marked `historical` rather than revived — and only
+when its photograph would be served today: the owner's, active, decided, unexpired and in
+this project's scope, so a dismissed decision's old revision is `not_found`, not a rule
+again. Two active owner decisions of one family are still withheld, and the contract says
+`conflict` instead of choosing. The legacy sections keep their fifty for the clients that do
+not speak the contract; the whole of it is in [memory-contract.md](memory-contract.md).
+
+**Typed conditions and exceptions, beside the narrative.** Since delivery C an episode may
+carry `conditions_predicate` and `exceptions_predicate` next to the narrative `conditions` and
+`exceptions` it always had — the narrative stays whole and is replaced neither by the tree nor
+by its absence (plan §22.9). A predicate is `{ schemaVersion: 1, expression }`, a tree of
+`all`, `any` and `not` over six closed leaves — the project, a path, the operation, an observed
+environment, an explicit task label, and the result of one of the episode's own checks by id
+and revision — validated whole by core (`validatePredicate`: no extra key, no empty array, at
+most 4 levels and 20 leaves) and stored as the fresh tree the validator returns, photographed
+with the row under the same `memory_rev`; the episode's checks live in
+`decision_episodes.checks` and are written through the checks door. The selector evaluates the
+tree in three values with the facts a request can honestly declare: it holds → the decision is
+served as before; it fails — a false condition, a true exception — → the decision is left out
+and the omission says `not_applicable`; it cannot be decided → the decision travels
+`conditional` with one `requires_check` line per check that would settle it. A missing fact is
+`unknown`, never false: an unobserved check does not let a condition fail or an exception pass.
+The writer is `setDecisionEpisodePredicates` in `packages/db/src/episodes.ts` (and
+`saveDecisionEpisodes` on creation), both under the revision the caller read; no HTTP door or
+screen writes the predicate yet, which is a known limit of
+[memory-checks.md](memory-checks.md), where the predicates, the facts and the evaluator are told.
 
 **When a decision stops applying.** A decision can carry a last day, `valid_until`, and the owner
 is the only one who writes it: nothing expires by itself, and every record written before

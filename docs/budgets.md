@@ -34,13 +34,14 @@ and the two queries the screen reads).
 
 | Family | Variable | Out of the box | What it holds back | Kinds in the ledger | Who asks for it |
 |---|---|---|---|---|---|
-| `read` | `PANOMA_READ_BUDGET` | 300 calls | reading your history: distilling, sorting by subject and synthesizing | `distill` · `classify` · `synthesize` | the three read routes under `app/api/twin/` |
+| `read` | `PANOMA_READ_BUDGET` | 300 calls | reading your history: distilling, sorting by subject and synthesizing; since delivery D also the Twin learning on its own, which shares the family and takes at most `min(6, cap)` automatic attempts a day across its three stages, 4 per scope and day and 3 per stage job inside it; an exhausted day defers the chain to tomorrow with its paid stages kept | `distill` · `classify` · `synthesize` | the three read routes under `app/api/twin/` and `lib/twin-learn.ts`, all reserving through `reserveModelCall` before the call — [twin-learning.md](twin-learning.md) |
+| — of those, automatic | — | `min(6, cap)` a day, 4 per scope | what the worker may spend on its own for the Twin | `distill` · `classify` · `synthesize` | `AUTOMATIC_SUBQUOTA` and `PER_SCOPE_MAX` in `lib/twin-learn.ts`, passed as the reservation's subquota and per-conversation maximum |
 | `look` | `PANOMA_LOOK_BUDGET` | 20 calls | the critic that looks at a screenshot | `look` | `app/api/twin/look/route.ts`, `lib/auto-look.ts` and the `/twin/look` page |
 | — of those, automatic | — | half, rounded down | what the watcher can look at on its own | `look` | `autoLookCap` in `lib/look.ts`, applied to the cap `capFor` returns |
-| `memory` | `PANOMA_DISTILL_BUDGET` | 12 calls | the memory distiller, one call for each closed session the worker drains —two when the first answer was cut—; an exhausted day defers the job to tomorrow | `memory` | `lib/memory-distill.ts` |
+| `memory` | `PANOMA_DISTILL_BUDGET` | 12 calls | the memory distiller, one call for each closed session the worker drains —two when the first answer was cut—, and since delivery B the paid project extraction, which shares the family and takes at most `min(4, cap)` automatic calls a day and 2 per conversation and day inside it; an exhausted day defers the job to tomorrow | `memory` | `lib/memory-distill.ts` and `lib/memory-extract.ts`, both reserving through `reserveModelCall` before the call — [memory-capture.md](memory-capture.md) |
 | `ask` | `PANOMA_ASK_BUDGET` | 20 calls | the double, drafting what you would have answered | `ask` | `runRehearsal` in `lib/consult.ts` |
 | `rehearse` | `PANOMA_REHEARSE_BUDGET` | 20 calls | the owner's Decision Lab, rehearsing a decision against beliefs and episodes | `rehearse` | `runRehearsal`, next to the double's |
-| `episodes` | `PANOMA_EPISODE_BUDGET` | 20 calls, at most two per request | decision-memory extraction: turning captured narratives into episodes | `episodes` | `lib/episode-learning.ts` |
+| `episodes` | `PANOMA_EPISODE_BUDGET` | 20 calls, at most two per request | decision-memory extraction: turning captured narratives into episodes; the cap is the factory 20 still, and no automatic origin exists for it | `episodes` | `lib/episode-learning.ts`, reserving through `reserveModelCall` before the call since delivery D, origin `manual` |
 | `card` | `PANOMA_CARD_BUDGET` | 100 calls | the two buttons of the project card: the description, and the opinion on `AGENTS.md` | `describe` · `review` | `app/api/describe/route.ts` and `app/api/md/review/route.ts` |
 | `app` | `PANOMA_APP_BUDGET` | 20 attempts | explicitly enabled model and voice providers in official apps | `app` | `lib/app-jobs.ts`, reserved atomically before enqueue and rechecked before launch |
 | `handoff` | `PANOMA_HANDOFF_BUDGET` | 10 calls | the model-written digest of one conversation about to be handed off: one action, by the person, on one transcript; two calls when the first answer was cut | `handoff` | `writeDigestWithModel` in `lib/handoff-digest.ts`, asked by `app/api/handoff/route.ts` (`digestBy: "model"`) and `app/api/handoff/digest/route.ts` |
@@ -53,7 +54,26 @@ by nothing: `probe`, the one-word question `POST /api/ai` asks to prove a creden
 screen lists it apart so the day's total still says where every call came from.
 
 The variables have their entry in [environment.md](environment.md); the screen that moves
-the caps is described further down. The organs behind the reads and the looks are covered
+the caps is described further down.
+
+| Quota | Variable | Out of the box | What it holds back | Where it is enforced | Who asks for it |
+| --- | --- | --- | --- | --- | --- |
+| the catalog's storage | `PANOMA_MEMORY_QUOTA_MB` | 256 MiB | the logical bytes of derived memory the whole catalog keeps — photographs, offers, typed facts and staged answers, canonical UTF-8, never the database on disk — past which every automatic pass pauses and an automatic write is refused; the owner's own gestures — an approval, a teaching, a signature — are charged and never refused, a paid job the owner started from a button is still machine retention and waits like an automatic one (`deferred / quota`, never lost), and a deletion is always applied | `chargeUsage` in `packages/db/src/memory-usage.ts`, inside the writer's transaction | `memoryQuota()` in `lib/spend-settings.ts`, read by the worker's gate (`lib/memory-quota.ts`), the capture pass and the offer — [memory-capture.md](memory-capture.md) |
+| each project's storage | `PANOMA_PROJECT_QUOTA_MB` | 64 MiB | the same bytes, per project: a project at its limit is skipped by the passes and its jobs wait, the rest of the catalog goes on | the same | the same |
+
+It is not a tenth budget. A budget counts calls a day and resets at midnight; the quota
+counts bytes held and comes down only when the owner purges something or a correction
+reduces content. It lives in the same file because it is the same kind of thing — a
+preference of this machine, moved without a migration — and it follows the same precedence
+without the pause: the variable, then `quota: { catalogMb, projectMb }` in `spend.json`, then
+the factory value. Two things differ from a cap on purpose. Zero and a negative number are
+refused, not applied: a cap of zero switches an organ off, but a quota of zero would refuse
+every automatic write from the first byte, and a quota is never "none". The Spend screen
+edits both limits through `POST /api/spend`: each field accepts a positive integer in MiB or
+`null` to restore its default, while omitted fields retain their value. An environment override
+remains effective and disables the corresponding control. What `memoryQuota()` answers is the two limits in
+bytes and who decided each (`sources`), summarised as `source` — `variable` when a variable
+decided either, else `file`, else `factory`. The organs behind the reads and the looks are covered
 in [twin.md](twin.md); the memory distiller and the double, in [memory.md](memory.md); the
 rehearsal and the extractor, in [decision-memory.md](decision-memory.md).
 
@@ -341,7 +361,13 @@ The brake above looks at what there was at the start, so without counting them h
 that begins with a single call of headroom takes all eight with it. Each batch is
 independent —it stores its own and marks its own— so stopping between two loses nothing of
 what was paid for, and whoever calls again meets the 429 above. `classify` and `synthesize`
-carry the same cut for the same reason.
+carry the same cut for the same reason. Since delivery D that in-process counter is gone
+from the three read routes and the cut inside the loop is the reservation itself: every call
+asks `reserveModelCall` under the family's lock before it leaves, a refused reservation
+before the first call answers the same 429, and one refused later stops the pass and returns
+the receipt of what was read — so a day the worker filled between the pre-check and the call
+is caught by the row, not by a number read at the start
+([twin-learning.md](twin-learning.md)).
 
 **A cut answer is asked for once more, with double the room, and that second call counts
 here too.** When the provider says the answer hit `maxTokens` (`stopReason === "length"`),
@@ -394,7 +420,27 @@ The other ordering that isn't accidental either: **the spend is written down bef
 answer is understood.** `runLook` calls `saveModelCall` and only afterwards `parseFindings`;
 the memory distiller, the double, the rehearsal, the episode extractor and the two card
 routes do the same. A brake that only counted the calls it also managed to make sense of
-would stop counting on exactly the day a model starts answering anything at all.
+would stop counting on exactly the day a model starts answering anything at all. Since
+delivery B the `memory` family writes it earlier still, before the call leaves: the row is
+reserved under `pg_advisory_xact_lock` on the family and the local day, marked `sent`, and
+completed with the usage — or left `uncertain` when the network answered nothing readable,
+which still counts because the provider may well have charged it; only a row proven never
+sent is `released` and stops counting. Legacy rows, written before the column existed, count
+by their creation instant within the local day as `completed`, as the old brake counted them,
+and `saveModelCall` still writes such a row for every organ that has not moved. A reservation
+made before local midnight and sent after is charged to the send day and refused when that day
+is full (T86). The distiller keeps the whole family cap; the automatic subquota of `min(4,
+cap)` a day and the 2 per conversation and day are the extractor's, so a window gets at most
+two paid attempts a day and three in all. Delivery D moved two more families the same day
+([twin-learning.md](twin-learning.md)): `read`, whose three routes reserve every call with
+origin `manual` and no subquota — a person's button is held back by the family cap only —
+while the worker's learning reserves with origin `automatic` under the shared subquota of
+`min(6, cap)` a day and 4 per scope, both under one lock, so a button and the worker never
+both spend the day's last call and an attempt whose answer never came back keeps counting on
+either side (D06/T68); and `episodes`, reserved with origin `manual` before each call, its
+factory cap of 20 and no automatic origin. The rest — `look`, `ask`, `rehearse`, `card`,
+`handoff` — still read, decide and spend in three steps; `app` reserves its calls in its own
+table (`packages/db/src/apps.ts`) and was never on this road.
 
 ## The spend ledger: `model_calls`
 
@@ -408,7 +454,12 @@ Eleven kinds are written today —`look`, `distill`, `classify`, `synthesize`, `
 `ask`, `rehearse`, `episodes`, `describe`, `review` and `probe`— and the canonical list is
 `FAMILY_KINDS` plus `UNBUDGETED_KINDS` in `spend-settings.ts`, not a comment in the
 database package: the budgets apply per family, not per kind, and a family is the unit the
-person thinks in.
+person thinks in. Since delivery B a row also says who asked (`origin`: `manual`, `automatic`,
+or `legacy` for what predates the column), where it stands (`state`), which job it belongs to
+(`job_id`) and which local day it is charged to (`budget_day`); `modelSpendToday` leaves the
+`released` rows out and keeps its window by `created_at`, so the screen still groups by the
+creation instant while the cap authority for the reserved family is the reservation itself
+([memory-capture.md](memory-capture.md)).
 
 **The tokens go null, and zero is forbidden.** `input_tokens` and `output_tokens` take null
 on purpose: a `cli` provider doesn't publish what it used, and there a zero would read as
@@ -485,11 +536,16 @@ radio buttons, full or fitted to a long edge of 1,568 px, with what each one cos
 it risks written beside it, and the note that it applies to PNG only. A radio and not a
 switch because there is no default half of that pair to hide. It `POST`s `/api/spend`, which
 refuses a wrong patch whole with a 400 `{ error, code }` naming the field —`body`, `caps`,
-`rates`, `currency`, `paused` or `shots`— and writes nothing, and on success writes the file
+`rates`, `currency`, `paused`, `shots` or `quota`— and writes nothing, and on success writes the file
 and answers the same body as the GET, so the screen repaints from the answer instead of
 asking twice. Both handlers go behind `localOperatorOnly`, the GET included: a quota is the
 operator's, and the receipt names the models this person pays for and how much they use
 them, which is the same inventory `GET /api/ai` keeps behind its guard.
+
+The storage card uses the same form for the catalog and per-project limits, showing current
+logical usage, pauses and each limit's effective source. The receipt also reports physical free
+space independently: available, low below 256 MiB, full at zero, or unknown when it cannot be
+measured locally. This measurement does not reserve disk blocks or guarantee a successful write.
 
 `panoma spend` prints the same receipt as text —one line per family, "read: 12 of 300
 (factory)", with its own tokens, unmetered calls and images dimmed underneath when it has
@@ -588,8 +644,14 @@ estimated, only bounded, and it is bounded in every route with `maxTokens`.
 - **There is no token cap anywhere**, for what was said above, so a very expensive call
   counts the same as a cheap one. `maxTokens` bounds what each route asks back, not what it
   sends.
-- **The budget is not transactional.** It gets read, a decision gets made and the call goes
-  out; two processes that start at the same time with one call of headroom can spend two.
+- **The budget is not transactional, except for the `memory`, `read` and `episodes` families.**
+  It gets read, a decision gets made and the call goes out; two processes that start at the
+  same time with one call of headroom can spend two. Since delivery B the `memory` family
+  reserves its row under a database lock before the call, so there the headroom is decided
+  once for every process ([memory-capture.md](memory-capture.md)), and since delivery D so do
+  `read` — its three routes and the Twin's learning under one lock — and `episodes`
+  ([twin-learning.md](twin-learning.md)); `look`, `ask`, `rehearse`, `card` and `handoff`
+  still spend in three steps, and `app` reserves in its own table.
   `readsLeft` returns `Math.max(cap - used, 0)` precisely because "spent" can end up above
   "fits" —a cap lowered halfway through the day, or a few calls that slipped in— and that is
   zero calls, not fewer than zero. The two in-process queues —`queueAsk` for the double and
@@ -599,9 +661,31 @@ estimated, only bounded, and it is bounded in every route with `maxTokens`.
 - **None of this brakes the agents.** What gets counted are the calls panoma makes; whatever
   Claude Code or Codex spends in its own session doesn't come through here and can't be seen
   from the catalog.
+- **The memory contract spends no model call and adds no family.** Selecting, rendering,
+  delivering and reading the receipts back are catalog reads, disk reads and hashes; nothing
+  of delivery A asks `capFor`, and there is no tenth row above. What it does bound is not
+  money: the receipt reader reads at most 8 MiB and works at most 250 ms per pass and 16 MiB a
+  minute across passes, a project may send six transcript pointers a minute, and a purge cleans
+  200 rows per store and round with at most eight rounds per heartbeat — all in
+  [memory-contract.md](memory-contract.md), none of them on the Spend screen. The one cost
+  it accepts on purpose is the agent's context: a start, a resume or a compaction gets the
+  memory again under a new generation, and repeating a rule that may have been discarded is
+  chosen over suppressing it.
+- **The patrol of delivery C spends time, never model calls.** Its budgets are in
+  `apps/web/lib/memory-patrol.ts` and none of them is a row above: two seconds per project and
+  turn (`PATROL_BUDGET_MS`), six checks per item and turn (`PATROL_CHECKS_PER_ITEM`), six
+  seconds per heartbeat in all (`PATROL_PASS_BUDGET_MS`), and the evaluator's 1 MiB per file
+  with a document walk of at most 32 levels and 32 entries per level (`CHECK_LIMITS` in
+  `packages/core/src/checks-eval.ts`). A check the budget does not reach gets no row and is
+  asked for again; a file over the cap is `unknown` and never `fail`. Nothing in the checks,
+  the commitments, the predicates or the case asks `capFor`, and the ledger records nothing of
+  them ([memory-checks.md](memory-checks.md)).
 - **`panoma ai ask` stays outside the ledger, and that is decided.** It runs `complete()` in
   the CLI process without the server, so there is no catalog to write a row in: it is the
   connection test, one question typed by hand, and making "does my key work" depend on the
   catalog being up would be the wrong trade.
 - **The chart stops early past 20,000 rows in thirty days**, which is above every factory cap
   put together and is said on the screen as a truncation, not hidden in a total.
+- **Logical retention and physical disk space remain separate.** Spend reports both, and
+  `coverage.quota` remains available on memory status, the CLI and the project card. Quota
+  enforcement controls derived memory retention; the physical-space warning is informational.

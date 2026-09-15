@@ -9,7 +9,7 @@ of **exceptions** and never the list of cases.
 **What tests anchor this.** Three, and they cover different things:
 `apps/web/middleware.test.ts` checks the front door with sixteen cases;
 `apps/web/lib/guard.test.ts` checks that `sameOrigin` and `localOperatorOnly` decide right
-**and** walks the source of all 79 routes demanding the doctrine handler by handler;
+**and** walks the source of all 94 routes demanding the doctrine handler by handler;
 `apps/web/app/api/gates.test.ts` calls the real handlers and checks that they **answer 403 and
 do nothing** — a guard placed after the first query would pass the first test and leave the
 door open all the same. The figures on this page are recovered with `grep`, and the commands
@@ -39,7 +39,7 @@ if (blocked) return blocked;
 
 ## The middleware decides whether you get in, and no longer asks where you came from
 
-Its `matcher` covers **everything** —all 79 API routes and every page— except Next's static
+Its `matcher` covers **everything** —all 88 API routes and every page— except Next's static
 assets (`_next/static`, `_next/image`) and `favicon.ico`, which are let through so that the
 "you need the key" page itself can be seen. `/icon/[id]` is **not** exempt, on purpose: it
 comes out of the catalog, and a project's name is already information.
@@ -116,13 +116,13 @@ detail: with `-H 0.0.0.0` the server thought it was called `http://0.0.0.0:4173`
 its own interface, which arrives from `http://localhost:4173`. The open, rescan, hide and
 launch buttons returned 403, accusing the browser of coming from somewhere else.
 
-**The figures.** `sameOrigin` shows up in 72 of the 79 `route.ts`, with **90 calls** —there
-are files with several handlers—, and those 90 calls cover 90 of the 98 handlers. The other
-eight are the agent channel (counted 12-Sep-2026):
+**The figures.** `sameOrigin` shows up in 87 of the 94 `route.ts`, with **112 calls** —there
+are files with several handlers—, and those 112 calls cover 112 of the 120 handlers. The other
+eight are the agent channel (counted 14-Sep-2026, after delivery D, which added no route file and moved no guard):
 
 ```bash
-grep -rl 'sameOrigin(' --include=route.ts apps/web/app/api | wc -l    # 72
-grep -rho 'sameOrigin(' --include=route.ts apps/web/app/api | wc -l   # 90
+grep -rl 'sameOrigin(' --include=route.ts apps/web/app/api | wc -l    # 87
+grep -rho 'sameOrigin(' --include=route.ts apps/web/app/api | wc -l   # 112
 ```
 
 ## `localOperatorOnly` separates looking from ordering
@@ -147,7 +147,7 @@ When there is a key, the client's is looked for in two places, in this order: th
 browser— and failing that, the `panoma-operator` cookie, pulled out of the `cookie` header by
 hand because a route handler receives a bare `Request`, without `NextRequest`'s `cookies`.
 
-**The thirty-eight handlers that carry it**, across thirty-one files:
+**The fifty-eight handlers that carry it**, across forty-four files:
 
 | route · method | why it carries it |
 | --- | --- |
@@ -172,7 +172,7 @@ hand because a route handler receives a bare `Request`, without `NextRequest`'s 
 | `POST /api/agent/mcp` | writes into the owner's `~/.claude.json` |
 | `POST /api/twin/sources` | granting is deciding that this computer opens the private history |
 | `POST /api/twin/mine` | opens those files and stores them |
-| `POST /api/twin/taste` | writes `TASTE.md`, which every one of your agents reads |
+| `POST /api/twin/taste` | writes `TASTE.md`, which every one of your agents reads — inline on the legacy body, and through the publication outbox it plans and runs on the version-2 body since delivery D — and saves the permission for what was inferred to go down |
 | `POST /api/twin/rehearse` | spends a model credential on the owner's behalf |
 | `GET /api/twin/episodes` | reads the owner's own testimony: decisions with their reasons and their evidence |
 | `POST /api/twin/episodes` | writes that testimony, revises it and dismisses it |
@@ -191,14 +191,32 @@ hand because a route handler receives a bare `Request`, without `NextRequest`'s 
 | `POST /api/agent/handoff` | the handoff's write on the agent channel: reads one conversation whole and puts a copy into another agent's own store; same order of guards, and the receipt keeps the agent's name |
 | `POST /api/agent/video` | a production of panoma video asked for by an agent: it starts the project's own development server as this user and films it, and the family's gate is the operator's — first, the agent key after it, and the row keeps the agent's name |
 | `POST /api/agent/video/cancel` | ends a production's process tree at an agent's request; same order of guards |
+| `POST /api/hook/context` | hands a program the project's memory contract; its caller —a Claude Code hook— has no agent key, so the operator key is the whole door |
+| `POST /api/hook/session` | points the receipt reader at a transcript of this disk; the pointer is validated against this machine and the operator's key says who may point |
+| `GET /api/memory/status` | the bridge's control room: every project's root, the grants over the person's history and what was delivered where |
+| `POST /api/memory/purge` | begins forgetting what the memory holds: a decision over this person's memory, never the network key's |
+| `GET /api/memory/purge` | the receipt of a purge names what was cleaned and what stayed |
+| `POST /api/memory/withdraw` | blocks memory from every future delivery; the same decision with the bytes kept |
+| `GET /api/memory/withdraw` | the receipt of a withdrawal |
+| `POST /api/memory/backfill` | plans and confirms a re-read of this disk's transcripts under a range the person names: a consent over the private history, and for the extraction purpose a plan to spend on it |
+| `GET /api/memory/backfill` | the receipt of a backfill names the streams it reaches and how far it got |
+| `GET /api/memory/jobs` | the backlog of every project's memory work, with its reasons and its receipts |
+| `POST /api/memory/jobs` | a retry spends the person's money at the next claim, and a cancel throws a paid answer away |
+| `GET /api/memory/checks` | names every live rule of the project with its anchors on this disk: which files a note, a criterion, a decision or an obligation depends on |
+| `POST /api/memory/checks` | a definition decides what the patrol will look at on this disk, and moves the item's revision |
+| `GET /api/memory/outcomes` | every look the patrol took at this project's rules, with the state of the disk it saw |
+| `POST /api/memory/outcomes` | a verdict on an incident is the owner's word on the record |
+| `GET /api/memory/commitments` | the person's obligations and what the disk observed of them |
+| `POST /api/memory/commitments` | an obligation is the person's word, and closing one is a decision over this person's memory |
+| `GET /api/memory/cases` | a case names the owner's decisions and an agent's logbook, which the network key never reads |
 
 ```bash
-grep -rl 'localOperatorOnly(' --include=route.ts apps/web/app/api | wc -l   # 31
-grep -rho 'localOperatorOnly(' --include=route.ts apps/web/app/api | wc -l  # 38
-grep -rl 'localOperatorOnly'  --include=route.ts apps/web/app/api | wc -l   # 37
+grep -rl 'localOperatorOnly(' --include=route.ts apps/web/app/api | wc -l   # 44
+grep -rho 'localOperatorOnly(' --include=route.ts apps/web/app/api | wc -l  # 58
+grep -rl 'localOperatorOnly'  --include=route.ts apps/web/app/api | wc -l   # 50
 ```
 
-The third figure is the interesting one: **37 files name the guard and only 31 call it**. The
+The third figure is the interesting one: **50 files name the guard and only 44 call it**. The
 remaining six name it in a comment to leave written down why they do **not** carry it
 —`north`, `search`, `md/apply`, `md/repair`, `environment` and `twin/assign`—, and those
 reasons are in [http-api.md](http-api.md). It is not decoration: it is how "decided" gets told
@@ -255,10 +273,14 @@ nobody was looking at them:
 With the list inverted, a new route arrives watched by default and whoever wants to leave it
 out has to write the reason. The six tests it runs today:
 
-1. The twenty-seven files in `EJECUTAN` —ten of the official apps, six that install, run
+1. The thirty-eight files in `EJECUTAN` —ten of the official apps, six that install, run
    or open, three of the twin, the two operator doors of the handoff and its two doors on
-   the agent channel, and the video four on that channel— carry **both** guards in every
-   handler, except twelve handlers exempted with a written reason longer than 40
+   the agent channel, the video four on that channel, and the eleven doors of the memory
+   contract (five of delivery A, the backfill and the jobs of delivery B, the checks, the
+   outcomes, the commitments and the cases of delivery C), which start no
+   process and are listed by name because what they hand out and
+   what they point at is the person's memory and the person's transcripts— carry **both**
+   guards in every handler, except twelve handlers exempted with a written reason longer than 40
    characters: the six read-only GETs of the apps family and their two twins on the agent
    channel (`agent/apps`, `agent/video/jobs`), `open GET`, `open/all GET`,
    `twin/sources GET` and `twin/taste GET`.
@@ -313,6 +335,17 @@ catalog** — `requireAgent` would open it to look the key up, and the mock thro
 The MCP client only ever sends the operator key to the loopback, read from the 0600 file the
 way `apps/cli/src/catalog-fetch.ts` does, so a remote catalog never hands off.
 
+The same mock guards the order of a newer call. Since the memory plan, every memory door and
+every Twin door consults `memoryQuarantine()` before doing anything with the catalog, and that
+check **opens the catalog** (`apps/web/lib/db.ts`), so it belongs after the guard and never
+before it. On 14-Sep-2026 the review of that plan put it first in `twin/look` POST and
+`twin/rehearse` POST, both in the operator block, and the test caught them; `twin/taste` GET had
+the same reversal and nothing visited it, because `sameOrigin` alone guards it. Since that day
+`gates.test.ts` has a block for the Twin doors of this origin — `taste` GET and POST, `look` GET,
+`classify`, `critique`, `distill` and `synthesize` — called from the tab next door: 403, the body
+unread, the catalog untouched. A new door that consults the quarantine belongs in one of the two
+blocks by its guard.
+
 ## The `Host` header no longer decides anything about security
 
 It is written by the caller. Measured on 25-Aug-2026 against a real server bound to `0.0.0.0`
@@ -362,3 +395,19 @@ can only have by being on the machine.
 - **No test checks the figures on this page.** `guard.test.ts` checks the doctrine, not the
   count: if tomorrow there are 70 calls to `sameOrigin`, the test stays green and this
   document is left lying. The `grep`s above are there so that gets found out in a minute.
+- **The sixth test does not sweep for `setGrant`.** The capture grant of the memory contract
+  is written by `setGrant` in `packages/core/src/history/consent.ts`, and the history sweep
+  names `setConsent` and `setInferredConsent` but not it. Nothing is uncovered today —
+  `twin/sources` is in `EJECUTAN` by name, and delivery D's third grant, `twinAutoLearn`,
+  goes through that same door — but a second route granting a capture or a learning
+  permission would be found by the list and not by the call, which is the weaker of the two
+  nets.
+- **The census is the same after delivery D, and that is worth one sentence.** D added no
+  `route.ts` and moved no guard: the third grant is one more `purpose` of `twin/sources`, the
+  version-2 body is the same `twin/taste` POST behind the same two keys, and the reservation
+  of the read routes changes what a call costs and not who may make it. The figures above —
+  94 files, 120 handlers, 112 calls to `sameOrigin` in 87 files, 58 to `localOperatorOnly` in
+  44, 38 files in `EJECUTAN` — were recounted on 14-Sep-2026 after D landed and did not move.
+  The review of the same day did move one: it put the quarantine check ahead of the guard in
+  three handlers, and the census does not see that, because a call is counted wherever it sits.
+  The order is what `gates.test.ts` holds, handler by handler, with the catalog mock that throws.

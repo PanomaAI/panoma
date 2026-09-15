@@ -37,9 +37,17 @@ import {
   signBelief,
   updateBelief,
   vetoBelief,
+  lastSynthesisHash,
+  saveSynthesisPass,
+  setBeliefScopeByRevision,
+  signBeliefByRevision,
+  vetoBeliefByRevision,
   type DesignFingerprint,
+  type NewBelief,
   type NewVerdict,
 } from "./queries";
+import { criterionPayload, observationPayload, readRevision, revisionHistory } from "./memory-revisions";
+import { originCounts, validateCaseOriginKey, validateSupportEvidence } from "./twin";
 
 /**
  * The two Twin boards, against PGlite and not against a double.
@@ -1375,5 +1383,289 @@ describe("lo que se ve sin mirar", () => {
 
   it("y una carpeta sin revisar no tiene ninguna", async () => {
     expect(await getReview(db, "proj_que_no_existe")).toBeUndefined();
+  });
+});
+
+/*
+  ── Delivery D: the contextual Twin ───────────────────────────────────────────────────
+  A criterion learns limits (typed conditions and exceptions), the owner's gestures name the
+  revision they looked at, an observation is born with its case origin and its photograph, and
+  a synthesis pass records the fingerprint it compressed. Against PGlite, because what is
+  pinned here is a compare-and-set in SQL, a photograph committed with its row, and a `where`
+  that refuses a stale number — none of which a double reproduces.
+ */
+describe("delivery D: the contextual Twin", () => {
+  const support = { observations: 3, projects: 2, days: 2 };
+  const deploy = { schemaVersion: 1, expression: { kind: "operation_is", operation: "deploy" } };
+  const production = { schemaVersion: 1, expression: { kind: "environment_is", environmentId: "a".repeat(64) } };
+  const staging = { schemaVersion: 1, expression: { kind: "environment_is", environmentId: "b".repeat(64) } };
+  const irreversible = { schemaVersion: 1, expression: { all: [{ kind: "operation_is", operation: "edit" }, { kind: "path_under", path: "migrations" }] } };
+
+  beforeEach(async () => {
+    await db.delete(t.synthesisPasses);
+    await db.delete(t.memoryJobs);
+    await db.delete(t.memoryRevisions);
+    await db.delete(t.beliefs);
+    await db.delete(t.observations);
+  });
+
+  const belief = (patch: Partial<NewBelief> = {}): NewBelief => ({
+    topic: "workflow", statement: "You prefer direct actions in forms.", state: "inferred", citations: [], support, model: "test/model", ...patch,
+  });
+
+  async function row(id: string) {
+    const found = (await listBeliefs(db)).find((one) => one.id === id);
+    if (!found) throw new Error(`No belief ${id}.`);
+    return found;
+  }
+
+  /** A predicate deeper than the limit: five nested `not`s around a leaf. */
+  function tooDeep() {
+    let node: Record<string, unknown> = { kind: "operation_is", operation: "read" };
+    for (let level = 0; level < 5; level += 1) node = { not: node };
+    return { schemaVersion: 1, expression: node };
+  }
+
+  it("§10.1: insertBeliefs stores validated conditions and exceptions, photographs them, and refuses depth or leaves beyond the limits whole", async () => {
+    const [id] = await insertBeliefs(db, [belief({ conditions: deploy, exceptions: irreversible })]);
+    const stored = await row(id!);
+    expect(stored.conditions).toEqual(deploy);
+    expect(stored.exceptions).toEqual(irreversible);
+    expect(stored.supportEvidence).toBeNull();
+    const photograph = await readRevision(db, "criterion", id!, 1);
+    expect(photograph?.payload).toEqual(criterionPayload((await db.select().from(t.beliefs).where(eq(t.beliefs.id, id!)))[0]!));
+    expect(photograph?.payload).toMatchObject({ conditions: deploy, exceptions: irreversible, supportEvidence: null });
+
+    // Depth and leaves: the batch is refused whole, before the first write.
+    await expect(insertBeliefs(db, [belief(), belief({ conditions: tooDeep() })])).rejects.toThrow(/levels deep/);
+    const leaves = { schemaVersion: 1, expression: { any: Array.from({ length: 21 }, (_, index) => ({ kind: "task_kind_is", taskKind: `kind-${index}` })) } };
+    await expect(insertBeliefs(db, [belief({ exceptions: leaves })])).rejects.toThrow(/leaves|nodes/);
+    await expect(insertBeliefs(db, [belief({ conditions: { schemaVersion: 1, expression: { kind: "operation_is", operation: "deploy", extra: 1 } } })])).rejects.toThrow(/Unknown key/);
+    expect(await listBeliefs(db)).toHaveLength(1);
+    // A model's JSON with a SQL-looking leaf is not a predicate: the union is closed.
+    await expect(insertBeliefs(db, [belief({ conditions: { schemaVersion: 1, expression: { kind: "sql", query: "1=1" } } })])).rejects.toThrow(/closed kinds/);
+  });
+
+  it("D01: a taught criterion signs with its exception and no quorum; «perfecto» without a referent is stored as a reaction that proposes nothing", async () => {
+    // A brief teach: the owner's text, one gesture, signed on the spot with its exception.
+    const [taught] = await insertBeliefs(db, [belief({ statement: "You prefer direct actions in forms.", state: "signed", model: "owner", support: { observations: 1, projects: 0, days: 1 }, exceptions: irreversible })]);
+    const signed = await signBeliefByRevision(db, taught!, { memoryRev: 1 });
+    expect(signed).toEqual({ revision: 1 });
+    expect((await row(taught!)).exceptions).toEqual(irreversible);
+    // The ambiguous reaction is evidence with an unknown referent: an observation, never a criterion.
+    expect(await saveObservations(db, [{ identity: null, topic: "other", classified: false, statement: "perfecto", citations: [{ verdictId: "v-1", quote: "perfecto", at: "2026-09-01T10:00:00.000Z" }], model: "test/model", caseOriginKey: "claude-code:ses-1:owner" }])).toBe(1);
+    expect(await listBeliefs(db)).toHaveLength(1);
+    const [reaction] = await listObservations(db, { classified: false });
+    expect(reaction).toMatchObject({ statement: "perfecto", caseOriginKey: "claude-code:ses-1:owner", memoryRev: 1 });
+  });
+
+  it("taste v2 CAS: signBeliefByRevision refuses a stale revision and writes nothing; the accepted content is stored exactly and photographed", async () => {
+    const [id] = await insertBeliefs(db, [belief()]);
+    expect(await signBeliefByRevision(db, id!, { memoryRev: 2 }, { statement: "Not what I read." })).toEqual({ conflict: true, reason: "stale_revision" });
+    expect(await row(id!)).toMatchObject({ state: "inferred", statement: "You prefer direct actions in forms.", memoryRev: 1, exceptions: null });
+    expect(await readRevision(db, "criterion", id!, 2)).toBeUndefined();
+
+    expect(await signBeliefByRevision(db, id!, { memoryRev: 1 }, { statement: "  You prefer  direct actions. ", exceptions: irreversible })).toEqual({ revision: 2 });
+    const signed = await row(id!);
+    expect(signed).toMatchObject({ state: "signed", statement: "You prefer direct actions.", model: "", memoryRev: 2, exceptions: irreversible, conditions: null });
+    expect(signed.signedAt).not.toBeNull();
+    const photograph = await readRevision(db, "criterion", id!, 2);
+    expect(photograph).toMatchObject({ reason: "approve", authority: "owner_instruction", disposition: "signed" });
+    expect(photograph?.payload).toMatchObject({ statement: "You prefer direct actions.", exceptions: irreversible, conditions: null });
+
+    // Signing again what it already says answers the current revision and bumps nothing.
+    expect(await signBeliefByRevision(db, id!, { memoryRev: 2 }, { statement: "You prefer direct actions.", exceptions: irreversible })).toEqual({ revision: 2 });
+    expect((await revisionHistory(db, "criterion", id!)).map((one) => one.rev)).toEqual([1, 2]);
+    // Clearing an exception is a change; keeping it (undefined) is not.
+    expect(await signBeliefByRevision(db, id!, { memoryRev: 2 }, { conditions: deploy })).toEqual({ revision: 3 });
+    expect(await row(id!)).toMatchObject({ conditions: deploy, exceptions: irreversible });
+    expect(await signBeliefByRevision(db, id!, { memoryRev: 3 }, { exceptions: null })).toEqual({ revision: 4 });
+    expect(await row(id!)).toMatchObject({ conditions: deploy, exceptions: null });
+    expect((await readRevision(db, "criterion", id!, 4))?.payload).toMatchObject({ exceptions: null, conditions: deploy });
+
+    // The old number is stale now, whatever it carries; a missing id and a bad predicate are refused before any write.
+    expect(await signBeliefByRevision(db, id!, { memoryRev: 1 })).toEqual({ conflict: true, reason: "stale_revision" });
+    expect(await signBeliefByRevision(db, "missing", { memoryRev: 1 })).toEqual({ conflict: true, reason: "not_found" });
+    await expect(signBeliefByRevision(db, id!, { memoryRev: 4 }, { conditions: tooDeep() })).rejects.toThrow(/levels deep/);
+    await expect(signBeliefByRevision(db, id!, { memoryRev: 0 })).rejects.toThrow(/positive integer/);
+    expect((await row(id!)).memoryRev).toBe(4);
+    // The legacy signature keeps working for the route that names no revision.
+    expect(await signBelief(db, id!, "Legacy words.")).toBe(true);
+    expect(await row(id!)).toMatchObject({ statement: "Legacy words.", memoryRev: 5, conditions: deploy });
+  });
+
+  it("taste v2 CAS: vetoBeliefByRevision and setBeliefScopeByRevision refuse a stale revision with nothing written, and photograph what they move", async () => {
+    const [id] = await insertBeliefs(db, [belief()]);
+    expect(await setBeliefScopeByRevision(db, id!, { memoryRev: 7 }, IDENTITY)).toEqual({ conflict: true, reason: "stale_revision" });
+    expect(await row(id!)).toMatchObject({ identity: null, scopeKind: "global", memoryRev: 1 });
+    expect(await setBeliefScopeByRevision(db, id!, { memoryRev: 1 }, IDENTITY)).toEqual({ revision: 2 });
+    expect(await row(id!)).toMatchObject({ identity: IDENTITY, scopeKind: "project", memoryRev: 2 });
+    expect(await readRevision(db, "criterion", id!, 2)).toMatchObject({ reason: "scope", scopeKind: "project", scopeRef: IDENTITY });
+    // Narrowing to where it already is answers the current number.
+    expect(await setBeliefScopeByRevision(db, id!, { memoryRev: 2 }, IDENTITY)).toEqual({ revision: 2 });
+    expect(await setBeliefScopeByRevision(db, "missing", { memoryRev: 1 }, null)).toEqual({ conflict: true, reason: "not_found" });
+
+    expect(await vetoBeliefByRevision(db, id!, { memoryRev: 1 })).toEqual({ conflict: true, reason: "stale_revision" });
+    expect(await row(id!)).toMatchObject({ state: "inferred", memoryRev: 2 });
+    expect(await vetoBeliefByRevision(db, id!, { memoryRev: 2 })).toEqual({ revision: 3 });
+    expect(await row(id!)).toMatchObject({ state: "vetoed", memoryRev: 3 });
+    expect(await readRevision(db, "criterion", id!, 3)).toMatchObject({ reason: "veto", disposition: "vetoed", authority: "owner_confirmation" });
+    // A buried row is no longer alive: the CAS says not found, as the legacy veto says false.
+    expect(await vetoBeliefByRevision(db, id!, { memoryRev: 3 })).toEqual({ conflict: true, reason: "not_found" });
+    expect(await vetoBelief(db, id!)).toBe(false);
+    expect((await revisionHistory(db, "criterion", id!)).map((one) => one.rev)).toEqual([1, 2, 3]);
+  });
+
+  it("D02: two candidates that differ by an exception, an environment or a date stay two rows — the writer never merges by similarity", async () => {
+    const statement = "You want confirmation before an irreversible operation.";
+    const ids = await insertBeliefs(db, [
+      belief({ statement }),
+      belief({ statement, exceptions: irreversible }),
+      belief({ statement, conditions: production }),
+      belief({ statement, conditions: staging }),
+    ]);
+    expect(new Set(ids).size).toBe(4);
+    const rows = await listBeliefs(db, { topic: "workflow" });
+    expect(rows).toHaveLength(4);
+    expect(rows.map((one) => one.statement)).toEqual([statement, statement, statement, statement]);
+    expect(rows.map((one) => one.conditions?.expression ?? null)).toContainEqual(production.expression);
+    expect(rows.map((one) => one.conditions?.expression ?? null)).toContainEqual(staging.expression);
+    // Rewriting one with the other's words does not fold them: each keeps its own row and number.
+    expect(await updateBelief(db, ids[0]!, { statement, exceptions: irreversible })).toBe(true);
+    expect(await listBeliefs(db, { topic: "workflow" })).toHaveLength(4);
+    expect((await row(ids[0]!)).memoryRev).toBe(2);
+    expect((await row(ids[1]!)).memoryRev).toBe(1);
+    // And the same words on two dates of evidence are two observations with two photographs.
+    const cite = (at: string) => [{ verdictId: `v-${at}`, quote: "confirm first", at }];
+    expect(await saveObservations(db, [
+      { identity: IDENTITY, topic: "workflow", statement: "Confirm before deleting.", citations: cite("2026-09-01T10:00:00.000Z"), model: "m", caseOriginKey: "claude-code:ses-1:owner" },
+      { identity: "git:0000000000000000000000000000000000000000", topic: "workflow", statement: "Confirm before deleting.", citations: cite("2026-09-02T10:00:00.000Z"), model: "m", caseOriginKey: "claude-code:ses-2:owner" },
+    ])).toBe(2);
+    expect(await listObservations(db, { topic: "workflow" })).toHaveLength(2);
+  });
+
+  it("updateBelief accepts the typed columns, revises only when one of them moves, and refuses a malformed evidence object", async () => {
+    const [id] = await insertBeliefs(db, [belief()]);
+    expect(await updateBelief(db, id!, { conditions: deploy })).toBe(true);
+    expect(await row(id!)).toMatchObject({ conditions: deploy, memoryRev: 2 });
+    expect((await readRevision(db, "criterion", id!, 2))?.payload).toMatchObject({ conditions: deploy });
+    // The same predicate again: the row is touched, the revision is not.
+    expect(await updateBelief(db, id!, { conditions: deploy, support })).toBe(true);
+    expect((await row(id!)).memoryRev).toBe(2);
+    const evidence = { schemaVersion: 1, supportPolicyVersion: 2, families: [{ originKey: "teach:g1", kind: "teach", revisionIds: ["mrev_b", "mrev_a"], at: "2026-09-01T10:00:00.000Z" }], counts: { families: 1, observations: 1, projects: 0, days: 1 }, refs: ["obs-1"] };
+    expect(await updateBelief(db, id!, { supportEvidence: evidence })).toBe(true);
+    expect((await row(id!)).supportEvidence).toMatchObject({ supportPolicyVersion: 2, families: [{ originKey: "teach:g1", revisionIds: ["mrev_a", "mrev_b"] }] });
+    expect((await readRevision(db, "criterion", id!, 3))?.payload).toMatchObject({ supportEvidence: { counts: { families: 1 } } });
+    await expect(updateBelief(db, id!, { supportEvidence: { ...evidence, score: 9 } })).rejects.toThrow(/unknown key/);
+    await expect(updateBelief(db, id!, { supportEvidence: { ...evidence, families: [{ ...evidence.families[0], originKey: "copied:x" }] } })).rejects.toThrow(/known origin/);
+    expect((await row(id!)).memoryRev).toBe(3);
+    // The wall stands: a signed row is not rewritten, typed columns included.
+    await signBelief(db, id!);
+    expect(await updateBelief(db, id!, { conditions: null })).toBe(false);
+    expect((await row(id!)).conditions).toEqual(deploy);
+  });
+
+  it("T58: saveObservations writes the case origin key and photographs each new row at revision 1; the same sentence read again keeps the origin it had", async () => {
+    const citations = [{ verdictId: "v-1", quote: "no dialogs here", at: "2026-09-03T12:00:00.000Z", project: "uno" }];
+    expect(await saveObservations(db, [
+      { identity: IDENTITY, topic: "workflow", statement: "No dialogs on the form.", citations, model: "m", caseOriginKey: " claude-code:ses-9:owner " },
+      { identity: null, topic: "other", statement: "A legacy-shaped row.", citations, model: "m" },
+    ])).toBe(2);
+    const [first] = await listObservations(db, { identity: IDENTITY });
+    expect(first).toMatchObject({ caseOriginKey: "claude-code:ses-9:owner", memoryRev: 1 });
+    const stored = (await db.select().from(t.observations).where(eq(t.observations.id, first!.id)))[0]!;
+    const photograph = await readRevision(db, "observation", first!.id, 1);
+    expect(photograph).toMatchObject({ reason: "create", authority: "owner_report", disposition: "classified", scopeKind: "project", scopeRef: IDENTITY, coverage: "complete" });
+    expect(photograph?.payload).toEqual(observationPayload(stored));
+    expect(photograph?.payload).toMatchObject({ caseOriginKey: "claude-code:ses-9:owner", statement: "No dialogs on the form." });
+    expect(photograph?.payload).not.toHaveProperty("topicAt");
+    const [legacy] = await listObservations(db, { identity: null });
+    expect(legacy!.caseOriginKey).toBeNull();
+    expect(await readRevision(db, "observation", legacy!.id, 1)).toMatchObject({ scopeKind: "global", scopeRef: null });
+
+    // A copy of the same words from another origin is not new evidence: nothing written, the origin stays.
+    expect(await saveObservations(db, [{ identity: IDENTITY, topic: "workflow", statement: "no dialogs on the form.", citations, model: "m", caseOriginKey: "copied:relay" }])).toBe(0);
+    expect((await listObservations(db, { identity: IDENTITY }))[0]!.caseOriginKey).toBe("claude-code:ses-9:owner");
+    expect(await revisionHistory(db, "observation", first!.id)).toHaveLength(1);
+
+    // A malformed key refuses the batch before any write.
+    await expect(saveObservations(db, [{ identity: null, topic: "other", statement: "New.", citations, model: "m", caseOriginKey: "bad key" }])).rejects.toThrow(/control characters/);
+    await expect(saveObservations(db, [{ identity: null, topic: "other", statement: "New.", citations, model: "m", caseOriginKey: "k".repeat(513) }])).rejects.toThrow(/at most 512/);
+    expect(await listObservations(db)).toHaveLength(2);
+    expect(validateCaseOriginKey(undefined)).toBeNull();
+    expect(originCounts("copied:anything")).toBe(false);
+    expect(originCounts("unknown")).toBe(false);
+    expect(originCounts(null)).toBe(false);
+    expect(originCounts("teach:g1")).toBe(true);
+  });
+
+  it("D04/T66: classify bumps memory_rev once by CAS and photographs; the same topic twice is a no-op; reclassifying never duplicates the row", async () => {
+    await saveObservations(db, [{ identity: null, topic: "other", classified: false, statement: "Sort it later.", citations: [{ verdictId: "v", quote: "q", at: "2026-09-03T12:00:00.000Z" }], model: "m", caseOriginKey: "claude-code:ses-1:owner" }]);
+    const [pending] = await listObservations(db, { classified: false });
+    const stored = async () => (await db.select().from(t.observations))[0]!;
+    const before = (await stored()).topicAt;
+
+    expect(await setObservationTopics(db, [{ id: pending!.id, topic: "workflow" }])).toBe(1);
+    const moved = await stored();
+    expect(moved).toMatchObject({ id: pending!.id, topic: "workflow", classified: true, memoryRev: 2 });
+    const second = await readRevision(db, "observation", pending!.id, 2);
+    expect(second).toMatchObject({ reason: "edit", disposition: "classified" });
+    expect(second?.payload).toMatchObject({ topic: "workflow", classified: true });
+    expect(second?.previousId).toBe((await readRevision(db, "observation", pending!.id, 1))?.id);
+
+    // Filing it where it already is moves nothing: not the number, not the photograph, not the clock.
+    expect(await setObservationTopics(db, [{ id: pending!.id, topic: "workflow" }])).toBe(0);
+    const same = await stored();
+    expect(same.memoryRev).toBe(2);
+    expect(same.topicAt.getTime()).toBe(moved.topicAt.getTime());
+    expect(same.topicAt.getTime()).toBeGreaterThanOrEqual(before.getTime());
+    expect((await revisionHistory(db, "observation", pending!.id)).map((one) => one.rev)).toEqual([1, 2]);
+
+    // Another topic is a third revision of the same row; the evidence is still one row.
+    expect(await setObservationTopics(db, [{ id: pending!.id, topic: "design" }])).toBe(1);
+    expect((await listObservations(db))[0]).toMatchObject({ topic: "design", memoryRev: 3 });
+    expect(await listObservations(db)).toHaveLength(1);
+    expect(await db.select().from(t.observations)).toHaveLength(1);
+    expect(await setObservationTopics(db, [{ id: "missing", topic: "design" }])).toBe(0);
+  });
+
+  it("D07/T72: saveSynthesisPass keeps the job and the fingerprint, and lastSynthesisHash answers the newest pass of the topic", async () => {
+    await db.insert(t.memoryJobs).values({ id: "mjob_twin_1", processor: "twin_synthesize", workKey: "workflow:h1", scopeKey: "workflow", purpose: "twin_learn", origin: "automatic" });
+    expect(await lastSynthesisHash(db, "workflow")).toBeNull();
+    await saveSynthesisPass(db, { topic: "workflow", created: 1, refined: 0, retired: 0, proposed: 0, observations: 3, at: new Date("2026-09-10T10:00:00.000Z"), jobId: "mjob_twin_1", inputHash: "h1" });
+    expect(await lastSynthesisHash(db, "workflow")).toBe("h1");
+    // The legacy writer, without the two fields, still writes a pass — with nulls, never with an invented hash.
+    await saveSynthesisPass(db, { topic: "design", created: 0, refined: 0, retired: 0, proposed: 0, observations: 0 });
+    expect(await lastSynthesisHash(db, "design")).toBeNull();
+    // The newest pass wins, by its instant and not by insertion order.
+    await saveSynthesisPass(db, { topic: "workflow", created: 0, refined: 1, retired: 0, proposed: 0, observations: 4, at: new Date("2026-09-12T10:00:00.000Z"), inputHash: "h2" });
+    await saveSynthesisPass(db, { topic: "workflow", created: 0, refined: 0, retired: 0, proposed: 0, observations: 4, at: new Date("2026-09-11T10:00:00.000Z"), inputHash: "h1b" });
+    expect(await lastSynthesisHash(db, "workflow")).toBe("h2");
+    expect(await lastSynthesisHash(db, "security")).toBeNull();
+    const passes = await db.select().from(t.synthesisPasses).where(eq(t.synthesisPasses.topic, "workflow"));
+    expect(passes.map((one) => [one.inputHash, one.jobId]).sort()).toEqual([["h1", "mjob_twin_1"], ["h1b", null], ["h2", null]]);
+    // A job that goes away leaves the pass with a null job, never a dangling one.
+    await db.delete(t.memoryJobs).where(eq(t.memoryJobs.id, "mjob_twin_1"));
+    expect((await db.select().from(t.synthesisPasses).where(eq(t.synthesisPasses.inputHash, "h1")))[0]?.jobId).toBeNull();
+  });
+
+  it("validateSupportEvidence checks the closed shape: unknown keys, copied or unknown origins, duplicate families and bad counts are refused; families and refs come back sorted", () => {
+    const family = (originKey: string) => ({ originKey, kind: "case", revisionIds: ["mrev_2", "mrev_1"], at: "2026-09-01T10:00:00.000Z", projectId: IDENTITY });
+    const good = { schemaVersion: 1, supportPolicyVersion: 2, families: [family("b:1:o"), family("a:1:o")], counts: { families: 2, observations: 2, projects: 1, days: 1 }, refs: ["obs-b", "obs-a"] };
+    const validated = validateSupportEvidence(good);
+    expect(validated.families.map((one) => one.originKey)).toEqual(["a:1:o", "b:1:o"]);
+    expect(validated.families[0]?.revisionIds).toEqual(["mrev_1", "mrev_2"]);
+    expect(validated.refs).toEqual(["obs-a", "obs-b"]);
+    expect(() => validateSupportEvidence({ ...good, extra: true })).toThrow(/unknown key/);
+    expect(() => validateSupportEvidence({ ...good, schemaVersion: 2 })).toThrow(/schemaVersion 1/);
+    expect(() => validateSupportEvidence({ ...good, families: [family("copied:x")] })).toThrow(/known origin/);
+    expect(() => validateSupportEvidence({ ...good, families: [family("unknown")] })).toThrow(/known origin/);
+    expect(() => validateSupportEvidence({ ...good, families: [family("a:1:o"), family("a:1:o")] })).toThrow(/share one origin/);
+    expect(() => validateSupportEvidence({ ...good, families: [{ ...family("a:1:o"), kind: "guess" }] })).toThrow(/case, a teach or a correction/);
+    expect(() => validateSupportEvidence({ ...good, counts: { ...good.counts, families: -1 } })).toThrow(/non-negative/);
+    expect(() => validateSupportEvidence({ ...good, counts: { ...good.counts, score: 1 } })).toThrow(/unknown key/);
+    expect(() => validateSupportEvidence({ ...good, refs: [""] })).toThrow(/bounded observation id/);
+    expect(() => validateSupportEvidence({ ...good, families: [{ ...family("a:1:o"), at: "yesterday" }] })).toThrow(/ISO 8601/);
+    expect(() => validateSupportEvidence(null)).toThrow(/is an object/);
   });
 });

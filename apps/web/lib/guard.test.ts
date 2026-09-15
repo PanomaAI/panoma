@@ -285,6 +285,41 @@ describe("las puertas que ejecutan llevan todas la misma guarda", () => {
     "agent/video/cancel/route.ts",
     "agent/apps/route.ts",
     "agent/video/jobs/route.ts",
+    /*
+      The memory contract v2 doors (14-Sep-2026). The two hooks deliver memory into a program's
+      context and point the reader at a transcript of this disk — a caller with no agent key at
+      all, so the operator key is the whole door. The three operator doors read the bridge's
+      control room, with every project's root and the grants over the person's history, and
+      begin the forgetting of what the memory holds; none of them starts a process, which is
+      exactly why they are listed by name rather than found by the sweep below.
+     */
+    "hook/context/route.ts",
+    "hook/session/route.ts",
+    "memory/status/route.ts",
+    "memory/purge/route.ts",
+    "memory/withdraw/route.ts",
+    /*
+      Delivery B's two operator doors (14-Sep-2026). A backfill opens this disk's transcripts
+      over a range the person names and, for the extraction purpose, queues paid work on them;
+      the jobs door lists every project's memory work and retries or cancels it — a retry spends
+      the person's money. Both GETs carry the key too: the page names every project's work and
+      the receipt names the cursors over a private stream.
+     */
+    "memory/backfill/route.ts",
+    "memory/jobs/route.ts",
+    /*
+      Delivery C's four operator doors (14-Sep-2026). A check definition decides what the
+      patrol looks at on this disk and the page names every live rule with its anchors; a
+      verdict is the owner's word on an incident; a commitment is the owner's obligation and
+      closing one is a decision over this person's memory; a case names the owner's decisions
+      and an agent's logbook. None starts a process; all four carry the key on every handler,
+      the GETs included, because the network key lets a phone look at the catalog and none of
+      this is the catalog.
+     */
+    "memory/checks/route.ts",
+    "memory/outcomes/route.ts",
+    "memory/commitments/route.ts",
+    "memory/cases/route.ts",
   ];
 
   /*

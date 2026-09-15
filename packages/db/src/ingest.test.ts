@@ -513,6 +513,36 @@ describe("mover la carpeta no mata la memoria", () => {
       noteIds: ["nota-mudanza"],
       noteChars: 40,
     });
+    // The v2 pair: a context the recipient keeps, and an offer prepared for it. The offer points
+    // at the context with `set null`, so the context has to survive for the offer to keep it.
+    await db.insert(t.memoryContexts).values({
+      id: "mctx-mudanza",
+      projectId,
+      harness: "claude-code",
+      entrypoint: "desktop",
+      recipientKey: "main",
+      nativeSessionKey: "sesion-nativa-mudanza",
+    });
+    await db.insert(t.servings).values({
+      id: "srv-mudanza-v2",
+      projectId,
+      agentId: null,
+      arm: "served",
+      noteIds: ["nota-mudanza"],
+      noteChars: 40,
+      schemaVersion: 2,
+      contextId: "mctx-mudanza",
+      contextGeneration: 1,
+      channel: "brief",
+      requestKey: "mudanza:request",
+      payload: { schemaVersion: 2, items: [] },
+      contentHash: "a".repeat(64),
+      rendered: "el build necesita la versión 20 de node",
+      renderedHash: "c".repeat(64),
+      serializedBytes: 48,
+      unitManifest: { schemaVersion: 1, units: [] },
+      policySnapshot: { grants: [] },
+    });
     await db.insert(t.tasks).values({ id: "tarea-mudanza", projectId, title: "cerrar el ciclo" });
     await db.insert(t.launches).values({ id: "lanz-mudanza", projectId, agent: "Claude Code" });
     await db.insert(t.handoffs).values({
@@ -560,7 +590,11 @@ describe("mover la carpeta no mata la memoria", () => {
     expect((await db.select().from(t.agentSessions))[0]?.projectId).toBe(heredero);
     expect((await db.select().from(t.agentActivities))[0]?.projectId).toBe(heredero);
     expect((await db.select().from(t.consultations))[0]?.projectId).toBe(heredero);
-    expect((await db.select().from(t.servings))[0]?.projectId).toBe(heredero);
+    const servings = await db.select().from(t.servings).orderBy(asc(t.servings.id));
+    expect(servings.map((row) => [row.id, row.projectId])).toEqual([["srv-mudanza", heredero], ["srv-mudanza-v2", heredero]]);
+    // The context followed the heir before the old row went, so the offer never lost it.
+    expect((await db.select().from(t.memoryContexts))[0]).toMatchObject({ id: "mctx-mudanza", projectId: heredero });
+    expect(servings[1]?.contextId, "the offer still names its context").toBe("mctx-mudanza");
     expect((await db.select().from(t.tasks))[0]?.projectId).toBe(heredero);
     expect((await db.select().from(t.launches))[0]?.projectId).toBe(heredero);
     expect((await db.select().from(t.handoffs))[0]?.projectId, "the receipt follows the heir too").toBe(heredero);
@@ -576,6 +610,9 @@ describe("mover la carpeta no mata la memoria", () => {
     await ingestPortfolio(db, [analyses("sin-repo-destino")], [], ROOT);
     expect(await db.select().from(t.notes)).toHaveLength(0);
     expect(await db.select().from(t.agentActivities)).toHaveLength(0);
+    // The context and the offer that named it go the same way: neither key stood in the way of the prune.
+    expect(await db.select().from(t.memoryContexts)).toHaveLength(0);
+    expect(await db.select().from(t.servings)).toHaveLength(0);
   });
 
   it("dos herederos que reclaman la misma identidad no heredan: la ambigüedad no se reparte", async () => {
@@ -600,5 +637,7 @@ describe("mover la carpeta no mata la memoria", () => {
     });
     await ingestPortfolio(db, copias, [], ROOT);
     expect(await db.select().from(t.notes)).toHaveLength(0);
+    expect(await db.select().from(t.memoryContexts)).toHaveLength(0);
+    expect(await db.select().from(t.servings)).toHaveLength(0);
   });
 });

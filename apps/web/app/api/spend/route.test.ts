@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { saveModelCall, schema, type Database } from "@panoma/db";
-import { BUDGET_ENV, spendSettingsPath } from "@/lib/spend-settings";
+import { BUDGET_ENV, QUOTA_ENV, memoryQuota, spendSettingsPath } from "@/lib/spend-settings";
 import type { SpendReport } from "@/lib/spend-report";
 
 /**
@@ -48,7 +48,7 @@ async function seed() {
 
 beforeAll(async () => {
   home = await mkdtemp(join(tmpdir(), "panoma-spend-route-"));
-  for (const variable of ["PANOMA_HOME", "PANOMA_OPERATOR_KEY", "DATABASE_URL", ...Object.values(BUDGET_ENV)]) {
+  for (const variable of ["PANOMA_HOME", "PANOMA_OPERATOR_KEY", "DATABASE_URL", ...Object.values(BUDGET_ENV), ...Object.values(QUOTA_ENV)]) {
     savedEnv[variable] = process.env[variable];
     delete process.env[variable];
   }
@@ -59,7 +59,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   dbMock.mockClear();
-  for (const variable of Object.values(BUDGET_ENV)) delete process.env[variable];
+  for (const variable of [...Object.values(BUDGET_ENV), ...Object.values(QUOTA_ENV)]) delete process.env[variable];
   await database.delete(schema.modelCalls);
   await rm(spendSettingsPath(), { force: true });
 });
@@ -123,6 +123,21 @@ describe("GET /api/spend", () => {
 });
 
 describe("POST /api/spend", () => {
+  it("saves storage limits and applies them to the writer resolver", async () => {
+    const response = await POST(postRequest({ quota: { catalogMb: 512, projectMb: 128 }, paused: true }));
+    expect(response.status).toBe(200);
+    expect(await memoryQuota()).toMatchObject({ catalogBytes: 512 * 1024 * 1024, projectBytes: 128 * 1024 * 1024, source: "file" });
+    const report = await response.json() as SpendReport;
+    expect(report.storage.scopes).toMatchObject([{ scope: "catalog", chosenMb: 512 }, { scope: "project", chosenMb: 128 }]);
+    await POST(postRequest({ currency: "EUR" }));
+    expect(await memoryQuota()).toMatchObject({ catalogBytes: 512 * 1024 * 1024 });
+    await POST(postRequest({ quota: { catalogMb: null } }));
+    expect(await memoryQuota()).toMatchObject({ catalogBytes: 256 * 1024 * 1024, projectBytes: 128 * 1024 * 1024 });
+    process.env["PANOMA_PROJECT_QUOTA_MB"] = "256";
+    const overridden = await (await GET(getRequest())).json() as SpendReport;
+    expect(overridden.storage.scopes[1]).toMatchObject({ source: "variable", effectiveMb: 256, chosenMb: 128 });
+  });
+
   it("refuses a bad cap with its field named and changes nothing on disk", async () => {
     for (const [body, code] of [
       [{ caps: { read: -1 } }, "caps"],
@@ -133,6 +148,10 @@ describe("POST /api/spend", () => {
       [{ currency: "dollars" }, "currency"],
       [{ paused: "yes" }, "paused"],
       [{ shots: "half" }, "shots"],
+      [{ quota: { catalogMb: 0 } }, "quota"],
+      [{ quota: { projectMb: 0.5 } }, "quota"],
+      [{ quota: { unknown: 64 } }, "quota"],
+      [{ quota: { catalogMb: 1048577 } }, "quota"],
       [[], "body"],
     ] as const) {
       const response = await POST(postRequest(body));

@@ -290,13 +290,18 @@ describe("recoverable episode learning", () => {
     expect(await narrativeCount(db)).toEqual({ total: 2, pending: 1, deferred: 0 });
   });
 
-  it("retains a completed batch when a later provider call fails", async () => {
+  it("retains a completed batch when a later provider call fails, and the dropped attempt still counts (T68)", async () => {
     await saveNarratives(db, [source, { ...source, source: "claude-code", sessionId: "session-b", at: new Date("2026-09-02T12:00:00Z") }]);
     completeMock.mockResolvedValueOnce(output(fields())).mockRejectedValueOnce(new Error("Provider unavailable"));
     await expect(learnEpisodes(db)).rejects.toThrow("Provider unavailable");
     expect(await narrativeCount(db)).toEqual({ total: 2, pending: 1, deferred: 0 });
     expect(await listDecisionEpisodes(db)).toHaveLength(1);
-    expect((await modelSpendToday(db, EPISODE_KIND)).calls).toBe(1);
+    // Two reservations left the process: one answered, one the provider dropped; both spend until reconciled.
+    expect((await modelSpendToday(db, EPISODE_KIND)).calls).toBe(2);
+    const rows = await db.select({ state: schema.modelCalls.state, origin: schema.modelCalls.origin, attemptKey: schema.modelCalls.attemptKey })
+      .from(schema.modelCalls).orderBy(schema.modelCalls.attemptKey);
+    expect(rows.map((row) => [row.state, row.origin])).toEqual([["completed", "manual"], ["uncertain", "manual"]]);
+    expect(rows.every((row) => /^manual:episodes:[0-9a-f-]{36}:[12]$/.test(row.attemptKey ?? ""))).toBe(true);
   });
 
   it("does not transmit a later batch whose source was forgotten during the first provider call", async () => {

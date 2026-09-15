@@ -3,9 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  BUDGET_ENV, BUDGET_FAMILIES, FACTORY_CAPS, FAMILY_KINDS, UNBUDGETED_KINDS, capFor, capFrom, capsFor, emptySpendSettings,
-  familyOf, parseSpendSettings, patchSpendSettings, rateKey, readSpendSettings, resolveCap, shotPolicy, spendSettingsPath,
-  writeSpendSettings,
+  BUDGET_ENV, BUDGET_FAMILIES, FACTORY_CAPS, FACTORY_QUOTA_MB, FAMILY_KINDS, MAX_QUOTA_MB, MIB, QUOTA_ENV, UNBUDGETED_KINDS, capFor,
+  capFrom, capsFor, emptySpendSettings, familyOf, memoryQuota, parseSpendSettings, patchSpendSettings, quotaFrom, rateKey,
+  readSpendSettings, resolveCap, resolveQuota, shotPolicy, spendSettingsPath, writeSpendSettings,
 } from "./spend-settings";
 
 let home: string;
@@ -15,7 +15,7 @@ beforeEach(async () => {
   home = await mkdtemp(join(tmpdir(), "panoma-spend-"));
   savedEnv["PANOMA_HOME"] = process.env["PANOMA_HOME"];
   process.env["PANOMA_HOME"] = home;
-  for (const variable of Object.values(BUDGET_ENV)) {
+  for (const variable of [...Object.values(BUDGET_ENV), ...Object.values(QUOTA_ENV)]) {
     savedEnv[variable] = process.env[variable];
     delete process.env[variable];
   }
@@ -194,5 +194,72 @@ describe("what a form may change", () => {
 describe("the factory values", () => {
   it("match the nine documented in docs/budgets.md", () => {
     expect(FACTORY_CAPS).toEqual({ read: 300, look: 20, memory: 12, ask: 20, rehearse: 20, episodes: 20, card: 100, app: 20, handoff: 10 });
+  });
+
+  it("and the two quotas of plan §25.3: 256 MiB per catalog, 64 MiB per project", () => {
+    expect(FACTORY_QUOTA_MB).toEqual({ catalog: 256, project: 64 });
+    expect(QUOTA_ENV).toEqual({ catalog: "PANOMA_MEMORY_QUOTA_MB", project: "PANOMA_PROJECT_QUOTA_MB" });
+    expect(MIB).toBe(1_048_576);
+  });
+});
+
+/*
+  The storage quota (plan §25.3, T39 "the limits"): the variable, then the file, then the
+  factory value, and never zero. A cap of zero switches an organ off; a quota of zero would
+  refuse every automatic write from the first byte, so zero and a negative number are refused
+  where they are read — the variable falls to the factory value, the file entry is dropped —
+  and a quota is never "none".
+ */
+describe("T39: the storage quota's limits", () => {
+  it("T39: reads the factory values when nothing was chosen, in bytes", () => {
+    expect(resolveQuota({}, emptySpendSettings())).toEqual({
+      catalogBytes: 256 * MIB, projectBytes: 64 * MIB, source: "factory", sources: { catalog: "factory", project: "factory" },
+    });
+  });
+
+  it("T39: prefers the file over the factory value, scope by scope", () => {
+    const settings = { ...emptySpendSettings(), quota: { projectMb: 8 } };
+    expect(resolveQuota({}, settings)).toEqual({
+      catalogBytes: 256 * MIB, projectBytes: 8 * MIB, source: "file", sources: { catalog: "factory", project: "file" },
+    });
+  });
+
+  it("T39: prefers the variable over the file, and says so", () => {
+    const settings = { ...emptySpendSettings(), quota: { catalogMb: 10, projectMb: 8 } };
+    expect(resolveQuota({ PANOMA_MEMORY_QUOTA_MB: "512" }, settings)).toEqual({
+      catalogBytes: 512 * MIB, projectBytes: 8 * MIB, source: "variable", sources: { catalog: "variable", project: "file" },
+    });
+    expect(resolveQuota({ PANOMA_PROJECT_QUOTA_MB: " 1e2 " }, settings).projectBytes).toBe(100 * MIB);
+  });
+
+  it("T39: refuses zero and a negative number everywhere, and falls to the factory value", () => {
+    for (const value of ["0", "-1", "2.5", "none", "Infinity", "NaN", String(MAX_QUOTA_MB + 1)]) {
+      expect(quotaFrom(value, 64)).toBe(64);
+    }
+    expect(quotaFrom(undefined, 64)).toBe(64);
+    expect(quotaFrom(" ", 64)).toBe(64);
+    expect(quotaFrom("3", 64)).toBe(3);
+    // A variable set to zero decides — it is the variable's turn — and decides the factory value, never "none".
+    expect(resolveQuota({ PANOMA_MEMORY_QUOTA_MB: "0" }, emptySpendSettings())).toMatchObject({ catalogBytes: 256 * MIB, sources: { catalog: "variable" } });
+    // The file's zero is dropped when read, so the resolver never sees it.
+    expect(parseSpendSettings({ quota: { catalogMb: 0, projectMb: -3 } })).toEqual(emptySpendSettings());
+    expect(parseSpendSettings({ quota: { catalogMb: 0, projectMb: 12 } })).toEqual({ ...emptySpendSettings(), quota: { projectMb: 12 } });
+    expect(parseSpendSettings({ quota: { catalogMb: 2.5, projectMb: "12" } })).toEqual(emptySpendSettings());
+    expect(parseSpendSettings({ quota: { catalogMb: MAX_QUOTA_MB + 1 } })).toEqual(emptySpendSettings());
+  });
+
+  it("T39: the pause says nothing about storage", () => {
+    expect(resolveQuota({}, { ...emptySpendSettings(), paused: true, quota: { catalogMb: 3 } }).catalogBytes).toBe(3 * MIB);
+  });
+
+  it("T39: round-trips the file and reads it at request time; a patch changes only the named scope", async () => {
+    await writeSpendSettings({ ...emptySpendSettings(), quota: { catalogMb: 300, projectMb: 5 } });
+    expect(await memoryQuota()).toEqual({
+      catalogBytes: 300 * MIB, projectBytes: 5 * MIB, source: "file", sources: { catalog: "file", project: "file" },
+    });
+    const { settings } = await readSpendSettings();
+    expect(patchSpendSettings(settings, { caps: { look: 2 }, quota: { catalogMb: 1 } })).toEqual({ settings: { ...settings, caps: { look: 2 }, quota: { catalogMb: 1, projectMb: 5 } } });
+    process.env["PANOMA_PROJECT_QUOTA_MB"] = "7";
+    expect(await memoryQuota()).toMatchObject({ projectBytes: 7 * MIB, source: "variable", sources: { catalog: "file", project: "variable" } });
   });
 });

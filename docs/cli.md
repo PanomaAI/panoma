@@ -1,4 +1,4 @@
-# The terminal: twenty-six verbs that ask and render
+# The terminal: twenty-seven verbs that ask and render
 
 This page tells how `apps/cli` is put together and what contract each verb has: which ones
 need the catalog up, which spend model, which leave the machine, which write to your disk,
@@ -61,9 +61,9 @@ And there is a fifth half-case, `panoma scan`, which analyzes locally: it only t
 catalog if you ask for `--save`, and it only leaves the machine if the version check is due
 that day.
 
-## The twenty-six verbs, and what each one needs
+## The twenty-seven verbs, and what each one needs
 
-`grep -o 'command === "[a-z-]*"' apps/cli/src/index.ts | sort -u` gives twenty-six. To them
+`grep -o 'command === "[a-z-]*"' apps/cli/src/index.ts | sort -u` gives twenty-seven. To them
 add bare `panoma`, which is not a verb but the absence of one: `parseArgs` returns flags with
 zero positionals and `index.ts` decides that this is the day's report.
 
@@ -92,28 +92,57 @@ already installed here.
 | `md` | `check` · `fix` · `init` · `sync` · `review` — see [agents-md.md](agents-md.md). `review` answers an unchanged file from the saved opinion and says so in a dim line (`--force` asks again), and says "not stored" instead of "stored in its page" for a project with no repository | `check`/`fix` no; `init`/`sync`/`review` yes | only `review`, and not when the answer came from the record | only `review`, depends on the provider | `fix`, `init` and `sync` |
 | `ai` | `status` · `use` · `key` · `ask` — see [ai-providers.md](ai-providers.md) | no | only `ask` | only `ask`, depends on the provider | `use` and `key` write `@panoma/ai`'s configuration |
 | `spend` | what the models cost today and in the last thirty days: one line per family as "read: 12 of 300 (factory)" with who decided the cap (factory · chosen on the Spend screen · the named variable decides, or is set and cannot be read · paused), the kinds no cap holds back, calls, tokens, unmetered calls and images, and money only once a rate is written; `--json` prints the whole receipt of `GET /api/spend`; the last line points to `/spend`, which is where caps and rates are written — see [budgets.md](budgets.md) | yes | no | no | no |
-| `twin` | `sources` · `allow` · `revoke` · `forget` · `mine` · `verdicts` · `distill` · `synthesize` · `taste` · `score` · `design` · `look` — see [twin.md](twin.md) | `sources`/`allow`/`revoke` no; the rest yes | `distill`, `synthesize` and `look` | depends on the provider | `allow`/`revoke` write `~/.panoma/twin.json` |
-| `memory` | `export <project>` — the project's memory as one versioned JSON document: its notes in every state, its decisions with their revision links, the owner's general decisions and the distiller's receipts — see [memory.md](memory.md) | yes | no | no | with `--out <file>` |
+| `twin` | `sources` · `allow` · `revoke` · `forget` · `mine` · `verdicts` · `distill` · `synthesize` · `taste` · `score` · `design` · `look` — see [twin.md](twin.md). Since delivery D `allow` and `revoke` post the legacy body `{ source, allowed }` to `POST /api/twin/sources` when a catalog answers, so a revocation typed here fences the paid jobs in flight like one clicked on the screen (the terminal prints their count when it is above 0); when no catalog answers they write `twin.json` through `@panoma/core` as before and say so in a dim line; when the catalog refuses, the refusal is printed and nothing is written, exit 1. `forget` is unchanged ([twin-learning.md](twin-learning.md)) | `sources` no; `allow`/`revoke` when a catalog answers, otherwise no; the rest yes | `distill`, `synthesize` and `look` | depends on the provider | `allow`/`revoke` write `~/.panoma/twin.json`, through the door or, offline, directly |
+| `memory` | `export <project>` — the project's memory as one versioned JSON document: its notes in every state, its decisions with their revision links, the owner's general decisions and the distiller's receipts; `status [project]` — what the delivery did, read from `GET /api/memory/status`: offers, attempts and receipts, the reader's cursors by state, the capture permissions that are on, the transcript sources by id and the programs the catalog has verified, each kept apart (`--json` prints the report whole); `purge <source>` · `withdraw <source>` — the preview of taking one transcript source back, from `POST /api/memory/purge` or `POST /api/memory/withdraw` with `dryRun: true`: what it reaches (revisions, offers, events, sources, contexts), what stays because something else still depends on it, and the copies outside the catalog it cannot reach; `--yes` sends that same plan back —its id and its revision, fetched in the same run— to be confirmed, and the worker cleans it in batches; a purge blanks the content, a withdrawal only blocks its use and keeps it; `session <root>` — the `SessionEnd` hook, a machine surface like `signal` (see `brief` below); and since delivery B `allow|revoke <source> capture|extract|twin (--project <slug> | --all) [--notice 2]` — one purpose of one source in one scope, through the grant alternative of `POST /api/twin/sources`, the scope demanded and never assumed, the boundary sentence printed and a revocation saying what stays; the third word is delivery D's and maps to the `twinAutoLearn` grant, notice 1 only: its boundary says that the new human messages of the scope may be distilled into observations of the Twin, redacted, in batches the catalog pays for on its own inside the read cap, that what was written before stays out, and that nothing reaches `TASTE.md` without the inferred switch; its revocation says what stays — signed criteria, published criteria, direct teaching — and that the learning jobs in flight are invalid from then on ([twin-learning.md](twin-learning.md)) —, `backfill <source> --from <iso> --until <iso> --purpose capture|extract|twin (--project <slug> | --all) [--limit <n>] [--dry-run|--yes]` — the preview of a re-read of a range already written, on the road of `purge`: the plan the catalog froze (streams, bytes, unreadable, the estimate of paid calls, the streams the limit left out), and `--yes` to confirm that exact plan —, `jobs [project] [--json]` — one page of memory jobs, fifty at most, with what a person can act on: attempts, paid calls, the reason, when it retries — and `jobs retry|cancel <id>`, which reads the row first and posts its revision; `status` also prints, against a B catalog, the jobs by state, the extraction backlog with its capacity sentence, the enabled extraction grants and the typed facts by kind, and since delivery D an enabled learning grant under the capture it depends on (`<source> · Twin learning on · scope <scope> · generation <n>`), and since delivery E, from `coverage.quota`, one line per scope that is over its storage quota or at four fifths of it — the catalog, then each project by its slug — with the limit and the used mebibytes closing the sentence, and the next step under them when the catalog is paused (nothing is deleted to make room: purge, or raise the limit) — see [memory.md](memory.md), [memory-contract.md](memory-contract.md) and [memory-capture.md](memory-capture.md) | yes; `session` keeps quiet without it | no | no | `export` with `--out <file>` |
 | `handoff` | bare, the conversations your agents kept on this disk —«In this folder» first, then by project when the catalog answers, plain when it is down, and under a row that ended on a usage limit the ready line `panoma handoff <handle> --to codex`—; with a handle and `--to`, hands one over: `--tier full` (every turn, default), `compact` (digest + the last `--keep` turns) or `brief` (a document only; also what `cursor`, `copilot`, `aider`, `amp` and `goose` get); `--to bundle` writes the portable file, since 12-Sep-2026 through the redactor (every mark counted into `dropped.secrets`) and with mode 0600; `--dry-run` shows what travels and what stays; `--to` the same agent writes nothing —the conversation stays on this disk, because every store is per machine and never per account— and prints the person's own steps to continue it with the account they want: the agent's sign-out and sign-in commands (`SIGN_OUT` / `SIGN_IN`, never run), the resume line on the same file, on macOS the app's link under it (Claude.app lists per account, so the link is what adopts the conversation there), and two optional lines, the fork and `--to bundle --out <file>` as the copy outside every agent; the same agent with `--tier compact` does write, a shorter copy in the same store with its own id, and prints the sign-out and the sign-in above the copy's resume line; the same agent on its other surface (`--to claude-app` from a terminal conversation, `--to codex` from an app thread) is that same flow, both doors under the resume step; the list labels an app conversation «Claude (app)» / «Codex (app)» from the file's own marker; the source is never modified — see [handoff.md](handoff.md) | no, except `--digest model` and the receipt, which is best effort | only `--digest model` | no | yes: one file in the target agent's store, or a `.md` at `--out` |
 | `agent-key` | creates an agent key and, with `--install`, leaves it plugged in where that agent will read it | yes | no | no | with `--install` |
-| `hooks` | the state of the passive hooks; `--install` puts them in, `--remove` takes them out | no — it only writes the address inside the script | no | no | with `--install` and `--remove` |
-| `signal` | the `PreToolUse` hook: delivers the sleeping notes for the path about to be edited | yes, and if it is not there it keeps quiet | no | no | `~/.panoma/signal-seen.json` |
+| `hooks` | the state of the passive hooks, reported per Claude Code event — `Stop`, `PreToolUse`, `SessionStart`, `SessionEnd` — as installed, legacy or missing, plus whether the interpreter and the entry they name exist on this disk; `--install` puts the four events and git's `post-commit` in, writing the absolute interpreter and entry proven to run without a PATH, `--remove` takes them out | no — it only writes the address inside the script | no | no | with `--install` and `--remove` |
+| `signal` | the `PreToolUse` hook: delivers the sleeping notes for the path about to be edited. By default the legacy `GET /api/agent/notes`, byte for byte; under `PANOMA_SIGNAL_V2=1` it first asks `POST /api/hook/context` for the memory contract of that path, and comes back to the GET inside the same two seconds when the server answers `409 unsupported_host` or has no such route | yes, and if it is not there it keeps quiet | no | no | `~/.panoma/signal-seen.json`, on the legacy road only |
+| `brief` | the `SessionStart` hook: when a Claude Code context starts, resumes, is cleared or has just been compacted (the matcher names the four, `startup\|resume\|clear\|compact`), asks `POST /api/hook/context` for the project's memory contract and prints the hook envelope with the text exactly as the server rendered it, through `printHookOutput` — `fs.writeSync` on the descriptor, past the terminal filter that would strip U+007F–U+009F and break the receipt's hash —; an empty contract, a `409 unsupported_host`, or any failure prints nothing. Its twin, the `SessionEnd` pointer, is `memory session <root>` | yes, and if it is not there it keeps quiet | no | no | no |
 
-Two things the table says without saying them. The first: **`signal` is not in the help**, and
-that is on purpose — it is a machine surface, Claude Code invokes it and nobody types it. The
-second: there are five places where the CLI writes the user's files without the catalog having
+Two things the table says without saying them. The first: **`signal`, `brief` and
+`memory session` are not in the help**, and that is on purpose — they are machine surfaces,
+Claude Code invokes them and nobody types them. The second: there are five places where the CLI writes the user's files without the catalog having
 to be alive —`hooks`, `md fix`, `ai use`, `ai key` and `handoff`—, and `hooks` is the strangest
 of the five, because **what it writes is the script that will call the catalog later**.
 `handoff` is the only one that writes **inside another program's folder**: one new transcript
 in the target agent's own history, in that agent's own shape, never touching what was there.
 
-And a third, which is the one `memory export` adds: **it only works against the catalog of this
-machine, by design.** `GET /api/memory/export` asks for the operator key —the file carries the
-owner's own testimony, and that is what `GET /api/twin/episodes` already reserves for the
-person at the keyboard— and `catalogFetch` sends that key on the local loop only. With `--api`
-pointing at another host the route answers 403 and the verb exits 1: the network key was
-printed to look at a catalog, not to carry its memory out. The slug is exact, like in `next`
-and `north`, because the wrong file carries somebody else's memory.
+And a third, which is the one `memory export` adds and the rest of `memory` keeps: **it only
+works against the catalog of this machine, by design.** `GET /api/memory/export` asks for the
+operator key —the file carries the owner's own testimony, and that is what
+`GET /api/twin/episodes` already reserves for the person at the keyboard— and so do
+`GET /api/memory/status` and the two deletion routes; `catalogFetch` sends that key on the local
+loop only. With `--api` pointing at another host the routes answer 403 and the verb exits 1: the
+network key was printed to look at a catalog, not to carry its memory out or to order a
+deletion. The slug is exact, like in `next` and `north`, because the wrong file carries
+somebody else's memory; the source id is exact for the same reason with the sign reversed,
+because the wrong source erases somebody else's.
+
+`memory purge` and `memory withdraw` carry one more rule, and it is the whole safety of the
+command: **the preview is always fetched, and `--yes` confirms the plan it has just fetched.**
+The two calls happen in the same run, the second one sends the first one's `planId` and
+`expectedRevision`, and the catalog answers `409 stale_revision` when the content moved between
+them or `409 stale_plan` when the plan expired — ten minutes — or was never this catalog's; each
+gets its own sentence instead of a retry. There is no `--force` here on purpose: a deletion is
+not a cache to skip, and the parser refuses `--dry-run --yes` typed together for the same reason
+it refuses `--install --remove`. Under `--json`, stdout is one object and nothing else: the plan
+for a preview, the acceptance `{ operationId, operation, status }` for a confirmed run. The CLI acts on
+sources only; the selectors by project, session and revision live on the screens and in the
+operator's HTTP.
+
+`memory backfill` takes the same road — the preview always fetched, `--yes` confirming its
+`planId` and `expectedRevision` in the same run, `--dry-run --yes` refused by the parser — and
+names its own `409`s: `stale_policy` (a permission the plan relied on changed, preview again),
+`stale_plan`, `consent_required` (allow the purpose for that scope first) and
+`unsupported_source` (the `twin` purpose in this delivery, or a source without a fact reader).
+`memory allow` and `memory revoke` name `consent_required`, `unsupported_source` and
+`stale_revision`; `memory jobs retry|cancel` name `stale_revision` and `not_retryable`, and
+both read the row through the GET first — walking without a slug through pages of fifty, forty at most — so
+the revision they post is the one they saw, and a job that moved in between is a `409` and not
+a second payment. A refusal whose body is not JSON — the production 404 page is one line —
+is cut to 200 characters after its first line. Nothing retries on a `409`, here either
+([memory-capture.md](memory-capture.md)).
 
 ## `args.ts` is the only parser, and an unknown flag is an error
 
@@ -152,14 +181,14 @@ problem is the same: you would have to choose on behalf of whoever typed it, and
 choose will do the opposite of what the other half of the command asked for. `--folder` with
 `--terminal` and `--install` with `--remove` get asked about instead of resolved.
 
-### The 42 flag tokens
+### The 46 flag tokens
 
-`KNOWN_FLAGS` has forty-two, counting the short forms as tokens of their own. `-v` was
+`KNOWN_FLAGS` has forty-six, counting the short forms as tokens of their own. `-v` was
 already `--verbose`, so the short form for version is `-V`, as in npm.
 
 | token | what it does | who actually uses it |
 | --- | --- | --- |
-| `--json` | prints the raw analysis as JSON; with `spend`, the whole receipt of `GET /api/spend`; with `handoff`, one object and nothing else on stdout | `scan`, `spend`, `handoff` |
+| `--json` | prints the raw analysis as JSON; with `spend`, the whole receipt of `GET /api/spend`; with `handoff`, one object and nothing else on stdout; with `memory status`, the whole report of `GET /api/memory/status`; with `memory purge`, `memory withdraw` and `memory backfill`, the plan for a preview or the acceptance for `--yes`; with `memory allow` and `memory revoke`, the door's answer; with `memory jobs`, the raw page with its cursor, or the action's answer | `scan`, `spend`, `handoff`, `memory status`, `memory purge`, `memory withdraw`, `memory allow`, `memory revoke`, `memory backfill`, `memory jobs` |
 | `--out <file>` | writes that JSON to a file; with `handoff`, where the document or the bundle goes | `scan`, `memory export`, `handoff` |
 | `--verbose` · `-v` | dependencies and health breakdown | `scan` |
 | `--duplicates` · `-d` | only the families of copies of the same project | `scan` |
@@ -179,11 +208,16 @@ already `--verbose`, so the short form for version is `-V`, as in npm.
 | `--rotate-key` | generate a new key and invalidate the previous one | `up --network` |
 | `--model <name>` | pin which of the provider's models is used | `ai use` |
 | `--provider <which>` | ask one specific provider | `ai ask` |
-| `--limit <n>` | how many are collected or read; with `twin distill`, a value below 2 plans nothing, because a batch needs two quotes from one project and a remainder of one is left for the next pass | `twin mine`, `twin verdicts`, `twin distill` |
-| `--project <path>` | only the sessions under that path | `twin mine` |
+| `--limit <n>` | how many are collected or read; with `twin distill`, a value below 2 plans nothing, because a batch needs two quotes from one project and a remainder of one is left for the next pass; with `memory backfill`, how many streams enter the plan, 1 to 500 (50 without it), the rest counted as left out | `twin mine`, `twin verdicts`, `twin distill`, `memory backfill` |
+| `--project <path>` | only the sessions under that path; with `memory allow`, `memory revoke` and `memory backfill` it takes a slug and names the one project of the scope — exactly one of `--project` and `--all` is demanded there, because a scope this command assumed would be a permission nobody gave, and the two together are refused for every verb | `twin mine`, `memory allow`, `memory revoke`, `memory backfill` |
 | `--source <source>` | a single history instead of every allowed one | `twin mine`, `twin verdicts`, and also `twin allow`/`revoke` |
-| `--all` | with `open`, everything the project's plan lists, in order; without a saved plan the suggestion —which here ends with the first installed editor, because the browser's preferred destination lives in that browser— said in a dim line. Contradicts `--folder` and `--terminal`, and the parser says so. With `twin distill`, chains passes until the whole history has been read | `open`, `twin distill` |
-| `--dry-run` | stop at the estimate instead of spending; with `twin look` the estimate also says at what size the capture would travel, and why it would travel whole when it cannot be reduced; with `handoff`, the preview —digest, what travels, what stays, size— and nothing written, nothing spent: `--to bundle --dry-run` writes no file and prints no bundle, only a dim line saying where it would go (or that it would print to stdout); `--digest model --dry-run` does not ask the catalog for the model digest, so no call of the `handoff` family is counted, and the preview carries the mechanical digest with a dim line saying so (and answers even with the catalog down, where the real command is refused); a document-only target previews `tier brief`, the tier the write records; and the same agent at the default tier, which writes nothing, previews what the real command prints —the numbered account steps— behind a dim line saying `--dry-run` changes nothing there, with `--json` answering the same `{ok: true, sameAgent: true, …}` object as the real command and no `dryRun` key (a script must not read its absence as a write). Until 12-Sep-2026 the bundle was written, the model call paid, `full` named and a fidelity table printed for a copy never written | `twin distill`, `twin look`, `handoff` |
+| `--all` | with `open`, everything the project's plan lists, in order; without a saved plan the suggestion —which here ends with the first installed editor, because the browser's preferred destination lives in that browser— said in a dim line. Contradicts `--folder` and `--terminal`, and the parser says so. With `twin distill`, chains passes until the whole history has been read. With `memory allow`, `memory revoke` and `memory backfill`, the global scope said with all the letters: every project, and the other half of the pair with `--project` | `open`, `twin distill`, `memory allow`, `memory revoke`, `memory backfill` |
+| `--dry-run` | stop at the estimate instead of spending; with `twin look` the estimate also says at what size the capture would travel, and why it would travel whole when it cannot be reduced; with `handoff`, the preview —digest, what travels, what stays, size— and nothing written, nothing spent: `--to bundle --dry-run` writes no file and prints no bundle, only a dim line saying where it would go (or that it would print to stdout); `--digest model --dry-run` does not ask the catalog for the model digest, so no call of the `handoff` family is counted, and the preview carries the mechanical digest with a dim line saying so (and answers even with the catalog down, where the real command is refused); a document-only target previews `tier brief`, the tier the write records; and the same agent at the default tier, which writes nothing, previews what the real command prints —the numbered account steps— behind a dim line saying `--dry-run` changes nothing there, with `--json` answering the same `{ok: true, sameAgent: true, …}` object as the real command and no `dryRun` key (a script must not read its absence as a write). Until 12-Sep-2026 the bundle was written, the model call paid, `full` named and a fidelity table printed for a copy never written. With `memory purge`, `memory withdraw` and `memory backfill`, the preview — which is also what they do without any flag, so the token exists to be typed on purpose; it contradicts `--yes`, and the parser says so | `twin distill`, `twin look`, `handoff`, `memory purge`, `memory withdraw`, `memory backfill` |
+| `--yes` | with `memory purge`, `memory withdraw` and `memory backfill`, confirm the plan the same run has just previewed: the command fetches the preview, prints it, and sends its `planId` and `expectedRevision` back. It is not a `--force`, and there is none: a `409` from the catalog is named, never retried | `memory purge`, `memory withdraw`, `memory backfill` |
+| `--from <iso>` | with `memory backfill`, the start of the range: an ISO instant with a time zone, like `2026-09-01T00:00:00Z`, validated in the command and not in the parser and normalized to UTC milliseconds before travelling; a bare date or a sentence is refused before any request | `memory backfill` |
+| `--until <x>` | with `video`, the stage to stop at (`plan` · `preview` · `final`); with `memory backfill`, the end of the range, an ISO instant with a zone like `--from` and later than it — validated in the command because `video` already uses the flag for a stage name, and a parser rule for one would break the other | `video`, `memory backfill` |
+| `--purpose <purpose>` | with `memory backfill`, which cursor the range feeds: `capture` · `extract` · `twin`; a closed set checked in the parser like `--tier`, because a misspelled purpose falling to a default would read a range under the wrong permission and one of the three pays (`twin` is refused by the catalog in this delivery) | `memory backfill` |
+| `--notice <n>` | with `memory allow`, the notice version the person accepts for the capture: 1 (receipts and lifecycle, the default) or 2 (typed facts too); checked in the parser, because a version nobody was shown would grant what nobody read | `memory allow` |
 | `--to <agent>` | where the conversation continues: the plain words `claude` · `codex` · `opencode` · `gemini` · `cursor` · `copilot` · `aider` · `amp` · `goose`, the canonical ids, the desktop apps `claude-app` · `codex-app` (the same file the CLI target gets, written into the same store; only the door differs), or `bundle` for the portable file; a misspelling gets the nearest suggested, and the module checks it, not the parser, because the list lives in `@panoma/handoff`. An app target prints «Open it in Claude (app):» with the `open 'claude://resume?session=<id>'` line (Codex: `open 'codex://threads/<id>'`), the sentence for when the link does not answer, and «Or, in a terminal:» with the CLI resume line; off macOS it says the app exists only there and prints the CLI line alone. The same agent on its own surface and no `--target-home` —`--to claude` from a Claude Code conversation— writes nothing either at the default tier: the store is per machine and never per account, so it prints the numbered steps for the person to run —sign out (`claude auth logout`, or `/logout` inside `claude`), sign in with the account to continue with (`claude auth login`, or `/login`), resume the same file, on macOS the app link under it, then the optional fork and the optional `--to bundle --out <file>` copy— and exits 0; panoma runs none of them and holds no credential. With `--tier compact` it writes the shorter copy into the same store and prints the two account lines above «Resume it:»; `--json` then carries them as `account`. The same agent on its other surface —a Claude Code conversation `--to claude-app`, or a Codex app thread `--to codex`— gets the same steps: the two surfaces read one store, and both doors are printed under the resume step | `handoff` |
 | `--tier <tier>` | `full` · `compact` · `brief`; checked in the parser like `--isolation`, because a misspelled tier falling to a default would carry a different amount than asked. `compact` is also what lets `--to` name the source's own agent: a shorter copy in the same store, for another account | `handoff` |
 | `--digest <by>` | `panoma` (mechanical, free, default) · `model` (the catalog asks the model, family `handoff`); checked in the parser, because one of the two spends. With the catalog down, `model` prints the error path every catalog command shares —`unreachable(api)`, which names the `--api` address tried and says `panoma up`— with the one way out that is this flag's own in a dim line under it: leave `--digest` out for the mechanical one | `handoff` |
@@ -213,10 +247,10 @@ the figure.
 ### The path is not a flag
 
 There is no `--path`. The path is a positional, and **not always the same one**: `parseArgs`
-leaves `flags.path = positionals[1] ?? "."`, which is what `scan`, `signal` and `hooks` read.
-But `md` takes it from `positionals[2]`, because the subcommand takes the second one — in
-`panoma md sync .`, `parsed.path` is `sync`—, and `review` takes it from `positionals[1]` on
-its own. In `up`, the dispatch looks at `positionals[1]` and not at `path` precisely because
+leaves `flags.path = positionals[1] ?? "."`, which is what `scan`, `signal`, `brief` and
+`hooks` read. But `md` and `memory session` take it from `positionals[2]`, because the
+subcommand takes the second one — in `panoma md sync .`, `parsed.path` is `sync`—, and
+`review` takes it from `positionals[1]` on its own. In `up`, the dispatch looks at `positionals[1]` and not at `path` precisely because
 the parser erases the distinction that matters: if there is a folder, `up` goes on to the
 scan; if there is not, it stops at bringing the server up.
 
@@ -250,9 +284,16 @@ that says what to do.
 | `ai` | status, provider chosen, key saved, the model's answer | an unknown subcommand, a provider that takes no key, an empty key, or the model fails |
 | `spend` | the receipt printed, empty day included | catalog down, or `/api/spend` answers badly |
 | `twin` | whatever each subcommand asks for | an unknown subcommand, a source that does not exist, a missing source, catalog down |
-| `memory export` | the document printed, or written with `--out` | no `export` subcommand, no slug or an extra argument; catalog down; a slug the catalog does not know (404); from another host, or from the network without the operator key (403) |
+| `memory export` | the document printed, or written with `--out` | no slug or an extra argument; catalog down; a slug the catalog does not know (404); from another host, or from the network without the operator key (403). And a `memory` subcommand that does not exist exits 1 with the usage before anything else |
+| `memory status` | the report printed, empty catalog included | an extra argument; catalog down or `/api/memory/status` answers badly; a slug the catalog does not know (404); from another host (403) |
+| `memory purge` · `memory withdraw` | the plan printed and nothing changed; with `--yes`, the operation accepted (202) | no source id or an extra argument; catalog down; the preview refused (a source the catalog does not know, 404; from another host, 403); with `--yes`, `409 stale_revision` (the content moved since the preview) or `409 stale_plan` (the plan expired, is unknown, or was previewed for the other operation), each with its own sentence; a `--dry-run --yes` pair, refused by the parser |
+| `memory allow` · `memory revoke` | the permission written, the boundary or what stays printed | no source, no purpose or an extra argument; a purpose that is not `capture`, `extract` or `twin`; neither or both of `--project` and `--all`, or `--notice` outside 1 and 2, refused by the parser; catalog down; `409 consent_required` (for `twin`, the sentence says the Twin learns on top of capture), `409 unsupported_source` or `409 stale_revision`, each with its own sentence; from another host (403) |
+| `memory backfill` | the plan printed and nothing changed; with `--yes`, the operation accepted (202) | no source, no `--from`, no `--until` or no `--purpose`, or an extra argument; an instant without a zone, or `--until` not later than `--from`; a `--limit` outside 1 to 500; a `--dry-run --yes` pair or a scope missing or doubled, refused by the parser; catalog down; `409 stale_policy`, `409 stale_plan`, `409 consent_required` or `409 unsupported_source`, each with its own sentence; from another host (403) |
+| `memory jobs` | the page printed, empty included; with `retry` or `cancel`, the action accepted (202) or already so (200) | an action without an id, or an extra argument; an id no page carries (nothing posted); catalog down; `409 stale_revision` or `409 not_retryable`, each with its own sentence; from another host (403) |
+| `memory session` | **always** | — |
+| `brief` | **always** | — |
 | `handoff` | the list, empty included; the preview; the file written — **and also when the catalog did not record the receipt**, said in a dim line; the same-agent steps and the other-surface door, which write nothing at `full`, and the shorter same-agent copy at `compact`, with the account lines above its resume line | a second positional; a target word that does not exist (with the nearest suggested); a handle that matches nothing or more than one conversation (the candidates named); no handle and nothing in this folder, or two agents there within the same hour; `--digest model` with the catalog down or saying no, before anything is written; every engine fault (`same-store`, `target-store-missing`, `cwd-missing`, `too-large`, `nothing-to-carry`, `bundle-invalid`, the disk's own); and an OpenCode import that ended with an error, the file written and the step left for you |
-| `hooks` | status, installed, or removed — **and also with unreadable Claude Code settings**: it warns in yellow, leaves the git hook in place and exits 0 | there is no git repository; there is somebody else's `post-commit`; the hooks cannot be merged with the settings that were already there |
+| `hooks` | status, installed, or removed — **and also with unreadable Claude Code settings**: it warns in yellow, leaves the git hook in place and exits 0 | there is no git repository; there is somebody else's `post-commit`; the hooks cannot be merged with the settings that were already there; and, since 14-Sep-2026, the command a hook would call could not be proven to run without a PATH — it lives in a temporary folder or npx's cache, it is not on the disk, it is an unbuilt source file, or the `--version` probe failed — in which case nothing is written and the reason is printed |
 | `signal` | **always** | — |
 
 ### The five oddities, and why each one is deliberate
@@ -281,13 +322,23 @@ the process answering on the port is still the old one with the new files undern
 startup script avoids taking for good a server that is not the one that was installed. With
 the same version, it exits 0.
 
-**`signal` always exits 0, and it cannot do otherwise.** It is rule one of
-`apps/cli/src/signal.ts`: a hook never breaks an edit. Catalog off, unreadable event JSON, a
-path outside the project, a timeout, a full disk — all of it ends in empty output and
-`return 0`, because the whole body lives inside a `try { … } catch { return 0 }`. It is not
-that it lacks the ability to block: **blocking is forbidden by contract**, and that is why it
-cannot reject anything either. Rule two is its twin: machine output only, the protocol's JSON
-or nothing, no prose and no colors.
+**`signal`, `brief` and `memory session` always exit 0, and they cannot do otherwise.** It is
+rule one of `apps/cli/src/signal.ts`, and `apps/cli/src/brief.ts` inherits it for the two
+lifecycle hooks: a hook never breaks a turn. Catalog off, slow or full, unreadable event JSON, a
+path outside the project, a host the server will not vouch for (`409 unsupported_host`), a
+timeout — all of it ends in empty output and `return 0`, because the whole body lives inside a
+`try { … } catch { return 0 }` and inside a budget: two seconds for the signal and the brief,
+one for the pointer, stdin reading included. It is not that they lack the ability to block:
+**blocking is forbidden by contract**, and that is why they cannot reject anything either. Rule
+two is its twin: machine output only, the protocol's JSON or nothing, no prose and no colors,
+not even on stderr. Rule three is where the output goes: the hook commands write their JSON
+to the descriptor itself with `printHookOutput` in `apps/cli/src/brief.ts`, never through
+`process.stdout`, which the CLI wraps at startup with the terminal filter of `safe-output.ts`
+— it strips U+007F–U+009F, `JSON.stringify` leaves them raw, and a byte removed on the way
+out is an offer the receipt reader never finds intact. And a fourth that the brief makes
+explicit: a timeout is never turned into an empty contract, and printing one is never recorded
+as a receipt — the CLI prints the offer, and only the reader that later finds those bytes in
+the transcript can say it was received.
 
 **And bare `panoma` exits 0 with the catalog off.** It used to give the help, which is the
 right answer to "I do not know what this does" and the wrong one to "good morning". Now it
@@ -512,9 +563,26 @@ command—. What gets executed starts with the binary.
   catalog: an agent working in A can ask for B's context by passing its path. It is consistent
   with "one machine, one person", and it is told where it was decided, in
   [mcp-security.md](mcp-security.md).
-- **`panoma signal` does not appear in the help**, on purpose. Whoever reads `--help` will not
-  find the complete list of verbs the dispatcher recognizes, and that difference is deliberate:
-  it is a machine surface.
+- **`panoma signal`, `panoma brief` and `panoma memory session` do not appear in the help**, on
+  purpose. Whoever reads `--help` will not find the complete list of verbs the dispatcher
+  recognizes, and that difference is deliberate: they are machine surfaces.
+- **The v2 road of `signal` is opt-in and unmeasured on this machine.** `PANOMA_SIGNAL_V2=1` is
+  the only switch, because the CLI cannot know from a hook whether the server has a verified
+  profile for this program and entry; the server answers that with `409 unsupported_host`, and
+  the fallback to the legacy GET is what keeps the edit signal working meanwhile. The receipt
+  site of `SessionStart` was verified on the desktop entry by the real-host probe of
+  14-Sep-2026 ([memory-contract.md](memory-contract.md)); the terminal entry is still unknown,
+  `brief` prints the same envelope either way, and the reader is what tells.
+- **The status report reads what the wire carries and no more.** Its interfaces in
+  `memory-command.ts` are local and every member optional: a newer server can add a field and
+  the terminal prints what it knows, with «unknown» for what it does not. Nothing pins the
+  report's shape on this side; `apps/web/lib/memory-status.ts` is the truth. The members
+  delivery B added — the jobs by state, the extraction backlog, the facts by kind, the two extra
+  stores of a deletion plan, the streams a backfill's limit left out — are printed only when the
+  reply carries them, never as a zero, so an older catalog's report reads exactly as before.
+- **A project whose slug is literally `retry` or `cancel` cannot be listed by `memory jobs
+  <slug>`.** The two words are the actions of that verb and are read as such before any slug;
+  `memory jobs --json` still carries its rows, and `GET /api/memory/jobs?slug=` answers it.
 - **The output filter lets `Buffer`s through as they are.** A `Buffer` can cut a multibyte
   character in half between two writes, and since only ASCII control bytes are stripped here,
   decoding and re-encoding would risk that in exchange for nothing. If one day the CLI wrote

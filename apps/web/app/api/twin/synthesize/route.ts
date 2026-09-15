@@ -1,24 +1,32 @@
+import { memoryFence, MemoryUnavailableError, memoryUnavailableResponse } from "@/lib/memory-availability";
+import { randomUUID } from "node:crypto";
 import { complete, resolveCredential, type CompleteResult } from "@panoma/ai";
 import { TASTE_CAP } from "@panoma/core";
 import {
   ALIVE,
+  completeReservation,
   insertBeliefs,
   listBeliefs,
   listObservations,
   latestSynthesisByTopic,
+  markSent,
+  markUncertain,
   modelSpendToday,
   observationTopics,
   projectNamesByIdentity,
+  queueWrite,
+  releaseReservation,
+  reserveModelCall,
   retireBeliefs,
-  saveModelCall,
   saveSynthesisPass,
   updateBelief,
   type BeliefRow,
   type Database,
   type NewBelief,
   type ObservationRow,
+  type ReservationPolicy,
 } from "@panoma/db";
-import { db } from "@/lib/db";
+import { db, memoryQuarantine } from "@/lib/db";
 import { sameOrigin } from "@/lib/guard";
 import {
   citationsFor,
@@ -73,6 +81,15 @@ import { localeFrom, t, type Locale } from "@/lib/i18n";
  * in each pass is not tuning, it is shuffling. That is why a belief only counts as tuned when it
  * really changes —see `planChanges`, where the stability rule resides—, and not every time the
  * model returns it unchanged.
+ *
+ * ── One reservation for the button and the worker (D06/T68) ──────────────────────────
+ *
+ * Since delivery D the worker's `twin_synthesize` processor rewrites the topics whose evidence
+ * moved, paying calls of this kind against this same `read` cap with nobody pressing anything.
+ * So each call here is reserved through `reserveModelCall` before it leaves —origin `manual`,
+ * the row moving `sent`, then `completed` with the usage or `uncertain` when the provider
+ * answered nothing readable, which still counts— exactly as the distillation route does; its
+ * header says why the count that decides is no longer read in this process.
  */
 
 export const maxDuration = 300;
@@ -129,15 +146,19 @@ const KIND = "synthesize";
 export async function POST(request: Request) {
   const blocked = sameOrigin(request);
   if (blocked) return blocked;
+  if ((await memoryQuarantine()).quarantined) return Response.json({ code: "unavailable", error: "Memory is quarantined until its deletion journal is reconciled." }, { status: 503, headers: { "Cache-Control": "no-store" } });
 
   const locale = localeFrom(request);
   const body = (await request.json().catch(() => ({}))) as { dryRun?: unknown; topic?: unknown };
 
   const { db: database } = await db();
+  let memoryCurrent: () => Promise<void>;
+  try { memoryCurrent = await memoryFence(database); } catch { return memoryUnavailableResponse(); }
   const only = typeof body.topic === "string" ? body.topic : undefined;
 
   const startedAt = new Date();
-  const counts = await observationTopics(database);
+  // Admissible rows only: the bare approvals of delivery D («perfecto» with no referent) are evidence of nothing general (D01/T64).
+  const counts = await observationTopics(database, { admissible: true });
   const conEvidencia = counts
     .filter((one) => one.observations >= MIN_OBSERVATIONS)
     .filter((one) => only === undefined || one.topic === only);
@@ -240,7 +261,8 @@ export async function POST(request: Request) {
     The brake of the day, shared with distilling and distributing by material. See `lib/reads.ts`;
     the number comes from `spend-settings.ts`, which is what the Spend screen moves.
    */
-  const { cap } = await capFor("read");
+  const budget = await capFor("read");
+  const { cap } = budget;
   const spent = await modelSpendToday(database, READING_KINDS);
   if (spent.calls >= cap) {
     return Response.json(
@@ -248,6 +270,7 @@ export async function POST(request: Request) {
       { status: 429 },
     );
   }
+  const policy: ReservationPolicy = { family: "read", kinds: READING_KINDS, caps: { family: cap, paused: budget.source === "paused" } };
 
   let credential;
   try {
@@ -277,63 +300,86 @@ export async function POST(request: Request) {
   let failure: unknown;
 
   /*
-    Upload subject by subject. Here it matters more than in the other two: a synthesis can involve
-    ten subjects and each subject is a call, so a rushed limit would be missed right on the pass
-    that writes the portrait. The subjects are independent — the `design` one is saved before
-    starting with `backend` — and the next pass picks up where it left off.
+    Subject by subject, each call reserved before it leaves. Here it matters more than in the
+    other two: a synthesis can involve ten subjects and each subject is a call, so a day the
+    worker filled would be met right on the pass that writes the portrait. The subjects are
+    independent — the `design` one is saved before starting with `backend` — and the next pass
+    picks up where it left off. A call lost in a network error has been sent and keeps counting
+    as `uncertain`; one that comes back unreadable has been paid for and appears on the bill. Per
+    answer: the retry below is a second call with its own reservation and its own row, and the
+    attempt key names this request and the call within it.
    */
-  let calls = spent.calls;
-
-  /*
-    One notes it when the answer returns, just like in distillation and in the look: a call that
-    is lost in a network error has been made by no one, but one that comes back unreadable has
-    already been paid for and must appear on the bill. Per answer: the retry below is a second
-    call with its own row.
-   */
-  const paid = async (answer: CompleteResult) => {
-    calls += 1;
-    await saveModelCall(database, {
-      kind: KIND,
-      provider: answer.provider,
-      model: answer.model,
-      ...(answer.usage ? { input: answer.usage.input, output: answer.usage.output } : {}),
-    });
+  const attemptBase = `manual:${KIND}:${randomUUID()}`;
+  let paid = 0;
+  const ask = async (plan: TopicPlan, maxTokens: number): Promise<CompleteResult | "refused"> => {
+    const reservation = await queueWrite(() => reserveModelCall(database, {
+      ...policy, kind: KIND, provider: credential.provider.id, model: credential.model || "session", origin: "manual", identity: null,
+      attemptKey: `${attemptBase}:${paid + 1}`,
+    }));
+    if (!reservation.reserved) return "refused";
+    const reserved = { reservationRev: reservation.reservationRev };
+    try { await memoryCurrent(); } catch (error) {
+      await queueWrite(() => releaseReservation(database, reservation.id, reserved));
+      throw error;
+    }
+    if (!(await queueWrite(() => markSent(database, reservation.id, reserved, new Date(), policy)))) {
+      // Midnight passed and the new day has no room: nothing left the process.
+      await queueWrite(() => releaseReservation(database, reservation.id, reserved));
+      return "refused";
+    }
+    const sent = { reservationRev: reserved.reservationRev + 1 };
+    let answer: CompleteResult;
+    try {
+      answer = await complete({ system: plan.built.system, prompt: plan.built.prompt, maxTokens });
+    } catch (error) {
+      // Sent, nothing readable back: the attempt keeps counting until it is reconciled (T68).
+      paid += 1;
+      await queueWrite(() => markUncertain(database, reservation.id, sent, "provider_failed"));
+      throw error;
+    }
+    paid += 1;
+    await queueWrite(() => completeReservation(database, reservation.id, sent, {
+      inputTokens: answer.usage?.input ?? null, outputTokens: answer.usage?.output ?? null,
+      provider: answer.provider, model: answer.model,
+    }));
+    await memoryCurrent();
+    return answer;
   };
 
   for (const plan of plans) {
-    if (calls >= cap) break;
-
-    let answer;
+    let answer: CompleteResult | "refused";
     try {
-      answer = await complete({
-        system: plan.built.system,
-        prompt: plan.built.prompt,
-        maxTokens: MAX_ANSWER_TOKENS,
-      });
+      answer = await ask(plan, MAX_ANSWER_TOKENS);
     } catch (error) {
       failure = error;
       break;
     }
-    await paid(answer);
+    // The day filled between the brake and this subject: the brake's 429 before any call, the receipt after one.
+    if (answer === "refused") {
+      if (paid > 0) break;
+      const used = (await modelSpendToday(database, READING_KINDS)).calls;
+      return Response.json({ error: t(locale, "twin.readsSpent", { used, cap }) }, { status: 429 });
+    }
 
     /*
       A cut answer is asked again, once, with twice the room, while the subject is in hand. The
       reason is next to the same loop in the distillation route: the next pass would send the
-      same input at the same cap and get cut at the same place. Not at the brake, and not twice.
+      same input at the same cap and get cut at the same place. Not when the reservation refuses
+      it, and not twice.
      */
-    if (answer.stopReason === "length" && calls < cap) {
-      truncated += 1;
+    if (answer.stopReason === "length") {
+      let second: CompleteResult | "refused";
       try {
-        answer = await complete({
-          system: plan.built.system,
-          prompt: plan.built.prompt,
-          maxTokens: MAX_ANSWER_TOKENS * 2,
-        });
+        second = await ask(plan, MAX_ANSWER_TOKENS * 2);
       } catch (error) {
+        truncated += 1;
         failure = error;
         break;
       }
-      await paid(answer);
+      if (second !== "refused") {
+        truncated += 1;
+        answer = second;
+      }
     }
 
     const read = parseBeliefs(answer.text, plan.built, plan.graveyard);
@@ -514,7 +560,7 @@ async function planTopic(
   budget: number,
 ): Promise<TopicPlan> {
   const [observations, alive, pending] = await Promise.all([
-    listObservations(database, { topic, limit: SYNTH_OBSERVATIONS }),
+    listObservations(database, { topic, limit: SYNTH_OBSERVATIONS, admissible: true }),
     listBeliefs(database, { topic, states: ALIVE }),
     listBeliefs(database, { topic, states: ["proposed"] }),
   ]);
@@ -554,6 +600,7 @@ async function planTopic(
 
 /** The model's failure, told in the language of the one who watches. See the distillation path. */
 function modelFailure(locale: Locale, error: unknown, receipt: object = {}): Response {
+  if (error instanceof MemoryUnavailableError) return memoryUnavailableResponse();
   const detail = (error as Error).message;
   const missing =
     detail.includes("credencial") ||

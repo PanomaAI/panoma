@@ -449,6 +449,62 @@
       "when": 1789198197369,
       "tag": "0063_app_job_requested_by",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1789388567286,
+      "tag": "0064_memory_contract_a",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1789399349641,
+      "tag": "0065_memory_capture_b",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1789406960311,
+      "tag": "0066_memory_checks_c",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1789412757426,
+      "tag": "0067_twin_contextual_d",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1789420339694,
+      "tag": "0068_observation_kinds_d",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1789425485692,
+      "tag": "0069_memory_usage_quota",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1789430163745,
+      "tag": "0070_memory_storage_reservations",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1789430924387,
+      "tag": "0071_memory_backfill_permissions",
+      "breakpoints": true
     }
   ]
 }

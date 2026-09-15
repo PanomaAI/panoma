@@ -160,7 +160,7 @@ export async function handoffCommand(parsed: Flags, deps: HandoffDeps = {}): Pro
 
   // The bare verb, with nothing to hand: the list.
   if (source === undefined && target === undefined && tier !== "brief") {
-    return list(parsed, cwd, store);
+    return list(parsed, cwd, store, deps.now);
   }
 
   // The conversation, from a bundle file, a handle, or the folder the person is in.
@@ -248,12 +248,14 @@ export async function handoffCommand(parsed: Flags, deps: HandoffDeps = {}): Pro
 
 // ── The list ───────────────────────────────────────────────────────────────
 
-async function list(parsed: Flags, cwd: string, store: StoreOptions): Promise<number> {
+async function list(parsed: Flags, cwd: string, store: StoreOptions, clock?: Date): Promise<number> {
   const projects = await catalogProjects(parsed.api);
   const roots = projects === undefined ? [] : projects.map((project) => project.root);
   const discovery = await discover(store, { cwds: [cwd, ...roots] });
   if (typeof discovery === "number") return discovery;
-  const now = new Date().toISOString();
+  // The injected clock, like every other path of this command: a listing that read the real
+  // clock while the fixtures were pinned was the one failure the suite had on 14-Sep-2026.
+  const now = (clock ?? new Date()).toISOString();
 
   if (parsed.json) {
     process.stdout.write(`${JSON.stringify({ conversations: discovery.conversations, stores: discovery.stores, catalog: projects !== undefined }, null, 2)}\n`);

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useT } from "./i18n-provider";
 import { ActionButton, ActionError, Card } from "./primitives";
+import { tasteRefusalKey } from "@/lib/memory-view";
 
 /*
   The only question that Twin asks, and why there is exactly one.
@@ -20,16 +21,28 @@ import { ActionButton, ActionError, Card } from "./primitives";
   been decided.
   As long as it is not answered, the portrait is exactly what the person signed. It is not an
   error or a half state — it is the default value, and that is why the card is not rendered red.
+  ── Since delivery D the yes names the publication it looked at ──────────────────────────
+  The body is the revisioned one (`version: 2`): the permission carries the generation of the
+  publication GET reported, and a generation that moved — another plan, a flip from another
+  tab — is refused as `publication_conflict` before anything is written, so the screen re-reads
+  and the person answers over what is there. And the file now goes through the outbox: the door
+  answers 200 when the portrait was written inline and 202 when the write is still pending, and
+  both are a saved yes. What is no longer true is that a portrait that does not fit leaves the
+  yes saved: the v2 door measures the cap before the flip, so `taste_full` is a refusal of the
+  permission too, and the card says the door's sentence and grants nothing.
  */
 
 export function TwinConsent({
   standing,
   chars,
   cap,
+  publicationRevision,
 }: {
   standing: number;
   chars: number;
   cap: number;
+  /** The generation of the publication this screen read; the yes names it back. */
+  publicationRevision: number;
 }) {
   const translate = useT();
   const router = useRouter();
@@ -43,16 +56,19 @@ export function TwinConsent({
       const response = await fetch("/api/twin/taste", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ publishInferred }),
+        body: JSON.stringify({ version: 2, publishInferred, expectedPublicationRevision: publicationRevision }),
       });
-      const payload = (await response.json()) as { error?: string };
+      const payload = (await response.json().catch(() => ({}))) as { code?: string; error?: string };
       /*
-        A portrait that does not fit answers 409 with its message, and here that **is not** a
-        permission error: the yes was saved before reconciling. It shows what the catalog says
-        —"does not fit, remove something"— and it refreshes the same, because the screen
-        underneath is already different.
+        A refusal is said by its code in the reader's language when the card knows it — the
+        publication moved, the content changed — and by the door's own sentence otherwise, which
+        for a portrait that does not fit is the translated one with the figures. The screen is
+        refreshed either way: what is underneath may already be different.
        */
-      if (!response.ok) setError(payload.error ?? String(response.status));
+      if (!response.ok) {
+        const key = tasteRefusalKey(payload.code);
+        setError(key ? translate(key) : payload.error ?? String(response.status));
+      }
       router.refresh();
     } catch {
       setError(translate("project.unreachable"));
@@ -65,6 +81,22 @@ export function TwinConsent({
     <Card as="section" tone="plain" className="mt-8" aria-labelledby="twin-consent-title">
       <h2 id="twin-consent-title" className="text-base font-semibold">{translate("twin.consentTitle")}</h2>
       <p className="mt-2 max-w-2xl text-sm leading-relaxed">{translate("twin.consentBody")}</p>
+      {/*
+         Publication is not capture. The switch that opens a transcript sits three sections above
+         this yes, and plan §14.1 asks that the controls of a source keep their effects apart: the
+         sentence says what this one does NOT do, so «let them reach the file» cannot be read as one
+         more door into the history.
+        */}
+      <p className="mt-2 max-w-2xl text-xs leading-relaxed text-smoke">
+        {translate("twin.consentDistinct")}{" "}
+        {/*
+           And since delivery B the histories card holds a third door, the paid extraction that
+           proposes project memory; this yes is not that one either, and it says so in the same
+           breath, because «publish» and «propose» are the two words a person could take for the
+           same thing (plan §14.1: capture, extraction and publication with distinct effects).
+          */}
+        {translate("twin.consentDistinctExtract")}
+      </p>
       {/*
          The figure, and if it would fit with it. A permission question without the number next to
          it is an accept terms button; with the number but without saying it doesn't fit, the

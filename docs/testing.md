@@ -225,6 +225,24 @@ invariant, you write it down. `contrast.test.ts` keeps five colors with their ex
 **exactly** the ones that fall short of 4.5:1, and that the figures written down are the real
 ones. An inventory with stale figures is worse than none: it gets read, and it gets believed.
 
+## The canary: proving that something never leaves
+
+A third shape, and the memory plan's readers made it the main tool on 14-Sep-2026. When the
+promise is an absence — "no command line, no prompt, no assistant sentence and no tool output
+ever leaves this reader" — an assertion on what *is* returned cannot prove it, and a `grep` of
+the source cannot either: the leak would be a field somebody added later. So the fixtures carry
+a canary: every secret, every command line, every tool output and every assistant turn in
+`packages/core/src/history/fixtures/facts-session.jsonl` and `facts-codex.jsonl` holds a word
+that appears nowhere else, and the tests in `facts.test.ts`, `facts-codex.test.ts`,
+`apps/web/lib/memory-capture.test.ts` and `memory-extract.test.ts` serialize whatever the reader,
+the pass or the extractor produced — facts, turns, the prompt, the staged output, the rows — and
+assert the word is not in it. `receipts.test.ts` did it first, on a smaller scale; the jobs
+door does it against the bytes of the page it answers, with a staged statement, a manifest path
+and the very field names `leaseToken` and `stagedOutput` as the words. Two rules make it worth copying: the canary must be
+*unforgeable* — a word no legitimate output could contain, never a path or a real token — and
+the assertion must run over the serialized whole, not over the fields the author remembered,
+because the field the author forgot is exactly the one that leaks.
+
 ## When you do have to run it: sabotage the environment
 
 The opposite exists too, and `packages/core/src/no-network.test.ts` is the case. "The engine

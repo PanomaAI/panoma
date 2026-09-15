@@ -1,9 +1,27 @@
 import Link from "next/link";
 import type { BridgeReport } from "@/lib/bridge";
 import { t, type Locale } from "@/lib/i18n";
-import { Card, EmptyState, Tag } from "@/components/primitives";
+import { deliveryLines, type BridgeMemoryView } from "@/lib/memory-view";
+import { Card, EmptyState, Notice, Tag } from "@/components/primitives";
 
-export function BridgeActivity({ report, locale }: { report: BridgeReport; locale: Locale }) {
+/**
+ * The activity cards of the bridge, and since 14-Sep-2026 a third one: what the memory bridge
+ * delivered and what it can prove about it (plan §14.1 «Puente»: reception observable, coverage,
+ * backlog). Each figure is its own evidence — an offer prepared is not a receipt observed, and a
+ * zero of receipts is printed next to the number of sources whose receipts may be read at all.
+ * The quarantine notice goes first when it applies: a journal that does not match the catalog
+ * stops delivery and capture, and every other number on the card is stale until it is reconciled.
+ * `memory` is null when the status could not be read; the card is then not drawn.
+ */
+export function BridgeActivity({
+  report,
+  locale,
+  memory,
+}: {
+  report: BridgeReport;
+  locale: Locale;
+  memory: BridgeMemoryView | null;
+}) {
   const memoryStats = [
     ["bridge.stat.journal", report.memory.activities],
     ["bridge.stat.approved", report.memory.approved],
@@ -73,6 +91,34 @@ export function BridgeActivity({ report, locale }: { report: BridgeReport; local
           {t(locale, "bridge.system.openScale")}
         </a>
       </Card>
+
+      {memory && (
+        <Card as="section" aria-labelledby="bridge-memory-title">
+          <h2 id="bridge-memory-title" className="text-sm font-semibold text-chalk">{t(locale, "memory.bridgeTitle")}</h2>
+          <p className="mt-2 text-xs leading-relaxed text-smoke">{t(locale, "memory.bridgeLead")}</p>
+          {memory.quarantine && (
+            <Notice tone="fail" className="mt-3" title={t(locale, "memory.quarantined")}>
+              <p className="mt-1 font-mono text-xs text-smoke">
+                {t(locale, "memory.quarantineReason", { reason: memory.quarantine.reason })}
+              </p>
+            </Notice>
+          )}
+          <ul className="mt-4 grid gap-2 font-mono text-[11px] text-smoke">
+            {deliveryLines(memory.delivery).map((line) => (
+              <li key={line.key}>{t(locale, line.key, line.vars)}</li>
+            ))}
+          </ul>
+          <ul className="mt-4 grid gap-2 border-t border-edge pt-3 font-mono text-[11px] text-smoke">
+            <li>{t(locale, "memory.captureSources", { n: memory.captureSources })}</li>
+            <li>{t(locale, "memory.backlog", { count: memory.backlog.pending })}</li>
+            <li>{t(locale, "memory.backlogBlocked", { count: memory.backlog.blocked })}</li>
+            <li>{t(locale, "memory.pointers", { n: memory.backlog.pointers })}</li>
+          </ul>
+          <a href="/api/memory/status" className="mt-3 inline-block text-xs text-chalk underline underline-offset-4">
+            {t(locale, "memory.openStatus")}
+          </a>
+        </Card>
+      )}
     </div>
   );
 }

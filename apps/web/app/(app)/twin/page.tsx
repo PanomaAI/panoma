@@ -1,3 +1,4 @@
+import { predicateLabel } from "@/lib/predicate-label";
 import {
   TASTE_CAP,
   consentState,
@@ -16,6 +17,7 @@ import {
   corpusProgress,
   listBeliefs,
   listObservations,
+  observationsByIds,
   listProjectRoots,
   listConflictingEpisodeFamilies,
   listDecisionEpisodes,
@@ -38,12 +40,13 @@ import {
   type TasteReach,
 } from "@panoma/db";
 import Link from "next/link";
-import { db } from "@/lib/db";
+import { db, memoryQuarantine } from "@/lib/db";
 import { PageSection, PageShell } from "@/components/page-shell";
 import { Card, EmptyState } from "@/components/primitives";
-import { BeliefEditor } from "@/components/belief-editor";
+import { BeliefEditor, TwinPublication } from "@/components/belief-editor";
 import { TwinConsent } from "@/components/twin-consent";
 import { TwinDistill } from "@/components/twin-distill";
+import { RECENT_OBSERVATIONS, TwinLearning } from "@/components/twin-learning";
 import { TwinSources } from "@/components/twin-sources";
 import { TwinSynthesize } from "@/components/twin-synthesize";
 import { TwinTeach } from "@/components/twin-teach";
@@ -55,6 +58,10 @@ import { asBelief } from "@/lib/taste-view";
 import { budgetOf, heaviest } from "@/lib/taste-budget";
 import { EPISODE_PAGE, episodeCursor } from "@/lib/twin-memory-view";
 import { publishable } from "@/lib/publishable";
+import { criterionRowViews, evidenceMarks, learningView, observationRowViews, publicationView, sourceGrantViews, type EvidenceMark } from "@/lib/memory-view";
+import { AUTOMATIC_SUBQUOTA, PER_CONVERSATION_MAX, QUOTES_PER_CANDIDATE, QUOTE_CODE_POINTS_MAX } from "@/lib/memory-extract";
+import { AUTOMATIC_SUBQUOTA as TWIN_SUBQUOTA, twinLearnReport } from "@/lib/twin-learn";
+import { publicationState } from "@/lib/taste-publish";
 import { scopable } from "@/lib/teach";
 import { labelProjects } from "@/lib/project-label";
 import { cliName } from "@/lib/cli-name";
@@ -92,8 +99,16 @@ const RECENT_DAYS = 7;
 /** How many months of movement are taught. Half a year fits at a glance; a year does not. */
 const CHURN_MONTHS = 6;
 
+
 export default async function TwinPage({ searchParams }: { searchParams: Promise<{ episode?: string }> }) {
   const { db: database } = await db();
+  const guard = await memoryQuarantine().catch(() => ({ quarantined: true }));
+  if (guard.quarantined) {
+    const locale = await getLocale();
+    return <PageShell title={t(locale, "nav.twin")} lead={t(locale, "memory.quarantined")}>
+      <PageSection><p role="status">{t(locale, "memory.statusUnavailable")}</p></PageSection>
+    </PageShell>;
+  }
   const requested = (await searchParams).episode;
   const focusedEpisode = typeof requested === "string" && requested.length <= 100 ? await decisionEpisodeById(database, requested) : undefined;
   const [alive, buried, proposals, profile, score, spend, consent, locale, caps] = await Promise.all([
@@ -127,8 +142,24 @@ export default async function TwinPage({ searchParams }: { searchParams: Promise
     bytes: source.bytes,
     state: consentState(source, isAllowed(consent, source.id), readable.includes(source.id)),
   }));
+  /*
+    The other permissions of each source, read from the same file: whether its receipts may be
+    read, at which notice version, and whether the paid extraction may run. Plain fields only —
+    the component draws a switch, a date and a generation to send back, never the grant object.
+    The extraction notice states its figures from the processor's own constants and today's
+    `memory` cap, so the sentence a person accepts is the cap the reservation enforces.
+   */
+  const grants = sourceGrantViews(consent.grants, sources.map((source) => source.id));
+  const extractionTerms = {
+    dailyCap: Math.min(AUTOMATIC_SUBQUOTA, caps.memory.cap),
+    perConversation: PER_CONVERSATION_MAX,
+    quotes: QUOTES_PER_CANDIDATE,
+    quoteChars: QUOTE_CODE_POINTS_MAX,
+  };
+  /* The learning notice states its figure the same way: the processor's subquota against today's `read` cap. */
+  const learningTerms = { dailyCap: Math.min(TWIN_SUBQUOTA, caps.read.cap) };
 
-  const [corpus, names, topics, unclassified, gone, churn, briefs, design, reach, projects, episodeRows, narrativeCoverage, episodeCount, conflicts] =
+  const [corpus, names, topics, unclassified, gone, churn, briefs, design, reach, projects, episodeRows, narrativeCoverage, episodeCount, conflicts, learning, publication, observed] =
     await Promise.all([
     corpusProgress(database),
     projectNamesByIdentity(database),
@@ -182,6 +213,15 @@ export default async function TwinPage({ searchParams }: { searchParams: Promise
       the person can.
      */
     listConflictingEpisodeFamilies(database),
+    /*
+      Delivery D: what the continuous learning is doing (the same object the status document
+      nests as `queue.twin`), what the outbox says about the file, and the newest observations
+      so every quote can say what kind of thing it was. Each read degrades on its own: a block
+      that cannot be read says nothing, and the portrait is still drawn.
+     */
+    twinLearnReport(database).catch(() => undefined),
+    publicationState(database, { target: "TASTE" }).catch(() => undefined),
+    listObservations(database, { limit: RECENT_OBSERVATIONS }).catch(() => []),
   ]);
   const episodes = episodeRows.slice(0, EPISODE_PAGE);
   const oldest = episodes.at(-1);
@@ -308,6 +348,32 @@ export default async function TwinPage({ searchParams }: { searchParams: Promise
   const grantable = sources.filter((source) => source.state === "allowed" || source.state === "denied");
   /* The projects a taught rule may be narrowed to; the rest are counted, not hidden in silence. */
   const teachable = pickable.filter((project) => scopable(project.identity, names));
+  /*
+    And from identity to slug for those, because the revisioned door narrows a criterion by the
+    project's slug and never by its identity string (plan §23.5): the editor offers the narrowing
+    only where a slug exists, which is exactly where the teach menu offers the project.
+   */
+  const slugs: Record<string, string> = {};
+  for (const project of teachable) if (project.identity) slugs[project.identity] = project.slug;
+
+  /*
+    What the portrait draws beyond the text of each criterion (delivery D): the revision every
+    gesture names back, the typed conditions and exceptions as the sentences the agent reads —
+    a localized renderer of the same typed tree —, and
+    the independent cases behind an inference. And the kind of every quote, read from the
+    observations: an ambiguous reaction founds nothing and the row says so. Plain fields only.
+   */
+  const shaped = [...alive, ...proposals];
+  const criteria = criterionRowViews(shaped, (node) => predicateLabel(locale, node));
+  // Exactly the observations the quotes cite, however old: a quote never loses its kind to a window.
+  const cited = await observationsByIds(database, shaped.flatMap((row) => row.citations.map((cite) => cite.observationId))).catch(() => []);
+  const evidence: Record<string, Record<string, EvidenceMark>> = {};
+  for (const row of shaped) evidence[row.id] = evidenceMarks(row.citations, cited);
+  const sourceLabels: Record<string, string> = {};
+  for (const source of sources) sourceLabels[source.id] = source.label;
+  const learningReport = learningView(learning, sourceLabels);
+  const recent = observationRowViews(observed, names, RECENT_OBSERVATIONS);
+  const publicationReport = publicationView(publication);
 
   const path = pathStages({
     histories: {
@@ -438,7 +504,13 @@ export default async function TwinPage({ searchParams }: { searchParams: Promise
            `TwinSources` carry that id. */
         aria-labelledby="twin-sources-title"
       >
-        <TwinSources sources={sources} />
+        <TwinSources sources={sources} grants={grants} extraction={extractionTerms} learning={learningTerms} />
+        {/*
+           What the learning granted just above is doing, right under the switch that grants it:
+           active or paused per source and project, the last range, what waits, the day's automatic
+           spend and why it waits — and the pause of each grant (plan §10.5, §14.1).
+          */}
+        <TwinLearning learning={learningReport} recent={recent} />
         <TwinDistill
           left={Math.max(0, corpus.total - corpus.read)}
           granted={sources.some((source) => source.state === "allowed")}
@@ -483,6 +555,8 @@ export default async function TwinPage({ searchParams }: { searchParams: Promise
             budgetOf([...escribibles, ...publishable(waiting, names, true)], profile).chars
           }
           cap={TASTE_CAP}
+          /* The yes names the publication it looked at; a generation that moved is refused, never overwritten. */
+          publicationRevision={publicationReport?.revision ?? 1}
         />
       )}
 
@@ -526,6 +600,9 @@ export default async function TwinPage({ searchParams }: { searchParams: Promise
           }),
         )}
         locale={locale}
+        criteria={criteria}
+        evidence={evidence}
+        slugs={slugs}
       />
       </section>
 
@@ -586,6 +663,11 @@ export default async function TwinPage({ searchParams }: { searchParams: Promise
                `ready` carries the same condition and the button says it instead of vanishing.
               */}
             <TwinSynthesize pending={unclassified.length} ready={topics.length > 0} />
+            {/*
+               And whether the file was actually written, beside the meter that says whether it
+               fits: the outbox's state, and the reconcile a moved file asks for (plan §10.4).
+              */}
+            <TwinPublication publication={publicationReport} publishesInferred={inferred} />
           </div>
 
           <Spend spend={spend} caps={caps} locale={locale} />

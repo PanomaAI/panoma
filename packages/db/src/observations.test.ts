@@ -4,14 +4,18 @@ import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Database } from "./client";
 import * as t from "./schema";
+import { revisionHistory } from "./memory-revisions";
 import {
   listObservations,
   observationTopics,
+  observationsByIds,
+  remapObservations,
   saveObservations,
   setObservationTopics,
   type NewObservation,
   type TasteCitation,
 } from "./queries";
+import { InvalidTwinInput, UNKNOWN_REFERENT, isAmbiguousReaction } from "./twin";
 
 /**
  * The evidence, against PGlite and not against a double.
@@ -347,6 +351,81 @@ describe("listObservations", () => {
   });
 
   it("sin nada guardado devuelve una lista vacía", async () => {
+    expect(await listObservations(db)).toEqual([]);
+  });
+});
+
+describe("remapObservations under delivery D", () => {
+  it("re-attributes by the surviving citations, moves the revision by compare-and-set and photographs the scope; a second pass moves nothing", async () => {
+    await db.delete(t.verdicts);
+    await db.insert(t.verdicts).values({
+      id: "vdt_remap", identity: OTRA, source: "claude", sessionId: "ses_remap", at: new Date("2026-08-20T23:11:00.000Z"), quote: "no me gusta ese verde", signals: [],
+    });
+    await saveObservations(db, [observation("Prefers a calmer green.", { citations: [citation({ verdictId: "vdt_remap" })] })]);
+    const [before] = await listObservations(db);
+    expect(before).toMatchObject({ identity: null, memoryRev: 1 });
+
+    expect(await remapObservations(db)).toBe(1);
+    const [after] = await listObservations(db);
+    expect(after).toMatchObject({ id: before!.id, identity: OTRA, memoryRev: 2 });
+    const history = await revisionHistory(db, "observation", before!.id);
+    expect(history.map((row) => [row.rev, row.reason, row.scopeKind, row.scopeRef])).toEqual([
+      [1, "create", "global", null],
+      [2, "scope", "project", OTRA],
+    ]);
+
+    expect(await remapObservations(db)).toBe(0);
+    expect((await listObservations(db))[0]!.memoryRev).toBe(2);
+    await db.delete(t.verdicts);
+  });
+});
+
+describe("the kind and the referent of an observation (delivery D, §21.3)", () => {
+  it("stores what the distiller read and photographs it; an ambiguous reaction keeps its topic and is left out of what a synthesis may read", async () => {
+    await saveObservations(db, [
+      observation("Prefers the guard tests first.", { topic: "testing", kind: "reason", referent: "the guard tests" }),
+      observation("perfecto", { topic: "testing", kind: "reaction", referent: UNKNOWN_REFERENT }),
+      observation("Use the new form.", { topic: "design" }),
+    ]);
+    // Same instant, so the order is the id's: compare as a set.
+    const rows = await listObservations(db, { topic: "testing" });
+    expect(rows.map((row) => [row.statement, row.kind, row.referent]).sort()).toEqual([
+      ["Prefers the guard tests first.", "reason", "the guard tests"],
+      ["perfecto", "reaction", "unknown"],
+    ]);
+    const ambiguous = rows.find((row) => row.statement === "perfecto")!;
+    expect(isAmbiguousReaction(ambiguous)).toBe(true);
+    expect(isAmbiguousReaction(rows.find((row) => row.statement !== "perfecto")!)).toBe(false);
+    expect((await revisionHistory(db, "observation", ambiguous.id))[0]?.payload).toMatchObject({ kind: "reaction", referent: "unknown" });
+    // The legacy row: nothing recorded, never a guess.
+    expect((await listObservations(db, { topic: "design" }))[0]).toMatchObject({ kind: null, referent: null });
+
+    expect((await listObservations(db, { topic: "testing", admissible: true })).map((row) => row.statement)).toEqual(["Prefers the guard tests first."]);
+    // A legacy row is admissible: null in both columns is "not recorded", never an ambiguous reaction (the SQL three-valued trap).
+    expect((await listObservations(db, { topic: "design", admissible: true })).map((row) => row.statement)).toEqual(["Use the new form."]);
+    expect((await listObservations(db, { admissible: true })).length).toBe(2);
+    expect((await observationTopics(db)).find((one) => one.topic === "testing")?.observations).toBe(2);
+    expect((await observationTopics(db, { admissible: true })).map((one) => [one.topic, one.observations]).sort()).toEqual([["design", 1], ["testing", 1]]);
+  });
+
+  it("reads the observations a set of citations name, by id, whatever their age and topic", async () => {
+    await saveObservations(db, [
+      observation("Old but cited.", { topic: "design", citations: [citation({ at: "2025-01-01T00:00:00.000Z" })], kind: "choice", referent: "the cover" }),
+      observation("Newer.", { topic: "testing" }),
+    ]);
+    const all = await listObservations(db);
+    const old = all.find((row) => row.statement === "Old but cited.");
+    const newer = all.find((row) => row.statement === "Newer.");
+    const rows = await observationsByIds(db, [newer!.id, old!.id, old!.id, "obs_missing"]);
+    expect(rows.map((row) => row.statement).sort()).toEqual(["Newer.", "Old but cited."]);
+    expect(rows.find((row) => row.id === old!.id)).toMatchObject({ kind: "choice", referent: "the cover", citations: [expect.objectContaining({ verdictId: "vdt_de_prueba" })] });
+    expect(await observationsByIds(db, [])).toEqual([]);
+  });
+
+  it("refuses a kind outside the seven and a referent that is not a few words, before writing", async () => {
+    await expect(saveObservations(db, [observation("x", { kind: "praise" as never })])).rejects.toBeInstanceOf(InvalidTwinInput);
+    await expect(saveObservations(db, [observation("x", { kind: "reaction", referent: "a".repeat(121) })])).rejects.toThrow(/at most 120/);
+    await expect(saveObservations(db, [observation("x", { kind: "reaction", referent: "   " })])).rejects.toThrow(/not empty/);
     expect(await listObservations(db)).toEqual([]);
   });
 });

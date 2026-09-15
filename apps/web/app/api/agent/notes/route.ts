@@ -12,10 +12,12 @@ import {
 } from "@panoma/db";
 import { refreshProjectMemory } from "@/lib/sentinels";
 import { requireAgent } from "@/lib/agent-auth";
-import { db } from "@/lib/db";
+import { memoryRefusal } from "@/lib/agent-channel";
+import { db, memoryQuarantine } from "@/lib/db";
 import { sameOrigin } from "@/lib/guard";
 import { localeFrom, t } from "@/lib/i18n";
 import { ablationArm, ablationEnabled } from "@/lib/memory-ablation";
+import { eligibleNoteFilter } from "@/lib/memory-eligibility";
 
 /**
  * The curated memory of the project, on the agent's side: propose and reread.
@@ -28,6 +30,16 @@ import { ablationArm, ablationEnabled } from "@/lib/memory-ablation";
  *
  * To decide —approve, discard— does not exist on this route on purpose, nor with a code: that is
  * `/api/notes`, which requires `sameOrigin` because the gate belongs to the person.
+ *
+ * ── Under the deletion contract, since 14-Sep-2026 ──────────────────────────────────────
+ *
+ * Both readers of this file —the reread below and the signal's GET— are legacy roads, and the
+ * plan says the old format never buys the old policy (§23.2.7): a note under a withdrawal or a
+ * purge is left out before the answer is composed (`lib/memory-eligibility.ts`, A18/T54), and
+ * the scale's row names only what travelled. Both consult `memoryQuarantine()` first: a catalog
+ * whose deletion journal disagrees with its rows delivers nothing (503 `unavailable`) until a
+ * person reconciles (T56). Proposing is neither a delivery nor a capture and stays open: an
+ * agent's own sentence enters the queue for the gate, and no purged text leaves through it.
  */
 export async function POST(request: Request) {
   const locale = localeFrom(request);
@@ -82,12 +94,16 @@ export async function POST(request: Request) {
     The audit found here the side door: without an arm or record, an agent of the retained arm
     recovered through this branch the entire memory that the experiment believed to be retained.
    */
+  const guard = await memoryQuarantine();
+  if (guard.quarantined) return quarantined(guard.reason);
   await refreshProjectMemory(auth.database, project);
-  const [all, usage] = await Promise.all([
+  const [all, usage, eligible] = await Promise.all([
     listProjectNotes(auth.database, project.id),
     noteUsage(auth.database, project.id),
+    eligibleNoteFilter(auth.database),
   ]);
-  const awake = all.filter((note) => note.trigger === null);
+  // The usage stays the catalog's: the budget counts what the owner keeps, not what travels today.
+  const awake = await eligible.notes(all.filter((note) => note.trigger === null));
 
   if (awake.length > 0) {
     const arm = ablationArm({
@@ -145,11 +161,24 @@ export async function GET(request: Request) {
   if (!project) return Response.json({ notes: [] });
 
   if (!validMemoryPath(touching)) return Response.json({ error: "Invalid project-relative path." }, { status: 400 });
+  // The hook reads a non-200 as "nothing to say" and lets the edit through: quarantine is silent there.
+  const guard = await memoryQuarantine();
+  if (guard.quarantined) return quarantined(guard.reason);
   await refreshProjectMemory(database, project);
-  const notes = await notesAt(database, project.id, touching);
+  const [signs, eligible] = await Promise.all([notesAt(database, project.id, touching), eligibleNoteFilter(database)]);
+  const notes = await eligible.notes(signs);
   return Response.json({
     project: project.slug,
     // The `id` travels for the hook's view registration: the same signal, once per session.
     notes: notes.map((note) => ({ id: note.id, body: note.body, trigger: note.trigger })),
   });
+}
+
+function quarantined(reason: string): Response {
+  return memoryRefusal(
+    "unavailable",
+    `The memory is quarantined (${reason}): the deletion journal and the catalog disagree.`,
+    503,
+    "Reconcile the journal with panoma memory status before asking again.",
+  );
 }

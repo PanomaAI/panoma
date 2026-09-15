@@ -15,7 +15,8 @@ import {
 import { useCliName, useT } from "./i18n-provider";
 import type { MessageKey } from "@/lib/i18n";
 import type { bridgeProgress, BridgeReport, SetupStepId } from "@/lib/bridge";
-import { ActionButton, Card, Tag } from "./primitives";
+import { INVOCATION_KEYS, RECEIPT_SITE_KEYS, type BridgeMemoryView } from "@/lib/memory-view";
+import { ActionButton, Card, Notice, Tag } from "./primitives";
 
 /*
   Explicit keys keep titles and explanations checked by the bilingual dictionary. Over `SetupStepId`
@@ -64,8 +65,23 @@ function CopyCommand({ command, label }: { command: string; label: string }) {
   );
 }
 
-/** Setup is separate from activity: a journal entry is a result, never a fifth task. */
-export function BridgeSteps({ report, progress }: { report: BridgeReport; progress: ReturnType<typeof bridgeProgress> }) {
+/**
+ * Setup is separate from activity: a journal entry is a result, never a fifth task.
+ *
+ * `memory` is the reading of the hooks event by event across the catalog (plan §14.1 «Puente»:
+ * installed, executed, version, and the cause of a failure). It is drawn under the hooks step,
+ * where the button that changes it lives, and it is null when the status could not be read —
+ * the step still counts on the post-commit alone, as it always did.
+ */
+export function BridgeSteps({
+  report,
+  progress,
+  memory,
+}: {
+  report: BridgeReport;
+  progress: ReturnType<typeof bridgeProgress>;
+  memory: BridgeMemoryView | null;
+}) {
   const t = useT();
   const cli = useCliName();
   const router = useRouter();
@@ -241,6 +257,51 @@ export function BridgeSteps({ report, progress }: { report: BridgeReport; progre
                         <p role="status" className="text-smoke">{outcome && !outcome.error ? outcome.text : null}</p>
                         <p role="alert" className="text-fail">{outcome?.error ? outcome.text : null}</p>
                       </div>
+                      {/*
+                         The three evidences the step used to fold into one bit (§6.4): each event
+                         of ours present, older or missing across the projects that can carry it;
+                         whether the command those entries name exists on this disk; and what the
+                         programs themselves showed — version, an observed run, a receipt site.
+                         The durability warning is the cause of the 556 silent failures of
+                         14-Sep-2026 and is printed as a notice, not as a count.
+                        */}
+                      {memory && (
+                        <div className="mt-3 space-y-2 border-t border-edge pt-3 text-xs text-smoke">
+                          <p className="font-mono text-[11px]">{t("memory.judged", { n: memory.judged })}</p>
+                          <ul className="space-y-1 font-mono text-[11px]">
+                            {memory.events.map((row) => (
+                              <li key={row.event}>
+                                <span className="text-chalk">{t(row.label)}</span>
+                                {" · "}
+                                {t("memory.eventCounts", { installed: row.installed, legacy: row.legacy, missing: row.missing })}
+                              </li>
+                            ))}
+                          </ul>
+                          <p className="font-mono text-[11px]">
+                            {t("memory.durableCount", { yes: memory.durable.yes, no: memory.durable.no })}
+                          </p>
+                          {memory.durable.no > 0 && <Notice tone="warn" title={t("memory.notDurable")} />}
+                          {memory.hosts.length > 0 && (
+                            <>
+                              <p className="font-mono text-[11px] text-chalk">{t("memory.hostsTitle")}</p>
+                              <ul className="space-y-1 font-mono text-[11px]">
+                                {memory.hosts.map((host) => (
+                                  <li key={`${host.harness}/${host.entry}`}>
+                                    <span className="text-chalk">{host.harness} · {host.entry}</span>
+                                    {" · "}
+                                    {host.version ? t("memory.hostVersion", { version: host.version }) : t("memory.hostVersionUnknown")}
+                                    {" · "}
+                                    {t(INVOCATION_KEYS[host.invocation])}
+                                    {" · "}
+                                    {t(RECEIPT_SITE_KEYS[host.receiptSite])}
+                                    {host.configured !== null && ` · ${t(host.configured ? "memory.hostConfigured" : "memory.hostNotConfigured")}`}
+                                  </li>
+                                ))}
+                              </ul>
+                            </>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

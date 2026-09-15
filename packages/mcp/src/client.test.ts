@@ -2,8 +2,21 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { MEMORY_OPERATIONS } from "@panoma/core";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { CatalogClient, CatalogError, checkConversationId, unsafeDestination } from "./client";
+import {
+  CONTEXT_MEMORY_INPUT,
+  CatalogClient,
+  CatalogError,
+  MemoryNegotiation,
+  RECALL_INPUT,
+  checkConversationId,
+  checkRecallInput,
+  contextRequest,
+  memoryReadRequest,
+  memoryVersionOf,
+  unsafeDestination,
+} from "./client";
 
 /**
  * The two things that this client can never do: send the agent's key where it doesn't belong, and
@@ -30,6 +43,9 @@ let home: string;
 const NETWORK_KEY = "n".repeat(64);
 const OPERATOR_KEY = "o".repeat(64);
 
+/** What the fake catalog says to a hello; each negotiation test sets it before starting one. */
+let hello: { status: number; body: unknown } = { status: 200, body: { ok: true, agent: "a" } };
+
 beforeAll(async () => {
   home = await mkdtemp(join(tmpdir(), "panoma-mcp-client-"));
   await writeFile(
@@ -53,6 +69,14 @@ beforeAll(async () => {
     if (request.url === "/refuse") {
       response.writeHead(409, { "content-type": "application/json" });
       return response.end(JSON.stringify({ error: "ambiguous-id", detail: "claude-cli:a, codex-cli:b", hint: "Name one." }));
+    }
+    if (request.url === "/memory-fault") {
+      response.writeHead(409, { "content-type": "application/json" });
+      return response.end(JSON.stringify({ code: "stale_cursor", error: "The continuation is stale.", hint: "Restart the read.", retryable: false }));
+    }
+    if (request.url === "/api/agent/hello") {
+      response.writeHead(hello.status, { "content-type": "application/json" });
+      return response.end(JSON.stringify(hello.body));
     }
     response.writeHead(200, { "content-type": "application/json" });
     response.end(JSON.stringify({ claimed: true }));
@@ -240,5 +264,183 @@ describe("lo que hay al otro lado tiene que ser el catálogo", () => {
   it("una redirección se cuenta, no se sigue", async () => {
     const client = new CatalogClient(`http://127.0.0.1:${port}/redirige`, "k");
     await expect(client.post("/redirige", {})).rejects.toThrow(/answered with a redirect/);
+  });
+});
+
+// ── The memory contract, version 2 ────────────────────────────────────────────────────────
+
+const helloRequests = () => seen.filter((request) => request.url === "/api/agent/hello").length;
+
+describe("the hello is a negotiation, and it is asked once", () => {
+  it("a catalog that lists version 2 enables the contract", async () => {
+    hello = { status: 200, body: { ok: true, agent: "a", memory: { versions: [1, 2], features: ["read", "continuation", "contexts"], profiles: ["mcp-memory-v2"] } } };
+    seen.length = 0;
+    const negotiation = new MemoryNegotiation(local());
+    negotiation.start();
+    expect(await negotiation.version()).toBe(2);
+    expect(helloRequests()).toBe(1);
+    expect(seen[0]!.auth).toBe("Bearer panoma_clave");
+  });
+
+  it("a catalog whose hello knows nothing of memory is the legacy catalog", async () => {
+    hello = { status: 200, body: { ok: true, agent: "a" } };
+    const negotiation = new MemoryNegotiation(local());
+    negotiation.start();
+    expect(await negotiation.version()).toBe(1);
+  });
+
+  it("a hello that failed is legacy for the life of the process, without a second hello", async () => {
+    hello = { status: 500, body: { error: "boom" } };
+    seen.length = 0;
+    const negotiation = new MemoryNegotiation(local());
+    negotiation.start();
+    expect(await negotiation.version()).toBe(1);
+    negotiation.start();
+    expect(await negotiation.version()).toBe(1);
+    expect(await negotiation.version()).toBe(1);
+    expect(helloRequests()).toBe(1);
+  });
+
+  it("a catalog that is not there is legacy too, and nothing else is asked of it", async () => {
+    // A port nothing listens on: taken from the kernel and released before the hello goes out.
+    const probe = createServer();
+    await new Promise<void>((done) => probe.listen(0, "127.0.0.1", done));
+    const closed = (probe.address() as { port: number }).port;
+    await new Promise<void>((done) => probe.close(() => done()));
+    const negotiation = new MemoryNegotiation(new CatalogClient(`http://127.0.0.1:${closed}`, "panoma_clave"));
+    negotiation.start();
+    expect(await negotiation.version()).toBe(1);
+  });
+
+  it("before start there is no hello to wait for, and the answer is legacy", async () => {
+    seen.length = 0;
+    expect(await new MemoryNegotiation(local()).version()).toBe(1);
+    expect(helloRequests()).toBe(0);
+  });
+
+  it("only a list that names 2 enables the contract", () => {
+    expect(memoryVersionOf({ ok: true, agent: "a", memory: { versions: [1, 2] } })).toBe(2);
+    expect(memoryVersionOf({ ok: true, agent: "a", memory: { versions: [1] } })).toBe(1);
+    expect(memoryVersionOf({ ok: true, agent: "a", memory: { versions: ["2"] } })).toBe(1);
+    expect(memoryVersionOf({ ok: true, agent: "a", memory: { versions: 2 } })).toBe(1);
+    expect(memoryVersionOf({ ok: true, agent: "a", memory: null })).toBe(1);
+    expect(memoryVersionOf(null)).toBe(1);
+    expect(memoryVersionOf("ok")).toBe(1);
+  });
+});
+
+describe("what a brief asks for", () => {
+  const where = { cwd: "/Users/x/panoma", root: "/Users/x/panoma", remote: "https://github.com/x/panoma" };
+
+  it("without the contract, the body the tool has always sent, byte for byte", () => {
+    expect(contextRequest(where, {}, 1)).toStrictEqual(where);
+    expect(contextRequest(where, { files: ["src/a.ts"], task: "fix the build" }, 1)).toStrictEqual({ ...where, files: ["src/a.ts"], task: "fix the build" });
+    // The v2-only inputs do not leak into a legacy body under any name.
+    const body = contextRequest(where, { operation: "edit", contextId: "mctx_1", contextGeneration: 2, continuation: "mc_x" }, 1);
+    expect(body).toStrictEqual(where);
+  });
+
+  it("with the contract, memory v2 with the mode the inputs imply and nothing invented", () => {
+    expect(contextRequest(where, {}, 2)).toStrictEqual({ ...where, memory: { version: 2, mode: "orientation" } });
+    expect(contextRequest(where, { task: "fix the build" }, 2)).toStrictEqual({ ...where, task: "fix the build", memory: { version: 2, mode: "action" } });
+    expect(contextRequest(where, { files: [] }, 2)).toStrictEqual({ ...where, files: [], memory: { version: 2, mode: "action" } });
+    expect(contextRequest(where, { files: ["src/a.ts"], operation: "edit", contextId: "mctx_1", contextGeneration: 2, continuation: "mc_x" }, 2)).toStrictEqual({
+      ...where,
+      files: ["src/a.ts"],
+      memory: { version: 2, mode: "action", operation: "edit", contextId: "mctx_1", contextGeneration: 2, continuation: "mc_x" },
+    });
+  });
+
+  it("memoryVersion 2 is the agent asking for the contract regardless of the hello", () => {
+    expect(contextRequest(where, { memoryVersion: 2 }, 1)).toStrictEqual({ ...where, memory: { version: 2, mode: "orientation" } });
+  });
+
+  it("the operations it accepts are core's vocabulary, no more and no fewer", () => {
+    for (const word of MEMORY_OPERATIONS) expect(CONTEXT_MEMORY_INPUT.operation.safeParse(word).success, word).toBe(true);
+    expect(CONTEXT_MEMORY_INPUT.operation.safeParse("delete").success).toBe(false);
+    expect(CONTEXT_MEMORY_INPUT.memoryVersion.safeParse(1).success).toBe(false);
+    expect(CONTEXT_MEMORY_INPUT.contextId.safeParse("../x").success).toBe(false);
+    expect(CONTEXT_MEMORY_INPUT.contextGeneration.safeParse(0).success).toBe(false);
+  });
+});
+
+describe("what a read by id asks for", () => {
+  const where = { cwd: "/Users/x/panoma" };
+
+  it("the location and memory.read, and nothing of a brief", () => {
+    expect(memoryReadRequest(where, { memoryKind: "note", memoryId: "note_1", revision: 3 })).toStrictEqual({
+      cwd: "/Users/x/panoma",
+      memory: { version: 2, read: { kind: "note", id: "note_1", revision: 3 } },
+    });
+    expect(memoryReadRequest(where, { memoryKind: "decision", memoryId: "dec_1", revision: 1, continuation: "mc_next" })).toStrictEqual({
+      cwd: "/Users/x/panoma",
+      memory: { version: 2, read: { kind: "decision", id: "dec_1", revision: 1, continuation: "mc_next" } },
+    });
+  });
+});
+
+describe("panoma_recall sorts its inputs before anything travels", () => {
+  it("memoryId needs memoryKind and revision, exactly as the brief listed them", () => {
+    expect(() => checkRecallInput({ memoryId: "note_1" })).toThrow(/memoryId needs memoryKind and revision/);
+    expect(() => checkRecallInput({ memoryId: "note_1" })).toThrow(/missing: memoryKind, revision/);
+    expect(() => checkRecallInput({ memoryId: "note_1", memoryKind: "note" })).toThrow(/missing: revision\./);
+    expect(() => checkRecallInput({ memoryId: "note_1", revision: 2 })).toThrow(/missing: memoryKind\./);
+  });
+
+  it("memoryKind, revision or continuation without memoryId name nothing", () => {
+    expect(() => checkRecallInput({ memoryKind: "note" })).toThrow(/memoryKind only make sense with memoryId/);
+    expect(() => checkRecallInput({ revision: 2, continuation: "mc_x" })).toThrow(/revision, continuation only make sense with memoryId/);
+  });
+
+  it("a read by id and a journal search are two calls, not one", () => {
+    const read = { memoryId: "note_1", memoryKind: "note" as const, revision: 2 };
+    expect(() => checkRecallInput({ ...read, query: "broken catalog" })).toThrow(/drop query or drop memoryId/);
+    expect(() => checkRecallInput({ ...read, entryId: "jrn_1", offset: 10 })).toThrow(/drop entryId, offset or drop memoryId/);
+    expect(() => checkRecallInput({ ...read, cursor: "c" })).toThrow(/drop cursor/);
+  });
+
+  it("a well-formed read is a read, with its continuation only when given", () => {
+    expect(checkRecallInput({ memoryId: "note_1", memoryKind: "note", revision: 2 })).toStrictEqual({ read: { memoryKind: "note", memoryId: "note_1", revision: 2 } });
+    expect(checkRecallInput({ memoryId: "dec_1", memoryKind: "decision", revision: 1, continuation: "mc_next" })).toStrictEqual({
+      read: { memoryKind: "decision", memoryId: "dec_1", revision: 1, continuation: "mc_next" },
+    });
+  });
+
+  it("the journal keeps its shape: query with cursor, entryId with offset, or nothing at all", () => {
+    expect(checkRecallInput({ query: "broken catalog", cursor: "c" })).toStrictEqual({ journal: { query: "broken catalog", cursor: "c" } });
+    expect(checkRecallInput({ entryId: "jrn_1", offset: 1200 })).toStrictEqual({ journal: { entryId: "jrn_1", offset: 1200 } });
+    expect(checkRecallInput({})).toStrictEqual({ journal: {} });
+  });
+
+  it("§23.4: memoryKind names a commitment or a case too; a case needs no revision and is read at 1, a commitment still does", () => {
+    expect(RECALL_INPUT.memoryKind.safeParse("commitment").success).toBe(true);
+    expect(RECALL_INPUT.memoryKind.safeParse("case").success).toBe(true);
+    expect(RECALL_INPUT.memoryKind.safeParse("task").success).toBe(false);
+    expect(checkRecallInput({ memoryId: "cmt_1", memoryKind: "commitment", revision: 2 })).toStrictEqual({ read: { memoryKind: "commitment", memoryId: "cmt_1", revision: 2 } });
+    expect(() => checkRecallInput({ memoryId: "cmt_1", memoryKind: "commitment" })).toThrow(/missing: revision\./);
+    expect(checkRecallInput({ memoryId: "tsk_1", memoryKind: "case" })).toStrictEqual({ read: { memoryKind: "case", memoryId: "tsk_1", revision: 1 } });
+    expect(checkRecallInput({ memoryId: "tsk_1", memoryKind: "case", revision: 1, continuation: "mc_next" })).toStrictEqual({
+      read: { memoryKind: "case", memoryId: "tsk_1", revision: 1, continuation: "mc_next" },
+    });
+    // The wire carries the kind as given: the catalog decides what a case or a commitment is.
+    expect(memoryReadRequest({ cwd: "/Users/x/panoma" }, { memoryKind: "case", memoryId: "tsk_1", revision: 1 })).toStrictEqual({
+      cwd: "/Users/x/panoma",
+      memory: { version: 2, read: { kind: "case", id: "tsk_1", revision: 1 } },
+    });
+    // Without memoryId the two words name nothing, as before.
+    expect(() => checkRecallInput({ memoryKind: "case" })).toThrow(/memoryKind only make sense with memoryId/);
+  });
+});
+
+describe("the third refusal shape: a code, a sentence and a hint", () => {
+  it("the code is the code, and the sentence travels ahead of the hint in the message", async () => {
+    const failure = await local().post("/memory-fault", {}).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(CatalogError);
+    const refused = failure as CatalogError;
+    expect(refused.status).toBe(409);
+    expect(refused.code).toBe("stale_cursor");
+    expect(refused.detail).toBeUndefined();
+    expect(refused.hint).toBe("The continuation is stale. Restart the read.");
+    expect(refused.message).toBe("stale_cursor. The continuation is stale. Restart the read.");
   });
 });

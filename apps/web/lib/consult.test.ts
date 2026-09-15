@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rename, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -331,6 +331,30 @@ describe("el barrendero de varadas", () => {
 
 // Rehearsals and background drafts share the same evidence selection and spending lock.
 describe("grounded decision rehearsals", () => {
+  it("reads no restored memory and sends no call when the deletion journal is missing", async () => {
+    const { ensureDeletionJournal, deletionJournalPath } = await import("@panoma/db");
+    await ensureDeletionJournal(db, home);
+    const path = deletionJournalPath(home);
+    await rename(path, `${path}.held`);
+    try {
+      await expect(rehearse(db, { question: "Should this use inline editing?", identity: IDENTITY })).rejects.toThrow(/quarantined/);
+      expect(completeMock).not.toHaveBeenCalled();
+    } finally {
+      await rename(`${path}.held`, path);
+    }
+  });
+
+  it("keeps a signed criterion with its complete typed conditions in the question's evidence", async () => {
+    const { insertBeliefs } = await import("@panoma/db");
+    await insertBeliefs(db, [{ topic: "design", statement: "Use inline editing.", state: "signed", citations: [],
+      support: { observations: 0, projects: 0, days: 0 }, model: "owner",
+      conditions: { schemaVersion: 1, expression: { kind: "operation_is", operation: "edit" } },
+      exceptions: { schemaVersion: 1, expression: { kind: "task_kind_is", taskKind: "migration" } },
+    }]);
+    const [belief] = await beliefsFor(db, IDENTITY);
+    expect(belief?.statement).toContain("Applies when:");
+    expect(belief?.statement).toContain("Except when:");
+  });
   async function signedRule() {
     const { insertBeliefs } = await import("@panoma/db");
     return insertBeliefs(db, [{ topic: "design", statement: "Prefer inline editing over a modal.",

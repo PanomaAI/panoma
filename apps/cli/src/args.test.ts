@@ -348,6 +348,148 @@ describe("the flags of panoma handoff", () => {
   });
 });
 
+/**
+ * `--yes`, the flag of `panoma memory purge` and `panoma memory withdraw`.
+ *
+ * The preview is the default and `--yes` is the only way past it, so it has to reach the command
+ * whole, stay out of the positionals —the source id travels there— and refuse to sit next to
+ * `--dry-run`, which asks for the opposite. `--force` is not accepted as a substitute: the plan
+ * says a deletion is not a cache to skip, and the parser is where that sentence is enforced.
+ */
+describe("the --yes flag of memory purge and withdraw", () => {
+  it("is accepted, and the source id stays a positional", () => {
+    const parsed = flagsOf(["memory", "purge", "msrc_0123456789ab", "--yes"]);
+    expect(parsed.yes).toBe(true);
+    expect(parsed.positionals).toEqual(["memory", "purge", "msrc_0123456789ab"]);
+    expect(flagsOf(["memory", "withdraw", "msrc_0123456789ab"]).yes).toBe(false);
+  });
+
+  it("refuses to sit next to --dry-run, which asks for the opposite", () => {
+    const error = errorOf(["memory", "purge", "msrc_0123456789ab", "--dry-run", "--yes"]);
+    expect(error).toContain("--dry-run");
+    expect(error).toContain("--yes");
+  });
+
+  it("a misspelled --yes gets the right one suggested", () => {
+    const error = errorOf(["memory", "purge", "msrc_0123456789ab", "--ye"]);
+    expect(error).toContain("--ye");
+    expect(error).toContain("--yes");
+  });
+});
+
+/**
+ * The three flags of delivery B —`--from`, `--purpose`, `--notice`— and the scope pair of the
+ * verbs that grant, revoke or read under one: `memory allow`, `memory revoke`, `memory backfill`.
+ *
+ * `--purpose` and `--notice` are closed sets and get the treatment of `--tier`: a purpose that
+ * fell to some default would read a range under the wrong permission, and one of the three
+ * spends; a notice version nobody was shown would grant what nobody read. The scope pair is the
+ * sentence the memory plan writes in so many words: exactly one of `--project` and `--all`, and
+ * omitting both is never global. `--until` stays a free string here because `video` uses it for
+ * a stage name; the command validates the instant.
+ */
+describe("the flags of memory allow, revoke and backfill", () => {
+  it("accepts --from, --purpose and --notice, with = and with a space, and none falls into the positionals", () => {
+    const parsed = flagsOf([
+      "memory", "backfill", "claude-code", "--from", "2026-09-01T00:00:00Z", "--until=2026-09-02T00:00:00Z",
+      "--purpose", "capture", "--project", "demo", "--limit", "20",
+    ]);
+    expect(parsed.from).toBe("2026-09-01T00:00:00Z");
+    expect(parsed.until).toBe("2026-09-02T00:00:00Z");
+    expect(parsed.purpose).toBe("capture");
+    expect(parsed.project).toBe("demo");
+    expect(parsed.limit).toBe(20);
+    expect(parsed.positionals).toEqual(["memory", "backfill", "claude-code"]);
+
+    const allowed = flagsOf(["memory", "allow", "claude-code", "capture", "--all", "--notice=2"]);
+    expect(allowed.notice).toBe(2);
+    expect(allowed.all).toBe(true);
+    expect(allowed.positionals).toEqual(["memory", "allow", "claude-code", "capture"]);
+    expect(flagsOf(["memory", "allow", "codex", "extract", "--project", "demo", "--notice", "1"]).notice).toBe(1);
+  });
+
+  /*
+    Delivery D: the third word of `memory allow|revoke` is `twin`, and it is a positional the
+    command validates, not a flag — the parser's part is the same scope rule as for the other
+    two: exactly one of `--project` and `--all`, never neither.
+   */
+  it("memory allow|revoke <source> twin parses under the same scope rule as capture and extract", () => {
+    const project = flagsOf(["memory", "allow", "claude-code", "twin", "--project", "demo"]);
+    expect(project.positionals).toEqual(["memory", "allow", "claude-code", "twin"]);
+    expect(project.project).toBe("demo");
+    expect(project.all).toBe(false);
+    const global = flagsOf(["memory", "revoke", "codex", "twin", "--all"]);
+    expect(global.positionals).toEqual(["memory", "revoke", "codex", "twin"]);
+    expect(global.all).toBe(true);
+    expect(errorOf(["memory", "allow", "claude-code", "twin"])).toContain("memory allow");
+    expect(errorOf(["memory", "revoke", "claude-code", "twin", "--project", "demo", "--all"])).toContain("--all");
+  });
+
+  it("rejects a purpose that does not exist and names the three, because one of them spends", () => {
+    const error = errorOf(["memory", "backfill", "claude-code", "--purpose", "extrct", "--all"]);
+    expect(error).toContain("extrct");
+    expect(error).toContain("capture");
+    expect(error).toContain("extract");
+    expect(error).toContain("twin");
+  });
+
+  it("accepts the three purposes", () => {
+    for (const purpose of ["capture", "extract", "twin"]) {
+      expect(flagsOf(["memory", "backfill", "claude-code", "--purpose", purpose, "--all"]).purpose).toBe(purpose);
+    }
+  });
+
+  it("rejects a notice version nobody was shown: only 1 and 2 exist", () => {
+    expect(errorOf(["memory", "allow", "claude-code", "capture", "--all", "--notice", "3"])).toContain("--notice");
+    expect(errorOf(["memory", "allow", "claude-code", "capture", "--all", "--notice", "two"])).toContain("--notice");
+    expect(errorOf(["memory", "allow", "claude-code", "capture", "--all", "--notice", "0"])).toContain("--notice");
+    expect(errorOf(["memory", "allow", "claude-code", "capture", "--all", "--notice", "--json"])).toContain("--notice needs a value");
+  });
+
+  it("refuses --project together with --all, for every verb: one project and every project contradict", () => {
+    const error = errorOf(["memory", "allow", "claude-code", "capture", "--project", "demo", "--all"]);
+    expect(error).toContain("--project");
+    expect(error).toContain("--all");
+    expect(errorOf(["memory", "backfill", "claude-code", "--purpose", "capture", "--all", "--project=demo"])).toContain("--all");
+  });
+
+  it("refuses memory allow, revoke and backfill with neither --project nor --all: a scope is never assumed", () => {
+    for (const argv of [
+      ["memory", "allow", "claude-code", "capture"],
+      ["memory", "revoke", "claude-code", "extract"],
+      ["memory", "backfill", "claude-code", "--from", "2026-09-01T00:00:00Z", "--until", "2026-09-02T00:00:00Z", "--purpose", "capture"],
+    ]) {
+      const error = errorOf(argv);
+      expect(error).toContain("--project <slug>");
+      expect(error).toContain("--all");
+      expect(error).toContain(`memory ${argv[1]}`);
+    }
+  });
+
+  it("the other verbs still take --project alone or --all alone, and memory status needs neither", () => {
+    expect(flagsOf(["twin", "mine", "--project", "/x"]).project).toBe("/x");
+    expect(flagsOf(["twin", "distill", "--all"]).all).toBe(true);
+    expect(flagsOf(["memory", "status", "demo"]).all).toBe(false);
+    expect(flagsOf(["memory", "jobs"]).project).toBeUndefined();
+    expect(flagsOf(["memory", "revoke", "claude-code", "capture", "--all"]).all).toBe(true);
+  });
+
+  it("refuses --dry-run next to --yes on a backfill, like on a purge", () => {
+    const error = errorOf([
+      "memory", "backfill", "claude-code", "--from", "2026-09-01T00:00:00Z", "--until", "2026-09-02T00:00:00Z",
+      "--purpose", "capture", "--all", "--dry-run", "--yes",
+    ]);
+    expect(error).toContain("--dry-run");
+    expect(error).toContain("--yes");
+  });
+
+  it("a misspelled new flag gets the right one suggested", () => {
+    expect(errorOf(["memory", "backfill", "x", "--purpos", "capture", "--all"])).toContain("--purpose");
+    expect(errorOf(["memory", "backfill", "x", "--fro", "2026-09-01T00:00:00Z", "--all"])).toContain("--from");
+    expect(errorOf(["memory", "allow", "x", "capture", "--all", "--notic", "2"])).toContain("--notice");
+  });
+});
+
 describe("un solo parser, no dos", () => {
   /*
     The underlying cause was not forgetting two entries on a list: it was that the command had its

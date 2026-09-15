@@ -1,21 +1,32 @@
 import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, relative, resolve } from "node:path";
-import { analyzeProject, classifyOrigin, deduceIdentity, isProjectRoot } from "@panoma/core";
 import {
+  analyzeProject, classifyOrigin, deduceIdentity, isProjectRoot, parseMemoryRequest,
+  type MemoryContractV2, type MemoryReadRequestV2, type MemoryRequestV2,
+} from "@panoma/core";
+import {
+  contextById,
   getAgentContext,
   getProject,
   ingestPortfolio,
   listHidden,
   listProjectRuns,
+  queueWrite,
   recordServing,
+  resolveContext,
   resolveProject,
+  touchContext,
   type Database,
 } from "@panoma/db";
 import { revalidatePath } from "next/cache";
 import { requireAgent } from "@/lib/agent-auth";
+import { NO_STORE, memoryRefusal } from "@/lib/agent-channel";
+import { memoryQuarantine } from "@/lib/db";
 import { ownerDecisionsFor } from "@/lib/decision-brief";
 import { ablationArm, ablationEnabled } from "@/lib/memory-ablation";
+import { MemoryRequestError, prepareMemory, readMemoryItem, recordAttemptFor } from "@/lib/memory-delivery";
+import { composeRequestKey, eligibleNoteFilter } from "@/lib/memory-eligibility";
 import { memoryFiles, projectMemoryForFiles } from "@/lib/project-memory-files";
 import { refreshProjectMemory } from "@/lib/sentinels";
 import { projectMemoryForTask, taskText } from "@/lib/task-memory";
@@ -37,6 +48,46 @@ import { projectMemoryForTask, taskText } from "@/lib/task-memory";
  * registered right here instead of sending the human to execute `panoma scan`. The agent is
  * already inside the folder: asking the person to open a terminal so that their agent can continue
  * is exactly the bounce that breaks the gesture.
+ *
+ * ── The memory contract v2, on the same door ─────────────────────────────────────────────
+ *
+ * Since 14-Sep-2026 the body may carry `memory` (plan §23.2.2). Every legacy field is still
+ * answered exactly as before —an older client never notices— and two things are added:
+ *
+ * - `memory: { version: 2, mode, operation?, contextId?, contextGeneration?, continuation?,
+ *   requestId? }` adds `memoryContract` to the briefing: the selection, packing and rendering of
+ *   `lib/memory-delivery.ts` under the `mcp-memory-v2` profile, persisted as an offer. The
+ *   context is the agent's own: a `mctx_` id the catalog handed out earlier is that row (and only
+ *   this agent's, for this project); any other `contextId` is the client's own key for its window
+ *   and resolves a row under it; no `contextId` is an unbound offer —delivered, never deduplicated
+ *   and never attributed (T15). The catalog's generation is the authority: a `contextGeneration`
+ *   the client sends back is parsed and the snapshot restates the real one.
+ * - `memory: { version: 2, read: { kind, id, revision, continuation? } }` reads one unit whole,
+ *   in parts when it exceeds the profile. It excludes `files` and `task`, enrols nothing,
+ *   patrols nothing and writes nothing: `{ projectId, memoryContract }` and no more.
+ *
+ * Every shape consults the quarantine first, once the project is known and before the patrol:
+ * a catalog whose deletion journal disagrees with its rows delivers nothing (503 `unavailable`)
+ * until a person reconciles (T56). The legacy fields are under the deletion contract as well
+ * —"on a new server, the legacy GET also applies eligibility, withdrawal and purge in force"
+ * (plan §23.2.7)— so the awake notes, the recency brief, the path notes and the task road are
+ * run through `lib/memory-eligibility.ts` before the answer is composed (A18/T54); the usage
+ * stays the catalog's count, because the budget is what the owner keeps, not what travels.
+ *
+ * The scale keeps weighing the awake notes. Under v2 the offer is the ledger's row —its arm, its
+ * note ids and the experiment travel with it, so one visit is one row— and the legacy
+ * `recordServing` is skipped. A withheld visit is the one case that keeps the legacy shape: the
+ * contract carries the notes as required units, the delivery module has no half-contract to
+ * offer, and withholding means the agent gets none of them; so the visit answers without a
+ * contract, with the notes withheld as before, and its legacy row records the arm.
+ *
+ * Two more things the offer needs from this door. Its request key is composed here, never taken
+ * raw from the client: `composeRequestKey` puts the audience, this agent, the context and its
+ * generation and the channel in front of the `requestId`, so two agents that both send "1" are
+ * two callers and not one retry (A10/T10, plan §25.4). And once the answer is built the offer
+ * gets its attempt —`sent`, or `failed` when building the body threw— written inside a catch,
+ * because a ledger that could not take the event is a gap in the ledger and never a 500 on a
+ * delivery that already happened (T11).
  */
 export async function POST(request: Request) {
   const auth = await requireAgent(request);
@@ -56,6 +107,18 @@ export async function POST(request: Request) {
     return Response.json({ error: (error as Error).message }, { status: 400 });
   }
 
+  // The v2 request, parsed before any catalog work: an unknown key is refused by name.
+  let memory: MemoryRequestV2 | MemoryReadRequestV2 | undefined;
+  if (hint.memory !== undefined) {
+    const parsed = parseMemoryRequest(hint.memory);
+    if ("code" in parsed) return memoryRefusal(parsed.code, parsed.error, 400);
+    if ("read" in parsed && (hint.files !== undefined || hint.task !== undefined)) {
+      return memoryRefusal("invalid_input", "memory.read cannot accompany files or task.", 400);
+    }
+    memory = parsed;
+  }
+  if (memory !== undefined && "read" in memory) return readOne(auth.database, hint, memory);
+
   const known = await resolveProject(auth.database, hint);
   const high = known ? undefined : await enrollNow(auth.database, hint);
   if (high && "error" in high) return high.error;
@@ -70,6 +133,10 @@ export async function POST(request: Request) {
       { status: 404 },
     );
   }
+
+  // The one door of the quarantine: nothing below reads, patrols or writes a row while it is up.
+  const guard = await memoryQuarantine();
+  if (guard.quarantined) return quarantined(guard.reason);
 
   /*
     The patrol runs before any memory read, and its result travels with the delivery: when it
@@ -87,7 +154,7 @@ export async function POST(request: Request) {
     three rows. Against a local catalog of a single user, paying for the record query is cheaper
     than that dependency.
    */
-  const [context, detail, runs, decisions, pathNotes] = await Promise.all([
+  const [read, detail, runs, brief, paths, eligible] = await Promise.all([
     getAgentContext(auth.database, project.id),
     getProject(auth.database, project.slug),
     listProjectRuns(auth.database, project.id),
@@ -98,23 +165,34 @@ export async function POST(request: Request) {
      */
     ownerDecisionsFor(auth.database, project.identity ?? null),
     projectMemoryForFiles(auth.database, project.id, files),
+    eligibleNoteFilter(auth.database),
   ]);
 
-  if (!context) {
+  if (!read) {
     return Response.json({ error: "The project is no longer in the catalog" }, { status: 404 });
   }
+
+  // The barrier over every legacy list: a withdrawn or purged row leaves before anything counts it.
+  const context = { ...read, notes: await eligible.notes(read.notes) };
+  const decisions = await eligible.decisions(brief);
+  const pathNotes = await eligible.notes(paths);
 
   /*
     The task read waits for the brief: it excludes the decisions the brief already carries, and
     those are only known once the brief is fitted. One more round trip, only when a task came, is
     cheaper than serving the same decision twice with two different reasons.
    */
-  const taskMemory = task === undefined ? undefined : await projectMemoryForTask(
+  const taskRead = task === undefined ? undefined : await projectMemoryForTask(
     auth.database,
     { id: project.id, identity: project.identity ?? null },
     task,
     { decisionIds: decisions.map((one) => one.id) },
   );
+  const taskMemory = taskRead === undefined ? undefined : {
+    ...taskRead,
+    notes: await eligible.notes(taskRead.notes),
+    decisions: await eligible.decisions(taskRead.decisions),
+  };
 
   /*
     The scale weighs the delivery before sending it. Only when there is memory to deliver: a visit
@@ -124,7 +202,8 @@ export async function POST(request: Request) {
     retained arm the proposal counter is also erased: half a memory signal is not a twin, it's a
     track.
    */
-  let memory = {};
+  let withheld = {};
+  let ledger: { noteIds: string[]; noteChars: number; arm: "served" | "withheld"; experimentId: string | null } | undefined;
   if (context.notes.length > 0) {
     const experimentEnabled = ablationEnabled();
     const arm = ablationArm({
@@ -133,44 +212,99 @@ export async function POST(request: Request) {
       at: new Date(),
       enabled: experimentEnabled,
     });
-    await recordServing(auth.database, {
-      projectId: project.id,
-      agentId: auth.agent.id,
-      arm,
+    ledger = {
       noteIds: context.notes.map((note) => note.id),
       noteChars: context.noteUsage.used,
+      arm,
       experimentId: experimentEnabled ? "memory-v1" : null,
-    });
+    };
     if (arm === "withheld") {
-      memory = { notes: [], noteUsage: { used: 0, budget: context.noteUsage.budget, pending: 0 } };
+      withheld = { notes: [], noteUsage: { used: 0, budget: context.noteUsage.budget, pending: 0 } };
     }
   }
 
-  return Response.json({
-    projectId: project.id,
-    ...context,
-    ...memory,
-    decisions,
-    // Path-specific rules are always delivered, like the edit hook; ablation applies to the brief.
-    ...(hint.files !== undefined ? { pathNotes, memoryFiles: files } : {}),
-    // So are task matches: the agent asked for them by name, and they carry their reason.
-    ...(taskMemory ? { taskNotes: taskMemory.notes, taskDecisions: taskMemory.decisions, taskOmitted: taskMemory.omitted } : {}),
-    sentinels: {
-      checked: patrol.checked,
-      unverified: patrol.unverified ?? 0,
-      ...(patrol.skipped ? { skipped: patrol.skipped } : {}),
-    },
-    delta: buildDelta({
-      recentCommits: project.recentCommits,
-      scannedAt: project.lastScannedAt,
-      versioned: project.gitVersioned,
-      agents: detail?.agents ?? [],
-      recentWork: context.recentWork,
-      agentName: auth.agent.name,
-    }),
-    pending: pendingDecisions(runs),
-    enrolled: high ? { root: high.project.root, at: high.scannedAt } : undefined,
-  });
+  /*
+    The offer, when the client asked for the contract and the visit is served. It is the ledger's
+    row for this visit, so the legacy row is written only when there is no offer: a withheld
+    visit, or a legacy client.
+   */
+  let contract: { memoryContract: MemoryContractV2 } | Record<string, never> = {};
+  let servingId: string | undefined;
+  if (memory !== undefined && ledger?.arm !== "withheld") {
+    const bound = await contextFor(auth.database, project.id, auth.agent.id, memory);
+    if (bound instanceof Response) return bound;
+    try {
+      const prepared = await prepareMemory({
+        database: auth.database,
+        project: { id: project.id, slug: project.slug, name: project.name, identity: project.identity ?? null, root: project.root },
+        audience: "agent",
+        channel: "mcp",
+        profile: "mcp-memory-v2",
+        agentId: auth.agent.id,
+        context: bound,
+        request: memory,
+        ...(task !== undefined ? { task } : {}),
+        ...(hint.files !== undefined ? { paths: files } : {}),
+        requestKey: composeRequestKey({
+          audience: "agent",
+          callerId: auth.agent.id,
+          contextId: bound?.id ?? null,
+          contextGeneration: bound?.generation ?? null,
+          channel: "mcp",
+          requestId: memory.requestId ?? null,
+        }),
+        patrol,
+        // The scale's row: read by `recordOffer` once `PrepareInput` carries these four names.
+        ...(ledger ?? {}),
+      });
+      if ("unavailable" in prepared) {
+        return memoryRefusal("unavailable", `The memory could not be delivered: ${prepared.reason}.`, 503, "Ask again in a moment.");
+      }
+      contract = { memoryContract: prepared.contract };
+      servingId = prepared.servingId;
+    } catch (error) {
+      if (error instanceof MemoryRequestError) return memoryRefusal(error.code, error.message, 409, STALE_HINTS[error.code]);
+      throw error;
+    }
+  } else if (ledger !== undefined) {
+    await recordServing(auth.database, { projectId: project.id, agentId: auth.agent.id, ...ledger });
+  }
+
+  let body: Record<string, unknown>;
+  try {
+    body = {
+      projectId: project.id,
+      ...context,
+      ...withheld,
+      decisions,
+      // Path-specific rules are always delivered, like the edit hook; ablation applies to the brief.
+      ...(hint.files !== undefined ? { pathNotes, memoryFiles: files } : {}),
+      // So are task matches: the agent asked for them by name, and they carry their reason.
+      ...(taskMemory ? { taskNotes: taskMemory.notes, taskDecisions: taskMemory.decisions, taskOmitted: taskMemory.omitted } : {}),
+      sentinels: {
+        checked: patrol.checked,
+        unverified: patrol.unverified ?? 0,
+        ...(patrol.skipped ? { skipped: patrol.skipped } : {}),
+      },
+      delta: buildDelta({
+        recentCommits: project.recentCommits,
+        scannedAt: project.lastScannedAt,
+        versioned: project.gitVersioned,
+        agents: detail?.agents ?? [],
+        recentWork: context.recentWork,
+        agentName: auth.agent.name,
+      }),
+      pending: pendingDecisions(runs),
+      enrolled: high ? { root: high.project.root, at: high.scannedAt } : undefined,
+      ...contract,
+    };
+  } catch (error) {
+    if (servingId !== undefined) await transportResult(auth.database, servingId, "failed", error);
+    throw error;
+  }
+  // The attempt, once the bytes are composed: what reached the program is the reader's question.
+  if (servingId !== undefined) await transportResult(auth.database, servingId, "sent");
+  return Response.json(body, memory !== undefined ? { headers: NO_STORE } : undefined);
 }
 
 interface Hint {
@@ -182,6 +316,105 @@ interface Hint {
   root?: string;
   remote?: string;
   slug?: string;
+  /** The memory contract v2 request, parsed by `parseMemoryRequest`; absent for a legacy client. */
+  memory?: unknown;
+}
+
+// ── The memory contract v2 ────────────────────────────────────────────────────────────────
+
+/** What a client does next after each staleness, in one sentence the MCP passes on. */
+const STALE_HINTS: Record<MemoryRequestError["code"], string> = {
+  stale_cursor: "Start the query again without a continuation.",
+  stale_revision: "Send the request again under a new requestId.",
+};
+
+function quarantined(reason: string): Response {
+  return memoryRefusal(
+    "unavailable",
+    `The memory is quarantined (${reason}): the deletion journal and the catalog disagree.`,
+    503,
+    "Reconcile the journal with panoma memory status before asking again.",
+  );
+}
+
+/** The attempt event of this delivery, written so that a miss of the ledger never fails the answer. */
+async function transportResult(database: Database, servingId: string, result: "sent" | "failed", error?: unknown): Promise<void> {
+  try {
+    await recordAttemptFor(database, servingId, result, result === "failed" ? { error: errorCode(error) } : {});
+  } catch {
+    // The offer stands and the answer went out; the attempt is the one event the ledger lacks.
+  }
+}
+
+/** A class of error, never its text: the text may quote a note. */
+function errorCode(error: unknown): string {
+  return error instanceof Error ? error.constructor.name : "unknown";
+}
+
+/**
+ * The context an offer is prepared for. A `mctx_` id is one of the catalog's own rows and must
+ * be this agent's for this project — a foreign one is `not_found`, which says nothing about
+ * whether it exists. Any other `contextId` is the client's key for its window, under which a row
+ * is found or created; without one the offer is unbound (T15). Never a lifecycle event: an MCP
+ * client cannot see its own compaction, and a generation that never rises is the honest counter.
+ */
+async function contextFor(
+  database: Database,
+  projectId: string,
+  agentId: string,
+  memory: MemoryRequestV2,
+): Promise<{ id: string; generation: number } | null | Response> {
+  if (memory.contextId === undefined) return null;
+  if (memory.contextId.startsWith("mctx_")) {
+    const row = await contextById(database, memory.contextId);
+    if (!row || row.projectId !== projectId || row.agentId !== agentId) {
+      return memoryRefusal("not_found", "memory.contextId names no context of this agent in this project.", 404, "Ask without contextId to open a new one.");
+    }
+    await queueWrite(() => database.transaction((tx) => touchContext(tx, row.id)));
+    return { id: row.id, generation: row.generation };
+  }
+  const { context } = await queueWrite(() => database.transaction((tx) => resolveContext(tx, {
+    projectId,
+    harness: "mcp",
+    entrypoint: "mcp",
+    recipientKey: agentId,
+    nativeSessionKey: memory.contextId,
+    agentId,
+  })));
+  return { id: context.id, generation: context.generation };
+}
+
+/**
+ * One unit by kind, id and revision: the project is resolved as always and never enrolled, no
+ * patrol runs, no offer is written. A unit outside this project or withdrawn is `not_found`; a
+ * continuation the cache no longer holds is `stale_cursor`, and starting again is the answer; a
+ * criterion whose file could not be reconciled this time is `unavailable`, and asking again is.
+ */
+async function readOne(database: Database, hint: Hint, memory: MemoryReadRequestV2): Promise<Response> {
+  const project = await resolveProject(database, hint);
+  if (!project) {
+    return memoryRefusal("not_found", "No project in the catalog matches.", 404, "Scan it with: panoma scan <path> --save");
+  }
+  const guard = await memoryQuarantine();
+  if (guard.quarantined) return quarantined(guard.reason);
+
+  const outcome = await readMemoryItem({
+    database,
+    project: { id: project.id, slug: project.slug, name: project.name, identity: project.identity ?? null, root: project.root },
+    audience: "agent",
+    read: memory.read,
+    profile: "mcp-memory-v2",
+  });
+  if ("code" in outcome) {
+    if (outcome.code === "not_found") {
+      return memoryRefusal("not_found", "No such unit is authorized for this project at that revision.", 404);
+    }
+    if (outcome.code === "unavailable") {
+      return memoryRefusal("unavailable", "The criteria could not be reconciled with TASTE.md this time.", 503, "Ask again in a moment.");
+    }
+    return memoryRefusal("stale_cursor", "The continuation no longer holds.", 409, "Start the read again without a continuation.");
+  }
+  return Response.json({ projectId: project.id, memoryContract: outcome }, { headers: NO_STORE });
 }
 
 // ── The day's report ──────────────────────────────────────────────────────────

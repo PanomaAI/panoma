@@ -1,37 +1,120 @@
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { hooksInstalledIn, bridgePending, bridgeProgress, bridgeSteps, type BridgeReport } from "./bridge";
+import { gitScanOrder, managedHooks, postCommitScript, settingsText } from "@panoma/core";
+import { hookStateAt, hooksInstalledIn, bridgePending, bridgeProgress, bridgeSteps, type BridgeReport } from "./bridge";
 
 /**
  * The bridge is tested by its two decisions: that detecting the hooks is truly reading the disk,
  * and that the list has ONLY one 'next' — the entire screen exists so that turning on is not a
  * list of tasks.
+ *
+ * Since 14-Sep-2026 "installed" means more than "the brand is there": it means the command the
+ * hook names exists on this disk, and, where a Claude Code settings file exists, that the four
+ * events carry their current identity. The 556 exit-127 hook runs measured that day all had the
+ * brand; what they lacked was a command a PATH-less shell could find. So the fixtures below name
+ * a real interpreter and a real file, and the one that names a bare `panoma` is the legacy case.
  */
 
+/** A command that exists on every machine the tests run on: node, and this very file. */
+const ARGV = [process.execPath, fileURLToPath(import.meta.url)];
+const API = "http://127.0.0.1:4173";
+
 let withHook: string;
+let legacy: string;
 let without: string;
 
 beforeAll(async () => {
   withHook = await mkdtemp(join(tmpdir(), "panoma-bridge-a-"));
+  legacy = await mkdtemp(join(tmpdir(), "panoma-bridge-l-"));
   without = await mkdtemp(join(tmpdir(), "panoma-bridge-b-"));
   await mkdir(join(withHook, ".git", "hooks"), { recursive: true });
-  await writeFile(join(withHook, ".git", "hooks", "post-commit"), "#!/bin/sh\npanoma scan . --save  # panoma-hooks\n");
+  await writeFile(join(withHook, ".git", "hooks", "post-commit"), postCommitScript(gitScanOrder(ARGV, API)));
+  await mkdir(join(legacy, ".git", "hooks"), { recursive: true });
+  await writeFile(join(legacy, ".git", "hooks", "post-commit"), "#!/bin/sh\npanoma scan . --save  # panoma-hooks\n");
   await mkdir(join(without, ".git", "hooks"), { recursive: true });
   await writeFile(join(without, ".git", "hooks", "post-commit"), "#!/bin/sh\ndeploy-de-otro\n");
 });
 
 afterAll(async () => {
   await rm(withHook, { recursive: true, force: true });
+  await rm(legacy, { recursive: true, force: true });
   await rm(without, { recursive: true, force: true });
 });
 
 describe("detectar los ganchos", () => {
   it("cuenta por la marca, no por existir: el gancho de otro no es el nuestro", async () => {
-    const result = await hooksInstalledIn([withHook, without, "/no/existe"]);
-    /* `without` has git and somebody else's hook: it counts as installable and not installed. */
-    expect(result).toEqual({ checked: 3, installed: 1, installable: 2 });
+    const result = await hooksInstalledIn([withHook, legacy, without, "/no/existe"]);
+    /*
+      `without` has git and somebody else's hook: installable and not installed. `legacy` has our
+      brand over a bare `panoma`, which no hook shell can find: installable, not installed either.
+     */
+    expect(result).toEqual({ checked: 4, installed: 1, installable: 3 });
+  });
+
+  it("reads the three evidences apart: brand, identity per event, and a command that exists", async () => {
+    expect(await hookStateAt(legacy)).toEqual({
+      postCommit: true,
+      events: { Stop: "missing", PreToolUse: "missing", SessionStart: "missing", SessionEnd: "missing" },
+      durable: false,
+      settingsFile: false,
+    });
+    expect(await hookStateAt(without)).toMatchObject({ postCommit: false, durable: null, settingsFile: false });
+    expect(await hookStateAt("/no/existe")).toMatchObject({ postCommit: false, durable: null });
+  });
+
+  it("with a Claude Code settings file, installed means the four events with their identity", async () => {
+    const root = await mkdtemp(join(tmpdir(), "panoma-bridge-s-"));
+    try {
+      await mkdir(join(root, ".git", "hooks"), { recursive: true });
+      await mkdir(join(root, ".claude"), { recursive: true });
+      await writeFile(join(root, ".git", "hooks", "post-commit"), postCommitScript(gitScanOrder(ARGV, API)));
+      const hooks = managedHooks(ARGV, root, API);
+      const settings = join(root, ".claude", "settings.local.json");
+
+      /* Only the two old events, written with the old bare brand: legacy, installable, not installed. */
+      await writeFile(
+        settings,
+        settingsText({
+          hooks: {
+            Stop: [{ hooks: [{ type: "command", command: "panoma scan /r --save  # panoma-hooks" }] }],
+            PreToolUse: [{ matcher: "Edit", hooks: [{ type: "command", command: "panoma signal /r  # panoma-hooks" }] }],
+          },
+        }),
+      );
+      expect(await hookStateAt(root)).toMatchObject({
+        postCommit: true,
+        events: { Stop: "legacy", PreToolUse: "legacy", SessionStart: "missing", SessionEnd: "missing" },
+        durable: false,
+        settingsFile: true,
+      });
+      expect(await hooksInstalledIn([root])).toEqual({ checked: 1, installed: 0, installable: 1 });
+
+      /* Two of the four current ones: not installed yet. */
+      await writeFile(
+        settings,
+        settingsText({ hooks: { Stop: [{ hooks: [{ type: "command", command: hooks[0]!.command }] }], SessionEnd: [{ hooks: [{ type: "command", command: hooks[3]!.command }] }] } }),
+      );
+      expect((await hookStateAt(root)).events).toEqual({ Stop: "installed", PreToolUse: "missing", SessionStart: "missing", SessionEnd: "installed" });
+      expect((await hooksInstalledIn([root])).installed).toBe(0);
+
+      /* The four, as the installer writes them: installed. */
+      await writeFile(
+        settings,
+        settingsText({
+          hooks: Object.fromEntries(hooks.map((hook) => [hook.event, [{ ...(hook.matcher ? { matcher: hook.matcher } : {}), hooks: [{ type: "command", command: hook.command }] }]])),
+        }),
+      );
+      expect(await hookStateAt(root)).toMatchObject({
+        events: { Stop: "installed", PreToolUse: "installed", SessionStart: "installed", SessionEnd: "installed" },
+        durable: true,
+      });
+      expect(await hooksInstalledIn([root])).toEqual({ checked: 1, installed: 1, installable: 1 });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("encuentra los ganchos donde git los tenga: core.hooksPath y worktrees incluidos", async () => {
@@ -45,14 +128,14 @@ describe("detectar los ganchos", () => {
       await mkdir(join(custom, ".git"), { recursive: true });
       await mkdir(join(custom, "mis-ganchos"), { recursive: true });
       await writeFile(join(custom, ".git", "config"), "[core]\n\thooksPath = mis-ganchos\n");
-      await writeFile(join(custom, "mis-ganchos", "post-commit"), "#!/bin/sh\n# panoma-hooks\n");
+      await writeFile(join(custom, "mis-ganchos", "post-commit"), postCommitScript(gitScanOrder(ARGV, API)));
 
       // A worktree: `.git` is a FILE, and the hooks reside in the common repository.
       const main = join(tree, "principal");
       const linked = join(tree, "rama");
       await mkdir(join(main, ".git", "hooks"), { recursive: true });
       await mkdir(join(main, ".git", "worktrees", "rama"), { recursive: true });
-      await writeFile(join(main, ".git", "hooks", "post-commit"), "#!/bin/sh\n# panoma-hooks\n");
+      await writeFile(join(main, ".git", "hooks", "post-commit"), postCommitScript(gitScanOrder(ARGV, API)));
       await mkdir(linked, { recursive: true });
       await writeFile(join(linked, ".git"), `gitdir: ${join(main, ".git", "worktrees", "rama")}\n`);
       await writeFile(join(main, ".git", "worktrees", "rama", "commondir"), "../..\n");

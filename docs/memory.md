@@ -10,7 +10,23 @@ are half the design.
 caps in `packages/db/src/notes.test.ts`, the sentinels and the dispute in
 `apps/web/lib/sentinels.test.ts`, the distiller's brakes in
 `apps/web/lib/memory-distill.test.ts`, and the hook's delivery in
-`apps/cli/src/signal.test.ts`.
+`apps/cli/src/signal.test.ts`. Since 14-Sep-2026 the way the memory reaches an agent — one
+selector, an immutable offer per delivery, a receipt read back from the program's own
+transcript, and the forgetting that had to exist first — has a record of its own,
+[memory-contract.md](memory-contract.md), which names the tests that execute each piece;
+this page keeps the memory itself and points there for the delivery. The same day's delivery B
+— the typed facts a transcript yields without a person's words, the owner's turns sent to a
+model under a permission of their own, the jobs, the reservation of every paid call of the
+`memory` family and the backfill — has its record in [memory-capture.md](memory-capture.md).
+And delivery C, the same day again — a check with a purpose and a revision on every unit, the
+pure evaluator and its `unknown`, the observations and incidents with the environment they
+were made in, the patrol in the worker's free passes, the commitments, the typed predicates in
+three values, the succession and expiry of notes, and the decision case — has its record in
+[memory-checks.md](memory-checks.md). And delivery D, the fourth of the day — the Twin
+learning from the owner's new turns on its own under a third permission, a criterion with
+typed conditions and exceptions the selector judges like a decision's, the support of an
+inference counted by the origin of the case, and the portrait's file written through a
+durable outbox — has its record in [twin-learning.md](twin-learning.md).
 
 The map, to keep in front of you while you read the rest:
 
@@ -24,6 +40,10 @@ The map, to keep in front of you while you read the rest:
 | The note that sleeps | Facts with a *where*, served for requested files or supported edits | The person approves; the context tool or hook delivers |
 | The double in shadow | The Twin drafts answers only the person sees and scores | The person, label by label |
 | The scale | Records delivery and reports an optional experiment — [memory-scale.md](memory-scale.md) | The owner enables the experiment; the report exposes its limits |
+| The contract | One selection over the whole eligible archive, one offer per delivery with its hashes, and a receipt read back from the transcript — [memory-contract.md](memory-contract.md) | The owner grants the capture per source; without the grant nothing is opened and no reception is sealed |
+| The capture and the extraction | The typed facts of what the tools did, read from both harnesses' transcripts as coordinates and never as text; and the owner's own turns, redacted, sent in frozen windows to a model that proposes notes and decision episodes for the gate — [memory-capture.md](memory-capture.md) | The owner, twice: the version-2 notice of the capture opens the facts, and the extraction is a grant of its own with its own boundary; every proposal still waits for the person's yes |
+| The checks, the commitments and the case | A check with a purpose on every unit, looked at by a patrol that answers `pass`, `fail` or `unknown` with the state of the disk it saw and never runs anything; the incidents it opens; the obligations a person writes and only a person or their approved criteria close; the typed conditions the selector judges in three values; and the case of a task, read as four columns — [memory-checks.md](memory-checks.md) | The person: they define the checks, judge an incident `confirmed` or `false_positive`, and close an obligation; the disk supplies evidence and never a verdict on the rule |
+| The Twin that learns on its own | Under a third permission per source and scope, the worker distils the owner's new turns into observations, files the ones without a topic and rewrites the topics whose inputs moved, in batches it pays for inside the `read` cap under a subquota; a criterion carries typed conditions and exceptions, and an inference publishes on its own only with 3 families of independent origin; the file goes through an outbox that compares before writing and reads back after — [twin-learning.md](twin-learning.md) | The person, three times apart: the learning permission, the publication switch, and every signature — nothing here signs, and a signature during a synthesis wins over the answer that arrives after it |
 
 ## A day with the memory, step by step
 
@@ -47,6 +67,38 @@ For anyone arriving new, this is the whole system working — no vocabulary requ
 9. **The scale records what was delivered**. Its optional experiment reports comparisons,
    without treating delivery as proof that a rule was used. The limits are explained in
    [memory-scale.md](memory-scale.md).
+10. **When a Claude Code context starts, resumes, is cleared or is compacted**, the
+    `SessionStart` hook asks for the project's memory contract and prints it into the new
+    context; the offer is
+    written down first, and if you allowed the receipt reader to open that source's
+    transcripts, it later finds those exact bytes in the program's own record and writes what
+    arrived, unit by unit. Told in [memory-contract.md](memory-contract.md).
+11. **If you accepted the second notice of the capture**, the same reader also notes what the
+    tools did in each session — which files were read and edited, what family of command ran,
+    whether the tests passed, where a tool failed — as typed facts with coordinates and never a
+    line of text; and **if you allowed the extraction** for a source, the worker freezes windows
+    of your own new messages and those facts, sends them redacted to the model under the
+    `memory` cap, and what comes back enters the same gate as everything else: proposed,
+    waiting for your yes, with the quotes that support it. Told in
+    [memory-capture.md](memory-capture.md).
+12. **If a rule says what the disk should look like** — a script that must exist, a literal
+    that must not come back, a dependency that must be declared — you write that down as a
+    check with a purpose, and the worker's patrol looks at it in its free passes, outside every
+    delivery, and writes what it saw: `pass`, `fail` or `unknown` with the reason, in the exact
+    state of the disk it looked at. A broken foundation challenges the note as before; a
+    violation opens an incident and leaves the rule alone; what cannot be read is `unknown` and
+    challenges nothing. An obligation you write as a commitment is closed by you or by the
+    criteria you approved, never by an agent saying it is done; and a task's case shows what
+    was asked, decided, declared and checked, with `unknown` where nothing was recorded. Told
+    in [memory-checks.md](memory-checks.md).
+13. **If you let the Twin learn from a source** — the third switch, on top of the capture —
+    the worker waits for your conversation to be quiet for half an hour, freezes your new
+    turns into a batch, and pays for one stage at a time inside the read cap: observations
+    with the exact quote and where it came from, a topic for the ones that had none, and a
+    synthesis of each topic whose inputs moved. What it infers waits in the Twin as a
+    proposal until you have said, once, that inferences may reach `TASTE.md`; a criterion
+    you teach or sign may carry the conditions under which it applies, and every agent reads
+    them inside the rule. Told in [twin-learning.md](twin-learning.md).
 
 In one sentence: the diary grows on its own, the memory is curated with you, the signals
 fire where they belong, and the whole system watches and measures itself.
@@ -187,7 +239,12 @@ Its brakes, in order — the free ones before the expensive one:
    Spend screen (`/spend`), then the factory 12— and `0` turns it off entirely.
 4. The spend is recorded **before** the answer is understood — the critic's rule: a brake
    that only counts the legible calls stops counting on the day the model starts answering
-   anything at all.
+   anything at all. Since delivery B it is recorded before the call leaves as well: the row is
+   reserved under a lock keyed by the family and the local day, marked sent, and completed
+   with the usage — or left `uncertain`, still counted, when the network answered nothing
+   readable — so two processes over one catalog cannot both spend the day's last call
+   ([memory-capture.md](memory-capture.md)). The distiller keeps the whole family cap; the
+   automatic subquota is the extractor's.
 
 The existing memory that travels with the journal is ordered by what it would cost to lose:
 approved and challenged first (the owner decided, or is deciding), then proposed, then
@@ -199,8 +256,9 @@ its oldest approved notes while last week's discarded ones travelled whole.
 No model is awaited by the HTTP turn. Database startup, a session close and a one-minute
 background heartbeat wake one serialized worker per database, with at most eight jobs per
 wake. A claim leases the session for five minutes; an expired claim can be recovered after
-a crash. A lease token prevents the old worker from saving proposals after another worker
-has taken over. The job follows the session's project when a cataloged folder moves.
+a crash. The lease token and its deadline prevent the old worker from paying or publishing,
+even before another worker has taken over. The job follows the session's project when a
+cataloged folder moves, transferring its reserved and staged bytes to that project's counter.
 
 Failures are told apart by what was paid for. A provider failure before any answer
 (`extraction_failed`) retries up to three attempts, with delays of one and two minutes. An
@@ -211,11 +269,28 @@ unreadable is **final** —the job fails with every attempt consumed (`finishMem
 `retriesLeft: 0`) and is never claimed again, because a third identical call would buy the
 same answer. A paid call whose publication failed (`DistillPublishError`, reason
 `publish_failed`, receipt `did: "unpublished"` with `candidates` as a count only) gets exactly
-one more claim (`retriesLeft: 1`), never a third payment. Exhausting the daily budget defers
+one more claim (`retriesLeft: 1`), which reuses its validated staged answer without another
+payment. Exhausting the daily budget defers
 work to the next local calendar day; a full proposal queue defers it for five minutes. Those
 deferrals do not consume attempts. Receipts record status, bounded error codes, coverage
 counts and `calls` —the paid calls for that session—, without copying source text or model
 output; the screen text `notes.jobsHint` states this contract.
+
+Before an automatic call, the legacy job reserves 256 KiB under its current lease in the
+same storage account used by the batch processors. Its validated, redacted candidates are
+staged with the session hash, project and deletion generation. A full review queue or storage
+quota rolls publication back and keeps that answer for a later claim. Publication and job
+completion share one transaction: unused capacity and staged bytes are credited once, then
+the final counters must fit the current limits. A changed session, scope or deletion generation
+invalidates the saved output. Dependencies on notes that entered the prompt let their purge
+reach the in-flight job and its later proposals too.
+
+The legacy unit is a closed session, not a rolling window. `/api/agent/log` opens another
+session for activity after closure and schedules another job when that session closes.
+Rewriting a closed session through an internal database API invalidates its staged answer
+and leaves a visible `obsolete / inputs_changed` result; it does not automatically create a
+replacement legacy job. The batch extractor's `requested_rev` and next-window mechanism do
+not apply to this older unit.
 
 The worker considers the latest 100 session activities in chronological order and fits the
 newest whole records into a 36,000-character source envelope. Both figures were half of that
@@ -259,6 +334,19 @@ conditions during reanalysis; memory delivery also checks them before reading no
 the root is on the serving machine's disk. That second check covers nested file changes that
 the catalog's narrow watcher does not see.
 
+Those three kinds are the **first generation**, and since delivery C they share the column
+with a second one: a check with `schemaVersion: 1`, a `chk_` id, a revision and a mandatory
+purpose — `grounds`, `applicability`, `violation` or `completion` — in one of seven kinds
+that add a script of a manifest, a direct dependency and a key of a JSON, TOML or YAML file to
+the three above, on notes, criteria, decisions and commitments alike. An anchor of the first
+generation keeps its interpretation and its evaluator here; a check of the second is the
+patrol's, in the worker's free passes, and what it writes is an observation with the state of
+the disk it saw, not only a challenge. The whole of it — the purposes and their four effects,
+why an unreadable file is `unknown` and never `fail`, the environment that keeps two dirty
+worktrees apart, the incidents and the commitments — is in
+[memory-checks.md](memory-checks.md); what follows here is the first generation as it still
+works.
+
 - **Nobody writes conditions by hand.** When a note is approved, customs (`extractAnchors`)
   extracts its anchors from the body itself: whatever looks like a path — two segments or
   more separated by `/`, without catching a bare `package.json` or URLs — and **exists at
@@ -268,7 +356,9 @@ the catalog's narrow watcher does not see.
   watching somebody else's disk.
 - **The patrol makes no model calls.** `patrolSentinels` runs during the watcher's reanalysis
   and before agent memory reads. The latter reads only the note conditions, not the entire
-  project. Sentinels that read contents pay two more customs checks: the `realpath` on top
+  project — and only the first generation's: an entry with a version and a `chk_` id is left
+  to the worker's patrol, which the read asks for (`requestPatrol`) and never waits for.
+  Sentinels that read contents pay two more customs checks: the `realpath` on top
   of the lexical comparison — a committed symlink pointing outside turned the prefix into
   paper — and the size **before** opening, capped at 1,000,000 bytes and with its own verdict
   (`unreadable: too large`, which is not the same thing as `missing`).
@@ -337,7 +427,11 @@ the memory can be large if nearly all of it is asleep.
   same one on every edit under its zone: the agent's context is not a corkboard for stapling
   duplicates to. Another session is another context and sees it again. The record is written
   **after** printing: if it fails, the signal has already travelled — the order picks the
-  cheap failure, repeating it, over the expensive one, losing it.
+  cheap failure, repeating it, over the expensive one, losing it. That file governs the legacy
+  road only. On the contract's road — the brief at the start of every context, and the signal
+  under `PANOMA_SIGNAL_V2=1` — what a recipient has seen lives in the catalog, per context and
+  generation (`memory_contexts`), so a compaction or a resume that discards a context makes
+  the rule eligible again instead of being suppressed by a file that outlived the context.
 - **The trigger is watched too.** When a sleeping note is approved, the base of its path — if
   it exists that day — is anchored as a sentinel **apart from** the three taken from the
   body: it's its guaranteed grounding, because if the zone disappeared from disk the note
@@ -427,9 +521,12 @@ panoma hooks --install
 The first registers the agent and writes the MCP configuration that agent reads — with it
 come the fifteen tools, the briefing with the memory inside, and the proposal channel. The
 second installs the hooks: the one that records the activity without the model having to
-remember to, and the `PreToolUse` one that delivers sleeping notes for supported editing
-tools. Other clients retrieve them by supplying `files` to `panoma_context`. After
-installing, restart the agent's session: a session already open picks up nothing.
+remember to, the `PreToolUse` one that delivers sleeping notes for supported editing
+tools, and — since 14-Sep-2026 — the `SessionStart` one that delivers the memory contract when
+a Claude Code context is new, and the `SessionEnd` one that tells the catalog where that
+session's transcript is, so the receipt reader can look there if and only if you allowed it on
+`/twin`. Other clients retrieve the sleeping notes by supplying `files` to `panoma_context`.
+After installing, restart the agent's session: a session already open picks up nothing.
 
 The hooks also have a **button**: on the bridge it puts them on every project in the catalog
 in one click, and each project page shows whether its own are in place — with its own button
@@ -437,7 +534,11 @@ if they're missing. It's the deliberate exception to "the web shows commands, it
 them", with its borders written in `lib/hooks-install.ts`: it runs nothing arbitrary — it
 writes the same two files the command does, with the same shared logic from `@panoma/core` —
 it demands `sameOrigin`, works only with the local catalog, and in the face of somebody
-else's hook it gives up without touching it.
+else's hook it gives up without touching it. The four Claude Code events and the
+`post-commit` are written as the absolute interpreter and entry, proven to run without a PATH
+before a byte is written: until 14-Sep-2026 both installers wrote the bare name `panoma`, and
+under the desktop app that was 556 hook runs ending in `command not found`, every one silent
+by contract. The record is [hooks.md](hooks.md).
 
 This page's controls, all of them with a sensible factory value — and both movable without a
 restart from the Spend screen (`/spend`), which is also where the day's spend is shown
@@ -463,7 +564,7 @@ The scale's control (`PANOMA_MEMORY_ABLATION`) lives in
 | The archive's search pages and complete originals | `searchJournalPage`, `readJournalEntry` + GIN index (migration 0042), `POST /api/agent/journal`, `panoma_recall` |
 | The distiller and its brakes | `apps/web/lib/memory-distill.ts`, invoked by `apps/web/lib/memory-worker.ts` |
 | The two caps, their precedence and the screen that moves them | `apps/web/lib/spend-settings.ts`, `~/.panoma/spend.json`, `/spend` and `GET/POST /api/spend` — [budgets.md](budgets.md) |
-| Persistent extraction jobs, leases, retries and receipts | `packages/db/src/memory-jobs.ts`, `memory_jobs`; enqueued atomically on session close in `/api/agent/log` |
+| Persistent extraction jobs, leases, retries and receipts | `packages/db/src/memory-jobs.ts`, `memory_jobs`; the legacy job enqueued atomically on session close in `/api/agent/log`; since delivery B the same table holds the batch jobs of the paid extraction, keyed by `(processor, work_key)`, with the `(lease_token, rev)` compare-and-set, the staged answer and the operator's retry and cancel ([memory-capture.md](memory-capture.md)) |
 | Budget, gate and races, tested | `packages/db/src/notes.test.ts` |
 | The search and the reread session, tested | `packages/db/src/journal.test.ts` |
 | The distiller's brakes, tested with a stunt-double model | `apps/web/lib/memory-distill.test.ts` |
@@ -476,8 +577,48 @@ The scale's control (`PANOMA_MEMORY_ABLATION`) lives in
 | Key redaction and its shapes | `packages/core/src/redact.ts`, tested in `packages/core/src/redact.test.ts` |
 | The move that doesn't kill the memory | `rehomeMemory` in `packages/db/src/ingest.ts`, tested in `packages/db/src/ingest.test.ts` |
 | The portable export: one versioned JSON document per project, never the lease token | `exportProjectMemory` in `packages/db/src/memory-export.ts`, `GET /api/memory/export` (operator only), `panoma memory export <project>`; tested in `packages/db/src/memory-export.test.ts`, `apps/web/app/api/memory/export/route.test.ts`, `apps/cli/src/memory-command.test.ts` |
-| The hook's record of what it has seen | `signal-seen.json` under `~/.panoma`, written by `apps/cli/src/signal.ts` |
+| The hook's record of what it has seen, on the legacy road | `signal-seen.json` under `~/.panoma`, written by `apps/cli/src/signal.ts` |
 | The scale, whole | [memory-scale.md](memory-scale.md) |
+| The contract's vocabulary, canonical JSON, the three hashes, the renderer and the reception check | `packages/core/src/memory-contract.ts`, tested in `memory-contract.test.ts` |
+| The one selector: `TASTE.md` reconciled first, eligibility, the core seeded from the published manifest, exact and lexical routes, pages and continuation | `apps/web/lib/select-memory.ts`, tested in `select-memory.test.ts`; the reconciliation it shares with the taste route, `reconcileWithFile` in `apps/web/lib/publishable.ts` |
+| The barrier as the legacy roads see it, and the request key both doors compose | `apps/web/lib/memory-eligibility.ts`, tested in `memory-eligibility.test.ts` |
+| The delivery: pack, judge the status on what travels, hash, render, confirm under one transaction with the permission read again, the read by id in fenced parts | `apps/web/lib/memory-delivery.ts`, tested in `memory-delivery.test.ts` |
+| The host matrix, the verified floor and the profile per channel | `apps/web/lib/memory-hosts.ts`, tested in `memory-hosts.test.ts` |
+| The photographs of every delivered object, the baseline at startup, and the delivery mode seeded from the published manifest right after it | `memory_revisions` (migration 0064), `packages/db/src/memory-revisions.ts` (`ensureBaselineRevisions`, `ensureDeliveryModes`), bumped by every writer in `notes.ts`, `episodes.ts` and `queries.ts`, where `markPublished` moves the mode and `delivery_policy_rev` and never `memory_rev`; tested in `memory-revisions.test.ts` |
+| Contexts and generations, offers, attempts and receptions | `memory_contexts`, `servings` (schema version 2), `serving_events`; `packages/db/src/memory-contexts.ts`, `memory-offers.ts`, their tests |
+| The transcript streams, their generations, the cursors with their boundaries, and the gaps a cursor crossed (`file_identity.gaps`, the last 50) | `memory_sources`, `memory_source_cursors`; `packages/db/src/memory-sources.ts` (`resolveCursorGap`), tested in `memory-sources.test.ts` |
+| The receipt parser, which returns coordinates and never a prompt | `packages/core/src/history/receipts.ts`, tested in `receipts.test.ts` with the three fixtures beside it |
+| The receipt reader, its grant, its boundaries and its budgets, inside the worker's heartbeat | `apps/web/lib/memory-receipts.ts`, run by `apps/web/lib/memory-worker.ts`; tested in `memory-receipts.test.ts` and `memory-worker.test.ts` |
+| The capture grant, on top of the source permission | `setGrant` · `grantFor` in `packages/core/src/history/consent.ts`, the grant alternative of `POST /api/twin/sources`, the switch under the histories card on `/twin`; tested in `consent.test.ts` and the route's test |
+| Withdraw and purge: the plan, the confirmation, the receipt, the journal and the quarantine | `memory_deletions`, `memory_dependencies`, `~/.panoma/memory-deletions.jsonl`; `packages/db/src/memory-purge.ts`, `memory-dependencies.ts`, `apps/web/lib/memory-purge.ts`; `POST/GET /api/memory/purge` and `/api/memory/withdraw`; `panoma memory purge` · `panoma memory withdraw`; tested in their `.test.ts` and the routes' |
+| The startup guard: baseline photographs and the journal check, before the worker's first claim | `guardMemory` and `memoryQuarantine()` in `apps/web/lib/db.ts` |
+| The two lifecycle hooks and the two doors they call | `panoma brief` · `panoma memory session` in `apps/cli/src/brief.ts`, which write to the descriptor through `printHookOutput`, past the terminal filter; `POST /api/hook/context` · `POST /api/hook/session`; tested in `brief.test.ts` and the routes' tests |
+| The bridge's control room, as a document and on the screens | `apps/web/lib/memory-status.ts`, `GET /api/memory/status`, `panoma memory status`; the per-event hooks fold and the «Deliveries» block on the card, the «Memory delivered» card on `/bridge`, shaped by `apps/web/lib/memory-view.ts` (references and counts only, never a payload) |
+| The whole of it, with the real-host probe | [memory-contract.md](memory-contract.md) |
+| The two facts readers, the command family table, the human turns and the interval locator | `packages/core/src/history/facts.ts` (`claude-code-facts-1`) and `facts-codex.ts` (`codex-facts-1`), tested in `facts.test.ts` and `facts-codex.test.ts` with the two fixtures beside them |
+| The typed facts, their closed validator, their identity and their prune | `session_facts` (migration 0065), `packages/db/src/session-facts.ts`, tested in `session-facts.test.ts` |
+| The capture pass over both harnesses, the two purposes' cursors and the backfill cursors it serves | `apps/web/lib/memory-capture.ts`, run by the worker after the receipt pass; tested in `memory-capture.test.ts` |
+| The backfill: the plan, the confirmation, the cursors under `grant_backfill_…` | `apps/web/lib/memory-backfill.ts`; `POST/GET /api/memory/backfill`; `panoma memory backfill`; tested in `memory-backfill.test.ts` and the route's test |
+| The paid extraction: the windows, the frozen manifest, the prompt, the validator, the publication and the capacity report | `apps/web/lib/memory-extract.ts` (`PROJECT_EXTRACT_PROMPT_V1`), run by the worker after the free passes; tested in `memory-extract.test.ts` with a stunt-double model |
+| The reservation of a paid call, and the day it is charged to | `packages/db/src/model-reservations.ts` (`reserveModelCall`, `markSent`, `completeReservation`, `markUncertain`, `releaseReservation`); the distiller's move in `memory-distill.ts`; tested in `model-reservations.test.ts`, `spend.test.ts` and `memory-distill.test.ts` |
+| The two grants' doors, the backlog and its two gestures | `POST /api/twin/sources` with `memoryExtract` and `noticeVersion` 2; `GET/POST /api/memory/jobs`; `panoma memory allow` · `revoke` · `jobs`; the three rows of the histories card on `/twin` and the «Extraction jobs» and «Captured facts» blocks of the project's Memory view, shaped by `apps/web/lib/memory-view.ts` |
+| The whole of delivery B | [memory-capture.md](memory-capture.md) |
+| The check definitions with their revisions, read normalized from both generations of `notes.sentinels` and from `beliefs.checks`, `decision_episodes.checks`, `commitments.checks` and `completion_checks` | `packages/db/src/memory-checks.ts` (`validateCheck`, `checksOf`, `putCheck`, `removeCheck`, `checkCount`), tested in `memory-checks.test.ts`; the `check` revision kind in `memory-revisions.ts` |
+| The pure evaluator and the environment read without git | `packages/core/src/checks-eval.ts` (`evaluateCheck`, `readEnvironment`, `readGitHead`, `CHECK_LIMITS`), tested in `checks-eval.test.ts`; the freshness rule is `staleOf` in `packages/db/src/memory-outcomes.ts`, beside the rows it reads (core carried a second copy, unused, until 14-Sep-2026) |
+| The observations, the incidents, the owner's verdict by compare-and-set, and the precedence that is never inferred from the clock | `memory_outcomes` (migration 0066), `packages/db/src/memory-outcomes.ts` (`recordObservation`, `openIncident`, `judgeIncident`, `outcomesFor`, `latestObservation`, `staleOf`, `deliveredBefore`), tested in `memory-outcomes.test.ts` |
+| The patrol: two seconds per project and turn, six checks per item, the purpose effects, the request a delivery leaves and never waits for | `apps/web/lib/memory-patrol.ts` (`runPatrol`, `runPatrolPass`, `requestPatrol`), run by `apps/web/lib/memory-worker.ts` after the capture pass; the first generation still in `sentinels.ts`; tested in `memory-patrol.test.ts` |
+| The commitments: create, revise, fulfil, cancel by compare-and-set, the `derived_from` link, and the verification of a closure by checks | `commitments` (migration 0066), `packages/db/src/commitments.ts`, tested in `commitments.test.ts` |
+| The predicates: the closed union, the limits, the three-valued evaluation and `applicability` | `packages/core/src/predicates.ts`, tested in `predicates.test.ts`; on an episode, `setDecisionEpisodePredicates` in `packages/db/src/episodes.ts`; in the selector, `compileApplicability` and `requestFacts` in `apps/web/lib/select-memory.ts` |
+| The succession and the expiry of a note | `decideNote` with `supersedesId` and `expectedPredecessorRev`, `setValidUntil` and `includeExpired` in `packages/db/src/notes.ts`, tested in `notes.test.ts`; the approve action of `POST /api/notes` |
+| The case projection, and the two reads of it | `packages/core/src/cases.ts` (`projectCase`), tested in `cases.test.ts`; `GET /api/memory/cases`; `caseUnit` and `renderCase` in `apps/web/lib/memory-delivery.ts` |
+| The four doors of delivery C | `GET/POST /api/memory/checks`, `GET/POST /api/memory/outcomes`, `GET/POST /api/memory/commitments`, `GET /api/memory/cases`; `shapeRefusal` in `apps/web/lib/agent-channel.ts`; tested in the `route.test.ts` beside each |
+| The whole of delivery C | [memory-checks.md](memory-checks.md) |
+| The Twin's vocabulary of delivery D: the predicates and the evidence of a criterion, the origin key, the seven observation kinds and the ambiguous reaction | `packages/db/src/twin.ts`, tested in `twin.test.ts`; the families in `support-families.ts` (`familiesOf`, `supportOf`, `publishableByPolicy`), tested in `support-families.test.ts`; the admissible rows in `listObservations`/`observationTopics` of `queries.ts`, tested in `observations.test.ts` |
+| The continuous learning: the planner, the three stage jobs, the fingerprint and the report for the screen | `apps/web/lib/twin-learn.ts`, run by `apps/web/lib/memory-worker.ts` after the extraction pass; the `twin_extract` cursor in `memory-capture.ts`; tested in `twin-learn.test.ts` with a stunt-double model |
+| The publication outbox: plan, run, the pass and the publication state | `apps/web/lib/taste-publish.ts` (`taste_publish` jobs), run by the worker after the learning job and inline by the taste door; tested in `taste-publish.test.ts` |
+| The taste door, version 2, and the criterion's line with its predicates | `POST /api/twin/taste` with `version: 2`, `GET /api/twin/taste` with `publication` and `revisions`; `fileStatement` in `apps/web/lib/publishable.ts`; tested in the route's test and `publishable.test.ts` |
+| The third grant, on both surfaces | `twinAutoLearn` through `POST /api/twin/sources`; `panoma memory allow \| revoke <source> twin`; `panoma twin allow \| revoke` through the same door; tested in the route's test, `memory-command.test.ts` and `twin-command.test.ts` |
+| The whole of delivery D | [twin-learning.md](twin-learning.md) |
 
 ## What the memory refuses to do, and what's deferred
 
@@ -490,7 +631,16 @@ The scale's control (`PANOMA_MEMORY_ABLATION`) lives in
   refuses; it doesn't compact.
 - **There's no editing.** Consolidating is discarding and writing again: the rewritten note
   goes through the person's hands once more; what had already been served isn't touched up in
-  place.
+  place. Since delivery C the rewrite can say what it replaces: an approval with
+  `supersedesId` moves the predecessor to `superseded` and the successor to `approved` in one
+  transaction, by compare-and-set on both, and a predecessor that moved meanwhile approves
+  nothing (T52). The old text is still not edited; it is succeeded, and the successor says so.
+- **A check never runs anything, and never retires a rule.** The disk is read with closed
+  parsers and compared with literals; no script, no test, no regular expression from a person,
+  a model or a transcript is executed, and what cannot be read is `unknown`, never a fail. A
+  violation opens an incident and leaves the rule as it is; only a person, or the criteria a
+  person approved, closes an obligation, and an agent's «done» is a report
+  ([memory-checks.md](memory-checks.md)).
 - **It stores no keys.** Whatever looks like a credential — `sk-…`, `ghp_…`, `AKIA…`, a PEM
   block — is covered up at the mouth of the journal, of the notes and of the questions to the
   double, with a visible mark in its place: the vault's rule, metadata yes, secrets never.
@@ -506,13 +656,19 @@ The scale's control (`PANOMA_MEMORY_ABLATION`) lives in
   was built for several processes, with a job claimed under `LOCK TABLE memory_jobs` and
   finished or published under its lease token, both of which hold across processes
   ([single-writer.md](single-writer.md)). What stops it is the spending. The model key that
-  would pay is the **server's**, for every project it serves, and the daily cap is the one
-  check the locks do not cover: each process reads it on its own before paying, so a catalog
-  served by N processes can exceed twelve calls a day by N−1. Panoma is local today, so on
-  6-Sep-2026 the owner deferred it rather than pay for that. Three guards hold it off, and
-  lifting it is one line in each: the `if` around the start call in `apps/web/lib/db.ts` and
-  the early returns of `runMemoryJobs` and `startMemoryWorker` in
-  `apps/web/lib/memory-worker.ts`. The record is in
+  would pay is the **server's**, for every project it serves. Until delivery B the daily cap
+  was also the one check the locks did not cover — each process read it on its own before
+  paying, so a catalog served by N processes could exceed twelve calls a day by N−1 —; since
+  14-Sep-2026 the `memory` family reserves its row under a database lock before the call
+  ([memory-capture.md](memory-capture.md)), the `read` and `episodes` families followed the
+  same day with delivery D ([twin-learning.md](twin-learning.md)), and the bound is gone for
+  those three, not the bill. Panoma is local today, so on 6-Sep-2026 the owner deferred it
+  rather than pay for that. Three guards hold it off, and lifting it is one line in each: the
+  `if` around the start call in `apps/web/lib/db.ts` and the early returns of `runMemoryJobs`
+  and `startMemoryWorker` in `apps/web/lib/memory-worker.ts` — and since B the capture pass
+  and the extraction pass sit behind the same guards, and since D the Twin's learning and the
+  publication outbox, because the reader opens the person's disk and the outbox writes to it,
+  which a remote catalog's server does not have. The record is in
   [open-questions.md](open-questions.md).
 - **The delivery-time patrol looks when it can, and says when it cannot.** Before serving a
   project's notes, the sentinels are re-checked if the project root is a directory on the
@@ -525,15 +681,35 @@ The scale's control (`PANOMA_MEMORY_ABLATION`) lives in
   they were; the evidence is unknown, not against them.
 - **The note hangs off the project, not off the stable identity.** That's deliberate — the
   note talks about the folder being worked on — and it has its price, bounded below.
-- **The export exists; the import and the deletion contract do not.** `panoma memory export
-  <project>` writes one versioned document (`version: 1`) with the notes in every state, the
-  decisions with their revision links and an `evidenceValid` flag, the owner's general
-  decisions and the distiller's receipts — and that is the whole of what the audit's seventh
-  proposal has today. Nothing reads such a file back into a catalog, and forgetting is still
-  what it was: revoking a source stops its ingestion and `DELETE /api/twin/verdicts` deletes
-  what it names, with no contract yet that names every derivative a deletion has to reach.
-  The document says so in its shape rather than promising more: it carries no narratives and
-  no journal, only what the person curated and decided on top of them.
+- **The export exists; the import does not, and the deletion contract covers the delivery's
+  families.** `panoma memory export <project>` writes one versioned document (`version: 2`)
+  with the notes in every state, the decisions with their revision links and an
+  `evidenceValid` flag, the owner's general decisions and the distiller's receipts, the
+  delivery revision (`memoryRev`) of every note and decision, the decision's `scopeKind`, a
+  summary of the v2 offers (`offers: { count, latest }`, never `rendered`, `payload`, a
+  locator or a lease) and `deletions: { journalRequired: true, applied }`, which tells a
+  reader of a restored copy that `memory-deletions.jsonl` must be reconciled first. Nothing
+  reads such a file back into a catalog. Forgetting has grown one contract since
+  14-Sep-2026: a withdrawal or a purge of a source, a session, a project or one object at one
+  or every revision reaches the photographs, the offers, their events and the stream's
+  identity, with a preview, a receipt and a journal outside the database
+  ([memory-contract.md](memory-contract.md)). What it does not reach is written there too:
+  the domain rows themselves — a note's body, a belief's statement — are still the gate's to
+  discard, and revoking a source still stops its ingestion and `DELETE /api/twin/verdicts`
+  still deletes what it names, as before. The document says so in its shape rather than
+  promising more: it carries no narratives and no journal, only what the person curated and
+  decided on top of them.
+- **A withdrawal reaches every road, the export included.** The contract's selector leaves
+  a withdrawn revision out before scoring, and since the same day the legacy roads — the
+  awake notes of the briefing, the recency brief, the path and task readers, the reread of
+  `POST /api/agent/notes` and the signal's `GET /api/agent/notes` — run their rows through
+  `apps/web/lib/memory-eligibility.ts`, which drops an object whose current photograph is
+  under a live withdrawal or purge: the old format never buys the old policy. The export joins
+  `memory_revisions` inside `exportProjectMemory` for the same test, on notes in every state
+  and on both decision lists. The same doors, the legacy shape of `POST /api/agent/context`
+  and `GET /api/memory/export` included, answer `503 unavailable` while the deletion journal
+  and the catalog disagree; only the proposal branch of `POST /api/agent/notes` stays open,
+  since an agent's own proposal is neither a delivery nor a capture.
 - **The family plane (promotion by quorum) isn't built**, and with the threshold written
   before looking. A note that turned up independently approved in two copies of the same
   project could be promoted to a family note and served in all of them, with a valuable
@@ -550,7 +726,9 @@ The scale's control (`PANOMA_MEMORY_ABLATION`) lives in
 And a promise in the other direction: **moving the folder doesn't kill the memory**. When
 rescanning after a move, the pruning looks for the heir by identity — the repository's root
 commit, the same fingerprint the decisions survive on — and moves the notes, the journal, the
-consultations, the servings and the runs across to it before retiring the old row. The gap
-that's left is honest and bounded: a project without a repository has no identity that
-survives, and if the new location isn't in the catalog yet when the old one is pruned,
-there's no heir in sight and the memory goes with it.
+consultations, the servings, the memory contexts and the runs across to it before retiring
+the old row. The gap that's left is honest and bounded: a project without a repository has
+no identity that survives, and if the new location isn't in the catalog yet when the old one
+is pruned, there's no heir in sight and the memory goes with it. One more, opened by the
+contract and recorded in [open-questions.md](open-questions.md): the photographs of a moved
+project's notes keep the old project id as their scope reference.
