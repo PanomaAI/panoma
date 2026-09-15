@@ -551,33 +551,89 @@ export const DOCS_COPY = {
      */
     lead: "The first agent memory that lives in the world, not in the conversation.",
     leadBody:
-      "A chat remembers what somebody typed at it. Panoma sits on your disk: it sees files change, scripts disappear, projects move. That is why its memory can do something a conversational one cannot — notice on its own that something it remembers stopped being true, and stop saying it, without anyone having to speak.",
+      "A chat remembers what somebody typed at it. Panoma sits on your disk: it sees files change, scripts disappear, projects move. That is why its memory can do something a conversational one cannot — notice on its own that something it remembers stopped being true, and stop saying it, without anyone having to speak. And every byte it hands an agent is written down before it leaves and read back afterwards from the agent's own record, so the question “did the rule reach it?” has an answer that is not a guess.",
 
     floorsTitle: "Four floors",
     floorsLead:
-      "Three of them were already working before any of this had a name. What was missing was the second one: a short, curated set of durable facts for each project.",
+      "Each one answers a different question. The journal says what happened; the curated memory says what is still true; a sleeping note says where; a check says what the disk has to look like for that to hold.",
     floors: [
       {
         title: "The journal",
-        body: "Everything agents log here, kept forever and searchable. It answers what happened. panoma_recall reads it; the hooks write to it without anyone having to remember.",
+        body: "Everything agents log here, kept forever and searchable page by page. panoma_recall reads it; the hooks write to it without anyone having to remember.",
       },
       {
-        title: "Curated notes",
-        body: "What is still true, in one or two sentences each. Agents propose, you approve, and only then does it travel to every agent that opens this project.",
+        title: "The curated memory",
+        body: "What is still true, in one or two sentences each: a note, a criterion of your taste, a decision with its rationale, a commitment you took on. Agents propose, you approve, and only then does it travel to every agent that opens this project. Every unit has a revision, and every change photographs the row as it was.",
       },
       {
         title: "Notes that sleep",
-        body: "A note can carry a where — an exact path, or a zone such as apps/web. Then it does not travel in the daily brief and costs nothing: it wakes at the instant an agent is about to touch that path, like a sign at the spot rather than a page in a manual.",
+        body: "A note can carry a where — an exact path, or a zone such as apps/web. Then it does not travel in the brief and costs nothing: it wakes at the instant an agent is about to touch that path, like a sign at the spot rather than a page in a manual.",
       },
       {
-        title: "Sentinels",
-        body: "A note carries the disk conditions that hold it up: the paths it names, checked as they are approved. When the watcher sees one break, the note is challenged — it stops being served at once and comes back to you with the evidence, to fix or to throw away.",
+        title: "Checks",
+        body: "A rule can say what the disk should look like: a script that must exist, a literal that must not come back, a dependency that must be declared. The patrol looks, in the worker's free passes, and writes what it saw. A foundation that breaks challenges the note; a violation opens an incident and leaves the rule alone.",
       },
     ],
 
     gateTitle: "Nothing is served without your yes",
     gateBody:
-      "Agents can only ever propose. Approving and discarding live behind a screen action, never behind an agent key, and the reason is blunt: an approved note is shown to every agent that opens this project, so a poisoned memory would be a virus with a loudspeaker. Reviewing is the antivirus, and the queue is capped so that reviewing never becomes a chore nobody does.",
+      "Agents can only ever propose — an agent through panoma_remember, the extractor from your own messages, the Twin from what you told your agents — and all of it lands in one queue. Approving and discarding live behind a screen action, never behind an agent key, and the reason is blunt: an approved note is shown to every agent that opens this project, so a poisoned memory would be a virus with a loudspeaker. Reviewing is the antivirus, and the queue is capped so that reviewing never becomes a chore nobody does.",
+
+    contractTitle: "What an agent receives is a contract",
+    contractLead:
+      "One selector over the whole eligible archive, and one contract per delivery. It names every unit it carries and every unit it does not, and it is written down — an offer with the hash of its content and of the exact text emitted, and the byte range of each unit inside it — before a byte leaves this machine.",
+    contract: [
+      { name: "items", body: "Every unit that travelled, whole: kind, revision, scope, authority, the text and its rationale, its conditions and exceptions. A unit is indivisible — a rule travels with its exceptions or it does not travel." },
+      { name: "checks", body: "What the catalog could not resolve, as text, so the agent knows what remains to be verified before acting." },
+      { name: "omissions · manifest", body: "What did not fit, by reason and count, readable whole by id. A required unit is never dropped to make room for an optional one; when the core alone does not fit, the contract says incomplete instead of pretending." },
+      { name: "status", body: "ready, requires_check, conflict, incomplete or unavailable. Two active decisions from one family are withheld as a conflict rather than resolved by picking the newer one." },
+    ],
+    contractOrder:
+      "The selector's order is the decision: eligibility first, then the core whole and unranked — the awake notes, the published criteria, the sleeping notes a touched path triggers —, then a lexical search over everything eligible, so a decision recorded behind 250 newer ones is found by its words, and only then the limits. Never the limits first.",
+
+    roadsTitle: "Three roads, each with a measured limit",
+    roads: [
+      { name: "Session start", body: "A hook prints the contract into a new Claude Code context at startup, resume, clear and compaction. 6,500 code points and 24 KiB, counted on the message the program receives." },
+      { name: "The edit", body: "A second hook delivers the sleeping notes pinned to the path an agent is about to touch, at the spot." },
+      { name: "MCP", body: "panoma_context carries the same contract, and panoma_recall reads any unit whole by id and revision. 24 KiB." },
+    ],
+    roadsNote:
+      "Limits are characters and bytes and are never called tokens. A compaction or a clear empties a context, and the next brief is a new contract under a new generation — a rule is never suppressed because a context that no longer exists once saw it.",
+
+    receiptTitle: "The receipt",
+    receiptBody:
+      "An offer proves what the catalog prepared; it does not prove that anything arrived. With the capture switch on, a reader opens the agent's own transcript — read only, never modified — and looks for those exact bytes at the one site that seals a reception: the record the agent writes for the hook's output, in the session the offer was bound to. It writes what it found, unit by unit: full, partial, unknown or not observed. The same bytes in a prompt, a tool result or a README are never a reception, and on a program nobody has verified the answer is unknown, never full.",
+    matrixBody:
+      "The catalog keeps a capability matrix per program, filled from three separate pieces of evidence: a hook was installed, an invocation was observed, a receipt site was verified by a person reading the record. Verified today: Claude Code 2.1.258 from the desktop app. What is not verified is declared as such and never counted.",
+
+    switchesTitle: "Reading your histories, under three switches",
+    switchesLead:
+      "Every agent history on this disk is a source, and nothing in it is opened until you allow that source by name. On top of that, three grants — each with a purpose, a scope of one project or all, and a boundary inside every file that the permission never rewinds past.",
+    switches: [
+      { title: "Capture", body: "At its first notice the reader takes only the receipts and the lifecycle records. At the second — an explicit re-consent — it also keeps typed facts of what the tools did, with coordinates and never a line of text: read, edit, command, test result, failure, commit." },
+      { title: "Extraction", body: "Your own turns of the allowed range — redacted, bounded, never the assistant's words — go to the model you connected, with those facts, in a window frozen before it is paid for: after thirty quiet minutes, or 96 KiB pending, or four hours since the oldest. What comes back is a proposal with its quotes, waiting for your yes like everything else." },
+      { title: "Twin learning", body: "The same turns, distilled in the background into observations about your taste. Told under Twin below." },
+    ],
+    switchesNote:
+      "Every paid call is reserved in the ledger before it leaves, under the daily cap of its family, so two organs can never both spend the last call of the day. Switching a grant off fences the work in flight: an answer paid for under the old permission is never published.",
+
+    checksTitle: "What the disk may say about a rule",
+    checksLead:
+      "A check has a purpose, a kind, a target and an expected value. Seven kinds — a path exists, a file hashes to this, a literal is present or absent, a manifest declares this script, this dependency, this structured key — and all of them are read, never run. The purpose decides what a failure does:",
+    checks: [
+      { name: "grounds", body: "The foundation the rule stands on. A note is challenged and stops being served; a decision or a criterion gets an incident and stays — a rule is never retired by a scanner." },
+      { name: "applicability", body: "Where the unit applies. An observation, and nothing else: the selector leaves the unit out where it does not apply." },
+      { name: "violation", body: "What a rule in force forbids. An incident; the rule stays exactly as it is." },
+      { name: "completion", body: "The finishing line of a commitment. An observation while it is open — a fail never closes an obligation." },
+    ],
+    checksNote:
+      "The patrol looks in the worker's free passes, two seconds per project and turn, and no hook ever waits for it. Each look is an observation with the exact state it saw — HEAD, dirty or clean, the hash of every file inspected — and unknown is never a fail: a file it cannot read challenges nothing. An observation goes stale after ten minutes and asks for another look; it never turns a rule on or off. An incident carries your verdict, confirmed or false positive, and never a judgement of obedience: whether the rule had reached the agent is answered yes only when a full receipt of that revision precedes the look in the same context.",
+
+    commitmentsTitle: "Commitments, cases, and conditions in three values",
+    commitmentsBody:
+      "A commitment is an obligation with a version: a text, optional typed conditions, up to six completion criteria. Only two actors close it — you, or every criterion passing on the current revision, fresh, in one environment. An agent saying “done” is a report and closes nothing. A case is a projection of a task and never a row: what was asked, what was decided, what the agent declared and what the checks saw, in four separate columns, with unknown where nothing was recorded.",
+    conditionsBody:
+      "A decision, a criterion or a commitment may carry a typed predicate beside its narrative — all, any and not over six facts: the project, a path, the operation, the environment, the kind of task, the result of a check. True and it is served; false and it is left out whole; undecidable and it travels conditional, with one line per fact that would settle it. The sentences go inside the unit, “Applies when” and “Except when”, on every road and in the taste file alike.",
 
     capsTitle: "Small on purpose",
     capsLead:
@@ -588,10 +644,16 @@ export const DOCS_COPY = {
       { value: "30", label: "sleeping notes, per project" },
       { value: "20", label: "proposals waiting for review" },
     ],
+    quotaBody:
+      "Above the character budgets sits a storage quota for everything the machine derives on its own — photographs, offers, typed facts, staged answers —: 256 MiB per catalog and 64 MiB per project out of the box, or PANOMA_MEMORY_QUOTA_MB and PANOMA_PROJECT_QUOTA_MB. A full quota pauses the machine and never the person: what you approve or write by hand is always taken, and nothing is deleted to make room.",
+
+    forgettingTitle: "Forgetting that survives a backup",
+    forgettingBody:
+      "Two doors, one protocol. A withdrawal takes eligibility away and keeps the bytes; a purge blanks the copies as well — photographs, offers, a stream's locator — and keeps the coordinates, so the receipt can still say what was cleaned. Both preview first, with the counts they would reach and what would be retained, and confirm only through the door that previewed. Every operation is appended to a journal outside the database before its row exists: a copy restored from before a purge finds a journal it does not carry, and the memory goes into quarantine — every delivery answers unavailable until a person reconciles — instead of bringing the text back in silence.",
 
     scaleTitle: "It measures itself",
     scaleBody:
-      "Every delivery of memory is written down: which notes travelled, to which agent, how heavy they were. With PANOMA_MEMORY_ABLATION set, half the visits get their memory and half have it held back — and the ledger records what would have been served, so both arms are twins. Then relaunches are counted on each side: relaunching is the gesture that gives a correction away. Off by default, agent channel only, and readable at /api/scale. It is the one memory that does not ask you to take its word for it.",
+      "Every delivery is written down: which units travelled, to which agent, how heavy they were, and what the receipt found. With PANOMA_MEMORY_ABLATION set, half the visits get their memory and half have it held back — and the ledger records what would have been served, so both arms are twins. Then relaunches are counted on each side: relaunching is the gesture that gives a correction away. Off by default, agent channel only, and readable at /api/scale. It is the one memory that does not ask you to take its word for it.",
 
     doubleTitle: "Questions go to your double",
     doubleBody:
@@ -601,18 +663,20 @@ export const DOCS_COPY = {
     refuses: [
       "No semantic search, no embeddings. The budget makes retrieval unnecessary, and every retrieval step that does not exist is one that cannot retrieve the wrong thing.",
       "No automatic compaction. Deciding what deserves to survive is exactly the decision this product keeps for you.",
-      "No editing. Consolidating is discarding and writing again, so the rewritten note passes your hands one more time.",
-      "No keys stored. Anything shaped like a credential is masked at the door of the journal, of notes and of questions — with a visible mark where it was.",
-      "Agents never decide. An agent key proposes and re-reads; approving is a gesture of the person.",
+      "No editing in place. A rewrite is a new revision that names the one it supersedes, so it passes your hands one more time and the old text stays photographed.",
+      "No keys stored. Anything shaped like a credential is masked at the door of the journal, of notes, of questions and of the turns sent to a model — with a visible mark where it was.",
+      "Nothing is run. A check reads a path, a hash, a literal, a manifest; it never executes a command, and what it cannot read is unknown, not a failure.",
+      "Agents never decide. An agent key proposes and re-reads; approving, closing a commitment and judging an incident are gestures of the person.",
+      "No verdict on obedience. A receipt says the bytes reached the context; an observation says what the disk looked like. Nothing in between is invented.",
     ],
 
     movingTitle: "Moving a folder does not kill it",
     movingBody:
-      "Rename or move a project, rescan, and the curated memory follows: the catalog looks for the heir by identity — the repository's root commit, the same fingerprint your decisions survive on — and moves the notes, the journal, the questions and the ledgers before retiring the old row.",
+      "Rename or move a project, rescan, and the curated memory follows: the catalog looks for the heir by identity — the repository's root commit, the same fingerprint your decisions survive on — and moves the notes, the commitments, the journal, the questions and the ledgers before retiring the old row.",
 
     turnOnTitle: "Turn it on",
     turnOnLead:
-      "Open Bridge in the app: four setup steps, each carrying its state as a word beside its title, and the commands you do not need yet folded away. The hooks step has a button that installs them across the catalog, and each project page says whether its own are in place. What agents have written through the channel is not a step to reach: it sits in its own card, beside the system status. From the terminal, per project:",
+      "Open Bridge in the app: four setup steps, each carrying its state as a word beside its title, and the commands you do not need yet folded away. The hooks step has a button that installs them across the catalog, and each project page says whether its own are in place. The three switches sit on the Twin screen, one per source, each with the sentence that says what is read, from which byte and how to take it back. From the terminal:",
     turnOnSteps: [
       {
         command: 'panoma agent-key "Claude Code" --install',
@@ -620,11 +684,19 @@ export const DOCS_COPY = {
       },
       {
         command: "panoma hooks --install",
-        note: "Two hooks: one records what happens here without the model having to remember, and one delivers sleeping notes at the path they were left on.",
+        note: "The hooks: the brief at session start, the sleeping notes at the path they were left on, the record without the model having to remember, and the receipt pointer when the session ends.",
+      },
+      {
+        command: "panoma memory allow claude-code capture --all --notice 2",
+        note: "Lets the reader open that history for receipts and typed facts, on every project. extract sends your own turns to the model for one project with --project; twin lets the Twin learn on its own. revoke takes one back and says what stops with it.",
+      },
+      {
+        command: "panoma memory status",
+        note: "Offers, receipts, the reader's cursors and which programs are verified; --json for the whole document. withdraw and purge are the two doors above, previewed first and confirmed with --yes.",
       },
     ],
     turnOnNote:
-      "Then restart the agent's session: one already open picks up nothing. What the distiller and the double may spend in a day has a ceiling each, on the Spend screen or with PANOMA_DISTILL_BUDGET and PANOMA_ASK_BUDGET; 0 turns either of them off.",
+      "Then restart the agent's session: one already open picks up nothing. What the distiller, the extractor and the double may spend in a day has a ceiling each, on the Spend screen or with PANOMA_DISTILL_BUDGET and PANOMA_ASK_BUDGET; 0 turns either of them off.",
   },
   twin: {
     kicker: "07",
@@ -649,6 +721,18 @@ export const DOCS_COPY = {
     floorsTitle: "Floors, not ceilings",
     floorsBody:
       "A belief is written so it can be broken: something a screen either respects or does not. Wishes make bad beliefs — an experiment proved it — so what gets mined is refusals and defaults. You sign the ones that are yours and veto the ones that are not, and only signed lines carry weight.",
+
+    learnTitle: "It learns on its own, under a third switch",
+    learnBody:
+      "On top of capture, a third grant lets the worker distil your new turns into observations of the Twin in the background — one paid stage at a time inside the same daily cap: observations with the exact quote and its origin, a topic for those that had none, a synthesis of each topic whose inputs moved. A topic is re-synthesized only when the evidence behind it changed, so the cycle never feeds itself. Support is counted in cases — the origin of a quote, so one session copied into two windows is one case — and an inference publishes on its own only with three families of known origin behind it. A pasted document that may be the assistant's own words counts for nothing.",
+
+    outboxTitle: "Learning and publishing are two acts",
+    outboxBody:
+      "What it infers waits in the Twin until you have said, once, that inferences may reach the taste file. Every write of that file goes through an outbox that compares the file before writing and reads it back after, so a line you deleted by hand is a veto and a line you rewrote is your signature on those words — and both are heard before any criterion is served to an agent again.",
+
+    limitsTitle: "A criterion learns its limits",
+    limitsBody:
+      "A criterion can carry the conditions under which it applies and the exceptions under which it does not — the same typed predicate a decision or a commitment uses. The selector judges them in three values before serving it, and the sentences travel inside the rule, on every road and in the file alike: “Applies when the operation is edit. Except when the path is under apps/site.” One sentence for one tree, on the screen, in the brief and in the file.",
 
     criticsTitle: "Two critics, two different rulers",
     critics: [

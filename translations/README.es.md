@@ -84,6 +84,11 @@ despacho de propuestas.
 - [x] El canal de agentes, endurecido: toda puerta con su guarda, la clave en 0600 y el texto ajeno que no puede salirse de su bloque (docs/mcp-security.md)
 - [x] El .md de los agentes: linter contra el disco real, bloque que se cuida solo, quién tocó el fichero, los heredados de arriba y la opinión del modelo (docs/agents-md.md)
 - [x] Memoria curada por proyecto: los agentes proponen hechos durables, tú apruebas, y lo aprobado llega al primer turno de todos — con presupuesto que se niega a compactar (docs/memory.md)
+- [x] Un contrato de memoria: un selector sobre el archivo entero, una oferta por entrega con sus hashes y su manifiesto de unidades, y un recibo leído en el historial del propio agente que dice, unidad por unidad, qué llegó al contexto (docs/memory-contract.md)
+- [x] Captura y extracción bajo tres interruptores separados: hechos tipados de lo que hicieron las herramientas, nunca una línea de texto; tus propios turnos enviados al modelo en una ventana congelada antes de pagarla; cada llamada de pago reservada en el libro antes de salir (docs/memory-capture.md)
+- [x] Comprobaciones con propósito sobre cada unidad de la memoria, una patrulla que mira el disco en las pasadas libres del trabajador y contesta pass, fail o unknown, incidencias con tu veredicto encima, compromisos que solo cierras tú o tus criterios, y condiciones tipadas juzgadas en tres valores (docs/memory-checks.md)
+- [x] Un Twin que aprende solo bajo un tercer interruptor, cuenta su apoyo en casos y no en mensajes, y escribe tu fichero de gusto por un buzón de salida que compara antes de escribir y relee después (docs/twin-learning.md)
+- [x] Un olvido que sobrevive a una copia de seguridad —retirar o purgar, con plan previo, anotado en un diario fuera de la base, con cuarentena cuando los dos discrepan— y una cuota de almacenamiento que pausa a la máquina y nunca a la persona
 - [x] Apps oficiales opcionales, con su propia pantalla: manifiesto validado, versiones que se activan y se revierten, y cada trabajo en un proceso aparte (docs/apps.md)
 - [x] panoma video, la primera app: añade una pantalla de producción a cada proyecto y un botón «Crear vídeo» en la cabecera, se instala desde npm como [`@panoma/video`](https://www.npmjs.com/package/@panoma/video), y un agente con clave puede pedir una producción del proyecto en el que está con las herramientas MCP `panoma_video` — con el modelo y la voz que tú activaste, nunca los que él elija
 - [x] Pantalla de gasto: cada llamada al modelo queda anotada, con un tope diario para cada una de las nueve familias, que puedes subir, bajar, poner a cero para apagar esa familia o dejar como viene de fábrica (docs/budgets.md)
@@ -214,10 +219,10 @@ Hay que reiniciar el agente después. A partir de ahí dispone de quince herrami
 
 | Herramienta | Para qué |
 |---|---|
-| `panoma_context` | el parte: pila, dependencias atrasadas, vulnerabilidades, tareas y qué hicieron otros agentes. Con `files`, las reglas fijadas a esas rutas; con `task`, las reglas y decisiones cuyas palabras se solapan con lo que vas a hacer |
+| `panoma_context` | el parte: pila, dependencias atrasadas, vulnerabilidades, tareas y qué hicieron otros agentes. Con `files`, las reglas fijadas a esas rutas; con `task`, las reglas y decisiones cuyas palabras se solapan con lo que vas a hacer. Con `memoryVersion: 2`, el contrato de memoria: cada unidad entera, qué queda por comprobar, qué no cupo y por qué, y una continuación para el resto |
 | `panoma_log` | registrar un cambio, una decisión o un bloqueo |
 | `panoma_remember` | **proponer** un hecho durable para la memoria del proyecto. No se sirve a nadie hasta que lo apruebas tú |
-| `panoma_recall` | buscar en la bitácora entera, página a página, y abrir cualquier entrada completa |
+| `panoma_recall` | buscar en la bitácora entera, página a página, y abrir cualquier entrada completa. Con `memoryKind` y `memoryId`, leer entera una unidad de la memoria —una nota, un criterio, una decisión, un compromiso o el caso de una tarea— en la revisión pedida |
 | `panoma_ask` | dejarle una pregunta de criterio a tu doble en vez de interrumpirte |
 | `panoma_tasks` | ver la cola del proyecto, abierta y cerrada |
 | `panoma_create_task` | anotar deuda técnica sin salirse de lo que está haciendo |
@@ -311,6 +316,235 @@ Exportar el portafolio entero a JSON:
 pnpm exec tsx apps/cli/src/index.ts scan ~/Desktop --json --out portafolio.json
 ```
 
+## La memoria
+
+La memoria de panoma no es el registro de un chat. Vive al lado del disco, así que puede
+darse cuenta sola de que algo que recuerda ha dejado de ser verdad; nada entra en ella sin tu
+sí; y cada byte que le entrega a un agente queda anotado antes de salir del proceso y se lee
+después en el propio registro del agente. Esta sección cuenta el ciclo entero. Los registros
+de decisión de cada parte son [docs/memory.md](../docs/memory.md),
+[docs/memory-contract.md](../docs/memory-contract.md),
+[docs/memory-capture.md](../docs/memory-capture.md),
+[docs/memory-checks.md](../docs/memory-checks.md) y
+[docs/twin-learning.md](../docs/twin-learning.md).
+
+```mermaid
+flowchart LR
+  sources["<b>Lo que ya existe</b><br/>los historiales de tus agentes · git · los ganchos · lo que tú escribes"]
+  reader["<b>El lector</b><br/>recibos · hechos tipados · tus propios turnos<br/><i>solo bajo un permiso que tú enciendes</i>"]
+  proposals["<b>Propuestas</b><br/>un agente · el extractor · el Twin"]
+  gate{{"<b>Tu sí</b>"}}
+  memory["<b>La memoria</b><br/>notas · criterios · decisiones · compromisos<br/>cada revisión fotografiada, cada unidad con sus comprobaciones"]
+  selector["<b>El selector</b><br/>un contrato por entrega, con su hash, guardado"]
+  agent["<b>El contexto del agente</b><br/>inicio de sesión · gancho de edición · MCP"]
+  patrol["<b>La patrulla</b><br/>mira el disco: pass · fail · unknown"]
+  forgetting["<b>El olvido</b><br/>retirar · purgar · un diario fuera de la base"]
+  sources --> reader --> proposals --> gate --> memory --> selector --> agent
+  agent -. "el recibo, leído en el historial" .-> reader
+  memory <--> patrol
+  forgetting -.-> memory
+```
+
+### Qué se recuerda
+
+Cuatro pisos, y cada uno contesta una pregunta distinta:
+
+| Piso | Qué guarda | Quién lo escribe |
+|---|---|---|
+| **La bitácora** | Todo lo que los agentes anotaron aquí, para siempre y buscable página a página. *Qué pasó.* | Los agentes, con `panoma_log` y los ganchos |
+| **La memoria curada** | Reglas cortas y durables: una nota de 500 caracteres como mucho, un criterio de tu gusto, una decisión con su porqué, un compromiso que asumiste. *Qué sigue siendo verdad.* | La propone cualquiera; la aprueba solo tú |
+| **Las notas que duermen** | Una nota con un *dónde*: una ruta exacta o una zona como `apps/web`. No cuesta nada en el parte y despierta cuando un agente va a tocar esa ruta. | La misma puerta |
+| **Las comprobaciones** | Cómo tiene que estar el disco para que una regla se sostenga: un script que debe existir, un literal que no debe volver, una dependencia que debe estar declarada. | Tú, sobre cualquier unidad de la memoria |
+
+Cada unidad lleva una **revisión**, y cada cambio fotografía la fila tal como estaba, para
+que una entrega pueda decir qué revisión viajó y una mirada pueda decir qué revisión miró.
+Una nota puede quedar **sustituida** por una reescritura que la nombra, o recibir un día de
+**validez**; nada caduca solo y nada se edita en el sitio.
+
+### Nada se sirve sin tu sí
+
+Los agentes solo pueden proponer. Un agente propone un hecho con `panoma_remember`; el
+extractor propone a partir de tus propios mensajes; el Twin propone un criterio a partir de lo
+que les dijiste a tus agentes. Todo cae en la misma cola, con tope de 20 para que revisar no
+se convierta en la tarea que nadie hace, y aprobar o descartar vive detrás de un gesto en
+pantalla, nunca detrás de una clave de agente. Una nota aprobada se le enseña a todo agente que
+abra el proyecto, así que una memoria envenenada sería un virus con altavoz; la revisión es el
+antivirus.
+
+La memoria es **pequeña a propósito**: 2.000 caracteres de memoria despierta por proyecto,
+30 notas dormidas, 3.000 caracteres en el retrato de tu gusto. Como cabe entera delante del
+modelo, no hay paso de recuperación que pueda elegir el recuerdo equivocado, y cuando se llena
+nada se resume a tus espaldas: se te dice, y decides qué sale. Encima de los presupuestos de
+caracteres hay una **cuota de almacenamiento** para todo lo que la máquina deriva sola
+—fotografías, ofertas, hechos, respuestas preparadas—: 256 MiB por catálogo y 64 MiB por
+proyecto de fábrica. Una cuota llena pausa a la máquina, nunca a la persona: lo que apruebas o
+escribes a mano entra siempre, y no se borra nada para hacer sitio.
+
+### Lo que recibe un agente es un contrato
+
+Antes de la entrega A había tres lectores con tres universos y ningún recibo: lo que recibía
+una sesión dependía del camino por el que entraba. Ahora hay **un selector** sobre todo el
+archivo elegible y **un contrato** por entrega, `MemoryContractV2`:
+
+- **`items`**: cada unidad que viajó, entera: su tipo, revisión, ámbito, autoridad, el texto y
+  su porqué, sus condiciones y excepciones. Una unidad es indivisible: una regla viaja con sus
+  excepciones o no viaja.
+- **`checks`**: lo que panoma no pudo resolver, como texto, para que el agente sepa qué queda
+  por comprobar antes de actuar.
+- **`omissions`** y un **`manifest`**: lo que no cupo, por motivo y recuento, legible entero
+  por id. Una unidad obligatoria nunca se descarta para hacer sitio a una opcional; si el
+  núcleo solo no cabe, el contrato dice `incomplete` en vez de fingir.
+- **Un estado**: `ready`, `requires_check`, `conflict`, `incomplete` o `unavailable`. Dos
+  decisiones activas de la misma familia se retienen como `conflict` en vez de resolverse
+  eligiendo la más nueva.
+
+El orden del selector es la decisión: primero la elegibilidad, luego el núcleo entero y sin
+clasificar (las notas despiertas, los criterios publicados, las notas dormidas que dispara una
+ruta tocada), luego una búsqueda léxica sobre todo el archivo —una decisión anotada detrás de
+otras 250 más nuevas se encuentra por sus palabras—, y al final los límites, nunca los límites
+primero. Cada entrega es una **oferta** anotada antes de que sus bytes salgan del proceso, con
+el SHA-256 de su contenido y del texto exacto emitido, y un manifiesto con el rango de bytes de
+cada unidad dentro de ese texto.
+
+El contrato llega al agente por tres caminos: el gancho `SessionStart` lo imprime en un
+contexto nuevo de Claude Code al arrancar, reanudar, limpiar y compactar; el gancho de edición
+entrega las notas dormidas de la ruta que se está tocando; y `panoma_context` lo lleva por MCP.
+Cada camino tiene un límite medido —6.500 puntos de código y 24 KiB para el parte, 24 KiB para
+MCP— contado sobre el mensaje que recibe el programa, y nunca llamado tokens.
+
+### El recibo
+
+Una oferta prueba lo que panoma preparó; no prueba que llegara nada. Con el interruptor de
+captura encendido, un lector abre el historial del propio agente —solo lectura, jamás se
+modifica— y busca esos bytes exactos en el único sitio que sella una recepción: el registro
+que el agente escribe para la salida del gancho, en la sesión a la que se ató la oferta. Y
+anota lo que encontró, unidad por unidad: `full`, `partial`, `unknown` o `not_observed`. Los
+mismos bytes en un prompt, en el resultado de una herramienta o en un README nunca son una
+recepción; en un programa que nadie ha verificado, la recepción es `unknown` y nunca `full`. Un
+contexto se cuenta por sesión y por generación: una compactación o un `/clear` lo vacían y el
+siguiente parte es un contrato nuevo, así que una regla nunca se calla porque la vio un
+contexto que ya no existe.
+
+El catálogo guarda una **matriz de capacidades** por programa, rellenada con tres evidencias
+separadas —se instaló un gancho, se observó una invocación, una persona verificó el sitio del
+recibo leyendo el registro— y un programa fuera de ella recibe `unknown` en cada eje.
+Verificado hoy: Claude Code 2.1.258 desde la app de escritorio. Lo que no está verificado se
+declara, nunca se cuenta.
+
+### Leer los historiales, bajo tres interruptores
+
+Cada historial de agente que hay en el disco es una fuente, y nada de dentro se abre hasta que
+permites esa fuente por su nombre en la pantalla del Twin. Encima de ese permiso base hay tres
+**concesiones**, cada una con un propósito, un ámbito —un proyecto o todos— y una frontera
+dentro de cada fichero:
+
+1. **Captura.** Con el primer aviso el lector toma solo los recibos y los registros del ciclo de
+   vida. Con el segundo —un consentimiento explícito de nuevo— guarda además **hechos tipados**
+   de lo que hicieron las herramientas, con coordenadas y nunca una línea de texto: `read`,
+   `edit`, `command`, `test_result`, `failure`, `commit`, `lifecycle`, `receipt_seen`.
+2. **Extracción.** Tus propios turnos del rango permitido —redactados, acotados, nunca las
+   palabras del asistente— van al modelo que conectaste, con los hechos, en una **ventana
+   congelada antes de pagarla**: cuando la conversación lleva media hora en silencio, o los
+   bytes pendientes pasan de 96 KiB, o el más viejo tiene cuatro horas. Lo que vuelve es una
+   propuesta con las citas que la sostienen, esperando tu sí como todo lo demás.
+3. **Aprendizaje del Twin.** Los mismos turnos, destilados en segundo plano en observaciones
+   sobre tu gusto, contado más abajo.
+
+La frontera es lo que hace honesto el permiso: un historial más viejo que la concesión empieza
+en el tamaño que tenía la primera vez que se vio, un registro cortado por la mitad en la
+frontera se excluye entero, y una concesión apagada y encendida otra vez retoma en la frontera
+nueva y nunca por detrás. Cada llamada de pago queda **reservada** en el libro antes de salir,
+bajo el tope diario de su familia, así que dos órganos nunca pueden gastar los dos la última
+llamada del día.
+
+### Comprobaciones: lo que el disco puede decir de una regla
+
+Una comprobación es `{ purpose, kind, target, expected }` sobre una nota, un criterio, una
+decisión o un compromiso. El **propósito** decide qué hace un fallo:
+
+| Propósito | Qué es la comprobación | Qué hace un `fail` |
+|---|---|---|
+| `grounds` | el fundamento sobre el que se sostiene la regla | una nota queda impugnada y deja de servirse; una decisión o un criterio reciben una incidencia y se quedan: una regla nunca la retira un escáner |
+| `applicability` | dónde aplica la unidad | una observación; el selector deja fuera la unidad donde no aplica |
+| `violation` | lo que una regla en vigor prohíbe | una incidencia; la regla se queda exactamente como está |
+| `completion` | la línea de meta de un compromiso | una observación mientras está abierto: un fallo nunca cierra una obligación |
+
+Siete **tipos**, todos leídos y ninguno ejecutado: `path_exists`, `file_hash`, `text_present`,
+`text_absent`, `manifest_script`, `direct_dependency`, `structured_key`. El evaluador contesta
+`pass`, `fail` o `unknown` con su motivo, y `unknown` nunca es un `fail`: un fichero que no
+puede leer no impugna nada. La **patrulla** mira en las pasadas libres del trabajador, dos
+segundos por proyecto y turno, fuera de toda entrega —ningún gancho la espera— y anota una
+**observación** por mirada con el estado exacto del disco que vio: el HEAD, sucio o limpio, el
+hash de cada fichero inspeccionado. Una observación caduca a los diez minutos y pide otra
+mirada; nunca enciende ni apaga una regla. Una **incidencia** es una identidad con tu veredicto
+encima, `confirmed` o `false_positive`, y nunca un juicio de obediencia: si la regla había
+llegado al agente antes se contesta `yes` solo cuando un recibo `full` de esa revisión precede a
+la mirada en el mismo contexto, y `unknown` en cualquier otro caso.
+
+### Compromisos y casos
+
+Un **compromiso** es una obligación con versión: un texto, condiciones tipadas opcionales,
+hasta seis criterios de cumplimiento. Solo dos actores lo cierran: tú, o todos los criterios de
+cumplimiento pasando sobre la revisión actual, frescos, en un mismo entorno. Un agente que dice
+«hecho» es un informe y no cierra nada. Un compromiso cerrado no se reabre; lo que lo continúa
+es uno nuevo enlazado al viejo. Un **caso** es una proyección de una tarea y nunca una fila:
+qué se pidió, qué se decidió, qué declaró el agente y qué vieron las comprobaciones, en cuatro
+columnas separadas, con `unknown` donde no se anotó nada; entre ellas no se escribe ninguna
+historia.
+
+### Condiciones en tres valores
+
+Una decisión, un criterio o un compromiso pueden llevar un predicado tipado junto a su
+narración: un árbol de `all`, `any` y `not` sobre seis hojas —`project_is`, `path_under`,
+`operation_is`, `environment_is`, `task_kind_is`, `check_result_is`—. El selector lo juzga
+sobre los hechos que la petición puede declarar honestamente y la última observación fresca de
+cada comprobación consultada: verdadero y se sirve; falso y se deja fuera entera como
+`not_applicable`; indecidible y viaja `conditional`, con una línea `requires_check` por cada
+hecho que lo zanjaría. Las frases van dentro de la unidad —`Applies when: …` y `Except when:
+…`— por todos los caminos, en el parte y en `TASTE.md` por igual, así que la pantalla, el parte
+y el fichero leen una misma frase para un mismo árbol.
+
+### El Twin aprende solo
+
+El tercer interruptor, encima de la captura, deja que el trabajador destile tus turnos nuevos
+en observaciones del Twin en segundo plano, una etapa de pago cada vez dentro del mismo tope
+diario: observaciones con la cita exacta y su origen, un tema para las que no lo tenían, una
+síntesis de cada tema cuyas entradas se movieron. Un tema solo se vuelve a sintetizar cuando la
+evidencia de detrás cambió, así que el ciclo nunca se alimenta a sí mismo. El apoyo se cuenta
+en **casos** —el origen de una cita, de modo que la misma sesión copiada en dos ventanas es un
+solo caso— y una inferencia se publica sola únicamente con tres familias de origen conocido
+detrás. Aprender y publicar son dos actos: lo que infiere espera en el Twin hasta que hayas
+dicho, una vez, que las inferencias pueden llegar a `TASTE.md`, y cada escritura de ese fichero
+pasa por un **buzón de salida** que compara el fichero antes de escribir y lo relee después.
+Una línea que borras en el fichero es un veto; una línea que reescribes es tu firma sobre esas
+palabras; y las dos se escuchan antes de volver a servir cualquier criterio.
+
+### Un olvido que sobrevive a una copia de seguridad
+
+Dos puertas, un protocolo: una **retirada** quita la elegibilidad y conserva los bytes; una
+**purga** blanquea también las copias —fotografías, ofertas, el localizador de un historial— y
+conserva las coordenadas, para que el recibo pueda seguir diciendo qué se limpió. Las dos
+enseñan primero un plan, con los siete recuentos que alcanzarían y lo que se conservaría, y se
+confirman solo por la puerta que las previsualizó. Cada operación se anexa, con fsync, a un
+diario fuera de la base antes de que exista su fila: una copia restaurada de antes de una purga
+encuentra un diario que no lleva y la memoria entra en **cuarentena** —toda entrega contesta
+`unavailable` hasta que una persona reconcilia— en vez de devolver el texto en silencio.
+
+### Encenderla
+
+```bash
+panoma agent-key "Claude Code" --install   # la clave y el bloque MCP: las herramientas, el parte y la memoria
+panoma hooks --install                      # los ganchos del ciclo de vida: el parte al abrir la sesión, el puntero del recibo al cerrarla
+panoma memory allow claude-code capture --all --notice 2   # recibos y hechos tipados, en todos los proyectos
+panoma memory allow claude-code extract --project kestrel  # tus propios turnos, al modelo, para un proyecto
+panoma memory allow claude-code twin --all                 # el Twin aprende solo
+panoma memory status                        # ofertas, recibos, cursores, qué programas están verificados
+```
+
+Cada concesión es también un interruptor en la pantalla del Twin, con la frase que dice qué se
+lee, desde qué byte y cómo retirarla. `panoma memory revoke` retira una y dice qué se detiene
+con ella; `panoma memory withdraw` y `panoma memory purge` son las dos puertas de arriba.
+
 ## Estructura
 
 ```
@@ -330,12 +564,22 @@ packages/core/     motor de detección (TypeScript puro, sin red)
   disk.ts          ocupación en disco y qué parte se regenera con un comando
   secrets.ts       credenciales commiteadas en los ficheros que git sigue
   analyze.ts       orquestador del pipeline
+  memory-contract.ts  el contrato de memoria: vocabulario, hashes canónicos, renderizado, comprobación de recepción
+  predicates.ts    condiciones tipadas en tres valores: seis hojas bajo all, any y not
+  checks-eval.ts   el evaluador puro de una comprobación: pass, fail o unknown, y nada ejecutado
+  cases.ts         el caso de una tarea como proyección: pedido, decidido, declarado, comprobado
+  history/         los lectores de los historiales de los agentes: recibos, hechos tipados, los turnos del dueño
 
 packages/db/       esquema PostgreSQL (Drizzle), ingesta y consultas
   schema.ts        tablas; snapshots append-only, ids deterministas
   ingest.ts        volcado idempotente de un escaneo
   queries.ts       lecturas del catálogo
   client.ts        driver: PGlite en local, postgres-js con DATABASE_URL
+  notes.ts         la memoria curada: propuestas, la puerta, sucesión, caducidad, los topes
+  memory-revisions.ts  cada objeto entregado, fotografiado en cada revisión
+  memory-checks.ts · memory-outcomes.ts · commitments.ts  comprobaciones, observaciones, incidencias, obligaciones
+  memory-jobs.ts · model-reservations.ts  trabajos por lotes con arrendamiento, y la fila del libro antes de cada llamada de pago
+  memory-purge.ts · memory-usage.ts  retirar y purgar con su diario, y la cuota de almacenamiento
 
 packages/enrich/   datos que necesitan red
   registries.ts    npm, pub, PyPI, crates.io, Go, RubyGems, Packagist

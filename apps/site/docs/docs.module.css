@@ -517,6 +517,83 @@
   line-height: 1.55;
 }
 
+/*
+  The memory figure: one SVG that takes the page's own ink and lines. It is wide on purpose —
+  nine stations and a loop do not fold into a phone column without losing the loop — so below
+  its natural width it scrolls sideways inside its own box instead of shrinking its words past
+  reading size. Text sizes are in viewBox units: at the column's full width they render close to
+  the notes beside them.
+ */
+.figure {
+  margin: 28px 0 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.figureCanvas {
+  display: block;
+  width: 100%;
+  min-width: 900px;
+  height: auto;
+  font-family: var(--display);
+}
+.figureBox {
+  fill: #fff;
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+.figureBoxStrong {
+  stroke: var(--ink);
+  stroke-width: 1.5;
+}
+.figureBoxDashed {
+  stroke-dasharray: 4 4;
+}
+.figureTitle {
+  fill: var(--ink);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.figureLine {
+  fill: var(--muted);
+  font-size: 13px;
+}
+.figureCaption {
+  fill: var(--faint);
+  font-size: 12px;
+  font-style: italic;
+}
+.figureArrow {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.25;
+}
+.figureArrowDashed {
+  fill: none;
+  stroke: var(--faint);
+  stroke-width: 1.25;
+  stroke-dasharray: 5 4;
+}
+.figureArrowHead {
+  fill: var(--ink);
+}
+.figureGate {
+  fill: var(--ink);
+}
+.figureGateLabel {
+  fill: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.figureNote {
+  max-width: 68ch;
+  margin-top: 10px;
+  color: var(--faint);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
 @media (max-width: 900px) {
   .navInner {
     grid-template-columns: 1fr auto;

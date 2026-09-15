@@ -31,6 +31,23 @@ npx panoma up
 It brings the catalog up at `http://127.0.0.1:4173`, with its database inside your home
 folder. Nothing else to install, no account to create. Stop it with `npx panoma down`.
 
+## The memory
+
+Each project keeps a curated memory for your agents — notes, criteria of your taste,
+decisions, commitments — and nothing enters it without your yes. What an agent receives is a
+contract: one offer per delivery, hashed and kept, printed into a new Claude Code context by
+the `SessionStart` hook and carried over MCP by `panoma_context`; with the capture switch on,
+a reader finds those exact bytes in the agent's own transcript and writes what arrived, unit
+by unit. A rule can carry checks the patrol looks at against the disk — pass, fail or unknown,
+never run — and typed conditions the selector judges before serving it. Forgetting is
+previewed, journaled outside the database and quarantined when a backup disagrees.
+
+```bash
+npx panoma hooks --install
+npx panoma memory allow claude-code capture --all --notice 2
+npx panoma memory status
+```
+
 More at [panoma.ai](https://panoma.ai).
 
 ## Licence

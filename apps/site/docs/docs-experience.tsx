@@ -8,6 +8,7 @@ import theme from "../landing/landing-theme.module.css";
 import { copyCommand } from "./copy-command";
 import { DOCS_COMMANDS, DOCS_COPY as text, DOCS_NAV, DOCS_SWARM } from "./docs-copy";
 import { paintMarkAndDocs } from "./docs-hero";
+import { MemoryFigure } from "./memory-figure";
 import styles from "./docs.module.css";
 
 /*
@@ -284,6 +285,8 @@ export function DocsExperience() {
             <p className={styles.lead}>{text.memory.lead}</p>
             <p className={styles.note}>{text.memory.leadBody}</p>
 
+            <MemoryFigure />
+
             <h3 className={styles.subhead}>{text.memory.floorsTitle}</h3>
             <p className={styles.note}>{text.memory.floorsLead}</p>
             <div className={styles.rules}>
@@ -298,6 +301,61 @@ export function DocsExperience() {
             <h3 className={styles.subhead}>{text.memory.gateTitle}</h3>
             <p className={styles.note}>{text.memory.gateBody}</p>
 
+            <h3 className={styles.subhead}>{text.memory.contractTitle}</h3>
+            <p className={styles.note}>{text.memory.contractLead}</p>
+            <ul className={styles.tools}>
+              {text.memory.contract.map((field) => (
+                <li key={field.name}>
+                  <code>{field.name}</code>
+                  <span>{field.body}</span>
+                </li>
+              ))}
+            </ul>
+            <p className={styles.note}>{text.memory.contractOrder}</p>
+
+            <h3 className={styles.subhead}>{text.memory.roadsTitle}</h3>
+            <ul className={styles.tools}>
+              {text.memory.roads.map((road) => (
+                <li key={road.name}>
+                  <code>{road.name}</code>
+                  <span>{road.body}</span>
+                </li>
+              ))}
+            </ul>
+            <p className={styles.note}>{text.memory.roadsNote}</p>
+
+            <h3 className={styles.subhead}>{text.memory.receiptTitle}</h3>
+            <p className={styles.note}>{text.memory.receiptBody}</p>
+            <p className={styles.note}>{text.memory.matrixBody}</p>
+
+            <h3 className={styles.subhead}>{text.memory.switchesTitle}</h3>
+            <p className={styles.note}>{text.memory.switchesLead}</p>
+            <div className={styles.rules}>
+              {text.memory.switches.map((grant) => (
+                <article key={grant.title}>
+                  <h3>{grant.title}</h3>
+                  <p>{grant.body}</p>
+                </article>
+              ))}
+            </div>
+            <p className={styles.note}>{text.memory.switchesNote}</p>
+
+            <h3 className={styles.subhead}>{text.memory.checksTitle}</h3>
+            <p className={styles.note}>{text.memory.checksLead}</p>
+            <ul className={styles.tools}>
+              {text.memory.checks.map((purpose) => (
+                <li key={purpose.name}>
+                  <code>{purpose.name}</code>
+                  <span>{purpose.body}</span>
+                </li>
+              ))}
+            </ul>
+            <p className={styles.note}>{text.memory.checksNote}</p>
+
+            <h3 className={styles.subhead}>{text.memory.commitmentsTitle}</h3>
+            <p className={styles.note}>{text.memory.commitmentsBody}</p>
+            <p className={styles.note}>{text.memory.conditionsBody}</p>
+
             <h3 className={styles.subhead}>{text.memory.capsTitle}</h3>
             <p className={styles.note}>{text.memory.capsLead}</p>
             <ul className={styles.tools}>
@@ -308,6 +366,10 @@ export function DocsExperience() {
                 </li>
               ))}
             </ul>
+            <p className={styles.note}>{text.memory.quotaBody}</p>
+
+            <h3 className={styles.subhead}>{text.memory.forgettingTitle}</h3>
+            <p className={styles.note}>{text.memory.forgettingBody}</p>
 
             <h3 className={styles.subhead}>{text.memory.scaleTitle}</h3>
             <p className={styles.note}>{text.memory.scaleBody}</p>
@@ -356,6 +418,15 @@ export function DocsExperience() {
 
             <h3 className={styles.subhead}>{text.twin.floorsTitle}</h3>
             <p className={styles.note}>{text.twin.floorsBody}</p>
+
+            <h3 className={styles.subhead}>{text.twin.learnTitle}</h3>
+            <p className={styles.note}>{text.twin.learnBody}</p>
+
+            <h3 className={styles.subhead}>{text.twin.outboxTitle}</h3>
+            <p className={styles.note}>{text.twin.outboxBody}</p>
+
+            <h3 className={styles.subhead}>{text.twin.limitsTitle}</h3>
+            <p className={styles.note}>{text.twin.limitsBody}</p>
 
             <h3 className={styles.subhead}>{text.twin.criticsTitle}</h3>
             <div className={styles.rules}>
