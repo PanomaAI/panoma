@@ -437,12 +437,21 @@ function validEvidence(columns: { origin: SQLWrapper; fields: SQLWrapper; identi
 /** The row the correlated family subqueries below walk, seen through `validEvidence`. */
 const CANDIDATE = { origin: sql`candidate.origin`, fields: sql`candidate.fields`, identity: sql`candidate.identity` };
 
-/** Another valid active member anywhere in this row's revision family: the conflict predicate. */
+/**
+ * Another valid active member anywhere in this row's revision family: the conflict predicate.
+ *
+ * The family is walked once per row and joined, never tested per candidate. Written as
+ * `candidate.id in (<the walk>)`, the planner ran the recursive walk inside the join filter —
+ * once for every pair of rows, 72,900 walks over an archive of 270 decisions — and a selection
+ * that should take milliseconds took four seconds; the brief has two in all. As a derived table
+ * the walk runs once per row and the candidates are found by their key (15-Sep-2026).
+ */
 function competingActive() {
   return sql`exists (
-    select 1 from decision_episodes candidate
-    where candidate.id in (${familyIds(sql`decision_episodes.id`)})
-      and candidate.id <> decision_episodes.id and candidate.status = 'active'
+    select 1
+    from (${familyIds(sql`decision_episodes.id`)}) as kin
+    inner join decision_episodes candidate on candidate.id = kin.id
+    where candidate.id <> decision_episodes.id and candidate.status = 'active'
       and ${validEvidence(CANDIDATE)}
   )`;
 }
@@ -534,9 +543,9 @@ export async function listConflictingEpisodeFamilies(db: Database): Promise<Deci
     ...getTableColumns(t.decisionEpisodes),
     members: sql<string>`(
       select string_agg(candidate.id, ',' order by candidate.created_at desc, candidate.id asc)
-      from decision_episodes candidate
-      where candidate.id in (${familyIds(sql`decision_episodes.id`)})
-        and candidate.status = 'active'
+      from (${familyIds(sql`decision_episodes.id`)}) as kin
+      inner join decision_episodes candidate on candidate.id = kin.id
+      where candidate.status = 'active'
         and ${validEvidence(CANDIDATE)}
     )`,
   }).from(t.decisionEpisodes).where(and(

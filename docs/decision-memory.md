@@ -114,6 +114,16 @@ reading, so a family that moved underneath is refused with the usual 409 rather 
 overwritten. Nothing creates such a family any more: the list is empty for a catalog that
 never had one. Exact save retries remain idempotent.
 
+The family walk is a recursive query, and how it is joined decides the cost of every
+briefing. Written as `candidate.id in (<the walk>)`, the planner ran the walk inside the join
+filter — once for every pair of active rows, 72,900 walks over an archive of 270 decisions —
+and the selector's eligibility read took four seconds on a fast machine, twice the brief's
+whole budget, before the WebAssembly runtime had even warmed up. Since 15-Sep-2026 the walk is
+a derived table joined to the candidates by their key (`competingActive` and the members
+aggregate in `packages/db/src/episodes.ts`): one walk per row, and the same read takes about
+90 ms. The frozen evaluation corpus in `apps/web/lib/memory-corpus.test.ts` is what caught it,
+by overrunning its five-second task budget on a shared CI runner.
+
 The screen receives the active version from the complete family, independently of its recent
 record limit, and links to it instead of offering a conflicting restore or revision. It sends
 `expectedUpdatedAt` on changes so a stale view is refused without losing the current state.

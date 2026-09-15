@@ -37,17 +37,6 @@ beforeAll(async () => {
   const { openDatabase } = await import("@panoma/db/client");
   ({ db: database, close } = await openDatabase());
   await database.insert(schema.projects).values(projects);
-  /*
-    One selection and one read before any case is timed. The task budget of a case measures the
-    task — its pages, its full reads — and not the first load of the delivery modules or the
-    query planner's cold start, which on a shared CI runner cost the first two cases their five
-    seconds on 15-Sep-2026 while every case after them conformed. Nothing here enters a result.
-   */
-  const warm = projects[0]!;
-  await prepareMemory({ database, project: warm, audience: "agent", channel: "mcp", profile: "mcp-memory-v2", agentId: null, context: null,
-    requestKey: null, names: {}, consent: { sources: {} }, task: "warm-up", request: { version: 2, mode: "action" } });
-  await readMemoryItem({ database, project: warm, audience: "agent", profile: "mcp-memory-v2", consent: { sources: {} },
-    read: { kind: "decision", id: "dec_warm_up", revision: 1 }, names: {} });
 });
 
 afterAll(async () => {
