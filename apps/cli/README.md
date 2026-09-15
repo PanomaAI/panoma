@@ -16,7 +16,7 @@ No install, no account, no network: it analyzes the folder and prints what proje
 - `npx panoma scan <path> -d` — copies of the same project, grouped.
 - `npx panoma md check <path>` — checks the project's `AGENTS.md` / `CLAUDE.md`: paths that no longer exist, scripts that are gone, versions that no longer run.
 - `npx panoma md init <path>` — writes your agents a truthful starting point (needs the catalog up).
-- `npx panoma handoff --to codex` — continues the newest conversation in this folder in another agent: written into that agent's own history so its normal resume finds it, the original untouched. Add `--dry-run` to see what would travel first.
+- `npx panoma handoff --to codex` — continues the newest conversation in this folder in another agent: written into that agent's own history so its normal resume finds it, the original untouched. Add `--dry-run` to see what would travel first, with what each tier weighs in tokens; `--tier compact` sends the digest and the newest turns, and `--digest model` lets the connected model write that digest from the whole conversation, in windows, one counted call each.
 
 ## The app
 

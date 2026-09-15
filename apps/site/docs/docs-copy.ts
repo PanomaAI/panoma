@@ -472,11 +472,11 @@ export const DOCS_COPY = {
     tiers: [
       {
         level: "full",
-        body: "Every turn, the tool calls and their results, the source's own summary and the title. The default for a native target, and the promise the tests hold: read back, the copy hashes the same as the source.",
+        body: "Every turn, the tool calls and their results, the source's own summaries where each was made, and the title. A conversation the agent compacted travels whole: the target's own model restarts from the newest summary, as the source's did, and the transcript on both sides is everything. The default for a native target, and the promise the tests hold: read back, the copy hashes the same as the source.",
       },
       {
         level: "compact",
-        body: "The digest written as the first turn, plus the newest turns whole — twelve by default, and --keep changes it. For a source that is large: a conversation that ended on a limit is usually the size that hit it, and the Handoff screen preselects this tier over 16 MiB or 150,000 estimated tokens and says which measure decided. Every tier is weighed before anything is written, and the screen prints its tokens next to it. With the model box ticked, the connected model compacts the whole conversation itself, in windows of 60,000 characters read oldest to newest, one call per window, and the last answer is the summary: the box starts ticked when the source carries no summary Panoma can read, and off when it does, because then the model would only add what came after that summary. A chain that does not fit in the calls left today is refused before the first one, with both figures.",
+        body: "The digest written as the first turn, plus the newest turns whole — twelve by default, and --keep changes it. For a source that is large: a conversation that ended on a limit is usually the size that hit it, and the Handoff screen preselects this tier over 16 MiB or 150,000 estimated tokens and says which measure decided. Every tier is weighed before anything is written, and the screen prints its tokens next to it. With the model box ticked, the connected model compacts the whole conversation itself, in windows of 60,000 characters read oldest to newest, one call per window, and the last answer is the summary: the box starts ticked when the source carries no summary Panoma can read, and off when it does, because then the model would only add what came after that summary. A chain that does not fit in the calls left today is refused before the first one, with both figures; with no model connected, the screen says beside the box that the mechanical digest travels instead, and links to where a model is connected.",
       },
       {
         level: "brief",
@@ -889,7 +889,7 @@ export const DOCS_COPY = {
       {
         name: "PANOMA_HANDOFF_BUDGET",
         value: "10",
-        what: "The model-written digest of a conversation being handed off. Asked for only by a person — the box on the screen, or --digest model in the terminal — and never through MCP, where an agent gets the mechanical digest. It is the one call that sends a whole transcript, redacted and wrapped, to a provider, which is why the cap is the smallest of the nine and the box is off by default.",
+        what: "The model-written digest of a conversation being handed off. Asked for only by a person — the box on the screen, or --digest model in the terminal — and never through MCP, where an agent gets the mechanical digest. It is the one call that sends a whole transcript, redacted and wrapped, to a provider, in windows of 60,000 characters counted against the cap before the first one, which is why the cap is the smallest of the nine; the box starts ticked only when the source carries no summary Panoma can read and the chain fits the day, and off when the source's own summary already travels inside the digest.",
       },
     ],
     capsNote:

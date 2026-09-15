@@ -261,6 +261,12 @@ Mandar el resumen y los últimos turnos en vez de todos, cuando la conversación
 pnpm exec tsx apps/cli/src/index.ts handoff --to claude --tier compact
 ```
 
+Que el modelo conectado escriba el resumen, leyendo la conversación entera por ventanas:
+
+```bash
+pnpm exec tsx apps/cli/src/index.ts handoff --to claude --tier compact --digest model
+```
+
 Ver qué viajaría y qué se quedaría, con las cifras, sin escribir nada:
 
 ```bash
@@ -283,6 +289,21 @@ con el resumen mecánico y nunca hacia el mismo agente. El mismo agente, con la 
 que quieres continuar, no escribe nada en `full`: cada almacén es por máquina y por carpeta,
 nunca por cuenta, así que panoma imprime tus propios pasos —cerrar sesión, iniciarla, reanudar—
 y no ejecuta ninguno; en `compact` escribe una copia más corta en el mismo almacén.
+
+`full` es la transcripción entera: una conversación que el agente compactó conserva cada
+turno, con cada uno de sus resúmenes donde se hizo, y el modelo del destino arranca del más
+nuevo igual que hacía el del origen. `compact` es la compactación propia de Panoma. Su
+resumen es mecánico y gratis —meta, el resumen más nuevo del origen, decisiones, ficheros,
+comandos, asuntos abiertos, el último intercambio— salvo que dejes que lo escriba el modelo
+conectado: entonces el modelo lee la conversación entera por ventanas de 60.000 caracteres,
+de la más antigua a la más nueva, una llamada cada una, y la última respuesta es el resumen.
+Un origen con un resumen propio legible (Claude Code, OpenCode) se lee desde ese resumen en
+adelante: la última compactación y lo que vino después. Los de Codex van cifrados, así que
+un origen de Codex se lee entero. Las llamadas se cuentan antes de pagar nada; la pantalla y
+el terminal dicen cuántas, cuánto pesa cada nivel en tokens, y preseleccionan `compact` por
+encima de 150.000. La casilla arranca marcada solo cuando el origen no trae un resumen que
+Panoma pueda leer, hay un modelo conectado y la cadena cabe en el tope del día; sin modelo
+conectado la pantalla dice qué viaja en su lugar y enlaza a donde se conecta uno.
 [docs/handoff.md](../docs/handoff.md) tiene la decisión, las versiones contra las que se
 verificó cada almacén y qué no cruza nunca la raya.
 

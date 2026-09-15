@@ -260,6 +260,12 @@ Send the digest and the newest turns instead of every one, for a conversation th
 pnpm exec tsx apps/cli/src/index.ts handoff --to claude --tier compact
 ```
 
+Let the connected model write the digest, reading the whole conversation in windows:
+
+```bash
+pnpm exec tsx apps/cli/src/index.ts handoff --to claude --tier compact --digest model
+```
+
 See what would travel and what would stay, with the counts, and write nothing:
 
 ```bash
@@ -281,8 +287,23 @@ behind the operator key, and an agent holding a key can do it for the project it
 same agent. The same agent, with the account you want to continue with, writes nothing at
 `full`: every store is per machine and per folder, never per account, so panoma prints your own
 sign-out, sign-in, and resume steps and runs none of them; at `compact` it writes a shorter
-copy in the same store. [docs/handoff.md](docs/handoff.md) has the decision, the versions
-each store was verified against, and what never crosses the line.
+copy in the same store.
+
+`full` is the whole transcript: a conversation the agent compacted keeps every turn, with each
+of its summaries where it was made, and the target's own model restarts from the newest one
+as the source's did. `compact` is Panoma's own compaction. Its digest is mechanical and free
+—goal, the source's newest summary, decisions, files, commands, open items, the last
+exchange— unless you let the connected model write it: then the model reads the whole
+conversation in windows of 60,000 characters, oldest to newest, one call each, and the last
+answer is the summary. A source with a readable summary of its own (Claude Code, OpenCode) is
+read from that summary on: the last compaction and what followed. Codex's summaries are
+encrypted, so a Codex source is read whole. The calls are counted before anything is paid;
+the screen and the terminal say how many, what each tier weighs in tokens, and preselect
+`compact` over 150,000 of them. The box starts ticked only when the source carries no
+summary Panoma can read, a model is connected and the chain fits today's cap; with no model
+connected the screen says what travels instead and links to where one is connected.
+[docs/handoff.md](docs/handoff.md) has the decision, the versions each store was verified
+against, and what never crosses the line.
 
 Analyze one project:
 
