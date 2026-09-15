@@ -25,11 +25,16 @@ without both guards, and the doors in the second call each handler from the netw
 the tab next door and demand a 403 with the body unread and the catalog untouched.
 `apps/web/app/api/handoff/launch/route.test.ts` holds the
 allowlist of what `open` may be handed, `apps/web/lib/handoff-http.test.ts` sweeps the throw
-sites, `apps/web/lib/handoff-view.test.ts` the grouping and the limit badge,
+sites, `apps/web/lib/handoff-view.test.ts` the grouping, the limit badge and —since
+15-Sep-2026— the preselection by tokens and the default of the model digest's box,
 `apps/web/components/modal-keyboard.test.ts` and `handoff-panel.test.ts` the panel —the
 second, since 12-Sep-2026, that no door is offered on a document receipt and that the table
 describes the tier the button saves—, `apps/web/lib/handoff-digest.test.ts` that the two lists
-the model prompt quotes travel masked and inside the block, and
+the model prompt quotes travel masked and inside the block and, since 15-Sep-2026, the chain
+over the whole transcript with a mocked model: one window per 60,000 characters, oldest to
+newest, every turn in exactly one window, the start after the newest readable summary, one
+ledger row per call, and the retry that never takes the slot of a window still to read;
+`apps/web/lib/handoff-write.test.ts` the three tiers sized with the engine's own measure; and
 `apps/cli/src/handoff-command.test.ts` the verb over fixture stores, `--dry-run` included: it
 writes no bundle, spends no model call and names the tier the write would record. The channel's half is
 held by `packages/mcp/src/format.test.ts`, which counts the untrusted marks over what the two
@@ -321,8 +326,48 @@ not panoma's: the screen says both in one line each, and neither can be undone f
 | tier | what travels | for whom |
 | --- | --- | --- |
 | `full` | every turn, the tool calls and their results, the source's own summaries at their positions and the title | a native target; the default |
-| `compact` | one `summary` part rendering the digest, plus the newest turns whole (twelve by default, `--keep` and `keepTurns` change it) | a native target when the source is large; preselected over 16 MiB |
+| `compact` | one `summary` part rendering the digest, plus the newest turns whole (twelve by default, `--keep` and `keepTurns` change it) | a native target when the source is large; preselected over 16 MiB, or over 150,000 estimated tokens |
 | `brief` | a Markdown document with the digest and the last exchange, to paste as the first message | any agent; the only tier for a document-only one |
+
+**Each tier is weighed before anything is written**, since 15-Sep-2026, so the person chooses
+with the three figures in front of them and not with a table of adjectives.
+`tierSizes(conversation, digest, keepTurns?)` in `apps/web/lib/handoff-write.ts` sizes the
+three tiers on the same conversation with the engine's own measure: `full` is the transcript
+as it is —`{turns, estimatedTokens}`, and its tokens are `digest.stats.estimatedTokens` to the
+digit—, `compact` is what `compactConversation` would write with that `keepTurns` —the digest
+as a summary turn plus the newest turns, the source's own summary turns dropped as the engine
+drops them—, and `brief` is the Markdown `briefMarkdown` would write, `{estimatedTokens}`
+alone, because a document has no turns. All three are counted by `estimateTokens` over
+`textOfTurns`, the rule behind `stats.estimatedTokens` —four characters per token, line
+endings normalised—, which `@panoma/handoff` exports since that day for exactly this: a
+second rule would have made the three figures incomparable with each other and with the size
+line. `previewSizes` puts them beside the size line and the model digest's cost, and the two
+previews answer that one object so they cannot drift —`GET /api/handoff/[id]`, which since
+the same day takes `?keepTurns=N` and refuses what is not a positive integer with 400 `body`,
+and the channel's dry run, which applies the body's `keepTurns`— as `sizes` and
+`modelDigest: { calls }`. The terminal computes the same object in its own process
+(`tierSizes` in `apps/cli/src/handoff-command.ts`, field for field and not imported, because
+the command runs the engine without the catalog) and prints it under the size line of every
+preview as `full ≈ 628k tokens · compact ≈ 9k tokens · brief ≈ 3k tokens`, with `--keep`
+applied and `--json` carrying it as `sizes`; the channel's formatter appends «At tier full ≈
+Nk tokens travel; at compact ≈ Nk; at brief ≈ Nk.» to the dry run's header. On the screen the
+size line —«turnos: {n} · ≈ {k}k tokens»— sits under the title as soon as the preview
+arrives, where the copy under the travels / stays table used to be, and every tier option
+carries «— ≈ {k}k tokens» after its label: the three of the native fieldset, the two of the
+same-agent fold, and the document-only sentence with `brief`'s figure. A catalog older than
+that day answers no `sizes`, and the labels then stand alone (`TierWeight` in
+`handoff-panel.tsx` paints nothing). Thousands are `max(1, round(tokens / 1000))` on every
+surface, so a conversation of 300 tokens reads «≈ 1k» and never «≈ 0k».
+
+**The preselection follows the tokens first, and the bytes when there is no estimate.**
+`defaultTier(bytes, native, tokens?)` in `apps/web/lib/handoff-view.ts` picks `compact` for a
+native target when `largeBy` says the source is large: over `LARGE_TOKENS`, 150,000 estimated
+tokens —more than a context takes at once, so the target's model would not read the whole
+transcript anyway—, or over `LARGE_BYTES`, 16 MiB, the measure that decided alone until
+15-Sep-2026 and still decides before the preview arrives, when only the row's bytes are known.
+The hint under the radios names the measure that decided: «Preseleccionado: ≈ {k}k tokens,
+más de lo que cabe en un contexto de una vez» when the tokens did, the old size sentence when
+only the bytes did; the person's own click on a radio wins over the default from then on.
 
 What never travels, at any tier: **thinking and reasoning blocks** (Claude's signed ones cannot
 be reproduced, Codex's reasoning cannot be produced at all), **images**, and **subagent runs**.
@@ -372,7 +417,8 @@ A conversation over 64 MiB is refused with `too-large` at read time, whatever th
 the preview itself fails and no tier is ever offered; the three surfaces say the same thing
 —«The conversation is over 64 MiB, which is more than a handoff carries»— and the web sentence
 no longer points at «digest + last turns», a choice the person could not make. Between 16 and
-64 MiB the screen preselects `compact` and says why. The panel derives one effective tier —the
+64 MiB, or over 150,000 estimated tokens, the screen preselects `compact` and says which
+measure decided. The panel derives one effective tier —the
 radio for a native target, the two-way fold for the same agent, `brief` for a document-only
 target whatever the radio last said— and feeds it to the travels / stays table, the digest box
 and preview, and the write, so what the table says is what the button saves; and the «Before
@@ -558,7 +604,7 @@ caution.
   as text and prints it; it never runs it.
 
 **The dry run.** With `dryRun: true` the route answers 200
-`{ dryRun: true, conversation, target, surface, tier, digest, fidelity, size, dropped, receipt }`
+`{ dryRun: true, conversation, target, surface, tier, digest, fidelity, size, sizes, modelDigest, dropped, receipt }`
 and writes nothing: no file, no receipt, and the discovery cache is not forgotten.
 `conversation` is the row as the list answers it: no path, no folder, the title redacted.
 `digest` is the mechanical `Digest` with every string field passed through `redactSecrets`
@@ -568,7 +614,12 @@ the write's answer; the document a `brief` writes is never on it, and the person
 `.md` at its path. `fidelity` is `fidelityOf(target)` for a native target at `full` or
 `compact` and `null` otherwise, for two causes the formatter words apart: a document-only
 target has no fidelity to promise, and at `brief` a document is written whatever the target.
-`size` is `{ turns, bytes, estimatedTokens }`; `receipt` is the newest receipt for that
+`size` is `{ turns, bytes, estimatedTokens }`; since 15-Sep-2026 `sizes` is the three tiers
+weighed by the engine, `{ full: {turns, estimatedTokens}, compact: {turns, estimatedTokens},
+brief: {estimatedTokens} }` with the body's `keepTurns` applied to `compact` and `brief`, and
+`modelDigest` is `{ calls }`, the windows the model digest would read on the person's
+surfaces —both from `previewSizes` in `handoff-write.ts`, the same assembly the operator's
+preview answers («The three tiers», above)—; `receipt` is the newest receipt for that
 conversation, target and surface (`findHandoff`, by the source's hash), or `null`, which is
 how an agent learns «already handed to Codex on Tuesday» before writing a second copy. On
 the MCP side the digest and the conversation titles reach the model inside `untrusted_data`
@@ -605,21 +656,125 @@ the same on every run. With «Let a model write the digest» a model writes the 
 (`by: "model"`), under the `handoff` spend family —factory cap 10, `PANOMA_HANDOFF_BUDGET`,
 ledger row before parsing— with the conversation wrapped as untrusted material of origin
 `conversation`, the ninth origin of [untrusted.md](untrusted.md), because a transcript carries
-the person's words and every README and page the agent read along the way. The prompt wraps
-it in four blocks: the person's first message, the source agent's own summary when there is
-one, the two lists the mechanical digest quotes from the transcript —files touched and open
-items, both through `redactSecrets`— and the turns; only the digest's counts go as plain
-lines. Until 12-Sep-2026 the two lists went plain and unredacted, on the belief that the
-reader had covered them —no reader redacts; the readers only count `redacted_thinking`— so a
-key in a «next steps» line reached the provider bare while the same line inside the turns
-block was masked; `handoff-digest.test.ts` holds the lists inside a block with the secret
-masked. The «first message» is chosen as the engine chooses the digest's `goal`: the first
-user turn's text part that is not a slash-command marker, never a `summary` part —a compacted
-conversation carries each summary as a user turn at its position, and until that day the prompt
-took the first such turn whole, so a compacted source sent its summary twice, once labelled as
-the first message. The digest cuts its goal to 600 characters and the prompt keeps 1,500,
-which is why `apps/web/lib/handoff-digest.ts` selects the text itself with a local copy of the
-engine's `COMMAND_MARKER`, and the test holds both selections to the same answer.
+the person's words and every README and page the agent read along the way.
+
+**The model reads the whole transcript, in windows, since 15-Sep-2026.** Until that day it
+got one prompt with the newest turns up to 24,000 characters: a summary of the tail, and a
+person who handed a long conversation got a paragraph that knew nothing of its first half.
+The owner decided that panoma compacts the conversation itself, the way the agents do, and
+`apps/web/lib/handoff-digest.ts` does it as a chain. The turns are rendered as text —thinking
+never, because no reader keeps such a part; a tool result as its note cut to 400 characters,
+a tool call as `textOfPart` cut to 600, a text or summary part cut to 2,500, every part
+through `redactSecrets` before the cut— and packed oldest to newest, as `[role]` lines, into
+windows of `WINDOW_CHARS`, 60,000 characters; a turn larger than a window is clipped to it
+with the mark `…(turn clipped)` and takes a window of its own. Call 1 gets the instructions,
+the person's first message, the source's own newest readable summary as «the summary so far»
+when there is one, and window 1, and answers a running summary; call k gets the instructions,
+«the summary so far» —the previous answer— and window k; the answer to the last window is the
+digest's summary, `by: "model"`. Each call has room for `MAX_DIGEST_TOKENS`, 1,200 tokens of
+answer. The plan is pure and costs nothing: `planDigest(conversation, digest)` answers
+`{ windows, from, calls }` —the rendered window texts, the index of the first turn they cover,
+and `calls`, which is `windows.length` because retries are not planned— and it is what the
+preview counts, what the routes check the cap against, and what the paid half reads one call
+at a time, the same plan either way. A conversation with nothing to render still plans one
+window, `(nothing to show)`, so the chain still makes its one call and the model writes from
+the goal and the summary so far, exactly what the single call did before. Measured here on a
+synthetic conversation of 31 MB and 7,392 turns, the plan takes about 70 ms and comes out at
+206 windows, which is the other half of the story: a plan is cheap, a chain is not, and «The
+calls and the cap», below, says what the cap makes of that.
+`buildDigestPrompt(conversation, digest, step?)` builds one call's prompt; without a step it
+builds call 1. The sentences a test can hold are
+«this is window {k} of {n}», «Nothing came before this window.», «The summary so far, made by
+the source agent of the part before this window:», «The summary so far, from the previous
+window:» and «The conversation, window {k} of {n}, oldest to newest:»; a single call over a
+conversation nobody compacted keeps the old «The conversation, oldest to newest:», because
+there is no chain to explain.
+
+**After the newest readable summary.** When the source's own newest summary is readable
+—`digest.summary` is set, which the engine takes from the last of `conversation.compactions`:
+Claude Code and OpenCode— the windows cover only the turns after the newest summary-only turn,
+the turn whose parts are all of kind `summary`, and that summary is the chain's first «summary
+so far», labelled as the source agent's: take the last compaction and what followed, because
+the summary already stands for everything before it and the source's own model restarted
+there. Otherwise the windows cover everything, `from` is 0 and the first call says «Nothing
+came before this window.»: a conversation nobody compacted, and a Codex source whatever its
+history, because a Codex `compacted` record closes with an encrypted item only Codex can open
+and its `compactions` stay empty («A compaction is a marker, not a cut», above). A digest
+that carries a summary with no summary-only turn behind it —a shape no reader writes:
+`TurnBuilder` in `readers/shared.ts` keeps every summary in a turn of its own— covers
+everything and still opens with the summary so far.
+
+The head of the prompt is the same on every call, and the window and the summary so far are
+what changes. Everything made of the transcript goes wrapped as untrusted material, with the
+three-line notice once, behind the last block: the two lists the mechanical digest quotes
+—files touched and open items, both through `redactSecrets`, one block cut at 6,000
+characters—, the person's first message, cut at 1,500, the summary so far, cut at 12,000, and
+the window, whose wrapper cut at `WINDOW_CHARS` plus 256 guards only the few characters the
+neutralizing may add; only the digest's counts go as plain lines. The lists travel on every
+call so that every window names files the same way, and the summary so far goes wrapped
+whether it is the source's or the previous answer, because both are made of the transcript.
+Until 12-Sep-2026
+the two lists went plain and unredacted, on the belief that the reader had covered them —no
+reader redacts; the readers only count `redacted_thinking`— so a key in a «next steps» line
+reached the provider bare while the same line inside the turns block was masked;
+`handoff-digest.test.ts` holds the lists inside a block with the secret masked. The «first
+message» is chosen as the engine chooses the digest's `goal`: the first user turn's text part
+that is not a slash-command marker, never a `summary` part —a compacted conversation carries
+each summary as a user turn at its position, and until that day the prompt took the first
+such turn whole, so a compacted source sent its summary twice, once labelled as the first
+message. The digest cuts its goal to 600 characters and the prompt keeps 1,500, which is why
+`apps/web/lib/handoff-digest.ts` selects the text itself with a local copy of the engine's
+`COMMAND_MARKER`, and the test holds both selections to the same answer.
+
+**The calls and the cap.** One ledger row of kind `handoff` per call, written the moment the
+answer arrives and before anything looks at it, as everywhere else. The cap is checked
+against the whole chain **before any call**: `digestRefusal(locale, { cap, spent, calls })`
+answers the 429 body both paid doors send —`POST /api/handoff` with `digestBy: "model"`, after
+`refuseSameStore` and `checkHandoff`, and `POST /api/handoff/digest`— and it has two
+sentences for two cases a person acts on differently. Nothing left, `left <= 0`, is the
+sentence from before the chain, `api.handoffSpent` with `used` and `cap` and its hint; some
+left but fewer than the chain needs, `spent + calls > cap`, is `api.handoffNeeds` —«El resumen
+por modelo necesita llamadas: {needs}; quedan hoy {left} de {cap}.»— with `api.handoffNeedsHint`
+—«Sube el tope en Gasto, o deja el resumen mecánico.»— and `needs` and `left` as fields beside
+the sentence, for a surface that wants the figures; either way it is a 429 and nothing is
+paid, written or receipted. Inside the loop the brake is the one every organ has, `calls >=
+cap` before each window, never past the cap whatever the pre-check saw; a chain it stops
+early answers `windows.read` below `windows.planned`, which can only happen when another
+call of the family spent a slot between the check and the loop, because this family still
+reads, decides and spends in three steps ([budgets.md](budgets.md)). A cut answer —`stopReason ===
+"length"`— is asked for once more at double the room, 2,400 tokens, and only while the cap
+has a slot beyond the windows still to read: with a cap of 10 and 7 spent, a chain of three
+windows whose first answer is cut goes on with the cut answer, because the retry would take
+window 3's slot, and a chain that stops early is a summary of half the conversation labelled
+as the whole; with 6 spent the retry fires and its answer is the one handed to window 2. A
+window whose answer says nothing readable leaves the summary so far as it was. `POST
+/api/handoff/digest` answers `{ ok, digest, calls, windows: { planned, read }, model }`, and
+the terminal prints `digest by model · calls: {n}` in a dim line the moment that answer
+arrives, never under `--json`; an older catalog answering the digest alone prints no such
+line, and the 429 with `needs` and `left` reaches the terminal through `handoff.digestRejected`
+as it always did: «The catalog would not write the digest (429). The model digest needs
+calls: 3; 1 of 10 left today. Raise the cap in Spend, or keep the mechanical digest.» How a
+long conversation relates to the cap of ten is [budgets.md](budgets.md)'s to say.
+
+**The box starts ticked only when the model has something to add.** `modelDigestDefault` in
+`apps/web/lib/handoff-view.ts` decides the default of «Let a model write the digest» and the
+line under it in one place, from the preview and the spend family, in the order a person acts
+on: no model connected (`digestNoModel`), a cap of zero (`digestPaused`: the family paused or
+disabled in Spend, not a day's worth spent), nothing left today (`digestSpent`), a catalog that
+did not count the windows (the old `digestLeft` line, the box off, as before the chain), a
+chain longer than what is left (`digestNeeds`, «Necesita llamadas: {n}; quedan hoy {m} de
+{cap} — …», the box disabled, the same distinction the server's 429 makes), and then the source
+itself. A source whose newest summary panoma can read gets the box **off** and enabled, with
+`digestSourceSummary`: the summary already travels inside the mechanical digest, under its
+«## Summary», and the model would only add what came after, «en llamadas: {n}». A source with
+no readable summary gets the box **on** when the tier needs a digest —`compact` or `brief`,
+never `full`, where the box is disabled and nothing is digested—, with `digestNoSourceSummary`
+naming the calls and what is left, because the mechanical digest has no summary to offer and
+the chain fits today. The person's own click wins over the default from then on, across tier
+changes (`byModelChoice` in the panel, `null` until a click); a disabled box always reads
+unticked, and the write sends `digestBy` only when the box is ticked and enabled. One wording
+moved on the way: the first draft's «en {n} llamadas» glued an inflected noun to a figure,
+and every line now closes its clause with the number, as the house rule says.
 
 The engine's free refusals come before the paid call. `@panoma/handoff` exports
 `checkHandoff(input)` since 12-Sep-2026 —the refusals `handoff()` raises, in its order, and no
@@ -636,7 +791,10 @@ cap of zero, the family paused or set to 0, is not «spent»: the screen says th
 paused or disabled and where to turn them on, since the panel receives `{left, cap, connected}`
 and cannot tell the two causes apart. The agent channel
 has no such box: a digest ordered through `panoma_handoff` is always `by: "panoma"`, and the
-reason is in «Through the agent channel».
+reason is in «Through the agent channel»; what its dry run does carry, since 15-Sep-2026, is
+`modelDigest: { calls }` —the chain's length, planned and unpaid— and the formatter prints it
+as «A model digest would take calls: N.», a figure the agent can pass on to the person and
+not a door.
 
 Either way the digest is **derived and regenerable**: delete it and the same conversation gives
 it back. That is the border with [memory.md](memory.md). A note is something a person approved
@@ -698,6 +856,12 @@ them. The description is the deliverable, not the interpretation.
   is the same gesture as an assignment's launch.
 - **"Left behind" is not "lost".** The original still has everything; what the copy lacks is
   listed by count. Nothing is deleted anywhere.
+- **A window is panoma's, a compaction is the agent's.** The windows of the model digest are
+  how panoma reads one transcript for one paragraph, 60,000 characters at a time; they are
+  planned in memory, paid one call each, and written nowhere. A compaction is what the source
+  agent did to its own conversation, a `summary` part at its position, and the only `summary`
+  part a copy carries at `compact` is the one rendering the digest. «The summary so far» in
+  the prompt is the chain's running answer, not a compaction of anything.
 - **"Same agent" writes nothing at `full`.** The same file is the one target that produces no
   file: sign out, sign in with the account you want to continue with, resume the same file,
   with the fork and the bundle as optional lines, and a command to copy for each. Since
@@ -731,6 +895,25 @@ them. The description is the deliverable, not the interpretation.
 - **Reasoning never travels, and that is a loss the person is told about**, not a fix waiting
   to happen: a target cannot verify another model's signed reasoning, and Codex cannot produce
   any.
+- **The chain's summary is checked by no test against the transcript.** `handoff-digest.test.ts`
+  runs the chain with a mocked model and proves the mechanics —which window each call gets,
+  which answer is handed on, which answer is kept— and nothing about the paragraph: whether a
+  running summary carried across many windows still holds the first window's decisions by
+  the last one is the model's behaviour under the instructions («keep what still holds,
+  correct what this window contradicts, add what it brings, and drop nothing that is still
+  open»), and no held-out comparison of the chain's answer against a person's reading of the
+  same transcript has been run. The mechanical digest is the fallback that needs no such
+  trust, and the box says what the model would add before it is ticked.
+- **A conversation whose chain is longer than the day's cap gets no model digest until the cap
+  is raised.** Ten windows under the factory cap is 600,000 rendered characters, and a
+  transcript past that is refused before any call with the two figures; the arithmetic is in
+  [budgets.md](budgets.md). A source compacted by Claude Code or OpenCode is shorter than it
+  looks, because the chain starts after its newest summary; a Codex source never is.
+- **What each call sends is not counted anywhere before it is paid.** `modelDigest.calls` is
+  the number of calls and not their size: every call repeats the head —the lists up to 6,000
+  characters, the first message up to 1,500, the summary so far up to 12,000— in front of a
+  window of up to 60,000, so a chain of ten calls sends about ten times that head. The Spend
+  screen shows the tokens afterwards, per call, when the provider states them.
 - **A document-only target gets a document.** Cursor, Copilot and the rest cannot resume a file
   panoma wrote, and this version reads none of their stores either: in v1 they are targets,
   never sources.

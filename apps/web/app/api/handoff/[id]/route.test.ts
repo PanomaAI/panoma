@@ -20,8 +20,11 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 const { GET } = await import("./route");
 const { forgetDiscovery } = await import("@/lib/handoff-cache");
 
-function preview(id: string, init: { crossSite?: boolean; fresh?: boolean } = {}) {
-  const path = `/api/handoff/${encodeURIComponent(id)}${init.fresh ? "?fresh=1" : ""}`;
+function preview(id: string, init: { crossSite?: boolean; fresh?: boolean; keepTurns?: string } = {}) {
+  const query = new URLSearchParams();
+  if (init.fresh) query.set("fresh", "1");
+  if (init.keepTurns !== undefined) query.set("keepTurns", init.keepTurns);
+  const path = `/api/handoff/${encodeURIComponent(id)}${query.size > 0 ? `?${query}` : ""}`;
   return GET(request(path, undefined, init), { params: Promise.resolve({ id }) });
 }
 
@@ -71,6 +74,31 @@ describe("GET /api/handoff/[id]", () => {
       cli: `${enter(harness.root)}claude --resume ${sessionId}`,
       app: process.platform === "darwin" ? `open 'claude://resume?session=${sessionId}'` : null,
     });
+  });
+
+  it("sizes the three tiers and prices the model digest, with keepTurns applied to compact and brief", async () => {
+    const body = await (await preview(CLAUDE_ID)).json();
+    // `full` is the size line's own figure: one measure for the three, so they compare.
+    expect(body.sizes.full).toEqual({ turns: body.size.turns, estimatedTokens: body.size.estimatedTokens });
+    expect(body.sizes.compact.turns).toBeGreaterThan(0);
+    expect(body.sizes.compact.estimatedTokens).toBeGreaterThan(0);
+    expect(body.sizes.brief.estimatedTokens).toBeGreaterThan(0);
+    expect("turns" in body.sizes.brief).toBe(false);
+    // The fixture fits one window: one paid call, and the person sees it before ticking the box.
+    expect(body.modelDigest).toEqual({ calls: 1 });
+
+    const one = await (await preview(CLAUDE_ID, { keepTurns: "1" })).json();
+    expect(one.sizes.full).toEqual(body.sizes.full);
+    expect(one.sizes.compact.turns).toBeLessThan(body.sizes.compact.turns);
+    expect(one.sizes.brief.estimatedTokens).toBeLessThan(body.sizes.brief.estimatedTokens);
+    expect(one.modelDigest).toEqual({ calls: 1 });
+
+    // Not a positive integer: refused, never ignored.
+    for (const keepTurns of ["0", "-1", "1.5", "twelve", ""]) {
+      const refused = await preview(CLAUDE_ID, { keepTurns });
+      expect(refused.status, keepTurns).toBe(400);
+      expect(await refused.json()).toMatchObject({ error: "body", code: "body", detail: "keepTurns is a positive integer" });
+    }
   });
 
   it("finds the receipt of an earlier handoff by the conversation's hash", async () => {

@@ -7,7 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { REDACTED } from "@panoma/core";
 import { quoteForShell, type Random } from "@panoma/handoff";
 import { parseArgs, type Flags } from "./args";
-import { coverBundle, groupByProject, handoffCommand, labelOf, leftBehind, nearestWord, rowLines, type HandoffDeps } from "./handoff-command";
+import { coverBundle, groupByProject, handoffCommand, labelOf, leftBehind, nearestWord, rowLines, type HandoffDeps, type TierSizes } from "./handoff-command";
 
 /**
  * `panoma handoff` against the engine's own fixtures laid under a temporary home, and a catalog
@@ -331,9 +331,41 @@ describe("the preview", () => {
     expect(text).toContain("Travels to Codex CLI");
     expect(text).toContain("Stays behind");
     expect(text).toMatch(/turns: \d+ · ≈ \d+k tokens/);
+    // Under the size line, the three tiers weighed by the engine itself, so the person picks one with the figures in front of them.
+    expect(text).toMatch(/turns: \d+ · ≈ \d+k tokens · [\d.]+ [KMG]?B\n\s+full ≈ \d+k tokens · compact ≈ \d+k tokens · brief ≈ \d+k tokens\n/);
     expect(ours(text)).not.toMatch(/\d [a-z]+s\b/);
     expect(existsSync(join(h, ".codex", "sessions"))).toBe(false);
     expect(seen).toEqual([]);
+  });
+
+  it("the tiers' weights are measured locally: full is the digest's own figure, compact and brief are smaller, and --keep shrinks both", async () => {
+    const { home: h, project } = home();
+    layClaude(h, claudeText(project));
+    expect(await handoffCommand(flags(["handoff", FIXTURE_CLAUDE_ID.slice(0, 8), "--to", "codex", "--dry-run", "--json"]), deps(h, project))).toBe(0);
+    const parsed = JSON.parse(out) as { size: { turns: number; tokens: number }; sizes: TierSizes; digest: { stats: { estimatedTokens: number } } };
+    expect(parsed.sizes.full).toEqual({ turns: parsed.size.turns, estimatedTokens: parsed.digest.stats.estimatedTokens });
+    expect(parsed.sizes.full.estimatedTokens).toBe(parsed.size.tokens);
+    expect(parsed.sizes.compact.turns).toBeGreaterThan(0);
+    expect(parsed.sizes.compact.estimatedTokens).toBeGreaterThan(0);
+    expect(parsed.sizes.brief.estimatedTokens).toBeGreaterThan(0);
+    expect("turns" in parsed.sizes.brief).toBe(false);
+    expect(seen).toEqual([]);
+
+    // --keep is the compact window and the brief's last turns, so both shrink with it; full does not move.
+    out = "";
+    expect(await handoffCommand(flags(["handoff", FIXTURE_CLAUDE_ID.slice(0, 8), "--to", "codex", "--dry-run", "--json", "--keep", "1"]), deps(h, project))).toBe(0);
+    const kept = (JSON.parse(out) as { sizes: TierSizes }).sizes;
+    expect(kept.full).toEqual(parsed.sizes.full);
+    expect(kept.compact.turns).toBeLessThan(parsed.sizes.compact.turns);
+    expect(kept.compact.estimatedTokens).toBeLessThan(parsed.sizes.compact.estimatedTokens);
+    expect(kept.brief.estimatedTokens).toBeLessThan(parsed.sizes.brief.estimatedTokens);
+
+    // The bare-handle preview prints the same line, and the figures are the engine's: the same call, the same answer.
+    out = "";
+    err = "";
+    expect(await handoffCommand(flags(["handoff", FIXTURE_CLAUDE_ID.slice(0, 8)]), deps(h, project))).toBe(0);
+    const k = (tokens: number): number => Math.max(1, Math.round(tokens / 1000));
+    expect(plain()).toContain(`full ≈ ${k(parsed.sizes.full.estimatedTokens)}k tokens · compact ≈ ${k(parsed.sizes.compact.estimatedTokens)}k tokens · brief ≈ ${k(parsed.sizes.brief.estimatedTokens)}k tokens`);
   });
 
   it("a handle with no --to is the preview plus the line that hands it", async () => {
@@ -624,7 +656,70 @@ describe("the write", () => {
     catalog((url) => (url.includes("/digest") ? Response.json({ digest }) : Response.json({ ok: true, receipt: { id: "hnd_0003" } })));
     expect(await handoffCommand(flags(["handoff", FIXTURE_CLAUDE_ID.slice(0, 8), "--to", "codex", "--digest", "model", "--tier", "compact"]), deps(h, project))).toBe(0);
     expect(plain()).toContain("digest by model · tier compact");
+    // An older catalog answers the digest alone: no calls line, and nothing invented.
+    expect(said()).not.toContain("calls:");
     expect(seen.map((call) => call.url.split("/api/")[1])).toEqual(["handoff/digest", "handoff/record"]);
+  });
+
+  it("--digest model says how many calls the chain took when the catalog counts them", async () => {
+    const { home: h, project } = home();
+    layClaude(h, claudeText(project));
+    mkdirSync(join(h, ".codex"), { recursive: true });
+    const digest = {
+      by: "model",
+      title: "Ledger, by a model",
+      goal: "A ledger.",
+      summary: "The chain's last answer.",
+      decisions: [],
+      filesTouched: [],
+      commandsRun: [],
+      openItems: [],
+      lastExchange: {},
+      stats: { turns: 6, toolCalls: 1, estimatedTokens: 900 },
+    };
+    // The route's own body since 15-Sep-2026: what was paid, what the plan had and what was read, and the model.
+    catalog((url) =>
+      url.includes("/digest")
+        ? Response.json({ ok: true, digest, calls: 3, windows: { planned: 2, read: 2 }, model: "anthropic/claude-sonnet-4-5" })
+        : Response.json({ ok: true, receipt: { id: "hnd_0004" } }),
+    );
+    expect(await handoffCommand(flags(["handoff", FIXTURE_CLAUDE_ID.slice(0, 8), "--to", "codex", "--digest", "model"]), deps(h, project))).toBe(0);
+    expect(said()).toContain("digest by model · calls: 3");
+    expect(plain()).toContain("digest by model · tier full");
+    expect(ours(said())).not.toMatch(/\d [a-z]+s\b/);
+
+    // --json keeps stderr silent and stdout one object, as every other path does.
+    out = "";
+    err = "";
+    seen = [];
+    expect(await handoffCommand(flags(["handoff", FIXTURE_CLAUDE_ID.slice(0, 8), "--to", "codex", "--digest", "model", "--json"]), deps(h, project))).toBe(0);
+    expect(err).toBe("");
+    expect((JSON.parse(out) as { ok: boolean; result: { digest?: { by: string } } }).ok).toBe(true);
+  });
+
+  it("--digest model with fewer calls left today than the chain needs is the catalog's 429, said with its figures, and nothing is written", async () => {
+    const { home: h, project } = home();
+    layClaude(h, claudeText(project));
+    mkdirSync(join(h, ".codex"), { recursive: true });
+    // The brake before the first call: `api.handoffNeeds` and its hint, with `needs` and `left` beside them for a script.
+    catalog(() =>
+      Response.json(
+        {
+          error: "The model digest needs calls: 3; 1 of 10 left today.",
+          hint: "Raise the cap in Spend, or keep the mechanical digest.",
+          needs: 3,
+          left: 1,
+        },
+        { status: 429 },
+      ),
+    );
+    expect(await handoffCommand(flags(["handoff", FIXTURE_CLAUDE_ID.slice(0, 8), "--to", "codex", "--digest", "model"]), deps(h, project))).toBe(1);
+    expect(said()).toContain(
+      "The catalog would not write the digest (429). The model digest needs calls: 3; 1 of 10 left today. Raise the cap in Spend, or keep the mechanical digest.",
+    );
+    expect(out).toBe("");
+    expect(existsSync(join(h, ".codex", "sessions"))).toBe(false);
+    expect(seen.map((call) => call.url.split("/api/")[1])).toEqual(["handoff/digest"]);
   });
 });
 

@@ -5,6 +5,9 @@ import { NO_PROJECT } from "./agent-channel";
 import {
   agentFromWord,
   agentOfApp,
+  briefMarkdown,
+  compactConversation,
+  estimateTokens,
   handoff,
   insideFolder,
   isAgentId,
@@ -15,6 +18,7 @@ import {
   readConversation,
   realFolder,
   splitConversationId,
+  textOfTurns,
   type AgentId,
   type Conversation,
   type ConversationRef,
@@ -28,6 +32,7 @@ import {
 import { HandoffFault, type HandoffFaultCode } from "@panoma/handoff/faults";
 import { revalidatePath } from "next/cache";
 import { discoverCached, forgetDiscovery, storeOptions } from "./handoff-cache";
+import { planDigest } from "./handoff-digest";
 import { projectOnDisk } from "./handoff-http";
 
 /*
@@ -257,6 +262,53 @@ export function publicRef(ref: ConversationRef): PublicRef {
 /** The size line of a preview: turns, bytes and the digest's token estimate. */
 export function sizeOf(conversation: Conversation, digest: Digest): { turns: number; bytes: number; estimatedTokens: number } {
   return { turns: conversation.turns.length, bytes: conversation.bytes, estimatedTokens: digest.stats.estimatedTokens };
+}
+
+/** What each tier would carry, measured before anything is written. */
+export interface TierSizes {
+  full: { turns: number; estimatedTokens: number };
+  compact: { turns: number; estimatedTokens: number };
+  brief: { estimatedTokens: number };
+}
+
+/**
+ * The three tiers sized on the same conversation, pure, with the engine's own measure: `full`
+ * is the transcript as it is, `compact` is what `compactConversation` would write with this
+ * `keepTurns` — the digest as a summary turn plus the newest turns — and `brief` is the
+ * Markdown `briefMarkdown` would write, all counted by `estimateTokens` over `textOfTurns`, the
+ * rule behind `stats.estimatedTokens`, so `full.estimatedTokens` is the digest's own figure and
+ * the three can be compared. Computed once per preview; the panel and the channel's dry run
+ * paint from it, so the person chooses a tier with the figures in front of them.
+ */
+export function tierSizes(conversation: Conversation, digest: Digest, keepTurns?: number): TierSizes {
+  const options = keepTurns !== undefined ? { keepTurns } : {};
+  const compact = compactConversation(conversation, digest, options);
+  return {
+    full: { turns: conversation.turns.length, estimatedTokens: estimateTokens(textOfTurns(conversation.turns)) },
+    compact: { turns: compact.turns.length, estimatedTokens: estimateTokens(textOfTurns(compact.turns)) },
+    brief: { estimatedTokens: estimateTokens(briefMarkdown(conversation, digest, options)) },
+  };
+}
+
+/** The size, the sizes per tier and the model digest's cost: what both previews say, from one place. */
+export interface PreviewSizes {
+  size: { turns: number; bytes: number; estimatedTokens: number };
+  sizes: TierSizes;
+  /** What «Let a model write the digest» would spend: one call per window of `planDigest`. */
+  modelDigest: { calls: number };
+}
+
+/**
+ * The figures the two previews share — the operator's `GET /api/handoff/[id]` and the channel's
+ * dry run — assembled once so the two doors cannot drift: the source's size line, the three
+ * tiers sized, and the calls the model digest would take. Nothing here pays or writes.
+ */
+export function previewSizes(conversation: Conversation, digest: Digest, keepTurns?: number): PreviewSizes {
+  return {
+    size: sizeOf(conversation, digest),
+    sizes: tierSizes(conversation, digest, keepTurns),
+    modelDigest: { calls: planDigest(conversation, digest).calls },
+  };
 }
 
 /**

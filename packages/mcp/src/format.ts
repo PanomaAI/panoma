@@ -1232,6 +1232,13 @@ export interface HandoffFidelity {
   resumeShape: string;
 }
 
+/** What each tier would carry, measured by the catalog before anything is written — `TierSizes` in `apps/web/lib/handoff-write.ts`. */
+export interface HandoffTierSizes {
+  full: { turns: number; estimatedTokens: number };
+  compact: { turns: number; estimatedTokens: number };
+  brief: { estimatedTokens: number };
+}
+
 /** `dryRun: true`: what would travel, and nothing written. */
 export interface HandoffDryRun {
   dryRun: true;
@@ -1242,6 +1249,10 @@ export interface HandoffDryRun {
   digest: HandoffDigest;
   fidelity: HandoffFidelity | null;
   size: { turns: number; bytes: number; estimatedTokens: number };
+  /** Since 15-Sep-2026; a catalog from before answers without it, and the dry run reads as it did. */
+  sizes?: HandoffTierSizes;
+  /** What «Let a model write the digest» would spend on the person's surfaces: one call per window. Never asked from here. */
+  modelDigest?: { calls: number };
   dropped: HandoffDropped;
   receipt: HandoffReceipt | null;
 }
@@ -1343,10 +1354,39 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/** Thousands of tokens, never below one: a conversation of 300 tokens reads «≈ 1k», not «≈ 0k». */
+function kTokens(tokens: number): number {
+  return Math.max(1, Math.round(tokens / 1000));
+}
+
 /** «turns: 40 · ≈ 12k tokens · 1.2 MB» — the CLI's own size line. */
 function sizeLine(size: { turns: number; bytes: number; estimatedTokens: number }): string {
-  const k = Math.max(1, Math.round(size.estimatedTokens / 1000));
-  return `turns: ${size.turns} · ≈ ${k}k tokens · ${formatBytes(size.bytes)}`;
+  return `turns: ${size.turns} · ≈ ${kTokens(size.estimatedTokens)}k tokens · ${formatBytes(size.bytes)}`;
+}
+
+/**
+ * « At tier full ≈ 41k tokens travel; at compact ≈ 9k; at brief ≈ 3k.» — the three tiers weighed
+ * by the catalog, after the source's size, so the model can name a tier with the figures in
+ * front of it. Nothing when the body carries none, or carries figures that are not numbers: a
+ * catalog from before 15-Sep-2026 answers without them, and the dry run reads as it did.
+ */
+function tiersClause(sizes: HandoffTierSizes | undefined): string {
+  if (!sizes) return "";
+  const figures = [sizes.full?.estimatedTokens, sizes.compact?.estimatedTokens, sizes.brief?.estimatedTokens];
+  if (!figures.every((n) => typeof n === "number" && Number.isFinite(n))) return "";
+  const [full, compact, brief] = figures as [number, number, number];
+  return ` At tier full ≈ ${kTokens(full)}k tokens travel; at compact ≈ ${kTokens(compact)}k; at brief ≈ ${kTokens(brief)}k.`;
+}
+
+/**
+ * « A model digest would take calls: 3.» — what the person's surfaces would spend on «Let a model
+ * write the digest», one call per window of the transcript. Said and nothing more: this channel
+ * never asks the model (`digestBy` is refused whole on the route), so the sentence is a figure
+ * the model can pass on to the person, not a door.
+ */
+function modelDigestClause(modelDigest: { calls: number } | undefined): string {
+  if (!modelDigest || typeof modelDigest.calls !== "number" || !Number.isFinite(modelDigest.calls)) return "";
+  return ` A model digest would take calls: ${modelDigest.calls}.`;
 }
 
 /**
@@ -1506,7 +1546,8 @@ function alreadyHanded(receipt: HandoffReceipt): string {
 /**
  * What the tier makes of the source's size. The size line is the source's — its turns, its
  * bytes — whatever the tier, so the clause says what of it travels: at `full` the line is the
- * answer and nothing is added.
+ * answer and this clause adds nothing. The tiers' weights, when the catalog sends them, follow
+ * it (`tiersClause`).
  */
 function travelsAtTier(tier: string): string {
   if (tier === "compact") return " At tier compact the digest and the newest turns travel whole, and the rest travels as the digest only.";
@@ -1525,7 +1566,8 @@ function renderDryRun(answer: HandoffDryRun): string {
   const lines = [
     "Dry run: nothing was written and no receipt was recorded.",
     `Source: ${neutralizeInline(source.id, 200)} — ${agentLabel(source.agent, source.surface)}, updated ${formatDate(source.updatedAt)}. ` +
-      `Target: ${target}, tier ${neutralizeInline(answer.tier, 10)}. Source size: ${sizeLine(answer.size)}.${travelsAtTier(answer.tier)}`,
+      `Target: ${target}, tier ${neutralizeInline(answer.tier, 10)}. Source size: ${sizeLine(answer.size)}.${travelsAtTier(answer.tier)}` +
+      `${tiersClause(answer.sizes)}${modelDigestClause(answer.modelDigest)}`,
     "",
     `The digest that would travel, ${answer.digest.by === "model" ? "as a model wrote it" : "as panoma composed it, mechanically"}:`,
     wrapUntrusted(renderDigest(answer.digest), { origin: "conversation", limit: 12_000, includeNote: false }),

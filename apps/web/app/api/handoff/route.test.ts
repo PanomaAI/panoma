@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { findHandoff, listHandoffs, listModelCalls, schema, startOfDay, type Database } from "@panoma/db";
 import type { AgentAvailability } from "@panoma/ai";
-import { CLAUDE_ID, CODEX_ID, closeHarness, enter, layStores, opencodeHome, openHarness, request, type Harness } from "./harness";
+import { CLAUDE_ID, CODEX_ID, closeHarness, enter, layClaudeOf, layStores, opencodeHome, openHarness, request, type Harness } from "./harness";
 
 /**
  * The list and the write: what the screen paints, and the one action that puts a conversation
@@ -47,6 +47,38 @@ function available(id: string, name: string, command?: string): AgentAvailabilit
 
 const CLAUDE_BUNDLE = { id: "claude-app", name: "Claude", path: "/Applications/Claude.app" };
 const CHATGPT_BUNDLE = { id: "chatgpt-app", name: "ChatGPT", path: "/Applications/ChatGPT.app" };
+
+/** A second Claude transcript, long enough for the model digest to read it in three windows. */
+const LONG_ID = "7b1e2c3d-4a5f-4b6c-8d9e-0f1a2b3c4d5f";
+
+/**
+ * A Claude Code transcript of `pairs` exchanges, as Claude Code writes them — `uuid`,
+ * `parentUuid`, a `timestamp`, which is required — each assistant answer about 2,400 characters,
+ * so that 60 pairs render to some 146,000 characters: three windows of 60,000.
+ */
+function longTranscript(cwd: string, pairs: number): string {
+  const lines: string[] = [];
+  let parent: string | null = null;
+  let n = 0;
+  const record = (type: "user" | "assistant", content: unknown) => {
+    n += 1;
+    const uuid = `b1000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+    const message = type === "user"
+      ? { role: "user", content }
+      : { model: "claude-fable-5-1", id: `msg_${n}`, type: "message", role: "assistant", content, stop_reason: null, stop_sequence: null };
+    lines.push(JSON.stringify({
+      parentUuid: parent, isSidechain: false, userType: "external", cwd, sessionId: LONG_ID, version: "2.1.258",
+      uuid, timestamp: new Date(Date.UTC(2026, 8, 11, 11, 0, n)).toISOString(), type, message,
+    }));
+    parent = uuid;
+  };
+  record("user", "Build the ledger, step by step.");
+  for (let index = 0; index < pairs; index += 1) {
+    record("assistant", [{ type: "text", text: `Step ${index}: ${"x".repeat(2400)}` }]);
+    record("user", `Go on ${index}`);
+  }
+  return `${lines.join("\n")}\n`;
+}
 
 beforeAll(async () => {
   harness = await openHarness("handoff-route");
@@ -345,6 +377,57 @@ describe("POST /api/handoff", () => {
     expect(await listHandoffs(database)).toHaveLength(1);
     // Nothing was written before the refusal: the brake comes before the file.
     expect(await rollouts()).toBe(before);
+  });
+
+  it("reads a long conversation in windows, one call and one ledger row each, and refuses whole when the day cannot pay them", async () => {
+    await layClaudeOf(harness.agentHome, harness.root, longTranscript(harness.root, 60), LONG_ID);
+    forgetDiscovery();
+    const body = { id: `claude-cli:${LONG_ID}`, target: "codex-cli", tier: "compact", digestBy: "model" };
+    const rollouts = async () => (await readdir(join(harness.agentHome, ".codex", "sessions"), { recursive: true })).filter((name) => name.endsWith(".jsonl")).length;
+    try {
+      // Two calls left, three needed: the 429 names both, before any call and before any file.
+      process.env["PANOMA_HANDOFF_BUDGET"] = "2";
+      const before = await rollouts();
+      const refused = await POST(request("/api/handoff", body));
+      expect(refused.status).toBe(429);
+      const said = await refused.json();
+      expect(said).toMatchObject({ needs: 3, left: 2 });
+      expect(said.error).toBe("The model digest needs calls: 3; 2 of 2 left today.");
+      expect(said.hint).toBe("Raise the cap in Spend, or keep the mechanical digest.");
+      expect(completeMock).not.toHaveBeenCalled();
+      expect(await listModelCalls(database, { since: startOfDay() })).toEqual([]);
+      expect(await listHandoffs(database)).toEqual([]);
+      expect(await rollouts()).toBe(before);
+
+      // Enough left: three calls, oldest window first, each answer handed to the next, the last one written.
+      process.env["PANOMA_HANDOFF_BUDGET"] = "10";
+      let seen = 0;
+      completeMock.mockImplementation(async () => {
+        seen += 1;
+        return { text: `Summary after window ${seen}.`, provider: "test", model: "writer", usage: { input: 15_000, output: 20 } };
+      });
+      const written = await POST(request("/api/handoff", body));
+      expect(written.status).toBe(200);
+      const answer = await written.json();
+      expect(answer.result.digest).toMatchObject({ by: "model", summary: "Summary after window 3." });
+      expect(await readFile(answer.result.path, "utf8")).toContain("Summary after window 3.");
+      expect(completeMock).toHaveBeenCalledTimes(3);
+      const prompts = completeMock.mock.calls.map((call) => (call[0] as { prompt: string }).prompt);
+      expect(prompts[0]).toContain("this is window 1 of 3");
+      expect(prompts[0]).toContain("Step 0:");
+      expect(prompts[1]).toContain("this is window 2 of 3");
+      expect(prompts[1]).toContain("Summary after window 1.");
+      expect(prompts[1]).not.toContain("Step 0:");
+      expect(prompts[2]).toContain("Summary after window 2.");
+      expect(prompts[2]).toContain("Step 59:");
+      const rows = await listModelCalls(database, { since: startOfDay() });
+      expect(rows).toHaveLength(3);
+      for (const row of rows) expect(row).toMatchObject({ kind: "handoff", provider: "test", model: "writer", input: 15_000, output: 20 });
+      expect(await listHandoffs(database)).toHaveLength(1);
+    } finally {
+      await layStores(harness.agentHome, harness.root);
+      forgetDiscovery();
+    }
   });
 
   it("runs the engine's free refusals before paying for the digest: no store, no folder, no call", async () => {

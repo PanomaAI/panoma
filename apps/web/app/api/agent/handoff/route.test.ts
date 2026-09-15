@@ -292,6 +292,14 @@ describe("POST /api/agent/handoff — the dry run", () => {
       expect(body.size.turns).toBeGreaterThan(0);
       expect(body.size.bytes).toBeGreaterThan(0);
       expect(body.size.estimatedTokens).toBeGreaterThan(0);
+      // The three tiers sized, with `keepTurns: 2` on compact and brief, and the model digest's
+      // price — a figure the agent can only relay, since this channel never orders one.
+      expect(body.sizes.full).toEqual({ turns: body.size.turns, estimatedTokens: body.size.estimatedTokens });
+      expect(body.sizes.compact.turns).toBeLessThanOrEqual(4);
+      expect(body.sizes.compact.turns).toBeLessThan(body.sizes.full.turns);
+      expect(body.sizes.compact.estimatedTokens).toBeGreaterThan(0);
+      expect(body.sizes.brief.estimatedTokens).toBeGreaterThan(0);
+      expect(body.modelDigest).toEqual({ calls: 1 });
       expect(body.dropped).toMatchObject({ thinking: expect.any(Number), secrets: expect.any(Number) });
       expect(body.digest.goal).toContain(REDACTED);
       expect(JSON.stringify(body)).not.toContain(SECRET);

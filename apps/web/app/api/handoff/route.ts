@@ -19,7 +19,7 @@ import { HandoffFault } from "@panoma/handoff/faults";
 import { db } from "@/lib/db";
 import { localOperatorOnly, sameOrigin } from "@/lib/guard";
 import { discoverCached, storeOptions } from "@/lib/handoff-cache";
-import { writeDigestWithModel } from "@/lib/handoff-digest";
+import { digestRefusal, planDigest, writeDigestWithModel } from "@/lib/handoff-digest";
 import { handoffHttpError } from "@/lib/handoff-http";
 import {
   catalogCwds,
@@ -238,23 +238,23 @@ export async function POST(request: Request) {
         ...(body.keepTurns !== undefined ? { keepTurns: body.keepTurns } : {}),
         options: storeOptions(),
       });
+      /*
+        The brake, against the whole chain: the model reads the transcript in windows, one paid
+        call each (`planDigest`, pure), and a day with three calls left does not start a chain
+        of five — the 429 names what it needs and what is left, and nothing is paid or written.
+       */
       const spent = await modelSpendToday(database, FAMILY_KINDS.handoff);
       const { cap } = await capFor("handoff");
-      if (spent.calls >= cap) {
-        return Response.json(
-          {
-            error: t(locale, "api.handoffSpent", { used: spent.calls, cap }),
-            hint: t(locale, "api.handoffSpentHint"),
-          },
-          { status: 429 },
-        );
-      }
+      const plan = planDigest(conversation, digest);
+      const refused = digestRefusal(locale, { cap, spent: spent.calls, calls: plan.calls });
+      if (refused) return Response.json(refused, { status: 429 });
       try {
         ({ digest } = await writeDigestWithModel(database, {
           conversation,
           digest,
           cap,
           spent: spent.calls,
+          plan,
           identity: null,
         }));
       } catch (error) {

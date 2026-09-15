@@ -81,7 +81,7 @@ export { readOpencodeConversation } from "./readers/opencode";
 export type { OpencodeReadDeps, OpencodeSource, SqliteHandle, SqliteOpener } from "./readers/opencode";
 export { readGeminiConversation } from "./readers/gemini";
 export type { GeminiReadDeps } from "./readers/gemini";
-export { digestConversation, digestMarkdown } from "./digest";
+export { digestConversation, digestMarkdown, estimateTokens, textOfTurns } from "./digest";
 export { compactConversation } from "./compact";
 export type { CompactOptions } from "./compact";
 export { briefMarkdown, writeBrief } from "./writers/brief";

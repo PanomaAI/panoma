@@ -24,7 +24,8 @@ import type {
 } from "@panoma/handoff";
 import { isHandoffFaultCode } from "@panoma/handoff/faults";
 import { formatBytes } from "./format-bytes";
-import type { Locale, MessageKey } from "./i18n";
+import type { TierSizes } from "./handoff-write";
+import type { Locale, MessageKey, TranslationVars } from "./i18n";
 
 /* ── Copies of the engine's pure tables ─────────────────────────────────────────────────── */
 
@@ -253,6 +254,13 @@ export interface HandoffPreview {
   fidelity: Record<string, Fidelity> | Fidelity[];
   dropped: Dropped;
   size: { turns: number; bytes: number; estimatedTokens?: number; tokens?: number };
+  /**
+   * What each tier's copy would weigh, measured by the engine before anything is written;
+   * absent from a catalog older than 15-Sep-2026, and the labels then stand without a figure.
+   */
+  sizes?: TierSizes;
+  /** What «Let a model write the digest» would spend over this conversation: one call per window. Absent on an older catalog. */
+  modelDigest?: { calls: number };
   /** The newest receipt per native target, keyed by `receiptKey`, or a plain list; `receiptFor` reads either. */
   receipts: Record<string, HandoffReceiptView | null> | HandoffReceiptView[];
   /**
@@ -497,9 +505,27 @@ export const TIER_HINT_KEY: Readonly<Record<Tier, MessageKey>> = {
 /** Above this the panel preselects `compact`; mirrors `LARGE_CONVERSATION_BYTES`. */
 export const LARGE_BYTES = 16 * 1024 * 1024;
 
-export function defaultTier(bytes: number, native: boolean): Tier {
+/**
+ * Above this many estimated tokens the panel preselects `compact` too: more than a context
+ * takes at once, so the whole transcript would not be read by the target's model anyway.
+ * The bytes line stands beside it for a preview that carries no estimate.
+ */
+export const LARGE_TOKENS = 150_000;
+
+/**
+ * Why `compact` is preselected, for the hint under the radios: the tokens when the estimate is
+ * over the line — the measure a context is made of, and the sentence the person acts on — and
+ * the bytes when only the file size says so. Nothing when neither does.
+ */
+export function largeBy(bytes: number, tokens?: number): "tokens" | "bytes" | undefined {
+  if (tokens !== undefined && tokens > LARGE_TOKENS) return "tokens";
+  if (bytes > LARGE_BYTES) return "bytes";
+  return undefined;
+}
+
+export function defaultTier(bytes: number, native: boolean, tokens?: number): Tier {
   if (!native) return "brief";
-  return bytes > LARGE_BYTES ? "compact" : "full";
+  return largeBy(bytes, tokens) ? "compact" : "full";
 }
 
 /** «12k» for the size line; never «0k» for a conversation that exists. */
@@ -509,6 +535,57 @@ export function kiloTokens(tokens: number): number {
 
 export function sizeText(bytes: number): string {
   return formatBytes(bytes);
+}
+
+/** What one tier's copy would weigh, from the preview's `sizes`; nothing when the catalog did not measure them. */
+export function tierTokens(sizes: TierSizes | undefined, tier: Tier): number | undefined {
+  return sizes?.[tier]?.estimatedTokens;
+}
+
+/* ── The model digest's box ─────────────────────────────────────────────────────────────── */
+
+/** What the «Let a model write the digest» box starts as, and the line under it. */
+export interface ModelDigestChoice {
+  /** Ticked before the person touches it. */
+  on: boolean;
+  disabled: boolean;
+  /** The line under the box, with the gaps it needs. */
+  key: MessageKey;
+  params: TranslationVars;
+}
+
+/**
+ * The box's default, decided once from what the preview and the spend family say, in the order
+ * a person acts on: no model connected, the family paused, the day spent, the chain longer than
+ * what is left today — each of those disables the box and names the cause where the count would
+ * be — and then the source itself. A source that carries a summary panoma can read (Claude Code
+ * and OpenCode; never Codex, whose summaries are encrypted) gets the box off: its summary
+ * travels inside the mechanical digest, and a model would only add what came after it. A source
+ * with none gets the box on when the tier needs a digest, because the mechanical one has no
+ * summary to offer and the chain fits today. An older catalog that did not count the windows
+ * (`calls` unknown) keeps the box off and the old «left today» line, exactly as before the chain.
+ */
+export function modelDigestDefault(input: {
+  tier: Tier;
+  connected: boolean;
+  cap: number;
+  left: number;
+  /** `planDigest(...).calls` from the preview; `undefined` when the catalog did not answer it. */
+  calls: number | undefined;
+  /** The preview's `digest.summary` is set: the source's newest summary is readable. */
+  summaryReadable: boolean;
+}): ModelDigestChoice {
+  const { tier, connected, cap, left, calls, summaryReadable } = input;
+  const off = (key: MessageKey, params: TranslationVars = {}): ModelDigestChoice => ({ on: false, disabled: true, key, params });
+  const full = tier === "full";
+  if (!connected) return off("handoff.digestNoModel");
+  /* A cap of zero is the family paused or disabled in Spend, not a day's worth spent. */
+  if (cap <= 0) return off("handoff.digestPaused");
+  if (left <= 0) return off("handoff.digestSpent", { cap });
+  if (calls === undefined) return { on: false, disabled: full, key: "handoff.digestLeft", params: { n: left, cap } };
+  if (calls > left) return off("handoff.digestNeeds", { n: calls, m: left, cap });
+  if (summaryReadable) return { on: false, disabled: full, key: "handoff.digestSourceSummary", params: { n: calls } };
+  return { on: !full, disabled: full, key: "handoff.digestNoSourceSummary", params: { n: calls, m: left, cap } };
 }
 
 /**

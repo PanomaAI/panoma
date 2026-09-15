@@ -27,14 +27,17 @@ import {
   iconKey,
   isNativeTarget,
   kiloTokens,
+  largeBy,
   leftBehind,
   limitBadge,
+  modelDigestDefault,
   parseTarget,
   receiptFor,
   receiptKey,
   resumeCommandOf,
   sizeText,
   sourceLabel,
+  tierTokens,
   tokensOf,
   type HandoffAgentRow,
   type HandoffPreview,
@@ -160,7 +163,8 @@ export function HandoffPanel({
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [tier, setTier] = useState<Tier>("full");
   const [tierTouched, setTierTouched] = useState(false);
-  const [byModel, setByModel] = useState(false);
+  /* `null` until the person clicks the model box: the default is derived below, and a click sticks across tier changes. */
+  const [byModelChoice, setByModelChoice] = useState<boolean | null>(null);
   const [phase, setPhase] = useState<"ready" | "writing">("ready");
   const [error, setError] = useState<string | null>(null);
   const [written, setWritten] = useState<HandoffWritten | null>(null);
@@ -207,12 +211,15 @@ export function HandoffPanel({
   const chosen = target !== null && target !== "same" ? parseTarget(target) : null;
   const chosenNative = chosen !== null && isNativeTarget(chosen.agent);
   const bytes = preview?.size.bytes ?? conversation.bytes;
+  /* The engine's estimate, once the preview is here; before it, only the bytes can say the conversation is large. */
+  const tokens = preview ? tokensOf(preview.size) : undefined;
+  const large = largeBy(bytes, tokens);
 
   /* The default tier follows the target until the person picks one by hand; the same agent starts on the same file. */
   useEffect(() => {
     if (tierTouched || target === null) return;
-    setTier(target === "same" ? "full" : defaultTier(bytes, chosenNative));
-  }, [bytes, chosenNative, target, tierTouched]);
+    setTier(target === "same" ? "full" : defaultTier(bytes, chosenNative, tokens));
+  }, [bytes, chosenNative, target, tierTouched, tokens]);
 
   /*
     The same-agent flow has two tiers: the same file (nothing written) and the shorter copy.
@@ -238,6 +245,23 @@ export function HandoffPanel({
   const effectiveTier: Tier = target === "same" ? sameTier : native ? tier : "brief";
   const digestNeeded = effectiveTier !== "full";
   const canWrite = preview !== null && phase === "ready" && destination !== null;
+
+  /*
+    The model box: its default and the line under it are one decision, made from the preview
+    and the spend family — on when the tier needs a digest, a model is connected, the source
+    carries no summary panoma can read and the chain fits in what is left today. The person's
+    own click wins over the default from then on, whatever the tier does; a disabled box always
+    reads unticked, and the write sends `digestBy` only when the box is ticked and enabled.
+   */
+  const modelChoice = modelDigestDefault({
+    tier: effectiveTier,
+    connected: digest.connected,
+    cap: digest.cap,
+    left: digest.left,
+    calls: preview?.modelDigest?.calls,
+    summaryReadable: Boolean(preview?.digest.summary),
+  });
+  const byModel = !modelChoice.disabled && (byModelChoice ?? modelChoice.on);
 
   async function write(asTier: Tier) {
     if (!canWrite || destination === null) return;
@@ -290,6 +314,12 @@ export function HandoffPanel({
             <p className="mt-1 truncate text-sm text-smoke" title={conversation.title ?? conversation.handle}>
               {sourceLabel(conversation.agent, conversation.surface)} · {conversation.title ?? conversation.handle}
             </p>
+            {/* The size, as soon as the preview is here and before any target is chosen: what the tiers below are measured against. */}
+            {preview && (
+              <p className="mt-1 font-mono text-[11px] text-smoke">
+                {t("handoff.sizeLine", { n: preview.size.turns, k: kiloTokens(tokensOf(preview.size)) })}
+              </p>
+            )}
           </div>
           <ActionButton tone="quiet" size="sm" type="button" onClick={onClose} aria-label={t("handoff.close")}>
             <HiOutlineXMark aria-hidden className="h-4 w-4" />
@@ -388,8 +418,9 @@ export function HandoffPanel({
                           }}
                           className="mt-1 accent-accent"
                         />
-                        <span>
+                        <span className="min-w-0">
                           <span className="text-chalk">{t(option === "full" ? "handoff.sameFile" : "handoff.tier.compact")}</span>
+                          <TierWeight tokens={tierTokens(preview.sizes, option)} />
                           <span className="block text-xs text-smoke">{t(option === "full" ? "handoff.sameFileHint" : "handoff.sameCopyHint")}</span>
                         </span>
                       </label>
@@ -468,45 +499,44 @@ export function HandoffPanel({
                               }}
                               className="mt-1 accent-accent"
                             />
-                            <span>
+                            <span className="min-w-0">
                               <span className="text-chalk">{t(TIER_KEY[option])}</span>
+                              <TierWeight tokens={tierTokens(preview.sizes, option)} />
                               <span className="block text-xs text-smoke">{t(TIER_HINT_KEY[option])}</span>
                             </span>
                           </label>
                         ))}
+                        {/* Why: the tokens when the estimate decided it, the file size when only the bytes did. */}
                         {!tierTouched && tier === "compact" && (
-                          <p className="text-xs text-faint">{t("handoff.tierPreselected", { size: sizeText(bytes) })}</p>
+                          <p className="text-xs text-faint">
+                            {large === "tokens"
+                              ? t("handoff.tierPreselectedTokens", { k: kiloTokens(tokens ?? 0) })
+                              : t("handoff.tierPreselected", { size: sizeText(bytes) })}
+                          </p>
                         )}
                       </fieldset>
                     )}
-                    {chosen && !native && <p className="text-sm text-smoke">{t("handoff.documentOnly", { agent: targetName })}</p>}
+                    {chosen && !native && (
+                      <p className="text-sm text-smoke">
+                        {t("handoff.documentOnly", { agent: targetName })}
+                        <TierWeight tokens={tierTokens(preview.sizes, "brief")} />
+                      </p>
+                    )}
 
-                    {/* The model digest: off by default, and the reason it is off is printed where the count would be. */}
+                    {/* The model digest: the default and the line under it come from `modelDigestDefault`, and the line names the price or the reason the box is off. */}
                     <div className="grid grid-cols-1 gap-1">
                       <Check
                         size="sm"
                         checked={byModel}
-                        disabled={!digestNeeded || !digest.connected || digest.left <= 0}
-                        onChange={(event) => setByModel(event.target.checked)}
+                        disabled={!digestNeeded || modelChoice.disabled}
+                        onChange={(event) => setByModelChoice(event.target.checked)}
                       >
                         {t("handoff.digestModel")}
                       </Check>
-                      {/* A cap of zero is the family paused or disabled in Spend, not a day's worth spent. */}
-                      <p className="pl-6 font-mono text-[11px] text-smoke">
-                        {!digest.connected
-                          ? t("handoff.digestNoModel")
-                          : digest.cap <= 0
-                            ? t("handoff.digestPaused")
-                            : digest.left <= 0
-                              ? t("handoff.digestSpent", { cap: digest.cap })
-                              : t("handoff.digestLeft", { n: digest.left, cap: digest.cap })}
-                      </p>
+                      <p className="pl-6 font-mono text-[11px] text-smoke">{t(modelChoice.key, modelChoice.params)}</p>
                     </div>
 
                     <FidelityTable tier={effectiveTier} dropped={dropped} />
-                    <p className="font-mono text-[11px] text-smoke">
-                      {t("handoff.sizeLine", { n: preview.size.turns, k: kiloTokens(tokensOf(preview.size)) })}
-                    </p>
                     {/* `testedWith` is a version and a date, painted as data; a native row without one was checked against the source only, and the screen says so in its own language. */}
                     {fidelityFor(preview.fidelity, destination.agent) && (
                       <p className="font-mono text-[11px] text-faint">
@@ -515,9 +545,10 @@ export function HandoffPanel({
                     )}
 
                     {digestNeeded && (
-                      <div>
+                      /* A grid child with a long path in it widens the whole body unless it may shrink, and the path may break anywhere. */
+                      <div className="min-w-0">
                         <h3 className="eyebrow mb-2">{t("handoff.digestPreview")}</h3>
-                        <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded border border-edge bg-ground p-3 font-mono text-[11px] leading-relaxed text-chalk">
+                        <pre className="max-h-64 overflow-auto whitespace-pre-wrap wrap-anywhere rounded border border-edge bg-ground p-3 font-mono text-[11px] leading-relaxed text-chalk">
                           {digestText(preview.digest)}
                         </pre>
                       </div>
@@ -571,6 +602,17 @@ export function HandoffPanel({
     </div>,
     document.body,
   );
+}
+
+/**
+ * What one tier's copy would weigh, after its label: «todo — ≈ 628k tokens». The figure is the
+ * engine's own estimate over the copy it would write, from the preview's `sizes`; an older
+ * catalog answers none, and the label then stands alone.
+ */
+function TierWeight({ tokens }: { tokens: number | undefined }) {
+  const t = useT();
+  if (tokens === undefined) return null;
+  return <span className="font-mono text-[11px] text-smoke"> — {t("handoff.tierTokens", { k: kiloTokens(tokens) })}</span>;
 }
 
 /** Two columns, always expanded: what travels and what stays, per row, before the write. */

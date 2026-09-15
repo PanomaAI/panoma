@@ -17,12 +17,12 @@ import {
   newestOf,
   NO_STORE,
   openConversation,
+  previewSizes,
   projectAt,
   publicRef,
   receiptView,
   redactDigest,
   refuseSameStore,
-  sizeOf,
   targetOf,
   writeHandoff,
   writtenBody,
@@ -39,12 +39,14 @@ import {
  * default), `keepTurns` for `compact`, and `dryRun`. A dry run answers the preview — the row
  * as the list shows it, the mechanical digest with its strings covered by the redactor, the
  * target's fidelity (null for a document: a target without a store, or any target at `brief`),
- * the size, what the reader dropped, the newest receipt for that target — and writes nothing. A
- * write puts the copy into the target's own store through the same half the screen's door uses
- * (`lib/handoff-write.ts`) and answers what `POST /api/handoff` answers, with the receipt
- * carrying the agent's name as `requestedBy` and without `result.document`: the brief of a
- * document-only handoff is read at `result.path`, not over the channel. A malformed `id` is
- * refused before discovery is asked.
+ * the size, the three tiers sized (`sizes`, with `keepTurns` applied to `compact` and `brief`),
+ * the calls a model digest would take (`modelDigest.calls`, a figure the agent can only relay:
+ * the channel never orders one), what the reader dropped, the newest receipt for that target —
+ * and writes nothing. A write puts the copy into the target's own store through the same half
+ * the screen's door uses (`lib/handoff-write.ts`) and answers what `POST /api/handoff` answers,
+ * with the receipt carrying the agent's name as `requestedBy` and without `result.document`:
+ * the brief of a document-only handoff is read at `result.path`, not over the channel. A
+ * malformed `id` is refused before discovery is asked.
  *
  * What is not on this channel, on purpose. No `surface`: the app word names it. No `digestBy`:
  * the channel never asks a model for the digest, the mechanical one is what travels. No
@@ -117,7 +119,7 @@ export async function POST(request: Request): Promise<Response> {
           // A document has no fidelity to speak of: a target without a store, or any target at
           // `brief`, where the engine writes a Markdown document whatever the target.
           fidelity: isNativeTarget(body.target) && body.tier !== "brief" ? fidelityOf(body.target) : null,
-          size: sizeOf(conversation, digest),
+          ...previewSizes(conversation, digest, body.keepTurns),
           dropped: conversation.dropped,
           receipt: receipt ? receiptView(receipt) : null,
         },

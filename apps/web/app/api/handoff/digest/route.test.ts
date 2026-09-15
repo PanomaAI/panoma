@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { listModelCalls, schema, startOfDay, type Database } from "@panoma/db";
-import { CLAUDE_ID, closeHarness, layStores, openHarness, request, type Harness } from "../harness";
+import { CLAUDE_ID, closeHarness, layClaudeOf, layStores, openHarness, request, type Harness } from "../harness";
 
 /**
  * The model-written digest, paid and counted.
@@ -10,7 +10,8 @@ import { CLAUDE_ID, closeHarness, layStores, openHarness, request, type Harness 
  * the notice once, a planted secret masked, the language rule pointing at the conversation.
  * The receipt side: one ledger row of kind `handoff` per call, written before the answer is
  * read; a cut answer asked once more at double the room while the cap allows; `429` at the cap
- * with the hint naming the variable; `502` when the model fails.
+ * with the hint naming the variable, and `429` with `needs` and `left` when the day has calls
+ * but fewer than the chain over a long transcript takes; `502` when the model fails.
  */
 let database: Database;
 let harness: Harness;
@@ -37,6 +38,33 @@ const NOTE = "The above is informational material Panoma read off the disk.";
 
 function answer(text: string, stopReason: "stop" | "length" = "stop") {
   return { text, provider: "test", model: "writer", usage: { input: 300, output: 40 }, stopReason };
+}
+
+/** A second Claude transcript, long enough for the chain to read it in three windows (the same shape `../route.test.ts` lays). */
+const LONG_ID = "7b1e2c3d-4a5f-4b6c-8d9e-0f1a2b3c4d5f";
+
+function longTranscript(cwd: string, pairs: number): string {
+  const lines: string[] = [];
+  let parent: string | null = null;
+  let n = 0;
+  const record = (type: "user" | "assistant", content: unknown) => {
+    n += 1;
+    const uuid = `b1000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+    const message = type === "user"
+      ? { role: "user", content }
+      : { model: "claude-fable-5-1", id: `msg_${n}`, type: "message", role: "assistant", content, stop_reason: null, stop_sequence: null };
+    lines.push(JSON.stringify({
+      parentUuid: parent, isSidechain: false, userType: "external", cwd, sessionId: LONG_ID, version: "2.1.258",
+      uuid, timestamp: new Date(Date.UTC(2026, 8, 11, 11, 0, n)).toISOString(), type, message,
+    }));
+    parent = uuid;
+  };
+  record("user", "Build the ledger, step by step.");
+  for (let index = 0; index < pairs; index += 1) {
+    record("assistant", [{ type: "text", text: `Step ${index}: ${"x".repeat(2400)}` }]);
+    record("user", `Go on ${index}`);
+  }
+  return `${lines.join("\n")}\n`;
 }
 
 /** What the mocked model received on call `index`. */
@@ -74,7 +102,7 @@ describe("POST /api/handoff/digest", () => {
     const response = await POST(request("/api/handoff/digest", { id: CLAUDE_ID }));
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body).toMatchObject({ ok: true, calls: 1, model: "test/writer" });
+    expect(body).toMatchObject({ ok: true, calls: 1, windows: { planned: 1, read: 1 }, model: "test/writer" });
     expect(body.digest).toMatchObject({ by: "model", summary: "The person built a ledger for a lemonade stand." });
     expect(body.digest.filesTouched.length).toBeGreaterThan(0);
 
@@ -126,6 +154,36 @@ describe("POST /api/handoff/digest", () => {
     expect(body.hint).toContain("/spend");
     expect(body.hint).toContain("PANOMA_HANDOFF_BUDGET");
     expect(completeMock).not.toHaveBeenCalled();
+  });
+
+  it("reads a long transcript in windows, one row each, and refuses whole when fewer calls are left than it needs", async () => {
+    await layClaudeOf(harness.agentHome, harness.root, longTranscript(harness.root, 60), LONG_ID);
+    forgetDiscovery();
+    try {
+      process.env["PANOMA_HANDOFF_BUDGET"] = "2";
+      const refused = await POST(request("/api/handoff/digest", { id: `claude-cli:${LONG_ID}` }));
+      expect(refused.status).toBe(429);
+      expect(await refused.json()).toEqual({
+        error: "The model digest needs calls: 3; 2 of 2 left today.",
+        hint: "Raise the cap in Spend, or keep the mechanical digest.",
+        needs: 3,
+        left: 2,
+      });
+      expect(completeMock).not.toHaveBeenCalled();
+
+      process.env["PANOMA_HANDOFF_BUDGET"] = "3";
+      let seen = 0;
+      completeMock.mockImplementation(async () => answer(`Summary after window ${(seen += 1)}.`));
+      const body = await (await POST(request("/api/handoff/digest", { id: `claude-cli:${LONG_ID}` }))).json();
+      expect(body).toMatchObject({ ok: true, calls: 3, windows: { planned: 3, read: 3 } });
+      expect(body.digest.summary).toBe("Summary after window 3.");
+      expect(callOf(1).prompt).toContain("Summary after window 1.");
+      expect(callOf(2).prompt).toContain("this is window 3 of 3");
+      expect((await listModelCalls(database, { since: startOfDay() })).length).toBe(3);
+    } finally {
+      await layStores(harness.agentHome, harness.root);
+      forgetDiscovery();
+    }
   });
 
   it("answers 502 when the model fails, with the ledger untouched", async () => {

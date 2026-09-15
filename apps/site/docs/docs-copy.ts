@@ -468,7 +468,7 @@ export const DOCS_COPY = {
 
     tiersTitle: "Three tiers",
     tiersLead:
-      "How much travels is chosen before anything is written, with the counts in front of you.",
+      "How much travels is chosen before anything is written, with the counts and what each tier weighs in tokens in front of you.",
     tiers: [
       {
         level: "full",
@@ -476,7 +476,7 @@ export const DOCS_COPY = {
       },
       {
         level: "compact",
-        body: "The digest written as the first turn, plus the newest turns whole — twelve by default, and --keep changes it. For a source that is large: a conversation that ended on a limit is usually the size that hit it, and the Handoff screen preselects this tier over 16 MiB and says why.",
+        body: "The digest written as the first turn, plus the newest turns whole — twelve by default, and --keep changes it. For a source that is large: a conversation that ended on a limit is usually the size that hit it, and the Handoff screen preselects this tier over 16 MiB or 150,000 estimated tokens and says which measure decided. Every tier is weighed before anything is written, and the screen prints its tokens next to it. With the model box ticked, the connected model compacts the whole conversation itself, in windows of 60,000 characters read oldest to newest, one call per window, and the last answer is the summary: the box starts ticked when the source carries no summary Panoma can read, and off when it does, because then the model would only add what came after that summary. A chain that does not fit in the calls left today is refused before the first one, with both figures.",
       },
       {
         level: "brief",
@@ -513,7 +513,7 @@ export const DOCS_COPY = {
       },
       {
         command: "panoma handoff --to opencode --dry-run",
-        note: "What would travel and what would stay, with the counts, and nothing written. --json prints the same as an object, for a script.",
+        note: "What would travel and what would stay, with the counts and what each tier weighs in tokens, and nothing written. --json prints the same as an object, for a script.",
       },
       {
         command: "panoma handoff --to bundle --out conversation.json",
@@ -521,7 +521,7 @@ export const DOCS_COPY = {
       },
       {
         command: "panoma handoff --to codex --digest model",
-        note: "A model writes the summary section of the digest instead of a function. Paid, under its own daily cap, and the conversation travels to the provider wrapped as untrusted material; the catalog has to be up. Off by default, because the mechanical digest is free and the same on every run.",
+        note: "A model writes the summary section of the digest instead of a function, reading the whole conversation in windows of 60,000 characters, one call each. Paid, under its own daily cap of ten, checked against the whole chain before the first call; the conversation travels to the provider wrapped as untrusted material, the catalog has to be up, and the terminal says how many calls it took. Off by default here, because the mechanical digest is free and the same on every run.",
       },
     ],
     commandsNote:

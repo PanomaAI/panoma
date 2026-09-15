@@ -13,6 +13,13 @@ import { estimateTokens } from "@panoma/core";
 import { textOfPart } from "./notes";
 import type { Conversation, Digest, Part, Turn } from "./types";
 
+/**
+ * The measure behind `stats.estimatedTokens`, re-exported so that whoever sizes a tier outside
+ * this package — the web's preview, which measures `compact` and `brief` before anything is
+ * written — counts with the same rule and not with a second one.
+ */
+export { estimateTokens };
+
 const TITLE_CHARS = 80;
 const GOAL_CHARS = 600;
 const LINE_CHARS = 200;
@@ -93,7 +100,8 @@ export function digestConversation(conversation: Conversation): Digest {
   return digest;
 }
 
-function textOfTurns(turns: readonly Turn[]): string {
+/** Every turn as the text a text-only agent would keep: what `stats.estimatedTokens` measures. */
+export function textOfTurns(turns: readonly Turn[]): string {
   return turns.map((turn) => turn.parts.map(textOfPart).join("\n")).join("\n");
 }
 

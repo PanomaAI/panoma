@@ -9,6 +9,8 @@ import {
   DROPPED_KEYS,
   IN_APP_BY_HAND_KEY,
   INSIDE_CLAUDE,
+  LARGE_BYTES,
+  LARGE_TOKENS,
   NATIVE_TARGETS,
   SIGN_IN_WORDS,
   SIGN_OUT_WORDS,
@@ -25,8 +27,10 @@ import {
   iconKey,
   insideFolder,
   kiloTokens,
+  largeBy,
   leftBehind,
   limitBadge,
+  modelDigestDefault,
   parseTarget,
   projectFilterFrom,
   receiptFor,
@@ -34,6 +38,7 @@ import {
   resumeCommandOf,
   sortNewest,
   sourceLabel,
+  tierTokens,
   untilText,
   type HandoffReceiptView,
   type RootRow,
@@ -292,6 +297,45 @@ describe("tiers, sizes and words", () => {
     expect(defaultTier(16 * 1024 * 1024, true)).toBe("full");
     expect(defaultTier(16 * 1024 * 1024 + 1, true)).toBe("compact");
     expect(defaultTier(1024, false)).toBe("brief");
+    expect(LARGE_BYTES).toBe(16 * 1024 * 1024);
+  });
+
+  /*
+    Since 15-Sep-2026 the estimate decides too: a transcript over 150,000 tokens is more than a
+    context takes at once, whatever its bytes say, and the hint under the radios names the
+    measure that decided — the tokens first, the file size only when the estimate is absent or
+    under the line.
+   */
+  it("preselects compact over 150k tokens too, and says which measure decided", () => {
+    expect(LARGE_TOKENS).toBe(150_000);
+    expect(defaultTier(1024, true, 150_000)).toBe("full");
+    expect(defaultTier(1024, true, 150_001)).toBe("compact");
+    expect(defaultTier(1024, true, undefined)).toBe("full");
+    expect(defaultTier(LARGE_BYTES + 1, true, 10)).toBe("compact");
+    /* A document-only target is a document whatever the size. */
+    expect(defaultTier(1024, false, 900_000)).toBe("brief");
+    expect(largeBy(1024, 150_001)).toBe("tokens");
+    expect(largeBy(LARGE_BYTES + 1, 150_001)).toBe("tokens");
+    expect(largeBy(LARGE_BYTES + 1, 10)).toBe("bytes");
+    expect(largeBy(LARGE_BYTES + 1)).toBe("bytes");
+    expect(largeBy(1024, 10)).toBeUndefined();
+    expect(largeBy(1024)).toBeUndefined();
+    for (const locale of ["es", "en"] as const) {
+      const hint = t(locale, "handoff.tierPreselectedTokens", { k: 628 });
+      expect(hint, locale).toContain("628k");
+      expect(hint).not.toMatch(/\{/);
+    }
+  });
+
+  it("reads each tier's weight from the preview's sizes, and nothing from an older catalog", () => {
+    const sizes = { full: { turns: 40, estimatedTokens: 628_000 }, compact: { turns: 13, estimatedTokens: 9_200 }, brief: { estimatedTokens: 2_900 } };
+    expect(tierTokens(sizes, "full")).toBe(628_000);
+    expect(tierTokens(sizes, "compact")).toBe(9_200);
+    expect(tierTokens(sizes, "brief")).toBe(2_900);
+    expect(tierTokens(undefined, "full")).toBeUndefined();
+    for (const locale of ["es", "en"] as const) {
+      expect(t(locale, "handoff.tierTokens", { k: kiloTokens(628_000) }), locale).toBe("≈ 628k tokens");
+    }
   });
 
   it("rounds tokens to thousands and never says zero", () => {
@@ -391,5 +435,83 @@ describe("tiers, sizes and words", () => {
       expect(sentence).not.toMatch(/digest \+ last turns|resumen \+ últimos turnos/);
     }
     expect(t("en", "handoff.fault.too-large")).toBe("The conversation is over 64 MiB, which is more than a handoff carries.");
+  });
+});
+
+describe("the model digest's box", () => {
+  const base = { tier: "compact" as const, connected: true, cap: 10, left: 7, calls: 3, summaryReadable: false };
+
+  /*
+    The chain reads the transcript in windows, one paid call each, so the box is a price before
+    it is a choice: on by default only when the tier needs a digest, a model is connected, the
+    source carries no summary panoma can read and the chain fits in what is left today.
+   */
+  it("starts ticked for a source with no readable summary when the chain fits today", () => {
+    const choice = modelDigestDefault(base);
+    expect(choice.on).toBe(true);
+    expect(choice.disabled).toBe(false);
+    expect(choice.key).toBe("handoff.digestNoSourceSummary");
+    expect(choice.params).toEqual({ n: 3, m: 7, cap: 10 });
+    /* The whole cap exactly fits: the brake is `spent + calls > cap`, and seven of seven left is not over it. */
+    expect(modelDigestDefault({ ...base, calls: 7 }).on).toBe(true);
+  });
+
+  it("starts off, and stays enabled, when the source carries its own readable summary", () => {
+    const choice = modelDigestDefault({ ...base, summaryReadable: true });
+    expect(choice).toEqual({ on: false, disabled: false, key: "handoff.digestSourceSummary", params: { n: 3 } });
+  });
+
+  it("is off and disabled at tier full, with the source's line still under it", () => {
+    const full = modelDigestDefault({ ...base, tier: "full" });
+    expect(full.on).toBe(false);
+    expect(full.disabled).toBe(true);
+    expect(full.key).toBe("handoff.digestNoSourceSummary");
+    expect(modelDigestDefault({ ...base, tier: "full", summaryReadable: true })).toMatchObject({ on: false, disabled: true, key: "handoff.digestSourceSummary" });
+    expect(modelDigestDefault({ ...base, tier: "brief" }).on).toBe(true);
+  });
+
+  it("names the cause where the count would be, in the order a person acts on", () => {
+    expect(modelDigestDefault({ ...base, connected: false })).toEqual({ on: false, disabled: true, key: "handoff.digestNoModel", params: {} });
+    /* A cap of zero is the family paused or disabled in Spend, not a day's worth spent. */
+    expect(modelDigestDefault({ ...base, cap: 0, left: 0 })).toEqual({ on: false, disabled: true, key: "handoff.digestPaused", params: {} });
+    expect(modelDigestDefault({ ...base, left: 0 })).toEqual({ on: false, disabled: true, key: "handoff.digestSpent", params: { cap: 10 } });
+    /* Something left, but fewer calls than the chain needs: the 429 the write would answer, said before the click. */
+    expect(modelDigestDefault({ ...base, calls: 8 })).toEqual({ on: false, disabled: true, key: "handoff.digestNeeds", params: { n: 8, m: 7, cap: 10 } });
+    /* No model wins over everything, and a summary the model could read changes nothing about the price. */
+    expect(modelDigestDefault({ ...base, connected: false, calls: 8, summaryReadable: true }).key).toBe("handoff.digestNoModel");
+    expect(modelDigestDefault({ ...base, calls: 8, summaryReadable: true }).key).toBe("handoff.digestNeeds");
+  });
+
+  /* A catalog older than the chain answers no `modelDigest`: the box behaves as it did before, off with the «left today» line. */
+  it("keeps the old line, and the box off, when the catalog did not count the calls", () => {
+    expect(modelDigestDefault({ ...base, calls: undefined })).toEqual({ on: false, disabled: false, key: "handoff.digestLeft", params: { n: 7, cap: 10 } });
+    expect(modelDigestDefault({ ...base, calls: undefined, tier: "full" }).disabled).toBe(true);
+  });
+
+  it("fills every gap of every line it can choose, in both languages, and closes each clause with its figure", () => {
+    const cases = [
+      base,
+      { ...base, summaryReadable: true },
+      { ...base, connected: false },
+      { ...base, cap: 0, left: 0 },
+      { ...base, left: 0 },
+      { ...base, calls: 8 },
+      { ...base, calls: undefined },
+    ];
+    for (const input of cases) {
+      const choice = modelDigestDefault(input);
+      for (const locale of ["es", "en"] as const) {
+        const line = t(locale, choice.key, choice.params);
+        expect(line, `${locale} ${choice.key}`).not.toBe("");
+        expect(line, `${locale} ${choice.key}`).not.toMatch(/\{/);
+      }
+    }
+    /* «{n} llamadas» would have been the tenth return of the glued plural: the figure closes the clause instead. */
+    for (const locale of ["es", "en"] as const) {
+      expect(t(locale, "handoff.digestSourceSummary", { n: 1 }), locale).toMatch(/1$/);
+      expect(t(locale, "handoff.digestNeeds", { n: 1, m: 1, cap: 1 }), locale).toMatch(/: 1; .*1 .* 1 /);
+      expect(t(locale, "handoff.digestNoSourceSummary", { n: 1, m: 1, cap: 1 }), locale).toMatch(/: 1 \(/);
+    }
+    expect(t("en", "handoff.digestNeeds", { n: 3, m: 2, cap: 10 })).toBe("Needs calls: 3; 2 of 10 left today — raise the cap in Spend or keep the mechanical digest");
   });
 });

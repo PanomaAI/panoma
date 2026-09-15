@@ -1193,6 +1193,35 @@ describe("the handoff answer", () => {
     expect(full).not.toContain("Would travel");
   });
 
+  it("los pesos de los tres niveles y las llamadas del resumen por modelo siguen a la frase del tamaño, y un cuerpo viejo se pinta como antes", () => {
+    const sizes = { full: { turns: 12, estimatedTokens: 9_000 }, compact: { turns: 5, estimatedTokens: 2_600 }, brief: { estimatedTokens: 340 } };
+    // The catalog since 15-Sep-2026: the three tiers weighed and the chain's cost, so the model can name a tier with the figures in front of it.
+    const text = formatHandoff(dryRun({ sizes, modelDigest: { calls: 3 } }));
+    expect(text).toContain(
+      "Source size: turns: 12 · ≈ 9k tokens · 391 KB. At tier compact the digest and the newest turns travel whole, and the rest travels as the digest only. " +
+        "At tier full ≈ 9k tokens travel; at compact ≈ 3k; at brief ≈ 1k. A model digest would take calls: 3.\n",
+    );
+    // At full the tier clause is empty and the weights still follow the size line; the number closes every sentence.
+    const full = formatHandoff(dryRun({ tier: "full", sizes, modelDigest: { calls: 1 } }));
+    expect(full).toContain("Source size: turns: 12 · ≈ 9k tokens · 391 KB. At tier full ≈ 9k tokens travel; at compact ≈ 3k; at brief ≈ 1k. A model digest would take calls: 1.\n");
+    // Our header line, not the digest's quoted exchange («12 tests green» is the person's, inside the block).
+    expect(full.split("\n")[1]).not.toMatch(/\d [a-z]+s\b/);
+    // The weights without the cost: the sentence about the model is not said, and no door to it either.
+    const weights = formatHandoff(dryRun({ sizes }));
+    expect(weights).toContain("At tier full ≈ 9k tokens travel; at compact ≈ 3k; at brief ≈ 1k.\n");
+    expect(weights).not.toContain("model digest");
+    expect(weights).not.toContain("digestBy");
+    // An older catalog answers neither, and the dry run reads exactly as it did.
+    const older = formatHandoff(dryRun());
+    expect(older).not.toContain("At tier full");
+    expect(older).not.toContain("model digest");
+    expect(older).toContain("Source size: turns: 12 · ≈ 9k tokens · 391 KB. At tier compact the digest and the newest turns travel whole, and the rest travels as the digest only.\n");
+    // Figures that are not numbers are not printed as words: a body that is not the catalog's says nothing.
+    const broken = formatHandoff(dryRun({ sizes: { full: { turns: 1, estimatedTokens: Number.NaN }, compact: sizes.compact, brief: sizes.brief } }));
+    expect(broken).not.toContain("At tier full");
+    expect(broken).not.toContain("NaN");
+  });
+
   it("un recibo previo se nombra en el ensayo, con la línea que retoma esa copia", () => {
     const text = formatHandoff(dryRun({ receipt: { id: "hnd_old", sourceAgent: "claude-cli", sourceSessionId: "0f8b2a1c-1111-4222-8333-444455556666", targetAgent: "codex-cli", targetSurface: "cli", tier: "full", createdAt: "2026-09-11T10:00:00.000Z", resumeCommand: "cd '/x' && codex resume abc", requestedBy: null } }));
     expect(text).toContain("Already handed to Codex CLI on 2026-09-11 at tier full (receipt hnd_old); the person can resume that copy instead of writing another: cd '/x' && codex resume abc");

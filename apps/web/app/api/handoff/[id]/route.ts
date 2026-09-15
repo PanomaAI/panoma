@@ -3,7 +3,7 @@ import { APP_OF, digestConversation, fidelityOf, NATIVE_AGENTS, resumeInApp, res
 import { db } from "@/lib/db";
 import { localOperatorOnly, sameOrigin } from "@/lib/guard";
 import { handoffHttpError } from "@/lib/handoff-http";
-import { checkId, discoverForCatalog, findConversation, openConversation, sizeOf } from "@/lib/handoff-write";
+import { checkId, discoverForCatalog, findConversation, isKeepTurns, openConversation, previewSizes } from "@/lib/handoff-write";
 import { localeFrom, t } from "@/lib/i18n";
 
 /**
@@ -24,7 +24,15 @@ import { localeFrom, t } from "@/lib/i18n";
  * the thirty-second listing, the same switch the list has: the panel sends it when a row is
  * pressed, so a conversation that appeared since the list was drawn is found and not answered
  * `conversation-not-found` — until 12-Sep-2026 the query was read by nobody, and the panel's
- * «no 30 s cache here» was a wish.
+ * «no 30 s cache here» was a wish. `?keepTurns=N` sizes `compact` and `brief` with that many
+ * newest turns instead of the engine's default, the same knob the write takes; what is not a
+ * positive integer is refused, not ignored.
+ *
+ * Since 15-Sep-2026 the answer also carries `sizes` — the three tiers measured on this
+ * conversation, `{ full, compact, brief }` — and `modelDigest.calls`, the paid calls the model
+ * digest would take over it: the chain reads the transcript in windows, one call each, and the
+ * person sees the price before ticking the box. Both come from `previewSizes` in
+ * `lib/handoff-write.ts`, the same assembly the agent channel's dry run answers.
  * Discovery and the read go through `lib/handoff-write.ts`, the half this route shares with the
  * doors that write; `guard.test.ts` sweeps for those names as it sweeps for the engine's.
  */
@@ -41,7 +49,12 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   }
 
   const { id } = await context.params;
-  const fresh = new URL(request.url).searchParams.get("fresh") === "1";
+  const query = new URL(request.url).searchParams;
+  const fresh = query.get("fresh") === "1";
+  const keepTurns = readKeepTurns(query.get("keepTurns"));
+  if (keepTurns === false) {
+    return Response.json({ error: "body", code: "body", detail: "keepTurns is a positive integer" }, { status: 400 });
+  }
   const { db: database } = await db();
   try {
     // The id's shape before discovery: a malformed one answers 400 with no listing paid.
@@ -70,7 +83,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
         digest,
         fidelity: NATIVE_AGENTS.map(fidelityOf),
         dropped: conversation.dropped,
-        size: sizeOf(conversation, digest),
+        ...previewSizes(conversation, digest, keepTurns),
         hash: conversation.hash,
         receipts,
         sameSurfaceDoor,
@@ -81,4 +94,11 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   } catch (error) {
     return handoffHttpError(error);
   }
+}
+
+/** The `keepTurns` query: absent is the engine's default, a positive integer is itself, anything else is refused. */
+function readKeepTurns(raw: string | null): number | undefined | false {
+  if (raw === null) return undefined;
+  const value = /^\d+$/.test(raw) ? Number(raw) : Number.NaN;
+  return isKeepTurns(value) ? value : false;
 }

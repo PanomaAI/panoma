@@ -7,7 +7,7 @@ still needs a ceiling. This page tells you which they are, with what number out 
 where the number comes from since 6-Sep-2026, and why the brake is built the way it is and
 not the way that looks obvious.
 
-Thirteen tests anchor it: `apps/web/lib/spend-settings.test.ts` (the one body that reads a cap,
+Fourteen tests anchor it: `apps/web/lib/spend-settings.test.ts` (the one body that reads a cap,
 the precedence between the pause, the variable, the file and the factory value, the strict
 patch the screen sends, and the size a capture travels at), `apps/web/lib/spend-view.test.ts`
 (the sums, the local-day buckets, the price of a window and which lines have figures to show
@@ -26,7 +26,10 @@ asks `capFor("read")` and never the variable, and the kinds that count against i
 `apps/web/lib/episode-learning.test.ts` (the extractor's cap, and the pass that rotates a
 failed batch behind the rest instead of paying for it again), `apps/web/lib/consult.test.ts`
 (the cut answer asked for once more, and the sweeper's two bounds),
-`apps/web/lib/memory-distill.test.ts` (the distiller's brakes) and
+`apps/web/lib/memory-distill.test.ts` (the distiller's brakes),
+`apps/web/lib/handoff-digest.test.ts` (the handoff chain's brake since 15-Sep-2026: one row
+per window call, the two 429 bodies before any call, and the retry that never takes the slot
+of a window still to read) and
 `packages/db/src/spend.test.ts` (the spend ledger, the kinds added up, the unmetered calls
 and the two queries the screen reads).
 
@@ -44,7 +47,7 @@ and the two queries the screen reads).
 | `episodes` | `PANOMA_EPISODE_BUDGET` | 20 calls, at most two per request | decision-memory extraction: turning captured narratives into episodes; the cap is the factory 20 still, and no automatic origin exists for it | `episodes` | `lib/episode-learning.ts`, reserving through `reserveModelCall` before the call since delivery D, origin `manual` |
 | `card` | `PANOMA_CARD_BUDGET` | 100 calls | the two buttons of the project card: the description, and the opinion on `AGENTS.md` | `describe` · `review` | `app/api/describe/route.ts` and `app/api/md/review/route.ts` |
 | `app` | `PANOMA_APP_BUDGET` | 20 attempts | explicitly enabled model and voice providers in official apps | `app` | `lib/app-jobs.ts`, reserved atomically before enqueue and rechecked before launch |
-| `handoff` | `PANOMA_HANDOFF_BUDGET` | 10 calls | the model-written digest of one conversation about to be handed off: one action, by the person, on one transcript; two calls when the first answer was cut | `handoff` | `writeDigestWithModel` in `lib/handoff-digest.ts`, asked by `app/api/handoff/route.ts` (`digestBy: "model"`) and `app/api/handoff/digest/route.ts` |
+| `handoff` | `PANOMA_HANDOFF_BUDGET` | 10 calls | the model-written digest of one conversation about to be handed off: one action, by the person, on one transcript; since 15-Sep-2026 one call per window of 60,000 rendered characters, the chain planned before anything is paid and refused whole with both figures when it does not fit today, plus one call for each answer that was cut and asked again | `handoff` | `writeDigestWithModel` in `lib/handoff-digest.ts`, asked by `app/api/handoff/route.ts` (`digestBy: "model"`) and `app/api/handoff/digest/route.ts`, both checking `planDigest(...).calls` against the cap first |
 
 The nine numbers, the variable of each family and the kinds it counts live in one file,
 `apps/web/lib/spend-settings.ts` (`FACTORY_CAPS`, `BUDGET_ENV`, `FAMILY_KINDS`), and every
@@ -119,15 +122,62 @@ person pressing a button is not a loop; it is the same argument that held for th
 action by the person on one conversation, and it is the one call in panoma that sends a whole
 private transcript to a provider — redacted and wrapped, but whole. Ten covers a bad day of
 usage limits, which is the day the feature exists for, and stops the one loop that could form:
-a screen refreshed with the box ticked. It is off by default on the screen and on the terminal
-(`--digest panoma` is the default); the mechanical digest costs nothing and is what travels
-when nobody asks for more. The row is written before the answer is read, as everywhere else,
-and a cut answer buys one retry only while the cap still has a slot for it. And the family
-stays the person's on purpose: the agent channel's `panoma_handoff` has no `digestBy` and
-`POST /api/agent/handoff` refuses a body that carries one, so a handoff an agent orders never
-spends here —an agent calling a tool is exactly the loop this cap exists to brake— and «one
-action, by the person» is still what every row of this family is
-([handoff.md](handoff.md)).
+a screen refreshed with the box ticked. The mechanical digest costs nothing and is what
+travels when nobody asks for more; on the terminal `--digest panoma` is the default, and on
+the screen the box starts off unless the tier needs a digest, a model is connected, the chain
+fits in what is left today and the source carries no summary panoma can read — the one case
+where a model has something to add, decided by `modelDigestDefault` in
+`apps/web/lib/handoff-view.ts` and never by a saved preference, so a refreshed screen
+re-derives it and the cap is still what brakes the refresh. The row is written before the
+answer is read, as everywhere else. And the family stays the person's on purpose: the agent
+channel's `panoma_handoff` has no `digestBy` and `POST /api/agent/handoff` refuses a body
+that carries one, so a handoff an agent orders never spends here —an agent calling a tool is
+exactly the loop this cap exists to brake— and «one action, by the person» is still what
+every row of this family is ([handoff.md](handoff.md)).
+
+**Since 15-Sep-2026 that one action is a chain, and the cap is checked against the whole
+chain before the first call.** Until then the digest was one call over the newest 24,000
+characters of the transcript, two when the answer was cut, and one action cost one slot. Now
+the model reads the whole transcript in windows of `WINDOW_CHARS`, 60,000 rendered characters
+each —tool results cut to 400, tool calls to 600, text parts to 2,500, thinking never—, one
+paid call per window, oldest to newest, each call extending the previous answer, and the last
+answer is the digest. `planDigest` in `lib/handoff-digest.ts` counts the windows without
+paying, and both paid doors run `digestRefusal` against that count before anything else is
+spent: with nothing left today the 429 is the old one (`api.handoffSpent`, `used` and `cap`);
+with something left but fewer calls than the chain needs, `spent + calls > cap`, it is
+`api.handoffNeeds` —«The model digest needs calls: {needs}; {left} of {cap} left today.»— with
+its hint —«Raise the cap in Spend, or keep the mechanical digest.»— and `needs` and `left` as
+fields, and nothing is paid, written or receipted. The alternative, starting the chain and
+stopping at the cap, was refused for the reason the in-loop section below gives for every
+organ and one more of this family's own: a chain stopped at window three of five is a
+summary of half the conversation handed to the next agent labelled as the whole. Inside the
+loop the brake is the same `calls >= cap` before every window, so a slot another call of the
+family took between the check and the loop is still never crossed, and the digest route says what
+happened as `windows: { planned, read }`. A cut answer is asked for once more at double the
+room (1,200 → 2,400 tokens), and only while the cap has a slot beyond the windows still to
+read: a retry never takes the slot of a window, so with 7 of 10 spent a chain of three whose
+first answer was cut goes on with the cut answer, and with 6 spent the retry fires. One row
+per call, retries included.
+
+**What ten calls buy, in the arithmetic of the plan.** Ten windows are 600,000 rendered
+characters, about 150,000 tokens by the engine's four-characters-per-token estimate, and
+that is the ceiling under the factory cap for a conversation nobody compacted: past it the
+person raises the cap on the Spend screen or with `PANOMA_HANDOFF_BUDGET`, or keeps the
+mechanical digest, and the 429 names both figures. The rendered text is shorter than the
+transcript, because a tool result is cut to 400 characters whatever its length and a tool
+call to 600; but a synthetic conversation of 31 MB planned here into 206 windows in about
+70 ms, so a very long transcript is refused at once and costs nothing to refuse. A
+conversation compacted by Claude Code or OpenCode is shorter than it looks: its chain starts
+after the newest summary panoma can read, which becomes the first «summary so far», so a
+source compacted recently has only what followed to read. A Codex source
+gets no such shortcut, because its summaries are encrypted and only Codex can open them, and
+its chain covers everything. The preview says the price before the box is ticked
+—`modelDigest.calls` on both previews, the calls against the calls left under the box on
+the screen, «A model digest would take calls: N.» on the channel's dry run— and the terminal
+prints `digest by model · calls: {n}` when the catalog answers how many it paid. What no
+surface says before paying is the size of each call: the head —the two lists, the first
+message, the summary so far up to 12,000 characters— is repeated in front of every window,
+and the Spend screen shows the tokens afterwards, per call, when the provider states them.
 
 ## Where the number comes from: pause, variable, file, factory
 
@@ -361,12 +411,16 @@ The brake above looks at what there was at the start, so without counting them h
 that begins with a single call of headroom takes all eight with it. Each batch is
 independent —it stores its own and marks its own— so stopping between two loses nothing of
 what was paid for, and whoever calls again meets the 429 above. `classify` and `synthesize`
-carry the same cut for the same reason. Since delivery D that in-process counter is gone
-from the three read routes and the cut inside the loop is the reservation itself: every call
-asks `reserveModelCall` under the family's lock before it leaves, a refused reservation
-before the first call answers the same 429, and one refused later stops the pass and returns
-the receipt of what was read — so a day the worker filled between the pre-check and the call
-is caught by the row, not by a number read at the start
+carry the same cut for the same reason, and so does the handoff's chain since 15-Sep-2026 —
+one call per window, `calls >= cap` before each — with the difference that its pre-check
+refuses the whole chain rather than the first call, because a handoff digest, unlike a
+distillation batch, is not divisible: what a stopped chain has paid for is a paragraph about
+part of the conversation, and nobody calls again for the rest. Since delivery D that
+in-process counter is gone from the three read routes and the cut inside the loop is the
+reservation itself: every call asks `reserveModelCall` under the family's lock before it
+leaves, a refused reservation before the first call answers the same 429, and one refused
+later stops the pass and returns the receipt of what was read — so a day the worker filled
+between the pre-check and the call is caught by the row, not by a number read at the start
 ([twin-learning.md](twin-learning.md)).
 
 **A cut answer is asked for once more, with double the room, and that second call counts
@@ -380,7 +434,11 @@ any unreadable one, and the next pass sent the same input at the same cap and go
 same place: two identical calls for the same nothing. The memory distiller does the same for
 a cut answer that did not parse (500 → 1,000, a loop of at most two, checking `calls < cap`
 before the second), and so do the double and the rehearsal (400 → 800), inside the same
-`queueAsk` turn and only if a second call still fits today.
+`queueAsk` turn and only if a second call still fits today. The handoff's chain does it per
+window since 15-Sep-2026 (1,200 → 2,400), with one more condition: the retry fires only
+while the cap has a slot beyond the windows still to read, because a retry that took a
+window's slot would end the chain early, and a chain ended early is half the conversation
+summarised as the whole.
 
 **And what no pass can send is not sent, marked or paid.** An observation needs
 `MIN_CITATIONS` (2) distinct citations from the same batch, so a project with a single unread

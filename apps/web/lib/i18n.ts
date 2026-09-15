@@ -2103,6 +2103,12 @@ const es = {
   "api.handoffSpent": "Los resúmenes de relevo de hoy están gastados: {used} de {cap}.",
   "api.handoffSpentHint":
     "Vuelve mañana, sube el tope en /spend o exporta PANOMA_HANDOFF_BUDGET. El relevo sin modelo sigue disponible.",
+  /*
+    The chain over a long conversation takes one call per window, and the day may have some
+    left but not that many: the refusal names both figures, each closing its clause.
+   */
+  "api.handoffNeeds": "El resumen por modelo necesita llamadas: {needs}; quedan hoy {left} de {cap}.",
+  "api.handoffNeedsHint": "Sube el tope en Gasto, o deja el resumen mecánico.",
   "api.cardSpentHint":
     "Vuelven mañana, o sube el tope en la pantalla de gasto (/spend) o con PANOMA_CARD_BUDGET.",
   "api.noAssignment": "Ese encargo no existe.",
@@ -4212,6 +4218,10 @@ const es = {
   "handoff.tierHint.compact": "El resumen de panoma y los turnos más recientes; el resto se queda.",
   "handoff.tierHint.brief": "Un .md para pegar como primer mensaje en cualquier agente.",
   "handoff.tierPreselected": "Preseleccionado: esta ocupa {size}",
+  /* When the token estimate decided it, the hint says so in the measure a context is made of; the size line stays for the bytes. */
+  "handoff.tierPreselectedTokens": "Preseleccionado: ≈ {k}k tokens, más de lo que cabe en un contexto de una vez",
+  /* What one tier's copy would weigh, after its label: «todo — ≈ 628k tokens». */
+  "handoff.tierTokens": "≈ {k}k tokens",
   "handoff.documentOnly": "{agent} no puede reanudar una conversación escrita: recibe un documento.",
   "handoff.digestModel": "Que un modelo escriba el resumen",
   "handoff.digestLeft": "quedan hoy {n} de {cap}",
@@ -4219,6 +4229,14 @@ const es = {
   /* The cap closes the sentence: a cap of one once read «Los 1 de hoy están gastados». A cap of zero is paused or disabled in Spend, not spent. */
   "handoff.digestSpent": "Los resúmenes de hoy están gastados — más mañana, o sube el tope en Gasto · tope: {cap}",
   "handoff.digestPaused": "Los resúmenes por modelo están en pausa o desactivados — actívalos en Gasto",
+  /*
+    The chain reads the transcript in windows, one paid call each, so the box names its price
+    before it is ticked: the calls it needs against the calls left today, and whether the source
+    already carries a summary panoma can read. Every figure closes its clause.
+   */
+  "handoff.digestNeeds": "Necesita llamadas: {n}; quedan hoy {m} de {cap} — sube el tope en Gasto o deja el resumen mecánico",
+  "handoff.digestSourceSummary": "El origen trae su propio resumen: viaja dentro del de panoma; el modelo solo añadiría lo posterior, en llamadas: {n}",
+  "handoff.digestNoSourceSummary": "El origen no trae un resumen legible: un modelo lo escribe en llamadas: {n} (quedan hoy {m} de {cap})",
   "handoff.travels": "viaja",
   "handoff.stays": "se queda",
   "handoff.row.all": "cada mensaje y cada llamada a herramientas",
@@ -5957,6 +5975,8 @@ const en = {
   "api.handoffSpent": "Today’s handoff digests are spent: {used} of {cap}.",
   "api.handoffSpentHint":
     "Come back tomorrow, raise the cap in /spend or export PANOMA_HANDOFF_BUDGET. The handoff without a model is still available.",
+  "api.handoffNeeds": "The model digest needs calls: {needs}; {left} of {cap} left today.",
+  "api.handoffNeedsHint": "Raise the cap in Spend, or keep the mechanical digest.",
   "api.cardSpentHint":
     "They come back tomorrow, or raise the cap on the Spend screen (/spend) or with PANOMA_CARD_BUDGET.",
   "api.noAssignment": "No such assignment.",
@@ -7508,12 +7528,17 @@ const en = {
   "handoff.tierHint.compact": "panoma’s digest and the newest turns; the rest stays.",
   "handoff.tierHint.brief": "A .md to paste as the first message in any agent.",
   "handoff.tierPreselected": "Preselected: this one is {size}",
+  "handoff.tierPreselectedTokens": "Preselected: ≈ {k}k tokens, more than a context takes at once",
+  "handoff.tierTokens": "≈ {k}k tokens",
   "handoff.documentOnly": "{agent} cannot resume a written conversation: it gets a document.",
   "handoff.digestModel": "Let a model write the digest",
   "handoff.digestLeft": "{n} of {cap} left today",
   "handoff.digestNoModel": "No model connected — choose one in AI",
   "handoff.digestSpent": "Today’s digests are spent — more tomorrow, or raise the cap in Spend · cap: {cap}",
   "handoff.digestPaused": "Model digests are paused or disabled — turn them on in Spend",
+  "handoff.digestNeeds": "Needs calls: {n}; {m} of {cap} left today — raise the cap in Spend or keep the mechanical digest",
+  "handoff.digestSourceSummary": "The source carries its own summary: it travels inside panoma’s; a model would only add what came after, in calls: {n}",
+  "handoff.digestNoSourceSummary": "The source carries no readable summary: a model writes it in calls: {n} ({m} of {cap} left today)",
   "handoff.travels": "travels",
   "handoff.stays": "stays behind",
   "handoff.row.all": "every message and tool call",

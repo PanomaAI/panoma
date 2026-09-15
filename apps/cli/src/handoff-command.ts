@@ -15,8 +15,10 @@ import {
   agentFromWord,
   agentOfApp,
   briefMarkdown,
+  compactConversation,
   digestConversation,
   discoverConversations,
+  estimateTokens,
   fidelityOf,
   forkOf,
   fromBundle,
@@ -31,6 +33,7 @@ import {
   resumeInApp,
   resumeOf,
   sameFolder,
+  textOfTurns,
   toBundle,
   type AgentId,
   type Conversation,
@@ -179,7 +182,9 @@ export async function handoffCommand(parsed: Flags, deps: HandoffDeps = {}): Pro
   if (digestBy === "model" && !parsed.dryRun) {
     const written = await modelDigest(parsed, conversation);
     if (typeof written === "number") return written;
-    digest = written;
+    digest = written.digest;
+    // The chain's cost, the moment it is known: one call per window of the transcript, plus one for each answer that was cut.
+    if (written.calls !== undefined && !parsed.json) process.stderr.write(pc.dim(`${say("handoff.digestCalls", { n: written.calls })}\n`));
   } else {
     if (digestBy === "model" && !parsed.json) process.stderr.write(pc.dim(`${say("handoff.dryRunDigest")}\n`));
     digest ??= digestConversation(conversation);
@@ -461,13 +466,21 @@ async function read(ref: ConversationRef, store: StoreOptions): Promise<Conversa
 
 // ── The digest a model writes ──────────────────────────────────────────────
 
+/** The catalog's digest, and the calls the chain took when the catalog says so; an older catalog answers the digest alone. */
+interface ModelDigestAnswer {
+  digest: Digest;
+  calls?: number;
+}
+
 /**
- * `POST /api/handoff/digest {id}`: the catalog re-reads the conversation, asks the model and
- * counts the spend. Refused before anything is written when the catalog is down: a handoff that
- * silently fell back to the mechanical digest would say "digest by model" nowhere and spend
- * nothing, which is exactly the kind of quiet substitution `args.ts` exists to prevent.
+ * `POST /api/handoff/digest {id}`: the catalog re-reads the conversation, asks the model over the
+ * whole transcript — one call per window, planned before anything is paid — and counts the
+ * spend. Refused before anything is written when the catalog is down: a handoff that silently
+ * fell back to the mechanical digest would say "digest by model" nowhere and spend nothing,
+ * which is exactly the kind of quiet substitution `args.ts` exists to prevent. A day with fewer
+ * calls left than the chain needs is the catalog's 429, printed with its error and its hint.
  */
-async function modelDigest(parsed: Flags, conversation: Conversation): Promise<Digest | number> {
+async function modelDigest(parsed: Flags, conversation: Conversation): Promise<ModelDigestAnswer | number> {
   let reply: Response;
   try {
     reply = await catalogFetch(new URL("/api/handoff/digest", parsed.api), {
@@ -486,13 +499,14 @@ async function modelDigest(parsed: Flags, conversation: Conversation): Promise<D
     process.stderr.write(pc.red(`${say("handoff.digestRejected", { status: reply.status, detail: await refusalOf(reply) })}\n`));
     return 1;
   }
-  const body = (await reply.json().catch(() => undefined)) as { digest?: Digest; by?: string } | undefined;
+  const body = (await reply.json().catch(() => undefined)) as { digest?: Digest; by?: string; calls?: unknown } | undefined;
   const digest = body?.digest ?? (body?.by === "model" ? (body as Digest) : undefined);
   if (!digest || typeof digest.title !== "string") {
     process.stderr.write(pc.red(`${say("handoff.digestUnreadable")}\n`));
     return 1;
   }
-  return digest;
+  const calls = typeof body?.calls === "number" && Number.isInteger(body.calls) && body.calls >= 0 ? body.calls : undefined;
+  return calls === undefined ? { digest } : { digest, calls };
 }
 
 // ── The preview ────────────────────────────────────────────────────────────
@@ -505,9 +519,10 @@ async function modelDigest(parsed: Flags, conversation: Conversation): Promise<D
 function preview(parsed: Flags, conversation: Conversation, digest: Digest, target: AgentId | "bundle" | undefined, tier: Tier, out?: string): number {
   const fidelity = target !== undefined && target !== "bundle" ? fidelityOf(target) : undefined;
   const sizeFacts = { turns: conversation.turns.length, tokens: digest.stats.estimatedTokens, bytes: conversation.bytes };
+  const sizes = tierSizes(conversation, digest, parsed.keep);
   if (parsed.json) {
     process.stdout.write(
-      `${JSON.stringify({ dryRun: true, conversation: refOf(conversation), digest, tier, target: target ?? null, fidelity: fidelity ?? null, size: sizeFacts, dropped: conversation.dropped, ...(target === "bundle" ? { bundle: out ?? null } : {}) }, null, 2)}\n`,
+      `${JSON.stringify({ dryRun: true, conversation: refOf(conversation), digest, tier, target: target ?? null, fidelity: fidelity ?? null, size: sizeFacts, sizes, dropped: conversation.dropped, ...(target === "bundle" ? { bundle: out ?? null } : {}) }, null, 2)}\n`,
     );
     return 0;
   }
@@ -519,9 +534,46 @@ function preview(parsed: Flags, conversation: Conversation, digest: Digest, targ
     for (const item of fidelity.leaves) lines.push(`    ${pc.dim("−")} ${pc.dim(item)}`);
   }
   if (target === "bundle") lines.push("", `  ${pc.dim(out ? say("handoff.bundleWouldWrite", { path: out }) : say("handoff.bundleWouldPrint"))}`);
-  lines.push("", `  ${sizeLine(sizeFacts)}`, `  ${pc.dim(leftBehind(conversation.dropped))}`, "");
+  lines.push("", `  ${sizeLine(sizeFacts)}`, `  ${tiersLine(sizes)}`, `  ${pc.dim(leftBehind(conversation.dropped))}`, "");
   process.stdout.write(lines.join("\n"));
   return 0;
+}
+
+/** What each tier would carry, measured before anything is written: the same shape the web preview answers as `sizes`. */
+export interface TierSizes {
+  full: { turns: number; estimatedTokens: number };
+  compact: { turns: number; estimatedTokens: number };
+  brief: { estimatedTokens: number };
+}
+
+/**
+ * The three tiers sized on the same conversation with the engine's own measure, so the person
+ * chooses a tier with the figures in front of them: `full` is the transcript as it is, `compact`
+ * is what `compactConversation` would write with this `keepTurns` — the digest as a summary turn
+ * plus the newest turns — and `brief` is the Markdown `briefMarkdown` would write, all counted
+ * by `estimateTokens` over `textOfTurns`, the rule behind `stats.estimatedTokens`. It mirrors
+ * `tierSizes` in `apps/web/lib/handoff-write.ts`, field for field, and is not imported from
+ * there on purpose: this command runs the engine in its own process and asks the catalog for
+ * nothing a preview needs. Pure, and the same on every run.
+ */
+export function tierSizes(conversation: Conversation, digest: Digest, keepTurns?: number): TierSizes {
+  const options = keepTurns !== undefined ? { keepTurns } : {};
+  const compact = compactConversation(conversation, digest, options);
+  return {
+    full: { turns: conversation.turns.length, estimatedTokens: estimateTokens(textOfTurns(conversation.turns)) },
+    compact: { turns: compact.turns.length, estimatedTokens: estimateTokens(textOfTurns(compact.turns)) },
+    brief: { estimatedTokens: estimateTokens(briefMarkdown(conversation, digest, options)) },
+  };
+}
+
+/** «full ≈ 628k tokens · compact ≈ 9k tokens · brief ≈ 3k tokens» — the three tiers under the size line. */
+function tiersLine(sizes: TierSizes): string {
+  return say("handoff.tierSizes", { full: kOf(sizes.full.estimatedTokens), compact: kOf(sizes.compact.estimatedTokens), brief: kOf(sizes.brief.estimatedTokens) });
+}
+
+/** Thousands of tokens, never below one: a conversation of 300 tokens reads «≈ 1k», not «≈ 0k». */
+function kOf(tokens: number): number {
+  return Math.max(1, Math.round(tokens / 1000));
 }
 
 function digestLines(conversation: Conversation, digest: Digest, tier: Tier): string[] {
@@ -546,7 +598,7 @@ function digestLines(conversation: Conversation, digest: Digest, tier: Tier): st
 }
 
 function sizeLine(facts: { turns: number; tokens: number; bytes: number }): string {
-  return say("handoff.sizeLine", { n: facts.turns, k: Math.max(1, Math.round(facts.tokens / 1000)), size: size(facts.bytes) });
+  return say("handoff.sizeLine", { n: facts.turns, k: kOf(facts.tokens), size: size(facts.bytes) });
 }
 
 /** «Left behind: thinking: 3, images: 1» — every zero omitted, so an empty list says nothing. */

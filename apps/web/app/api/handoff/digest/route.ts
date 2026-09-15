@@ -11,7 +11,7 @@ import { HandoffFault } from "@panoma/handoff/faults";
 import { db } from "@/lib/db";
 import { localOperatorOnly, sameOrigin } from "@/lib/guard";
 import { discoverCached, storeOptions } from "@/lib/handoff-cache";
-import { writeDigestWithModel } from "@/lib/handoff-digest";
+import { digestRefusal, planDigest, writeDigestWithModel } from "@/lib/handoff-digest";
 import { handoffHttpError } from "@/lib/handoff-http";
 import { localeFrom, t } from "@/lib/i18n";
 import { modelErrorParts } from "@/lib/model-errors";
@@ -24,8 +24,11 @@ import { capFor, FAMILY_KINDS } from "@/lib/spend-settings";
  * `digestBy: "model"` with the write itself. The body names a conversation by id; the server
  * re-reads it from the store — a transcript never travels in a request — digests it, redacts
  * every turn and wraps every block as `conversation` origin (`lib/handoff-digest.ts`), and
- * pays one call of the `handoff` family, two when the first answer was cut. The ledger row is
- * written before the answer is read.
+ * pays one call of the `handoff` family per window of the transcript, one more for each answer
+ * that was cut. The chain is planned before anything is paid, and a day with fewer calls left
+ * than the chain needs is refused whole with both figures. The ledger row is written before
+ * each answer is read. The answer carries `calls`, what was paid, and `windows`, what the plan
+ * had and what was read.
  *
  * Operator key: it sends the person's private conversation to a provider and spends their
  * credential. Local only: the store is on this disk.
@@ -78,25 +81,20 @@ export async function POST(request: Request) {
   }
   const digest = digestConversation(conversation);
 
-  // The brake, after everything free and before the prompt is built.
+  // The brake, after everything free and before the prompt is built: the whole chain must fit today.
   const spent = await modelSpendToday(database, FAMILY_KINDS.handoff);
   const { cap } = await capFor("handoff");
-  if (spent.calls >= cap) {
-    return Response.json(
-      {
-        error: t(locale, "api.handoffSpent", { used: spent.calls, cap }),
-        hint: t(locale, "api.handoffSpentHint"),
-      },
-      { status: 429 },
-    );
-  }
+  const plan = planDigest(conversation, digest);
+  const refused = digestRefusal(locale, { cap, spent: spent.calls, calls: plan.calls });
+  if (refused) return Response.json(refused, { status: 429 });
 
   try {
-    const written = await writeDigestWithModel(database, { conversation, digest, cap, spent: spent.calls, identity: null });
+    const written = await writeDigestWithModel(database, { conversation, digest, cap, spent: spent.calls, plan, identity: null });
     return Response.json({
       ok: true,
       digest: written.digest,
       calls: written.calls,
+      windows: written.windows,
       model: `${written.provider}/${written.model}`,
     });
   } catch (error) {

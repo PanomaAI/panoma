@@ -337,10 +337,17 @@ the hour of the newest counts, and the route answers 409 `ambiguous-id` naming b
 `dryRun: true`, answers what would travel and writes nothing: the row, the mechanical digest
 with every string covered by `redactSecrets`, the target's fidelity — `null` at `brief`,
 because a document is written whatever the target — the source's size, what the reader
-dropped, and the newest receipt for that target and surface. The formatter labels the size as
+dropped, the newest receipt for that target and surface, and since 15-Sep-2026 `sizes` —the
+three tiers weighed by the engine, `{full: {turns, estimatedTokens}, compact: {turns,
+estimatedTokens}, brief: {estimatedTokens}}`, `compact` and `brief` with the body's
+`keepTurns`— and `modelDigest: {calls}`, what «Let a model write the digest» would spend on
+the person's surfaces. The formatter labels the size as
 the source's and adds what the tier makes of it: at `compact` the digest and the newest turns
 travel whole and the rest as the digest only, at `brief` a Markdown document travels, at
-`full` nothing is added. Without `dryRun` it writes a new conversation into the target
+`full` nothing is added; then, when the body carries them, «At tier full ≈ Nk tokens travel;
+at compact ≈ Nk; at brief ≈ Nk.» and «A model digest would take calls: N.» — a figure to pass
+on, never a door, because `digestBy` is refused on this channel — and a body from an older
+catalog without the two fields prints as it did. Without `dryRun` it writes a new conversation into the target
 agent's own history on this machine, with an id of its own and the original untouched,
 records the receipt with `requested_by` set to the agent's name, and answers the body
 `POST /api/handoff` answers the screen with, less the document itself: a `.md` target gets
@@ -355,8 +362,11 @@ or an app word (`claude-app`, `codex-app`) that means the agent on its `app` sur
 no `surface` field, no `digestBy`, no `targetHome`, no bundle: an unknown key in the body is a
 400. The **model-written digest is not on this channel**: the digest is mechanical, free and
 the same on every run, and a paid call made because a model asked another model would be spend
-nobody decided. A document-only target — Cursor, Copilot, Aider, Amp, Goose — gets a `.md` for
-the person to paste as the first message, and the answer says so.
+nobody decided — since 15-Sep-2026 it is a chain of one call per window of the transcript, so
+the dry run's `modelDigest.calls` lets the agent tell the person the price before sending them
+to the screen or the terminal, where the box and `--digest model` are. A document-only target
+— Cursor, Copilot, Aider, Amp, Goose — gets a `.md` for the person to paste as the first
+message, and the answer says so.
 
 **The same agent is refused here, at any tier and on either surface**: 409 `same-store`. The
 person's two-account flow of [handoff.md](handoff.md) is a sequence of the person's own steps

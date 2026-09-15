@@ -2,8 +2,9 @@ import { mkdir, mkdtemp, realpath, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { REDACTED } from "@panoma/core";
-import type { ConversationRef, Digest } from "@panoma/handoff";
+import { digestConversation, hashTurns, NOTHING_DROPPED, type Conversation, type ConversationRef, type Digest, type Turn } from "@panoma/handoff";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { WINDOW_CHARS } from "./handoff-digest";
 import {
   catalogCwds,
   checkId,
@@ -11,11 +12,13 @@ import {
   isKeepTurns,
   locationOf,
   newestOf,
+  previewSizes,
   publicRef,
   redactDigest,
   refuseSameStore,
   SAME_HOUR_MS,
   targetOf,
+  tierSizes,
 } from "./handoff-write";
 
 /*
@@ -188,6 +191,95 @@ describe("what a machine may see", () => {
     const bare = redactDigest({ ...withoutSummary, lastExchange: {} });
     expect("summary" in bare).toBe(false);
     expect(bare.lastExchange).toEqual({});
+  });
+});
+
+describe("the sizes per tier", () => {
+  function conversationOf(turns: Turn[], extra: Partial<Conversation> = {}): Conversation {
+    return {
+      version: 1,
+      id: CLAUDE,
+      agent: "claude-cli",
+      sessionId: CLAUDE.split(":")[1]!,
+      handle: CLAUDE.slice(-8),
+      path: "/x/transcript.jsonl",
+      cwd: "/x",
+      updatedAt: "2026-09-11T10:00:00.000Z",
+      turnCount: turns.length,
+      bytes: 4096,
+      compacted: false,
+      hash: hashTurns(turns),
+      turns,
+      compactions: [],
+      dropped: { ...NOTHING_DROPPED },
+      ...extra,
+    };
+  }
+  const user = (text: string): Turn => ({ role: "user", parts: [{ kind: "text", text }] });
+  const assistant = (text: string): Turn => ({ role: "assistant", parts: [{ kind: "text", text }] });
+  const turns: Turn[] = [user("Build the ledger.")];
+  for (let index = 0; index < 20; index += 1) {
+    turns.push(assistant(`Step ${index}: ${"x".repeat(400)}`));
+    turns.push(user(`Go on ${index}`));
+  }
+  const conversation = conversationOf(turns);
+  const digest = digestConversation(conversation);
+
+  it("measures the three tiers with the engine's own rule, compact and brief on the newest turns", () => {
+    const sizes = tierSizes(conversation, digest);
+    // `full` is the digest's own figure: the same measure, so the three can be compared.
+    expect(sizes.full).toEqual({ turns: 41, estimatedTokens: digest.stats.estimatedTokens });
+    // The digest as a summary turn, then the engine's default of twelve.
+    expect(sizes.compact.turns).toBe(13);
+    expect(sizes.compact.estimatedTokens).toBeGreaterThan(0);
+    expect(sizes.compact.estimatedTokens).toBeLessThan(sizes.full.estimatedTokens);
+    expect(sizes.brief.estimatedTokens).toBeGreaterThan(0);
+    expect(sizes.brief.estimatedTokens).toBeLessThan(sizes.full.estimatedTokens);
+    expect("turns" in sizes.brief).toBe(false);
+  });
+
+  it("applies keepTurns to compact and brief, and never to full", () => {
+    const two = tierSizes(conversation, digest, 2);
+    expect(two.full).toEqual(tierSizes(conversation, digest).full);
+    expect(two.compact.turns).toBe(3);
+    expect(two.compact.estimatedTokens).toBeLessThan(tierSizes(conversation, digest).compact.estimatedTokens);
+    expect(two.brief.estimatedTokens).toBeLessThan(tierSizes(conversation, digest).brief.estimatedTokens);
+    // A window that would open on a tool result brings the call along, as the engine writes it.
+    const tools = conversationOf([
+      user("Run it"),
+      { role: "assistant", parts: [{ kind: "tool_call", id: "c1", name: "Bash", input: { command: "ls" } }] },
+      { role: "user", parts: [{ kind: "tool_result", callId: "c1", output: "a\nb" }] },
+      assistant("Two files."),
+    ]);
+    expect(tierSizes(tools, digestConversation(tools), 2).compact.turns).toBe(4);
+  });
+
+  it("drops the source's own summary turns from compact, as the engine does", () => {
+    const summary = "Earlier: the ledger was sketched.";
+    const compacted = conversationOf(
+      [user("Build it"), assistant("Sketched."), { role: "user", parts: [{ kind: "summary", text: summary }] }, user("Add taxes"), assistant("Added.")],
+      { compacted: true, compactions: [{ text: summary }] },
+    );
+    const sizes = tierSizes(compacted, digestConversation(compacted));
+    expect(sizes.full.turns).toBe(5);
+    expect(sizes.compact.turns).toBe(5);
+  });
+
+  it("assembles what both previews say: the size line, the sizes and the model digest's calls", () => {
+    const preview = previewSizes(conversation, digest, 2);
+    expect(preview.size).toEqual({ turns: 41, bytes: 4096, estimatedTokens: digest.stats.estimatedTokens });
+    expect(preview.sizes).toEqual(tierSizes(conversation, digest, 2));
+    expect(preview.modelDigest).toEqual({ calls: 1 });
+    // A conversation the chain reads in windows costs one call each, and the preview says so.
+    const long: Turn[] = [user("Build the ledger.")];
+    for (let index = 0; index < 60; index += 1) {
+      long.push(assistant(`Step ${index}: ${"x".repeat(2400)}`));
+      long.push(user(`Go on ${index}`));
+    }
+    const longConversation = conversationOf(long);
+    const calls = previewSizes(longConversation, digestConversation(longConversation)).modelDigest.calls;
+    expect(calls).toBe(3);
+    expect(calls).toBeGreaterThanOrEqual(Math.ceil((60 * 2400) / WINDOW_CHARS));
   });
 });
 
