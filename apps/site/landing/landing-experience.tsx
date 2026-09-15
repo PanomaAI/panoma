@@ -2139,9 +2139,14 @@ function MemorySection({ text }: { text: LandingCopy }) {
             <span>{text.memory.line2}</span>
           </h2>
           <p className={styles.memoryLead}>{text.memory.lead}</p>
-          <Link className={styles.featureDocsLink} href="/docs#memory">
-            {text.memory.docs}
-          </Link>
+          <div className={styles.featureLinks}>
+            <Link className={styles.featureDocsLink} href="/docs#memory">
+              {text.memory.docs}
+            </Link>
+            <Link className={styles.featureDocsLink} href="/memory">
+              {text.memory.story}
+            </Link>
+          </div>
         </header>
 
         <div className={styles.memoryVisual} aria-hidden>

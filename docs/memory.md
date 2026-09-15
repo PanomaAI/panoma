@@ -557,6 +557,7 @@ The scale's control (`PANOMA_MEMORY_ABLATION`) lives in
 | What | Where |
 |---|---|
 | The table and its four caps | `packages/db/src/schema.ts` (`notes`), `packages/db/src/notes.ts` |
+| The public explainer: one sentence followed to a rule, plain or technical, Spanish or English | `apps/site/memory/`, served at `/memory` on the site, embedded at the top of `/docs#memory` in English, and linked from the landing's memory section; `memory-copy.test.ts` pins its figures to the constants above |
 | Proposing and rereading, with an agent key | `POST /api/agent/notes` |
 | Approving, discarding and writing general or path rules by hand | `POST /api/notes` + the project's "Memory" tab, `apps/web/components/project-memory.tsx` |
 | The agent's tool | `panoma_remember` in `packages/mcp/src/index.ts` |

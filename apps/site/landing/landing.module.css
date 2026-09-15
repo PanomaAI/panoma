@@ -2626,6 +2626,9 @@
   it are positioned absolutely over a decorative visual, so the button needs to reactivate the
   pointer in case any ancestor turned it off.
  */
+/* Two doors out of the memory section side by side: the reference, and the story. */
+.page .featureLinks { display: flex; flex-wrap: wrap; justify-content: center; gap: 0 10px; }
+
 .page .featureDocsLink {
   display: inline-flex;
   align-items: center;

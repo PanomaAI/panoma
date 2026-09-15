@@ -553,6 +553,10 @@ export const DOCS_COPY = {
     leadBody:
       "A chat remembers what somebody typed at it. Panoma sits on your disk: it sees files change, scripts disappear, projects move. That is why its memory can do something a conversational one cannot — notice on its own that something it remembers stopped being true, and stop saying it, without anyone having to speak. And every byte it hands an agent is written down before it leaves and read back afterwards from the agent's own record, so the question “did the rule reach it?” has an answer that is not a guess.",
 
+    storyLine: "Before the reference, the walk: one sentence of yours followed until it is a rule every agent receives — told plainly, or with every name and figure the code uses.",
+    storyAside: "The same walk on a page of its own, in Spanish as well:",
+    storyLink: "/memory",
+
     floorsTitle: "Four floors",
     floorsLead:
       "Each one answers a different question. The journal says what happened; the curated memory says what is still true; a sleeping note says where; a check says what the disk has to look like for that to hold.",

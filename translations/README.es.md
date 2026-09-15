@@ -347,7 +347,9 @@ de decisión de cada parte son [docs/memory.md](../docs/memory.md),
 [docs/memory-contract.md](../docs/memory-contract.md),
 [docs/memory-capture.md](../docs/memory-capture.md),
 [docs/memory-checks.md](../docs/memory-checks.md) y
-[docs/twin-learning.md](../docs/twin-learning.md).
+[docs/twin-learning.md](../docs/twin-learning.md). Si prefieres verlo paso a paso, de una frase
+tuya a una regla que reciben todos tus agentes: [panoma.ai/memory](https://www.panoma.ai/memory) lo
+cuenta dos veces —sencillo, y con los nombres y las cifras del código— en español o en inglés.
 
 ```mermaid
 flowchart LR

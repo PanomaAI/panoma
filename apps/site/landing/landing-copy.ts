@@ -139,6 +139,8 @@ export type LandingCopy = {
     line2: string;
     lead: string;
     docs: string;
+    /** The link to `/memory`: one sentence of the owner's, followed until it is a rule. */
+    story: string;
     projects: string[];
   };
   twin: {
@@ -416,6 +418,7 @@ const en: LandingCopy = {
     line2: "Panoma has it.",
     lead: "It updates live and your agents read it.",
     docs: "How memory works",
+    story: "One sentence, step by step",
     projects: ["Project 1", "Project 2", "Project 3", "Project 4", "Project 5"],
   },
   twin: {
@@ -688,6 +691,7 @@ const es: LandingCopy = {
     line2: "La tiene Panoma.",
     lead: "Se actualiza en vivo y la leen los agentes.",
     docs: "Cómo funciona la memoria",
+    story: "Una frase, paso a paso",
     projects: ["Proyecto 1", "Proyecto 2", "Proyecto 3", "Proyecto 4", "Proyecto 5"],
   },
   twin: {

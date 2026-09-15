@@ -78,6 +78,7 @@ There are two small and deliberate copies, each with its test beside it:
 | --- | --- |
 | `/` | the landing |
 | `/docs` | the public documentation, English only |
+| `/memory` | the memory told from one sentence of the owner's to a rule every agent receives, in a plain and a technical register, Spanish or English |
 | `/landing` | 308 redirect to `/` |
 
 The landing lived at `/landing` because inside `apps/web` the root was the catalog's front

@@ -48,7 +48,8 @@ npx panoma memory allow claude-code capture --all --notice 2
 npx panoma memory status
 ```
 
-More at [panoma.ai](https://panoma.ai).
+More at [panoma.ai](https://panoma.ai); the memory told step by step, plainly or technically, at
+[panoma.ai/memory](https://www.panoma.ai/memory).
 
 ## Licence
 

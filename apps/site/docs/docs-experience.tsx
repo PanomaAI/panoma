@@ -8,7 +8,7 @@ import theme from "../landing/landing-theme.module.css";
 import { copyCommand } from "./copy-command";
 import { DOCS_COMMANDS, DOCS_COPY as text, DOCS_NAV, DOCS_SWARM } from "./docs-copy";
 import { paintMarkAndDocs } from "./docs-hero";
-import { MemoryFigure } from "./memory-figure";
+import { MemoryStory } from "../memory/memory-story";
 import styles from "./docs.module.css";
 
 /*
@@ -284,8 +284,12 @@ export function DocsExperience() {
             <h2>{text.memory.title}</h2>
             <p className={styles.lead}>{text.memory.lead}</p>
             <p className={styles.note}>{text.memory.leadBody}</p>
+            <p className={styles.note}>{text.memory.storyLine}</p>
 
-            <MemoryFigure />
+            <MemoryStory locale="en" embedded />
+            <p className={styles.note}>
+              {text.memory.storyAside} <Link href="/memory">{text.memory.storyLink}</Link>
+            </p>
 
             <h3 className={styles.subhead}>{text.memory.floorsTitle}</h3>
             <p className={styles.note}>{text.memory.floorsLead}</p>

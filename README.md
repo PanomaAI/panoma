@@ -343,7 +343,9 @@ it hands an agent is written down before it leaves the process and read back aft
 the agent's own record. This section tells the whole loop. The decision records behind each
 part are [docs/memory.md](docs/memory.md), [docs/memory-contract.md](docs/memory-contract.md),
 [docs/memory-capture.md](docs/memory-capture.md), [docs/memory-checks.md](docs/memory-checks.md)
-and [docs/twin-learning.md](docs/twin-learning.md).
+and [docs/twin-learning.md](docs/twin-learning.md). Prefer it told step by step, from one
+sentence of yours to a rule every agent receives? [panoma.ai/memory](https://www.panoma.ai/memory)
+tells it twice — plainly, and with the names and figures of the code — in English or Spanish.
 
 ```mermaid
 flowchart LR
